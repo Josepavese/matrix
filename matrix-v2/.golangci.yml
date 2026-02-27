@@ -1,0 +1,17 @@
+linters:
+  disable-all: true
+  enable:
+    - goimports
+    - revive
+    - gocritic
+    - gocyclo
+    - goconst
+    - errcheck
+
+linters-settings:
+  gocyclo:
+    min-complexity: 10
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+

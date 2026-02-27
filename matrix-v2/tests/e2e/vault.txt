@@ -1,0 +1,11 @@
+# Verify that vault commands work properly
+exec matrix vault set my_secret "S3cr3tV4lu3"
+! stderr .
+
+exec matrix vault get my_secret
+stdout 'S3cr3tV4lu3'
+! stderr .
+
+# Verify getting a nonexistent secret throws an error
+! exec matrix vault get does_not_exist
+stderr 'Not found'
