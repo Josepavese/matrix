@@ -47,6 +47,15 @@ func (m *Manager) Get(key string) (string, error) {
 	return m.vault.GetString(keyPrefix + key)
 }
 
+// GetWithDefault retrieves a configuration value, returning the fallback if missing.
+func (m *Manager) GetWithDefault(key, fallback string) string {
+	val, err := m.Get(key)
+	if err != nil || val == "" {
+		return fallback
+	}
+	return val
+}
+
 // Delete removes a configuration entry by dot-notation key.
 func (m *Manager) Delete(key string) error {
 	if key == "" {

@@ -22,7 +22,11 @@ func TestFUSE_MountAndRead(t *testing.T) {
 	if err := mgr.MountVirtualFS(mountPoint); err != nil {
 		t.Fatalf("Failed to mount virtual FS: %v", err)
 	}
-	defer mgr.UnmountVirtualFS()
+	defer func() {
+		if err := mgr.UnmountVirtualFS(); err != nil {
+			t.Fatalf("UnmountVirtualFS failed: %v", err)
+		}
+	}()
 
 	// Wait briefly for the OS FUSE subsystem to register the mount
 	time.Sleep(200 * time.Millisecond)

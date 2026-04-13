@@ -14,7 +14,7 @@ func (m *mockStorage) Get(key string) ([]byte, error) {
 	if m.data == nil {
 		return nil, nil
 	}
-	if string(key) == "error_trigger" {
+	if key == "error_trigger" {
 		return nil, errors.New("simulated error")
 	}
 	return m.data[key], nil
@@ -24,7 +24,7 @@ func (m *mockStorage) Set(key string, val []byte) error {
 	if m.data == nil {
 		m.data = make(map[string][]byte)
 	}
-	if string(key) == "fail_set" {
+	if key == "fail_set" {
 		return errors.New("simulated set error")
 	}
 	m.data[key] = val

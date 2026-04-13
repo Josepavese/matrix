@@ -4,7 +4,7 @@ import "github.com/spf13/cobra"
 
 var fuseCmd = &cobra.Command{
 	Use:   "fuse",
-	Short: "Manage Matrix Virtual Filesystem",
+	Short: "Experimental virtual filesystem surface",
 }
 
 func init() {

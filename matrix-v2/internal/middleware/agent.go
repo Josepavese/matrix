@@ -1,0 +1,246 @@
+package middleware
+
+import (
+	"context"
+	"encoding/json"
+)
+
+// AgentTransport abstracts a bidirectional stream for JSON-RPC 2.0 messages (e.g. Stdio, WebSocket).
+type AgentTransport interface {
+	// Send sends a raw JSON byte slice over the stream.
+	Send(ctx context.Context, message []byte) error
+	// Receive reads a raw JSON byte slice from the stream. Returns error on closed/EOF.
+	Receive(ctx context.Context) ([]byte, error)
+	// Close terminates the stream.
+	Close() error
+}
+
+// SessionObserver receives asynchronous updates (e.g. streaming text) during a prompt execution.
+type SessionObserver interface {
+	OnUpdate(notification SessionNotification)
+}
+
+// RequestHandler handles incoming JSON-RPC requests from the agent (e.g. tool calls, permissions).
+type RequestHandler interface {
+	HandleRequest(ctx context.Context, method string, params json.RawMessage) (interface{}, error)
+}
+
+// AgentClient provides the strictly-typed semantic methods to interact with an ACP Agent.
+type AgentClient interface {
+	Initialize(ctx context.Context, req InitializeRequest) (*InitializeResponse, error)
+	NewSession(ctx context.Context, req NewSessionRequest) (*NewSessionResponse, error)
+	Prompt(ctx context.Context, req PromptRequest, observer SessionObserver) (*PromptResponse, error)
+	// SetRequestHandler registers a handler for incoming agent-to-client requests.
+	SetRequestHandler(handler RequestHandler)
+	// SetMode switches the agent session mode (e.g. "yolo" for auto-approve all tools).
+	SetMode(ctx context.Context, sessionID, modeID string) error
+}
+
+// AgentRouter is responsible for orchestrating the complete lifecycle (Init -> Session -> Prompt) for a given agent.
+type AgentRouter interface {
+	// Route executes a full prompt turn, delegating to the proper AgentClient.
+	// It returns the response text, the updated AgentSessionID, and any requested ToolCalls.
+	Route(ctx context.Context, req RouteRequest) (string, string, []ToolCall, error)
+}
+
+type RouteRequest struct {
+	AgentID          string
+	LogicalSessionID string
+	AgentSessionID   string
+	Message          string
+	Tools            []Tool
+	ThoughtNotifier  ThoughtNotifier // optional: receives real-time thought/tool updates during prompt
+}
+
+// ThoughtUpdateType classifies the kind of intermediate update from an agent.
+type ThoughtUpdateType int
+
+const (
+	ThoughtTypeThinking ThoughtUpdateType = iota // agent is reasoning (agent_thought_chunk)
+	ThoughtTypeToolCall                          // agent is invoking a tool
+	ThoughtTypeToolResult                        // tool execution result
+)
+
+// ThoughtUpdate represents a real-time intermediate update during agent execution.
+type ThoughtUpdate struct {
+	Type    ThoughtUpdateType
+	Content string
+}
+
+// ThoughtNotifier receives real-time thought and tool updates during a prompt turn.
+// Implementations can show these as temporary UI elements (e.g. a "thinking" message).
+type ThoughtNotifier interface {
+	OnThought(update ThoughtUpdate)
+	// SetHeader provides agent and session metadata for display.
+	SetHeader(agentID, agentSessionID string)
+	// FormattedHeader returns a platform-specific styled label for the final response.
+	// Returns empty string if no header is available.
+	FormattedHeader() string
+}
+
+// AgentEndpointResolver maps an agent ID to its dynamic protocol and address.
+type AgentEndpointResolver interface {
+	GetAgentEndpoint(agentID string) (protocol, address string, args []string, env []string, err error)
+}
+
+// --- Domain Structures matching Zed ACP ---
+
+type InitializeRequest struct {
+	ProtocolVersion    int                    `json:"protocolVersion"`
+	ClientInfo         map[string]interface{} `json:"clientInfo"`
+	ClientCapabilities *ClientCapabilities    `json:"clientCapabilities,omitempty"`
+}
+
+// ClientCapabilities declares what the client supports per ACP spec.
+// Per spec: fs is an object {readTextFile, writeTextFile}, terminal is a boolean.
+type ClientCapabilities struct {
+	Fs       *FsCapability `json:"fs,omitempty"`
+	Terminal bool          `json:"terminal,omitempty"`
+}
+
+// FsCapability indicates the client can handle fs/read_text_file and fs/write_text_file.
+type FsCapability struct {
+	ReadTextFile  bool `json:"readTextFile"`
+	WriteTextFile bool `json:"writeTextFile"`
+}
+
+type InitializeResponse struct {
+	Capabilities map[string]interface{} `json:"capabilities"`
+	AuthMethods  []AuthMethod           `json:"authMethods,omitempty"`
+}
+
+// AuthMethod describes an authentication method returned by the agent during initialize.
+type AuthMethod struct {
+	Type        string `json:"type"`
+	ID          string `json:"id,omitempty"`
+	Description string `json:"description,omitempty"`
+	EnvVar      string `json:"envVar,omitempty"`
+}
+
+type NewSessionRequest struct {
+	ClientTitle string           `json:"clientTitle,omitempty"`
+	Cwd         string           `json:"cwd"`
+	McpServers  []McpServerConfig `json:"mcpServers"`
+	Tools       []Tool           `json:"tools,omitempty"`
+}
+
+// McpServerConfig describes an MCP server connection for session/new per ACP spec.
+type McpServerConfig struct {
+	Name    string     `json:"name"`
+	Type    string     `json:"type,omitempty"`    // "stdio" (default) or "http"
+	Command string     `json:"command,omitempty"`  // for stdio
+	Args    []string   `json:"args,omitempty"`     // for stdio
+	Env     []EnvVar   `json:"env,omitempty"`      // for stdio
+	URL     string     `json:"url,omitempty"`      // for http
+	Headers []Header   `json:"headers,omitempty"`  // for http
+}
+
+// EnvVar is a name/value pair for environment variable injection.
+type EnvVar struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// Header is a name/value pair for HTTP headers.
+type Header struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type Tool struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	InputSchema map[string]interface{} `json:"inputSchema"`
+}
+
+type NewSessionResponse struct {
+	SessionId     string             `json:"sessionId"`
+	Modes         *SessionModeState  `json:"modes,omitempty"`
+	ConfigOptions []ConfigOption     `json:"configOptions,omitempty"`
+}
+
+// SessionModeState represents the current and available modes for a session.
+type SessionModeState struct {
+	CurrentModeId  string        `json:"currentModeId"`
+	AvailableModes []SessionMode `json:"availableModes"`
+}
+
+// SessionMode describes an agent-defined mode (e.g. "code", "ask", "architect").
+type SessionMode struct {
+	Id          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// ConfigOption describes a session-level configuration option (preferred over legacy modes).
+type ConfigOption struct {
+	Id       string              `json:"id"`
+	Name     string              `json:"name"`
+	Category string              `json:"category"`
+	Options  []ConfigOptionValue `json:"options"`
+	Current  string              `json:"current,omitempty"`
+}
+
+// ConfigOptionValue is one of the possible values for a ConfigOption.
+type ConfigOptionValue struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type PromptRequest struct {
+	SessionId string    `json:"sessionId"`
+	Prompt    []Content `json:"prompt"`
+}
+
+type PromptResponse struct {
+	StopReason string     `json:"stopReason"` // e.g. "end_turn", "tool_calls"
+	ToolCalls  []ToolCall `json:"toolCalls,omitempty"`
+}
+
+type ToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"` // "function"
+	Function ToolCallFunction `json:"function"`
+}
+
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type SessionUpdate struct {
+	SessionUpdate string  `json:"sessionUpdate"` // e.g. "agent_message_chunk"
+	Content       Content `json:"content"`       // e.g. {"type":"text","text":"pong"}
+}
+
+type SessionNotification struct {
+	SessionId string        `json:"sessionId"`
+	Update    SessionUpdate `json:"update"`
+}
+
+type Message struct {
+	Role    string    `json:"role"`    // "user", "assistant"
+	Content []Content `json:"content"` // Array of content blocks
+}
+
+type Content struct {
+	Type string `json:"type"` // "text"
+	Text string `json:"text"`
+}
+
+// SessionEventType classifies the kind of event emitted during a prompt turn.
+type SessionEventType int
+
+const (
+	EventChunk        SessionEventType = iota // text chunk from agent
+	EventToolCall                              // agent is invoking a tool
+	EventProgress                             // agent reports progress
+	EventChildComplete                        // a child/background task completed
+)
+
+// SessionEvent represents a discrete event during agent execution.
+type SessionEvent struct {
+	Type     SessionEventType
+	Content  string
+	Metadata map[string]any
+}

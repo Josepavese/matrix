@@ -1,0 +1,5 @@
+{
+  "token": "seed-token",
+  "enabled": true,
+  "admins": [123, 456]
+}

@@ -11,6 +11,8 @@ var configDeleteCmd = &cobra.Command{
 	Example: `  matrix config delete provider.openai.key`,
 	Args:    cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		ensureConfigKeyAllowed(args[0])
+
 		mgr, cleanup, err := openConfigManager()
 		if err != nil {
 			exitf("Error: %v", err)

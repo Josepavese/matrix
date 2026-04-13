@@ -1,9 +1,11 @@
 package daemon
 
 import (
+	"context"
 	"log/slog"
 	"net/rpc"
 	"net/rpc/jsonrpc"
+	"sync"
 
 	"github.com/jose/matrix-v2/internal/logic/vault"
 	"github.com/jose/matrix-v2/internal/middleware"
@@ -13,8 +15,10 @@ import (
 type Server struct {
 	rpcServer *rpc.Server
 	net       middleware.Network
+	mu        sync.Mutex
 	listener  middleware.ClosableListener
 	vault     *vault.Vault
+	apiKey    string
 }
 
 // NewServer initializes a new JSON-RPC Daemon
@@ -26,27 +30,63 @@ func NewServer(v *vault.Vault, n middleware.Network) *Server {
 	}
 }
 
-// Start opens the TCP socket and begins serving JSON-RPC requests
-func (s *Server) Start(addr string) error {
-	// Register the Vault Service
+// WithAPIKey enables API key authentication for the JSON-RPC daemon.
+func (s *Server) WithAPIKey(key string) *Server {
+	s.apiKey = key
+	return s
+}
+
+// Start opens the TCP socket and serves JSON-RPC requests until the context is cancelled.
+// Returns nil on graceful shutdown, or an error if startup fails.
+func (s *Server) Start(ctx context.Context, addr string) error {
+	log := slog.With("component", "daemon")
+
 	vaultSvc := NewVaultService(s.vault)
 	if err := s.rpcServer.RegisterName("Vault", vaultSvc); err != nil {
 		return err
+	}
+
+	if s.apiKey != "" {
+		authSvc := &AuthService{apiKey: s.apiKey}
+		if err := s.rpcServer.RegisterName("Auth", authSvc); err != nil {
+			return err
+		}
+		log.Info("daemon API key authentication enabled", "event", "daemon_auth_enabled")
 	}
 
 	l, err := s.net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
 	s.listener = l
+	s.mu.Unlock()
 
-	slog.Info("matrix daemon started", "addr", addr, "protocol", "json-rpc")
+	log.Info("matrix daemon started", "event", "daemon_started", "addr", addr, "protocol", "json-rpc")
+
+	// Close the listener when context is cancelled, which unblocks Accept.
+	go func() {
+		<-ctx.Done()
+		log.Info("daemon context cancelled, closing listener", "event", "daemon_shutdown")
+		s.mu.Lock()
+		if s.listener != nil {
+			s.listener.Close()
+		}
+		s.mu.Unlock()
+	}()
 
 	for {
-		conn, err := s.listener.Accept()
+		conn, err := l.Accept()
 		if err != nil {
-			slog.Error("accept error", "err", err)
-			continue
+			// Check if we're shutting down
+			select {
+			case <-ctx.Done():
+				log.Info("daemon stopped gracefully", "event", "daemon_stopped")
+				return nil
+			default:
+				log.Error("accept error", "event", "accept_failed", "error", err)
+				continue
+			}
 		}
 		go s.rpcServer.ServeCodec(jsonrpc.NewServerCodec(conn))
 	}
@@ -54,6 +94,8 @@ func (s *Server) Start(addr string) error {
 
 // Stop gracefully shuts down the daemon
 func (s *Server) Stop() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.listener != nil {
 		return s.listener.Close()
 	}

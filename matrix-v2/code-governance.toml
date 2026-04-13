@@ -1,0 +1,18 @@
+[budgets]
+package_loc = 800
+file_loc = 280
+function_loc = 55
+function_params = 4
+
+[quality]
+avg_function_loc_warn = 24
+p95_function_loc_warn = 50
+branch_points_warn = 10
+long_function_ratio_warn = 0.08
+
+[scope]
+roots = ["cmd", "internal", "pkg"]
+exclude_dirs = ["vendor", "tests/mocks"]
+
+[package_overrides]
+"cmd/matrix" = 1700
