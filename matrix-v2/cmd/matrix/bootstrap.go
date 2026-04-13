@@ -15,7 +15,7 @@ var bootstrapDoctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Show bootstrap readiness and setup guidance",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		ctx, cleanup, err := NewAgentContext(DefaultVaultPath)
 		if err != nil {
 			exitf("Error: %v", err)

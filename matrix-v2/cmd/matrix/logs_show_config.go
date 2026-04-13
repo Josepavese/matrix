@@ -10,7 +10,7 @@ var logsShowConfigCmd = &cobra.Command{
 	Use:   "show-config",
 	Short: "Show effective logging configuration",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		cfg, cleanup, err := openLogConfig()
 		if err != nil {
 			exitf("Error: %v", err)

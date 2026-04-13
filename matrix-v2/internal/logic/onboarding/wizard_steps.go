@@ -93,12 +93,12 @@ func (w *Wizard) step2Handle(_ *Wizard, state *WizardState, input string) (strin
 	agentData := state.Context["_agent_list"]
 	var agents []AgentEntry
 	if agentData == "" {
-		var err error
-		agents, err = w.fetchAgentList()
-		if err != nil || len(agents) == 0 {
+		var fetchErr error
+		agents, fetchErr = w.fetchAgentList()
+		if fetchErr != nil || len(agents) == 0 {
 			return w.invalidSelection(state, w.promptForStep(*state)), nil
 		}
-	} else if err := json.Unmarshal([]byte(agentData), &agents); err != nil || len(agents) == 0 {
+	} else if unmarshalErr := json.Unmarshal([]byte(agentData), &agents); unmarshalErr != nil || len(agents) == 0 {
 		return w.invalidSelection(state, w.promptForStep(*state)), nil
 	}
 
@@ -135,7 +135,7 @@ func (w *Wizard) step2Handle(_ *Wizard, state *WizardState, input string) (strin
 		// If codex, check if already authenticated
 		if selected.ID == agentCodex {
 			msg, err := w.prepareCodexSelection(state)
-		return installMsg + msg, err
+			return installMsg + msg, err
 		}
 		return installMsg + w.promptForStep(*state), nil
 	}

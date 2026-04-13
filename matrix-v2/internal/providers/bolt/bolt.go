@@ -54,7 +54,7 @@ func openProvider(path string, readOnly bool) (*Provider, error) {
 	})
 
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, &middleware.Error{
 			Code:    "ERR_VAULT_INIT",
 			Message: "Failed to initialize default bucket",
@@ -64,7 +64,7 @@ func openProvider(path string, readOnly bool) (*Provider, error) {
 	}
 
 	if err := vaultsec.ApplySecurePermissions(path); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, &middleware.Error{
 			Code:    "ERR_VAULT_PERMISSIONS",
 			Message: "Failed to enforce secure vault permissions",

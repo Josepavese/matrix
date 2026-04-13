@@ -70,7 +70,7 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 		log.Info("daemon context cancelled, closing listener", "event", "daemon_shutdown")
 		s.mu.Lock()
 		if s.listener != nil {
-			s.listener.Close()
+			_ = s.listener.Close()
 		}
 		s.mu.Unlock()
 	}()

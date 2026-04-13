@@ -12,9 +12,9 @@ type memStorage struct {
 func newMemStorage() *memStorage {
 	return &memStorage{data: make(map[string][]byte)}
 }
-func (m *memStorage) Get(key string) ([]byte, error)       { return m.data[key], nil }
-func (m *memStorage) Set(key string, val []byte) error      { m.data[key] = val; return nil }
-func (m *memStorage) Delete(key string) error                { delete(m.data, key); return nil }
+func (m *memStorage) Get(key string) ([]byte, error)   { return m.data[key], nil }
+func (m *memStorage) Set(key string, val []byte) error { m.data[key] = val; return nil }
+func (m *memStorage) Delete(key string) error          { delete(m.data, key); return nil }
 func (m *memStorage) List(prefix string) ([]string, error) {
 	var keys []string
 	for k := range m.data {
@@ -152,8 +152,12 @@ func TestSaveMetaAndLoadMeta(t *testing.T) {
 
 func TestListMetaIDs(t *testing.T) {
 	s := newMemStorage()
-	SaveMeta(s, "alpha", Meta{ID: "alpha", Name: "Alpha"})
-	SaveMeta(s, "beta", Meta{ID: "beta", Name: "Beta"})
+	if err := SaveMeta(s, "alpha", Meta{ID: "alpha", Name: "Alpha"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveMeta(s, "beta", Meta{ID: "beta", Name: "Beta"}); err != nil {
+		t.Fatal(err)
+	}
 
 	ids, err := ListMetaIDs(s)
 	if err != nil {
@@ -171,7 +175,9 @@ func TestListMetaIDs(t *testing.T) {
 func TestDeleteEntry(t *testing.T) {
 	s := newMemStorage()
 	active := true
-	Save(s, "to-delete", Override{Active: &active})
+	if err := Save(s, "to-delete", Override{Active: &active}); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := DeleteEntry(s, "to-delete"); err != nil {
 		t.Fatalf("DeleteEntry: %v", err)
@@ -185,7 +191,9 @@ func TestDeleteEntry(t *testing.T) {
 
 func TestDeleteMeta(t *testing.T) {
 	s := newMemStorage()
-	SaveMeta(s, "to-delete", Meta{ID: "to-delete", Name: "DeleteMe"})
+	if err := SaveMeta(s, "to-delete", Meta{ID: "to-delete", Name: "DeleteMe"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := DeleteMeta(s, "to-delete"); err != nil {
 		t.Fatalf("DeleteMeta: %v", err)
@@ -200,8 +208,12 @@ func TestDeleteMeta(t *testing.T) {
 func TestListAgentIDs(t *testing.T) {
 	s := newMemStorage()
 	active := true
-	Save(s, "zebra", Override{Active: &active})
-	Save(s, "alpha", Override{Active: &active})
+	if err := Save(s, "zebra", Override{Active: &active}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(s, "alpha", Override{Active: &active}); err != nil {
+		t.Fatal(err)
+	}
 
 	ids, err := ListAgentIDs(s)
 	if err != nil {

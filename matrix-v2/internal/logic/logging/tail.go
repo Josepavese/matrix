@@ -14,7 +14,7 @@ func TailFile(fs middleware.FS, path string, lines int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if lines < 1 {
 		lines = 1
@@ -41,7 +41,7 @@ func FollowFile(fs middleware.FS, path string, fromOffset int64, printLine func(
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	if _, err := file.Seek(fromOffset, io.SeekStart); err != nil {
 		return err

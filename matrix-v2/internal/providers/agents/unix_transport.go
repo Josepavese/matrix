@@ -69,7 +69,7 @@ func (t *UnixTransport) Receive(ctx context.Context) ([]byte, error) {
 	select {
 	case <-ctx.Done():
 		// Close the connection to unblock the ReadBytes goroutine
-		t.conn.Close()
+		_ = t.conn.Close()
 		<-ch // wait for goroutine to finish
 		return nil, ctx.Err()
 	case result := <-ch:

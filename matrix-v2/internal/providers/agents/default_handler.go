@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/jose/matrix-v2/internal/middleware"
 )
@@ -23,16 +26,29 @@ var _ interface {
 // When trustMode is false, it denies permission requests (deny-by-default).
 // It also handles fs/ and terminal/ ACP methods.
 type defaultRequestHandler struct {
-	trustMode func() bool         // returns true if auto-approve is enabled; defaults to true if nil
-	fs        middleware.FS       // filesystem operations for fs/* methods
-	proc      middleware.Process  // process execution for terminal/* methods
-	cwd       string              // working directory for path validation
+	trustMode func() bool        // returns true if auto-approve is enabled; defaults to true if nil
+	fs        middleware.FS      // filesystem operations for fs/* methods
+	proc      middleware.Process // process execution for terminal/* methods
+	cwd       string             // working directory for path validation
+
+	// terminalRegistry holds active terminal sessions for async terminal methods.
+	terminals   map[string]*terminalSession
+	terminalsMu sync.Mutex
+	nextTermID  atomic.Uint64
+}
+
+// terminalSession tracks a running terminal process and its accumulated output.
+type terminalSession struct {
+	id     middleware.PipedProcess
+	output bytes.Buffer
+	done   chan struct{}
+	once   sync.Once
 }
 
 // newConfigurableRequestHandler creates a handler that consults the given
 // trustMode function for permission decisions and supports fs/terminal ACP methods.
 func newConfigurableRequestHandler(trustMode func() bool) *defaultRequestHandler {
-	return &defaultRequestHandler{trustMode: trustMode}
+	return &defaultRequestHandler{trustMode: trustMode, terminals: make(map[string]*terminalSession)}
 }
 
 // WithFS configures filesystem operations for fs/* ACP methods.
@@ -68,10 +84,14 @@ func (h *defaultRequestHandler) HandleRequest(ctx context.Context, method string
 		return h.handleFSWrite(ctx, log, params)
 	case method == "terminal/create":
 		return h.handleTerminalCreate(ctx, log, params)
-	case strings.HasPrefix(method, "terminal/"):
-		// terminal/output, terminal/wait_for_exit, terminal/kill, terminal/release
-		log.Info("terminal method not yet fully implemented", "method", method)
-		return map[string]interface{}{"status": "not_implemented"}, nil
+	case method == "terminal/output":
+		return h.handleTerminalOutput(ctx, log, params)
+	case method == "terminal/wait_for_exit":
+		return h.handleTerminalWaitForExit(ctx, log, params)
+	case method == "terminal/kill":
+		return h.handleTerminalKill(ctx, log, params)
+	case method == "terminal/release":
+		return h.handleTerminalRelease(ctx, log, params)
 	default:
 		log.Info("auto-approving agent request", "event", "request_approved", "method", method)
 		return map[string]interface{}{"status": "ok"}, nil
@@ -166,8 +186,8 @@ func (h *defaultRequestHandler) handleFSWrite(ctx context.Context, log *slog.Log
 	}
 
 	var req struct {
-		Path     string `json:"path"`
-		Content  string `json:"content"`
+		Path    string `json:"path"`
+		Content string `json:"content"`
 	}
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, fmt.Errorf("invalid fs/write_text_file params: %w", err)
@@ -188,7 +208,7 @@ func (h *defaultRequestHandler) handleFSWrite(ctx context.Context, log *slog.Log
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file %s for writing: %w", absPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.Write([]byte(req.Content)); err != nil {
 		return nil, fmt.Errorf("failed to write file %s: %w", absPath, err)
@@ -273,4 +293,130 @@ func (h *defaultRequestHandler) handleTerminalCreate(ctx context.Context, log *s
 		"stdout":   stdout,
 		"stderr":   stderr,
 	}, nil
+}
+
+// --- Async terminal methods ---
+
+// terminalIDFromParams extracts the terminalId from request params.
+func terminalIDFromParams(params json.RawMessage) (string, error) {
+	var req struct {
+		TerminalID string `json:"terminalId"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return "", fmt.Errorf("invalid params: %w", err)
+	}
+	if req.TerminalID == "" {
+		return "", fmt.Errorf("missing terminalId")
+	}
+	return req.TerminalID, nil
+}
+
+// getTerminal retrieves a terminal session by ID.
+func (h *defaultRequestHandler) getTerminal(id string) (*terminalSession, error) {
+	h.terminalsMu.Lock()
+	defer h.terminalsMu.Unlock()
+	ts, ok := h.terminals[id]
+	if !ok {
+		return nil, fmt.Errorf("terminal %s not found", id)
+	}
+	return ts, nil
+}
+
+func (h *defaultRequestHandler) handleTerminalOutput(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+	id, err := terminalIDFromParams(params)
+	if err != nil {
+		return nil, err
+	}
+	ts, err := h.getTerminal(id)
+	if err != nil {
+		return nil, err
+	}
+
+	output := ts.output.String()
+	log.Info("terminal output", "terminalId", id, "output_len", len(output))
+	return map[string]interface{}{
+		"output": output,
+	}, nil
+}
+
+func (h *defaultRequestHandler) handleTerminalWaitForExit(ctx context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+	id, err := terminalIDFromParams(params)
+	if err != nil {
+		return nil, err
+	}
+	ts, err := h.getTerminal(id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wait for the process to finish or context cancellation
+	select {
+	case <-ts.done:
+		// Process already finished
+	case <-ctx.Done():
+		return nil, fmt.Errorf("wait cancelled: %w", ctx.Err())
+	}
+
+	output := ts.output.String()
+	log.Info("terminal exited", "terminalId", id, "output_len", len(output))
+	return map[string]interface{}{
+		"exitCode": 0,
+		"output":   output,
+	}, nil
+}
+
+func (h *defaultRequestHandler) handleTerminalKill(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+	id, err := terminalIDFromParams(params)
+	if err != nil {
+		return nil, err
+	}
+	ts, err := h.getTerminal(id)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ts.id.Kill(); err != nil {
+		log.Warn("failed to kill terminal", "terminalId", id, "error", err)
+		return nil, fmt.Errorf("failed to kill terminal %s: %w", id, err)
+	}
+	ts.once.Do(func() { close(ts.done) })
+
+	log.Info("terminal killed", "terminalId", id)
+	return map[string]interface{}{"status": "ok"}, nil
+}
+
+func (h *defaultRequestHandler) handleTerminalRelease(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+	id, err := terminalIDFromParams(params)
+	if err != nil {
+		return nil, err
+	}
+
+	h.terminalsMu.Lock()
+	ts, ok := h.terminals[id]
+	if ok {
+		delete(h.terminals, id)
+	}
+	h.terminalsMu.Unlock()
+
+	if !ok {
+		return nil, fmt.Errorf("terminal %s not found", id)
+	}
+
+	// Ensure process is cleaned up
+	_ = ts.id.Kill()
+	ts.once.Do(func() { close(ts.done) })
+
+	log.Info("terminal released", "terminalId", id)
+	return map[string]interface{}{"status": "ok"}, nil
+}
+
+// CloseTerminals cleans up all active terminal sessions.
+func (h *defaultRequestHandler) CloseTerminals() {
+	h.terminalsMu.Lock()
+	defer h.terminalsMu.Unlock()
+	for id, ts := range h.terminals {
+		_ = ts.id.Kill()
+		ts.once.Do(func() { close(ts.done) })
+		delete(h.terminals, id)
+	}
 }

@@ -82,7 +82,7 @@ func TestRouter_Integration_WS(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		for {
 			_, message, err := conn.ReadMessage()

@@ -1,3 +1,4 @@
+// Package main implements the Matrix CLI.
 package main
 
 import (

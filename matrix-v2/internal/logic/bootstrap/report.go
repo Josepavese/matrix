@@ -10,6 +10,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// BuildReport generates a bootstrap readiness report.
 func BuildReport(store middleware.Storage, cfgMgr *config.Manager, registry *agentmgr.Registry, cfgReader middleware.ConfigReader) (map[string]any, error) {
 	tgCfg, tgSource, err := channelcfg.LoadTelegramConfig(cfgReader, cfgMgr)
 	if err != nil {
@@ -30,6 +31,7 @@ func BuildReport(store middleware.Storage, cfgMgr *config.Manager, registry *age
 	return report, nil
 }
 
+// BuildGuide returns setup guidance steps based on bootstrap state.
 func BuildGuide(systemConfigured, telegramEnabled, telegramConfigured bool, activeAgents []string) []string {
 	steps := []string{
 		"Build the binary with `go build -o matrix ./cmd/matrix` or use `go run ./cmd/matrix ...`.",

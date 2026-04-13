@@ -24,7 +24,7 @@ var agentInfoCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Vault error: %v\n", err)
 			os.Exit(1)
 		}
-		defer provider.Close()
+		defer func() { _ = provider.Close() }()
 
 		netProv := networkprovider.NewProvider()
 		regClient := agentmgr.NewCachingRegistryClient(netProv, "", provider)

@@ -1,0 +1,11 @@
+{
+    "name": "matrix-agents",
+    "version": "1.0.0",
+    "description": "Node-based agent clients for Matrix V2",
+    "scripts": {
+        "update-agents": "npm install @openai/codex@latest"
+    },
+    "dependencies": {
+        "@openai/codex": "latest"
+    }
+}

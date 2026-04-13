@@ -21,7 +21,7 @@ func TestDaemon_VaultRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to init bolt provider: %v", err)
 	}
-	defer provider.Close()
+	defer func() { _ = provider.Close() }()
 
 	v := vault.NewVault(provider)
 	netProvider := networkprovider.NewProvider()
@@ -51,7 +51,7 @@ func TestDaemon_VaultRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to dial TCP JSON-RPC server: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	key := "integration.test.key"
 	expectedVal := "rpc_secret_value"

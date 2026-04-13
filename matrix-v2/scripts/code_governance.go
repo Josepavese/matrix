@@ -93,7 +93,7 @@ func loadConfig(path string) (config, error) {
 	if err != nil {
 		return cfg, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	section := ""
 	scanner := bufio.NewScanner(file)

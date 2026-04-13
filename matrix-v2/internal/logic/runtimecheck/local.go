@@ -14,7 +14,7 @@ type LocalInput struct {
 	FS          middleware.FS
 	// BuildInput is the fully wired input for BuildReport.
 	// The cmd layer is responsible for creating Storage, Registry, Process, etc.
-	BuildInput  *BuildInput
+	BuildInput *BuildInput
 }
 
 func BuildLocalReport(input LocalInput) (map[string]any, error) {

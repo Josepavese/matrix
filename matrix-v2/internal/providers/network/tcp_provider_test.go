@@ -41,7 +41,7 @@ func TestCanDial_OpenPort(t *testing.T) {
 	if err != nil {
 		t.Skipf("can't open listener: %v", err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	addr := l.Addr().String()
 	if !p.CanDial(addr) {
@@ -58,7 +58,7 @@ func TestCanDial_ClosedPort(t *testing.T) {
 
 func TestFetch_Success(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("hello"))
+		_, _ = w.Write([]byte("hello"))
 	}))
 	defer ts.Close()
 
@@ -94,7 +94,7 @@ func TestPostJSON_Success(t *testing.T) {
 			t.Errorf("expected JSON content type")
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	defer ts.Close()
 
@@ -113,7 +113,7 @@ func TestPostJSON_Success(t *testing.T) {
 
 func TestDownload_Success(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("binary-data"))
+		_, _ = w.Write([]byte("binary-data"))
 	}))
 	defer ts.Close()
 

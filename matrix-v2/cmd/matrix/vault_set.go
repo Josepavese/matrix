@@ -26,7 +26,7 @@ var vaultSetCmd = &cobra.Command{
 		if err != nil {
 			exitf("Vault error: %v", err)
 		}
-		defer provider.Close()
+		defer func() { _ = provider.Close() }()
 
 		v := vault.NewVault(provider)
 		value := ""

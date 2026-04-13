@@ -100,7 +100,7 @@ var runCmd = &cobra.Command{
 		}
 		mux := http.NewServeMux()
 		acpServer.RegisterRoutes(mux)
-		mux.HandleFunc("/_matrix/runtime", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/_matrix/runtime", func(w http.ResponseWriter, _ *http.Request) {
 			report, err := runtimecheck.BuildReport(runtimecheck.BuildInput{
 				Store:         d.App.Store,
 				Registry:      d.Registry,
@@ -123,10 +123,10 @@ var runCmd = &cobra.Command{
 
 		// JSON-RPC Daemon
 		srv := daemon.NewServer(d.App.Vault, d.NetProv)
-			if daemonAPIKey := d.App.Config.GetWithDefault("daemon_api_key", ""); daemonAPIKey != "" {
-				srv.WithAPIKey(daemonAPIKey)
-				log.Info("daemon API key configured", "event", "daemon_apikey_set")
-			}
+		if daemonAPIKey := d.App.Config.GetWithDefault("daemon_api_key", ""); daemonAPIKey != "" {
+			srv.WithAPIKey(daemonAPIKey)
+			log.Info("daemon API key configured", "event", "daemon_apikey_set")
+		}
 
 		// Telegram Bot (conditional)
 		tgCfg, tgSource, err := channelcfg.LoadTelegramConfig(d.ConfigMgr, d.App.Config)

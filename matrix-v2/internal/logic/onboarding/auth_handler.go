@@ -7,13 +7,13 @@ import (
 // AuthMethod represents a single authentication method declared by an ACP agent
 // via the initialize response's authMethods array.
 type AuthMethod struct {
-	ID          string            `json:"id"`           // Unique method identifier (e.g. "oauth-personal", "codex-api-key")
-	Name        string            `json:"name"`         // Human-readable name
-	Type        string            `json:"type"`         // "env_var", "terminal", "agent", or "" (agent is default)
-	Description string            `json:"description"`  // Optional description
-	Vars        []string          `json:"vars"`         // For type=env_var: environment variable names
-	Args        []string          `json:"args"`         // For type=terminal: command arguments
-	Meta        map[string]any    `json:"_meta"`        // Extension metadata (terminal-auth, api-key, gateway, etc.)
+	ID          string         `json:"id"`          // Unique method identifier (e.g. "oauth-personal", "codex-api-key")
+	Name        string         `json:"name"`        // Human-readable name
+	Type        string         `json:"type"`        // "env_var", "terminal", "agent", or "" (agent is default)
+	Description string         `json:"description"` // Optional description
+	Vars        []string       `json:"vars"`        // For type=env_var: environment variable names
+	Args        []string       `json:"args"`        // For type=terminal: command arguments
+	Meta        map[string]any `json:"_meta"`       // Extension metadata (terminal-auth, api-key, gateway, etc.)
 }
 
 // AuthResult holds the outcome of a successful authentication flow.
