@@ -21,6 +21,7 @@ const (
 	defaultMaxBackups = 5
 )
 
+// Config holds resolved logging configuration.
 type Config struct {
 	Level      slog.Level
 	Format     string
@@ -32,20 +33,24 @@ type Config struct {
 	ACPWire    bool
 }
 
+// Runtime holds the initialized logger, its config, and a close function.
 type Runtime struct {
 	Logger *slog.Logger
 	Config Config
 	Close  func() error
 }
 
+// Bootstrap initializes logging using the default factory.
 func Bootstrap(cfgMgr *config.Manager) (*Runtime, error) {
 	return BootstrapWithFactory(cfgMgr, nil)
 }
 
+// ResolveConfig loads and returns the logging configuration.
 func ResolveConfig(cfgMgr *config.Manager) (Config, error) {
 	return loadConfig(cfgMgr)
 }
 
+// BootstrapWithFactory initializes logging with a custom sink factory.
 func BootstrapWithFactory(cfgMgr *config.Manager, sinkFactory middleware.LogSinkFactory) (*Runtime, error) {
 	cfg, err := loadConfig(cfgMgr)
 	if err != nil {

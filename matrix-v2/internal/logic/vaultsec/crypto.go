@@ -1,3 +1,4 @@
+// Package vaultsec provides encryption, sealing, and key management for the Matrix vault.
 package vaultsec
 
 import (
@@ -16,12 +17,14 @@ import (
 
 const encryptedPrefix = "ENCV1:"
 
+// KeyStatus describes the state of the vault encryption master key.
 type KeyStatus struct {
 	Configured bool
 	Source     string
 	Algorithm  string
 }
 
+// ResolveMasterKey locates and returns the vault encryption master key.
 func ResolveMasterKey(fs middleware.FS) ([]byte, KeyStatus, error) {
 	if filePath := strings.TrimSpace(os.Getenv("MATRIX_VAULT_MASTER_KEY_FILE")); filePath != "" {
 		if fs == nil {
@@ -47,6 +50,7 @@ func ResolveMasterKey(fs middleware.FS) ([]byte, KeyStatus, error) {
 	return nil, KeyStatus{Configured: false}, nil
 }
 
+// EncryptBytes encrypts a byte slice using AES-GCM with the resolved master key.
 func EncryptBytes(plain []byte) ([]byte, error) {
 	key, _, err := ResolveMasterKey(nil)
 	if err != nil {
@@ -74,6 +78,7 @@ func EncryptBytes(plain []byte) ([]byte, error) {
 	return []byte(encryptedPrefix + encoded), nil
 }
 
+// DecryptBytes decrypts a byte slice that was encrypted with EncryptBytes.
 func DecryptBytes(raw []byte) ([]byte, error) {
 	if !IsEncryptedValue(raw) {
 		return raw, nil
@@ -107,6 +112,7 @@ func DecryptBytes(raw []byte) ([]byte, error) {
 	return gcm.Open(nil, nonce, ciphertext, nil)
 }
 
+// IsEncryptedValue reports whether a byte slice starts with the encrypted prefix.
 func IsEncryptedValue(raw []byte) bool {
 	return strings.HasPrefix(string(raw), encryptedPrefix)
 }

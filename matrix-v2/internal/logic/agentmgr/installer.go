@@ -1,3 +1,4 @@
+// Package agentmgr handles agent installation, registration, and lifecycle management.
 package agentmgr
 
 import (
@@ -31,6 +32,7 @@ type InstallerConfig struct {
 	BaseDir  string
 }
 
+// NewInstaller creates a new agent Installer from the given config.
 func NewInstaller(cfg InstallerConfig) (*Installer, error) {
 	if cfg.BaseDir == "" {
 		home, err := cfg.FS.UserHomeDir()
@@ -56,15 +58,15 @@ func (inst *Installer) RegistryClient() *RegistryClient {
 
 // Install fetches, downloads, extracts and registers an agent.
 // Supports binary, npx, and uvx distribution types.
-func (i *Installer) Install(ctx context.Context, agentID string) error {
+func (inst *Installer) Install(ctx context.Context, agentID string) error {
 	// 1. Fetch Manifest
-	manifest, err := i.registry.FetchManifest(ctx, agentID)
+	manifest, err := inst.registry.FetchManifest(ctx, agentID)
 	if err != nil {
 		return err
 	}
 
 	// 2. Resolve best distribution
-	resolved, err := i.registry.ResolveAnyDistribution(manifest)
+	resolved, err := inst.registry.ResolveAnyDistribution(manifest)
 	if err != nil {
 		return err
 	}
@@ -74,7 +76,7 @@ func (i *Installer) Install(ctx context.Context, agentID string) error {
 
 	switch resolved.Type {
 	case "binary":
-		binaryPath, err := i.installBinary(ctx, manifest)
+		binaryPath, err := inst.installBinary(ctx, manifest)
 		if err != nil {
 			return err
 		}
@@ -96,7 +98,7 @@ func (i *Installer) Install(ctx context.Context, agentID string) error {
 
 	// 4. Register in Vault
 	entry := agentcfg.Entry{Config: cfg}
-	if err := agentcfg.SaveEntry(i.storage, agentID, entry); err != nil {
+	if err := agentcfg.SaveEntry(inst.storage, agentID, entry); err != nil {
 		return err
 	}
 
@@ -113,32 +115,32 @@ func (i *Installer) Install(ctx context.Context, agentID string) error {
 		Icon:        manifest.Icon,
 		DistTypes:   manifest.DistTypes(),
 	}
-	return agentcfg.SaveMeta(i.storage, agentID, meta)
+	return agentcfg.SaveMeta(inst.storage, agentID, meta)
 }
 
 // installBinary handles the binary distribution flow: download, extract, resolve path.
-func (i *Installer) installBinary(ctx context.Context, manifest *AgentManifest) (string, error) {
-	dist, err := i.registry.ResolveDistribution(manifest)
+func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifest) (string, error) {
+	dist, err := inst.registry.ResolveDistribution(manifest)
 	if err != nil {
 		return "", err
 	}
 
-	agentDir := filepath.Join(i.baseDir, manifest.ID)
-	tmpFile := filepath.Join(i.fs.TempDir(), fmt.Sprintf("matrix-agent-%s-%s", manifest.ID, manifest.Version))
+	agentDir := filepath.Join(inst.baseDir, manifest.ID)
+	tmpFile := filepath.Join(inst.fs.TempDir(), fmt.Sprintf("matrix-agent-%s-%s", manifest.ID, manifest.Version))
 
 	tmpFile += archiveExt(dist.Archive)
 
 	fmt.Printf("Downloading %s %s from %s...\n", manifest.ID, manifest.Version, dist.Archive)
-	if err := i.net.Download(ctx, dist.Archive, tmpFile); err != nil {
+	if err := inst.net.Download(ctx, dist.Archive, tmpFile); err != nil {
 		return "", fmt.Errorf("download failed: %w", err)
 	}
-	defer func() { _ = i.fs.RemoveAll(tmpFile) }()
+	defer func() { _ = inst.fs.RemoveAll(tmpFile) }()
 
 	fmt.Printf("Extracting to %s...\n", agentDir)
-	if err := i.fs.MkdirAll(agentDir, 0755); err != nil {
+	if err := inst.fs.MkdirAll(agentDir, 0755); err != nil {
 		return "", err
 	}
-	if err := i.archive.Extract(tmpFile, agentDir); err != nil {
+	if err := inst.archive.Extract(tmpFile, agentDir); err != nil {
 		return "", fmt.Errorf("extraction failed: %w", err)
 	}
 
@@ -151,22 +153,22 @@ func (i *Installer) installBinary(ctx context.Context, manifest *AgentManifest) 
 }
 
 // Uninstall removes the agent's files and its registration from the Vault.
-func (i *Installer) Uninstall(ctx context.Context, agentID string) error {
+func (inst *Installer) Uninstall(_ context.Context, agentID string) error {
 	// 1. Remove files
-	agentDir := filepath.Join(i.baseDir, agentID)
-	if _, err := i.fs.Stat(agentDir); err == nil {
+	agentDir := filepath.Join(inst.baseDir, agentID)
+	if _, err := inst.fs.Stat(agentDir); err == nil {
 		fmt.Printf("Removing agent directory %s...\n", agentDir)
-		if err := i.fs.RemoveAll(agentDir); err != nil {
+		if err := inst.fs.RemoveAll(agentDir); err != nil {
 			return fmt.Errorf("failed to remove agent directory: %w", err)
 		}
 	}
 
 	// 2. Remove config + metadata from Vault
 	fmt.Printf("Removing agent %s from Vault...\n", agentID)
-	if err := agentcfg.DeleteEntry(i.storage, agentID); err != nil {
+	if err := agentcfg.DeleteEntry(inst.storage, agentID); err != nil {
 		return fmt.Errorf("failed to remove agent config: %w", err)
 	}
-	if err := agentcfg.DeleteMeta(i.storage, agentID); err != nil {
+	if err := agentcfg.DeleteMeta(inst.storage, agentID); err != nil {
 		slog.Warn("failed to delete agent metadata", "agent", agentID, "error", err)
 	}
 	return nil

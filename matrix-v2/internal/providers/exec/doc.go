@@ -1,3 +1,4 @@
+// Package exec provides process execution capabilities for the Matrix runtime.
 package exec
 
 // Re-export NewProvider so callers use the package-level name

@@ -7,6 +7,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// BuildInput holds the full set of dependencies for building a runtime report.
 type BuildInput struct {
 	Store         middleware.Storage
 	Registry      *agentmgr.Registry
@@ -18,6 +19,7 @@ type BuildInput struct {
 	ACPHTTPAddr   string
 }
 
+// BuildReport generates a comprehensive runtime report.
 func BuildReport(input BuildInput) (map[string]any, error) {
 	tgCfg, source, err := channelcfg.LoadTelegramConfig(input.ConfigReader, input.ConfigManager)
 	if err != nil {

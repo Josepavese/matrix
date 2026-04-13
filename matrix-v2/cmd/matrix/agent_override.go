@@ -17,7 +17,7 @@ var agentOverrideListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all agents that currently have an SSOT override",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		ctx, cleanup, err := NewAgentStoreContext(DefaultVaultPath)
 		if err != nil {
 			exitf("Error: %v", err)
@@ -38,7 +38,7 @@ var agentOverrideShowCmd = &cobra.Command{
 	Use:   "show <agent_id>",
 	Short: "Show the raw SSOT override for an agent",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		agentID := args[0]
 		ctx, cleanup, err := NewAgentStoreContext(DefaultVaultPath)
 		if err != nil {
@@ -57,7 +57,7 @@ var agentOverrideShowCmd = &cobra.Command{
 		if err != nil {
 			exitf("Error: %v", err)
 		}
-		cmd.Println(string(out))
+		fmt.Println(string(out))
 	},
 }
 
@@ -65,7 +65,7 @@ var agentOverrideClearCmd = &cobra.Command{
 	Use:   "clear <agent_id>",
 	Short: "Remove all SSOT overrides for an agent",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		agentID := args[0]
 		ctx, cleanup, err := NewAgentStoreContext(DefaultVaultPath)
 		if err != nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// RestoreBackup restores a backup file to the target path, creating a pre-restore backup if needed.
 func RestoreBackup(fs middleware.FS, sourcePath, targetPath, backupDir string, now time.Time) (string, error) {
 	absSource, absTarget, err := validateRestorePaths(fs, sourcePath, targetPath)
 	if err != nil {

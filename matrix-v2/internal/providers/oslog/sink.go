@@ -1,3 +1,4 @@
+// Package oslog provides a log sink that writes structured logs using the OS logging subsystem.
 package oslog
 
 import (
@@ -10,12 +11,15 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// Factory creates log sinks backed by the local OS.
 type Factory struct{}
 
+// NewFactory returns a new oslog Factory.
 func NewFactory() *Factory {
 	return &Factory{}
 }
 
+// Build creates a log sink based on the provided options.
 func (f *Factory) Build(options middleware.LogSinkOptions) (middleware.LogSink, error) {
 	switch options.Target {
 	case "stderr":

@@ -12,7 +12,7 @@ var vaultDoctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Inspect vault security posture",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		report, err := vaultsec.BuildReport(osfs.NewFSProvider(), DefaultVaultPath)
 		if err != nil {
 			exitf("Vault doctor failed: %v", err)

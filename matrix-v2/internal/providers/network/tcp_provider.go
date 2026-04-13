@@ -1,3 +1,4 @@
+// Package network provides TCP/HTTP networking primitives.
 package network
 
 import (

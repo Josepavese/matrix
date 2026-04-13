@@ -36,6 +36,6 @@ func (s *VaultService) Get(args *VaultArgs, reply *VaultReply) error {
 }
 
 // Set stores a string into the vault over RPC
-func (s *VaultService) Set(args *VaultArgs, reply *VaultReply) error {
+func (s *VaultService) Set(args *VaultArgs, _ *VaultReply) error {
 	return s.v.SetString(args.Key, args.Value)
 }

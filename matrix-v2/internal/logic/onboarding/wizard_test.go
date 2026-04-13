@@ -54,23 +54,23 @@ func newTestLocalizer() *testLocalizer {
 	return &testLocalizer{
 		strings: map[string]map[string]string{
 			"en": {
-				"language_selection":           "Select language:\n1. English\n2. Italiano",
-				"agent_selection_header":       "Select the agent to connect:\n",
-				"agent_installed_mark":         "✅",
-				"agent_installing":             "Installing %s...",
-				"agent_install_failed":         "Could not install %s: %v",
-				"generic_api_key_prompt":       "Enter API key for %s:",
-				"codex_auth_method_prompt":     "Codex auth:\n1. ChatGPT Login\n2. OpenAI API Key",
-				"codex_openai_key_prompt":      "Enter your OpenAI API key:",
-				"opencode_provider_prompt":     "Select provider:\n1. OpenRouter\n2. Local/Ollama",
-				"opencode_auth_method_prompt":  "OpenRouter auth:\n1. API Key\n2. Quick Login",
-				"opencode_api_key_prompt":      "Enter %s API key:",
-				"opencode_model_prompt":        "Enter model name:",
+				"language_selection":                    "Select language:\n1. English\n2. Italiano",
+				"agent_selection_header":                "Select the agent to connect:\n",
+				"agent_installed_mark":                  "✅",
+				"agent_installing":                      "Installing %s...",
+				"agent_install_failed":                  "Could not install %s: %v",
+				"generic_api_key_prompt":                "Enter API key for %s:",
+				"codex_auth_method_prompt":              "Codex auth:\n1. ChatGPT Login\n2. OpenAI API Key",
+				"codex_openai_key_prompt":               "Enter your OpenAI API key:",
+				"opencode_provider_prompt":              "Select provider:\n1. OpenRouter\n2. Local/Ollama",
+				"opencode_auth_method_prompt":           "OpenRouter auth:\n1. API Key\n2. Quick Login",
+				"opencode_api_key_prompt":               "Enter %s API key:",
+				"opencode_model_prompt":                 "Enter model name:",
 				"opencode_openrouter_quick_auth_prompt": "Open this URL: %s",
-				"agent_configure_failed":       "Failed: %v",
-				"agent_configured_success":     "%s configured!",
-				"invalid_selection_number":     "Invalid selection.",
-				"back_hint":                    "Type 'back' to go back.",
+				"agent_configure_failed":                "Failed: %v",
+				"agent_configured_success":              "%s configured!",
+				"invalid_selection_number":              "Invalid selection.",
+				"back_hint":                             "Type 'back' to go back.",
 			},
 			"it": {
 				"language_selection": "Scegli lingua:\n1. English\n2. Italiano",
@@ -90,26 +90,26 @@ func (l *testLocalizer) GetString(lang, key string) string {
 
 type testFS struct{}
 
-func (f *testFS) Mount(string) error                { return nil }
-func (f *testFS) Unmount() error                    { return nil }
-func (f *testFS) CreateDirectory(string) error      { return nil }
-func (f *testFS) RemoveAll(string) error            { return nil }
-func (f *testFS) Stat(string) (os.FileInfo, error)  { return nil, os.ErrNotExist }
-func (f *testFS) MkdirAll(string, os.FileMode) error { return nil }
-func (f *testFS) UserHomeDir() (string, error)      { return "/tmp", nil }
-func (f *testFS) TempDir() string                   { return "/tmp" }
+func (f *testFS) Mount(string) error                   { return nil }
+func (f *testFS) Unmount() error                       { return nil }
+func (f *testFS) CreateDirectory(string) error         { return nil }
+func (f *testFS) RemoveAll(string) error               { return nil }
+func (f *testFS) Stat(string) (os.FileInfo, error)     { return nil, os.ErrNotExist }
+func (f *testFS) MkdirAll(string, os.FileMode) error   { return nil }
+func (f *testFS) UserHomeDir() (string, error)         { return "/tmp", nil }
+func (f *testFS) TempDir() string                      { return "/tmp" }
 func (f *testFS) Open(string) (middleware.File, error) { return nil, os.ErrNotExist }
 func (f *testFS) OpenFile(string, int, os.FileMode) (middleware.File, error) {
 	return nil, os.ErrNotExist
 }
 func (f *testFS) ReadFile(string) ([]byte, error) { return nil, os.ErrNotExist }
-func (f *testFS) Remove(string) error              { return nil }
-func (f *testFS) Rename(_, _ string) error         { return nil }
+func (f *testFS) Remove(string) error             { return nil }
+func (f *testFS) Rename(_, _ string) error        { return nil }
 
 type testNet struct{}
 
 func (n *testNet) Listen(_, _ string) (middleware.ClosableListener, error) { return nil, nil }
-func (n *testNet) Download(_ context.Context, _, _ string) error            { return nil }
+func (n *testNet) Download(_ context.Context, _, _ string) error           { return nil }
 func (n *testNet) FetchJSON(_ context.Context, _ string, _ interface{}) error {
 	return fmt.Errorf("not implemented")
 }
@@ -145,7 +145,9 @@ func newTestWizardWithAgents() *Wizard {
 		{ID: "codex", Name: "Codex", Description: "OpenAI code agent", DistTypes: []string{"binary", "npx"}},
 	}
 	for _, a := range agents {
-		if err := agentcfg.SaveMeta(w.storage, a.ID, a); err != nil { panic(err) }
+		if err := agentcfg.SaveMeta(w.storage, a.ID, a); err != nil {
+			panic(err)
+		}
 	}
 	return w
 }
@@ -167,7 +169,8 @@ func TestWizard_GenericAgent_APIKey(t *testing.T) {
 	w := newTestWizardWithAgents()
 
 	// Step 0->1: Initial entry
-	_, err := w.Process("ch2", "")
+	resp, err := w.Process("ch2", "")
+	_ = resp
 	if err != nil {
 		t.Fatalf("step 0: %v", err)
 	}
@@ -213,10 +216,10 @@ func TestWizard_Codex_APIKey(t *testing.T) {
 	w := newTestWizardWithAgents()
 
 	// Step 0->1
-	w.Process("ch3", "")
+	_, _ = w.Process("ch3", "")
 
 	// Step 1->2: Select English
-	w.Process("ch3", "1")
+	_, _ = w.Process("ch3", "1")
 
 	// Step 2->3: Select codex (index 2 in alphabetical order)
 	resp, err := w.Process("ch3", "2")
@@ -250,16 +253,15 @@ func TestWizard_Codex_APIKey(t *testing.T) {
 	}
 }
 
-
 func TestWizard_BackNavigation(t *testing.T) {
 	w := newTestWizardWithAgents()
 
 	// Navigate to step 2
-	w.Process("ch4", "")
-	w.Process("ch4", "1")
+	_, _ = w.Process("ch4", "")
+	_, _ = w.Process("ch4", "1")
 
 	// Select an agent
-	w.Process("ch4", "2")
+	_, _ = w.Process("ch4", "2")
 
 	// Go back
 	resp, err := w.Process("ch4", "back")
@@ -557,9 +559,11 @@ func TestWizard_InstallFailureResetsState(t *testing.T) {
 		{ID: "opencode", Name: "OpenCode", Description: "Already there", Installed: true},
 	}
 	// Also pre-populate agentcfg meta so installedAgents() works
-	agentcfg.SaveMeta(store, "opencode", agentcfg.Meta{
+	if err := agentcfg.SaveMeta(store, "opencode", agentcfg.Meta{
 		ID: "opencode", Name: "OpenCode", Description: "Already there",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	agentData, _ := json.Marshal(agents)
 	stateKey := "wizard.state." + channelID
@@ -614,4 +618,3 @@ func TestConfigureAgent_AuthResultEnv(t *testing.T) {
 	}
 	fmt.Printf("Agent config: %s\n", string(data))
 }
-

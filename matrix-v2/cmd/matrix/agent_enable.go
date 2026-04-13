@@ -11,7 +11,7 @@ var agentEnableCmd = &cobra.Command{
 	Use:   "enable <agent_id>",
 	Short: "Enable an agent via SSOT override",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		agentID := args[0]
 
 		ctx, cleanup, err := NewAgentStoreContext(DefaultVaultPath)
@@ -37,7 +37,7 @@ var agentDisableCmd = &cobra.Command{
 	Use:   "disable <agent_id>",
 	Short: "Disable an agent via SSOT override",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		agentID := args[0]
 
 		ctx, cleanup, err := NewAgentStoreContext(DefaultVaultPath)

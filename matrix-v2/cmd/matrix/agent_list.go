@@ -11,7 +11,7 @@ var agentListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all known agents with effective active state",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		ctx, cleanup, err := NewAgentContext(DefaultVaultPath)
 		if err != nil {
 			exitf("Error: %v", err)

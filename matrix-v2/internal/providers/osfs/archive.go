@@ -1,3 +1,4 @@
+// Package osfs provides OS-based filesystem and configuration providers.
 package osfs
 
 import (

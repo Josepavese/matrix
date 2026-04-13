@@ -1,3 +1,4 @@
+// Package fusefs implements a FUSE-based virtual filesystem provider.
 package fusefs
 
 import (
@@ -26,8 +27,8 @@ func (r *syntheticRoot) OnAdd(ctx context.Context) {
 		},
 	}
 
-	ch := r.Inode.NewPersistentInode(ctx, f, fs.StableAttr{Mode: fuse.S_IFREG})
-	r.Inode.AddChild("matrix.txt", ch, false)
+	ch := r.NewPersistentInode(ctx, f, fs.StableAttr{Mode: fuse.S_IFREG})
+	r.AddChild("matrix.txt", ch, false)
 }
 
 // Provider implements middleware.FS
@@ -93,26 +94,32 @@ func (p *Provider) CreateDirectory(path string) error {
 	return os.MkdirAll(path, 0755)
 }
 
+// RemoveAll removes path and any children.
 func (p *Provider) RemoveAll(path string) error {
 	return os.RemoveAll(path)
 }
 
+// Stat returns file info for the given path.
 func (p *Provider) Stat(path string) (os.FileInfo, error) {
 	return os.Stat(path)
 }
 
+// MkdirAll creates directories along the path.
 func (p *Provider) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
 
+// UserHomeDir returns the current user's home directory.
 func (p *Provider) UserHomeDir() (string, error) {
 	return os.UserHomeDir()
 }
 
+// TempDir returns the temporary directory path.
 func (p *Provider) TempDir() string {
 	return os.TempDir()
 }
 
+// Open opens the named file for reading.
 func (p *Provider) Open(path string) (middleware.File, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -121,6 +128,7 @@ func (p *Provider) Open(path string) (middleware.File, error) {
 	return &osFileWrapper{File: f}, nil
 }
 
+// OpenFile opens the named file with the specified flags and permissions.
 func (p *Provider) OpenFile(path string, flag int, perm os.FileMode) (middleware.File, error) {
 	f, err := os.OpenFile(path, flag, perm)
 	if err != nil {
@@ -129,14 +137,17 @@ func (p *Provider) OpenFile(path string, flag int, perm os.FileMode) (middleware
 	return &osFileWrapper{File: f}, nil
 }
 
+// ReadFile reads the named file and returns its contents.
 func (p *Provider) ReadFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+// Remove removes the named file or empty directory.
 func (p *Provider) Remove(path string) error {
 	return os.Remove(path)
 }
 
+// Rename renames oldpath to newpath.
 func (p *Provider) Rename(oldpath, newpath string) error {
 	return os.Rename(oldpath, newpath)
 }

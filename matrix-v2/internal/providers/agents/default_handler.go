@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/jose/matrix-v2/internal/middleware"
 )
@@ -34,7 +33,6 @@ type defaultRequestHandler struct {
 	// terminalRegistry holds active terminal sessions for async terminal methods.
 	terminals   map[string]*terminalSession
 	terminalsMu sync.Mutex
-	nextTermID  atomic.Uint64
 }
 
 // terminalSession tracks a running terminal process and its accumulated output.
@@ -75,22 +73,22 @@ func (h *defaultRequestHandler) HandleRequest(ctx context.Context, method string
 	log := slog.With("component", "acp_request_handler", "method", method)
 	log.Info("handling agent request", "event", "agent_request", "method", method, "params_len", len(params))
 
-	switch {
-	case method == "session/request_permission":
+	switch method {
+	case "session/request_permission":
 		return h.handlePermissionRequest(ctx, log, params)
-	case method == "fs/read_text_file":
+	case "fs/read_text_file":
 		return h.handleFSRead(ctx, log, params)
-	case method == "fs/write_text_file":
+	case "fs/write_text_file":
 		return h.handleFSWrite(ctx, log, params)
-	case method == "terminal/create":
+	case "terminal/create":
 		return h.handleTerminalCreate(ctx, log, params)
-	case method == "terminal/output":
+	case "terminal/output":
 		return h.handleTerminalOutput(ctx, log, params)
-	case method == "terminal/wait_for_exit":
+	case "terminal/wait_for_exit":
 		return h.handleTerminalWaitForExit(ctx, log, params)
-	case method == "terminal/kill":
+	case "terminal/kill":
 		return h.handleTerminalKill(ctx, log, params)
-	case method == "terminal/release":
+	case "terminal/release":
 		return h.handleTerminalRelease(ctx, log, params)
 	default:
 		log.Info("auto-approving agent request", "event", "request_approved", "method", method)
@@ -100,10 +98,10 @@ func (h *defaultRequestHandler) HandleRequest(ctx context.Context, method string
 
 // --- Permission handling ---
 
-func (h *defaultRequestHandler) handlePermissionRequest(ctx context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+func (h *defaultRequestHandler) handlePermissionRequest(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
 	var req struct {
 		Options []struct {
-			OptionId string `json:"optionId"`
+			OptionID string `json:"optionId"`
 			Kind     string `json:"kind"`
 		} `json:"options"`
 	}
@@ -120,22 +118,22 @@ func (h *defaultRequestHandler) handlePermissionRequest(ctx context.Context, log
 		return h.denyResponse(), nil
 	}
 
-	optionId := "allow-once"
+	optionID := "allow-once"
 	for _, opt := range req.Options {
 		if opt.Kind == "allow_once" || opt.Kind == "allow_always" {
-			optionId = opt.OptionId
+			optionID = opt.OptionID
 			break
 		}
 	}
-	log.Info("auto-approving permission", "event", "permission_approved", "optionId", optionId, "options_count", len(req.Options))
-	return h.approveResponse(optionId), nil
+	log.Info("auto-approving permission", "event", "permission_approved", "optionID", optionID, "options_count", len(req.Options))
+	return h.approveResponse(optionID), nil
 }
 
-func (h *defaultRequestHandler) approveResponse(optionId string) map[string]interface{} {
+func (h *defaultRequestHandler) approveResponse(optionID string) map[string]interface{} {
 	return map[string]interface{}{
 		"outcome": map[string]interface{}{
 			"outcome":  "selected",
-			"optionId": optionId,
+			"optionId": optionID,
 		},
 	}
 }
@@ -150,7 +148,7 @@ func (h *defaultRequestHandler) denyResponse() map[string]interface{} {
 
 // --- File system methods ---
 
-func (h *defaultRequestHandler) handleFSRead(ctx context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+func (h *defaultRequestHandler) handleFSRead(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
 	if h.fs == nil {
 		log.Warn("fs handler not configured")
 		return nil, fmt.Errorf("filesystem access not available")
@@ -179,7 +177,7 @@ func (h *defaultRequestHandler) handleFSRead(ctx context.Context, log *slog.Logg
 	}, nil
 }
 
-func (h *defaultRequestHandler) handleFSWrite(ctx context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+func (h *defaultRequestHandler) handleFSWrite(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
 	if h.fs == nil {
 		log.Warn("fs handler not configured")
 		return nil, fmt.Errorf("filesystem access not available")

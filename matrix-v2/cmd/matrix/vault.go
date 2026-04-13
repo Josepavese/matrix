@@ -9,7 +9,7 @@ import (
 var vaultCmd = &cobra.Command{
 	Use:   "vault",
 	Short: "Manage Matrix V2 SSOT Vault",
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		fmt.Println("Matrix Vault Options: set, get, backup, restore, doctor, seal")
 	},
 }

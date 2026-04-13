@@ -19,7 +19,7 @@ type mockResolver struct {
 	binPath string
 }
 
-func (m *mockResolver) GetAgentEndpoint(agentID string) (protocol, address string, args, env []string, err error) {
+func (m *mockResolver) GetAgentEndpoint(_ string) (protocol, address string, args, env []string, err error) {
 	return "stdio", m.binPath, nil, nil, nil
 }
 

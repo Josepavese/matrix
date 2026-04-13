@@ -16,7 +16,7 @@ var installCmd = &cobra.Command{
 	Use:   "install [agent_id]",
 	Short: "Install an AI agent from the ACP Registry",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		agentID := args[0]
 
 		// 1. Setup Dependencies

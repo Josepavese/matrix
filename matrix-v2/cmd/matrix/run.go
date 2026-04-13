@@ -27,7 +27,7 @@ import (
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Start the Matrix V2 background daemon",
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		ctx, cancel := signalContext()
 		defer cancel()
 

@@ -1,3 +1,4 @@
+// Package daemon implements the JSON-RPC daemon server.
 package daemon
 
 import (

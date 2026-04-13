@@ -1,57 +1,75 @@
 version: "2"
-
 run:
-  timeout: 5m
   tests: true
-
 linters:
-  disable-all: true
+  default: none
   enable:
     - bodyclose
     - copyloopvar
+    - errcheck
     - errorlint
+    - gocritic
     - govet
-    - staticcheck
     - ineffassign
-    - unused
-    - unconvert
     - misspell
-    - whitespace
     - nakedret
     - nilerr
     - revive
-    - gocritic
-    - errcheck
-
-formatters:
-  enable:
-    - goimports
-
-linters-settings:
-  nakedret:
-    max-func-lines: 30
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-  revive:
+    - staticcheck
+    - unconvert
+    - unused
+    - whitespace
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+    nakedret:
+      max-func-lines: 30
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: errorf
+        - name: if-return
+        - name: increment-decrement
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: var-declaration
+        - name: unused-parameter
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
     rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: errorf
-      - name: if-return
-      - name: increment-decrement
-      - name: range
-      - name: receiver-naming
-      - name: redefines-builtin-id
-      - name: superfluous-else
-      - name: time-naming
-      - name: var-declaration
-
-issues:
-  exclude-rules:
-    - path: tests/e2e/e2e_test.go
-      linters:
-        - staticcheck
-        - gocritic
+      - linters:
+          - gocritic
+          - staticcheck
+        path: tests/e2e/e2e_test.go
+      - linters:
+          - revive
+        path: scripts/
+      - linters:
+          - revive
+        text: stutters
+      - linters:
+          - revive
+        text: package-comments
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

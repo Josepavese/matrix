@@ -13,7 +13,7 @@ var configGetCmd = &cobra.Command{
 	Example: `  matrix config get provider.openai.key
   matrix config get provider.default`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		ensureConfigKeyAllowed(args[0])
 
 		mgr, cleanup, err := openConfigManager()

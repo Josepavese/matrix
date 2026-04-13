@@ -35,7 +35,7 @@ func NewWSTransport(ctx context.Context, url string) (*WSTransport, error) {
 }
 
 // Send writes a text message to the WebSocket. Safe for concurrent use.
-func (t *WSTransport) Send(ctx context.Context, message []byte) error {
+func (t *WSTransport) Send(_ context.Context, message []byte) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	err := t.conn.WriteMessage(websocket.TextMessage, message)

@@ -46,7 +46,7 @@ type mockRouter struct {
 	lastMsg     string
 }
 
-func (m *mockRouter) Route(ctx context.Context, req middleware.RouteRequest) (string, string, []middleware.ToolCall, error) {
+func (m *mockRouter) Route(_ context.Context, req middleware.RouteRequest) (string, string, []middleware.ToolCall, error) {
 	m.lastSession = req.LogicalSessionID
 	m.lastMsg = req.Message
 	return "Ok", req.AgentSessionID, nil, nil

@@ -1,3 +1,4 @@
+// Package vault provides encrypted key-value vault operations.
 package vault
 
 import (

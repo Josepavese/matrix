@@ -1,3 +1,4 @@
+// Package session manages channel-to-agent session routing for the Matrix runtime.
 package session
 
 import (

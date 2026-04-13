@@ -1,3 +1,4 @@
+// Package middleware defines shared interfaces and domain types for the Matrix runtime.
 package middleware
 
 import (
@@ -57,9 +58,12 @@ type RouteRequest struct {
 type ThoughtUpdateType int
 
 const (
-	ThoughtTypeThinking   ThoughtUpdateType = iota // agent is reasoning (agent_thought_chunk)
-	ThoughtTypeToolCall                            // agent is invoking a tool
-	ThoughtTypeToolResult                          // tool execution result
+	// ThoughtTypeThinking indicates the agent is reasoning.
+	ThoughtTypeThinking ThoughtUpdateType = iota
+	// ThoughtTypeToolCall indicates the agent is invoking a tool.
+	ThoughtTypeToolCall
+	// ThoughtTypeToolResult indicates a tool execution result.
+	ThoughtTypeToolResult
 )
 
 // ThoughtUpdate represents a real-time intermediate update during agent execution.
@@ -160,27 +164,27 @@ type Tool struct {
 
 // NewSessionResponse contains the session ID and mode information returned after session creation.
 type NewSessionResponse struct {
-	SessionId     string            `json:"sessionId"`
+	SessionID     string            `json:"sessionId"`
 	Modes         *SessionModeState `json:"modes,omitempty"`
 	ConfigOptions []ConfigOption    `json:"configOptions,omitempty"`
 }
 
 // SessionModeState represents the current and available modes for a session.
 type SessionModeState struct {
-	CurrentModeId  string        `json:"currentModeId"`
+	CurrentModeID  string        `json:"currentModeId"`
 	AvailableModes []SessionMode `json:"availableModes"`
 }
 
 // SessionMode describes an agent-defined mode (e.g. "code", "ask", "architect").
 type SessionMode struct {
-	Id          string `json:"id"`
+	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 }
 
 // ConfigOption describes a session-level configuration option (preferred over legacy modes).
 type ConfigOption struct {
-	Id       string              `json:"id"`
+	ID       string              `json:"id"`
 	Name     string              `json:"name"`
 	Category string              `json:"category"`
 	Options  []ConfigOptionValue `json:"options"`
@@ -189,13 +193,13 @@ type ConfigOption struct {
 
 // ConfigOptionValue is one of the possible values for a ConfigOption.
 type ConfigOptionValue struct {
-	Id   string `json:"id"`
+	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
 // PromptRequest is the payload sent to execute a prompt turn in an agent session.
 type PromptRequest struct {
-	SessionId string    `json:"sessionId"`
+	SessionID string    `json:"sessionId"`
 	Prompt    []Content `json:"prompt"`
 }
 
@@ -226,7 +230,7 @@ type SessionUpdate struct {
 
 // SessionNotification is an asynchronous notification sent from the agent during a session.
 type SessionNotification struct {
-	SessionId string        `json:"sessionId"`
+	SessionID string        `json:"sessionId"`
 	Update    SessionUpdate `json:"update"`
 }
 

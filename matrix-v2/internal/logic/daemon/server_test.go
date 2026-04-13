@@ -18,15 +18,15 @@ func newMockNetwork() *MockNetwork {
 	return &MockNetwork{listenCalled: make(chan struct{})}
 }
 
-func (m *MockNetwork) Download(ctx context.Context, url, destPath string) error {
+func (m *MockNetwork) Download(_ context.Context, _, _ string) error {
 	return nil
 }
 
-func (m *MockNetwork) FetchJSON(ctx context.Context, url string, target interface{}) error {
+func (m *MockNetwork) FetchJSON(_ context.Context, _ string, _ interface{}) error {
 	return nil
 }
 
-func (m *MockNetwork) Listen(network, address string) (middleware.ClosableListener, error) {
+func (m *MockNetwork) Listen(_, _ string) (middleware.ClosableListener, error) {
 	close(m.listenCalled)
 	return &MockListener{done: make(chan struct{})}, nil
 }
@@ -34,13 +34,13 @@ func (m *MockNetwork) Listen(network, address string) (middleware.ClosableListen
 func (m *MockNetwork) GetFreePort() (int, error) {
 	return 8080, nil
 }
-func (m *MockNetwork) Fetch(ctx context.Context, url string) ([]byte, error) {
+func (m *MockNetwork) Fetch(_ context.Context, _ string) ([]byte, error) {
 	return nil, nil
 }
-func (m *MockNetwork) PostJSON(ctx context.Context, url string, body interface{}) ([]byte, int, error) {
+func (m *MockNetwork) PostJSON(_ context.Context, _ string, _ interface{}) ([]byte, int, error) {
 	return nil, 0, nil
 }
-func (m *MockNetwork) CanDial(address string) bool { return false }
+func (m *MockNetwork) CanDial(_ string) bool { return false }
 
 // MockListener implements middleware.ClosableListener
 type MockListener struct {

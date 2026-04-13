@@ -95,10 +95,15 @@ func (w *Wizard) step2Handle(_ *Wizard, state *WizardState, input string) (strin
 	if agentData == "" {
 		var fetchErr error
 		agents, fetchErr = w.fetchAgentList()
-		if fetchErr != nil || len(agents) == 0 {
+		if fetchErr != nil {
+			return w.invalidSelection(state, w.promptForStep(*state)), nil //nolint:nilerr // intentional: show user-friendly message
+		}
+		if len(agents) == 0 {
 			return w.invalidSelection(state, w.promptForStep(*state)), nil
 		}
-	} else if unmarshalErr := json.Unmarshal([]byte(agentData), &agents); unmarshalErr != nil || len(agents) == 0 {
+	} else if unmarshalErr := json.Unmarshal([]byte(agentData), &agents); unmarshalErr != nil {
+		return w.invalidSelection(state, w.promptForStep(*state)), nil //nolint:nilerr // intentional: show user-friendly message
+	} else if len(agents) == 0 {
 		return w.invalidSelection(state, w.promptForStep(*state)), nil
 	}
 

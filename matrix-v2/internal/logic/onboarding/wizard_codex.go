@@ -22,7 +22,7 @@ type codexAuthHandler struct {
 	wizard *Wizard
 }
 
-func (h *codexAuthHandler) Methods(ctx context.Context) ([]AuthMethod, error) {
+func (h *codexAuthHandler) Methods(_ context.Context) ([]AuthMethod, error) {
 	return []AuthMethod{
 		{
 			ID:          "chatgpt",
@@ -67,7 +67,7 @@ func (h *codexAuthHandler) authenticateAPIKey(envVar, input string) (*AuthResult
 	}, "", nil
 }
 
-func (h *codexAuthHandler) authenticateDeviceAuth(ctx context.Context, input string) (*AuthResult, string, error) {
+func (h *codexAuthHandler) authenticateDeviceAuth(_ context.Context, input string) (*AuthResult, string, error) {
 	if input == "" {
 		// First call: start device auth flow
 		link, code, err := h.startDeviceAuth()

@@ -32,7 +32,7 @@ type Registry struct {
 }
 
 // NewRegistry initializes the registry by loading all agent definitions from the Vault.
-func NewRegistry(loader middleware.ConfigReader, store middleware.Storage) (*Registry, error) {
+func NewRegistry(_ middleware.ConfigReader, store middleware.Storage) (*Registry, error) {
 	ids, err := agentcfg.ListAgentIDs(store)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents from vault: %w", err)

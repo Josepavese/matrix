@@ -11,7 +11,7 @@ var vaultSealCmd = &cobra.Command{
 	Use:   "seal",
 	Short: "Rewrite all vault entries with encryption using the configured master key",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		_, status, err := vaultsec.ResolveMasterKey(osfs.NewFSProvider())
 		if err != nil {
 			exitf("Vault encryption key error: %v", err)

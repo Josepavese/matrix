@@ -1,3 +1,4 @@
+// Package agentcfg manages agent configuration metadata stored in the vault.
 package agentcfg
 
 import (
@@ -9,6 +10,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// MetaKeyPrefix is the vault key prefix for agent metadata entries.
 const MetaKeyPrefix = "agent.meta."
 
 // Meta holds display metadata for an agent (name, description, etc.).
@@ -26,6 +28,7 @@ type Meta struct {
 	DistTypes   []string `json:"dist_types,omitempty"`
 }
 
+// MetaKey returns the vault key for an agent's metadata.
 func MetaKey(agentID string) string {
 	return MetaKeyPrefix + agentID
 }

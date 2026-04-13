@@ -75,7 +75,7 @@ func NewStdioTransport(ctx context.Context, executable string, env []string, arg
 
 // Send writes a generic JSON message to the agent over standard input.
 // ACP dictates that each message should be a compact JSON ending with a newline.
-func (t *StdioTransport) Send(ctx context.Context, message []byte) error {
+func (t *StdioTransport) Send(_ context.Context, message []byte) error {
 	// Let's ensure there's a newline to flush.
 	msgWithNewline := append(append([]byte{}, message...), '\n')
 	_, err := t.stdin.Write(msgWithNewline)
@@ -86,7 +86,7 @@ func (t *StdioTransport) Send(ctx context.Context, message []byte) error {
 }
 
 // Receive blocks until a complete JSON line is read from the agent's standard output.
-func (t *StdioTransport) Receive(ctx context.Context) ([]byte, error) {
+func (t *StdioTransport) Receive(_ context.Context) ([]byte, error) {
 	// ACP over stdio relies on newline delimited JSON (NDJSON) or standard framing.
 	line, err := t.reader.ReadBytes('\n')
 	if err != nil {

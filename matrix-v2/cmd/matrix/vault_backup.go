@@ -14,7 +14,7 @@ var vaultBackupCmd = &cobra.Command{
 	Use:   "backup",
 	Short: "Create a secure copy of the local vault",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		path, err := vaultsec.CreateBackup(osfs.NewFSProvider(), DefaultVaultPath, vaultBackupDir, time.Now())
 		if err != nil {
 			exitf("Vault backup failed: %v", err)

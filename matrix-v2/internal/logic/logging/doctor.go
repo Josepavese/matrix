@@ -1,3 +1,4 @@
+// Package logging provides structured logging configuration and log file management.
 package logging
 
 import (
@@ -9,6 +10,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// BuildDoctorReport generates a logging diagnostic report.
 func BuildDoctorReport(fs middleware.FS, cfg Config, warnings []string) (map[string]any, error) {
 	backups := []string{}
 	report := map[string]any{

@@ -9,6 +9,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// TailFile reads the last N lines from a file.
 func TailFile(fs middleware.FS, path string, lines int) ([]string, error) {
 	f, err := fs.Open(path)
 	if err != nil {
@@ -36,6 +37,7 @@ func TailFile(fs middleware.FS, path string, lines int) ([]string, error) {
 	return ring, nil
 }
 
+// FollowFile streams new lines from a file starting at the given offset.
 func FollowFile(fs middleware.FS, path string, fromOffset int64, printLine func(string)) error {
 	file, err := fs.Open(path)
 	if err != nil {

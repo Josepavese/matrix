@@ -1,3 +1,4 @@
+// Package channelcfg manages per-channel configuration stored in the SSOT vault.
 package channelcfg
 
 import (
@@ -8,6 +9,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// ProviderState describes the configuration state of a channel provider.
 type ProviderState struct {
 	Provider  string            `json:"provider"`
 	Keys      []string          `json:"keys"`
@@ -30,6 +32,7 @@ var providerDefinitions = map[string]providerDefinition{
 	},
 }
 
+// SupportedProviders returns the names of all supported channel providers.
 func SupportedProviders() []string {
 	names := make([]string, 0, len(providerDefinitions))
 	for name := range providerDefinitions {
@@ -39,6 +42,7 @@ func SupportedProviders() []string {
 	return names
 }
 
+// DescribeProvider returns the effective configuration for a provider.
 func DescribeProvider(reader middleware.ConfigReader, cfgMgr *config.Manager, provider string) (ProviderState, error) {
 	def, err := providerDefinitionFor(provider)
 	if err != nil {
