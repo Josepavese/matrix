@@ -1,10 +1,9 @@
 # Verify that vault commands work properly
 exec matrix vault set my_secret "S3cr3tV4lu3"
-! stderr .
+stderr 'Successfully set my_secret'
 
-exec matrix vault get my_secret
-stdout 'S3cr3tV4lu3'
-! stderr .
+exec matrix vault get my_secret --reveal
+stderr 'S3cr3tV4lu3'
 
 # Verify getting a nonexistent secret throws an error
 ! exec matrix vault get does_not_exist

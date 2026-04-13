@@ -10,7 +10,7 @@ var vaultCmd = &cobra.Command{
 	Use:   "vault",
 	Short: "Manage Matrix V2 SSOT Vault",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Matrix Vault Options: set, get")
+		fmt.Println("Matrix Vault Options: set, get, backup, restore, doctor, seal")
 	},
 }
 

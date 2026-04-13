@@ -1,0 +1,6 @@
+{
+    "node_version": "22.14.0",
+    "global_dependencies": {
+        "@openai/codex": "latest"
+    }
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -28,6 +29,9 @@ var configListCmd = &cobra.Command{
 			return
 		}
 		for _, k := range keys {
+			if strings.HasPrefix(k, "channel.") {
+				continue
+			}
 			fmt.Println(k)
 		}
 	},

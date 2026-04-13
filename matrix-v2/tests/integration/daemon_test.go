@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"net/rpc/jsonrpc"
 	"path/filepath"
 	"testing"
@@ -26,17 +27,24 @@ func TestDaemon_VaultRPC(t *testing.T) {
 	netProvider := networkprovider.NewProvider()
 	srv := daemon.NewServer(v, netProvider)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Start server on a specific local port
 	addr := "127.0.0.1:9091"
 	go func() {
-		if err := srv.Start(addr); err != nil {
+		if err := srv.Start(ctx, addr); err != nil {
 			t.Logf("Server error: %v", err)
 		}
 	}()
 
 	// Wait briefly for the server to start accepting connections
 	time.Sleep(100 * time.Millisecond)
-	defer srv.Stop()
+	defer func() {
+		if err := srv.Stop(); err != nil {
+			t.Fatalf("Stop failed: %v", err)
+		}
+	}()
 
 	// Dial the JSON-RPC TCP server
 	client, err := jsonrpc.Dial("tcp", addr)

@@ -73,11 +73,16 @@ func TestConfigManager_GetMissing(t *testing.T) {
 func TestConfigManager_Delete(t *testing.T) {
 	mgr := newTestManager()
 
-	_ = mgr.Set("todelete", "value")
+	if err := mgr.Set("todelete", "value"); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
 	if err := mgr.Delete("todelete"); err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
-	val, _ := mgr.Get("todelete")
+	val, err := mgr.Get("todelete")
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
 	if val != "" {
 		t.Errorf("Expected empty after delete, got %q", val)
 	}
@@ -86,8 +91,12 @@ func TestConfigManager_Delete(t *testing.T) {
 func TestConfigManager_List(t *testing.T) {
 	mgr := newTestManager()
 
-	_ = mgr.Set("provider.openai.key", "sk-1")
-	_ = mgr.Set("provider.default", "openai")
+	if err := mgr.Set("provider.openai.key", "sk-1"); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+	if err := mgr.Set("provider.default", "openai"); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
 
 	keys, err := mgr.List()
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jose/matrix-v2/internal/logic/vaultsec"
 	"github.com/jose/matrix-v2/internal/middleware"
 	bbolt "go.etcd.io/bbolt"
 )
@@ -20,7 +21,16 @@ var defaultBucket = []byte("matrix_vault")
 
 // NewProvider initializes and returns a new bbolt storage provider
 func NewProvider(path string) (*Provider, error) {
-	db, err := bbolt.Open(path, 0600, &bbolt.Options{Timeout: 1 * time.Second})
+	return openProvider(path, false)
+}
+
+// NewReadOnlyProvider opens the vault in read-only mode for concurrent inspection.
+func NewReadOnlyProvider(path string) (*Provider, error) {
+	return openProvider(path, true)
+}
+
+func openProvider(path string, readOnly bool) (*Provider, error) {
+	db, err := bbolt.Open(path, 0600, &bbolt.Options{Timeout: 1 * time.Second, ReadOnly: readOnly})
 	if err != nil {
 		return nil, &middleware.Error{
 			Code:    "ERR_VAULT_OPEN",
@@ -28,6 +38,13 @@ func NewProvider(path string) (*Provider, error) {
 			Op:      "bolt.NewProvider",
 			Err:     err,
 		}
+	}
+
+	if readOnly {
+		return &Provider{
+			db:   db,
+			path: path,
+		}, nil
 	}
 
 	// Ensure default bucket exists
@@ -41,6 +58,16 @@ func NewProvider(path string) (*Provider, error) {
 		return nil, &middleware.Error{
 			Code:    "ERR_VAULT_INIT",
 			Message: "Failed to initialize default bucket",
+			Op:      "bolt.NewProvider",
+			Err:     err,
+		}
+	}
+
+	if err := vaultsec.ApplySecurePermissions(path); err != nil {
+		db.Close()
+		return nil, &middleware.Error{
+			Code:    "ERR_VAULT_PERMISSIONS",
+			Message: "Failed to enforce secure vault permissions",
 			Op:      "bolt.NewProvider",
 			Err:     err,
 		}
@@ -85,6 +112,19 @@ func (p *Provider) Get(key string) ([]byte, error) {
 		}
 	}
 
+	if val == nil {
+		return nil, nil
+	}
+
+	val, err = vaultsec.DecryptBytes(val)
+	if err != nil {
+		return nil, &middleware.Error{
+			Code:    "ERR_VAULT_DECRYPT",
+			Message: fmt.Sprintf("Failed to decrypt key: %s", key),
+			Op:      "bolt.Get",
+			Err:     err,
+		}
+	}
 	return val, nil
 }
 
@@ -93,7 +133,17 @@ func (p *Provider) Set(key string, val []byte) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	err := p.db.Update(func(tx *bbolt.Tx) error {
+	encrypted, err := vaultsec.EncryptBytes(val)
+	if err != nil {
+		return &middleware.Error{
+			Code:    "ERR_VAULT_ENCRYPT",
+			Message: fmt.Sprintf("Failed to encrypt key: %s", key),
+			Op:      "bolt.Set",
+			Err:     err,
+		}
+	}
+
+	err = p.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(defaultBucket)
 		if b == nil {
 			return &middleware.Error{
@@ -102,7 +152,7 @@ func (p *Provider) Set(key string, val []byte) error {
 				Op:      "bolt.Set",
 			}
 		}
-		return b.Put([]byte(key), val)
+		return b.Put([]byte(key), encrypted)
 	})
 
 	if err != nil {

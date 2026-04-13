@@ -18,6 +18,8 @@ func NewManager(fs middleware.FS) *Manager {
 
 // MountVirtualFS ensures the directory exists and mounts the pseudo-FS
 func (m *Manager) MountVirtualFS(mountPoint string) error {
+	log := slog.With("component", "filesystem")
+
 	if err := m.fs.CreateDirectory(mountPoint); err != nil {
 		return &middleware.Error{
 			Code:    "ERR_FS_MKDIR",
@@ -27,12 +29,12 @@ func (m *Manager) MountVirtualFS(mountPoint string) error {
 		}
 	}
 
-	slog.Info("Mounting Virtual FS", "path", mountPoint)
+	log.Info("mounting virtual fs", "event", "mount_start", "path", mountPoint)
 	return m.fs.Mount(mountPoint)
 }
 
 // UnmountVirtualFS cleanly unmounts the system
 func (m *Manager) UnmountVirtualFS() error {
-	slog.Info("Unmounting Virtual FS")
+	slog.With("component", "filesystem").Info("unmounting virtual fs", "event", "unmount_start")
 	return m.fs.Unmount()
 }

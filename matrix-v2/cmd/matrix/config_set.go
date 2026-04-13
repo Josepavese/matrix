@@ -11,6 +11,8 @@ var configSetCmd = &cobra.Command{
   matrix config set provider.default openai`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
+		ensureConfigKeyAllowed(args[0])
+
 		mgr, cleanup, err := openConfigManager()
 		if err != nil {
 			exitf("Error: %v", err)

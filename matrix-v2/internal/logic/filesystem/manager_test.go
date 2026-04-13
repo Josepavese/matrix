@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/jose/matrix-v2/internal/middleware"
@@ -30,6 +31,19 @@ func (m *MockFS) Unmount() error {
 	m.Mounted = false
 	return nil
 }
+
+func (m *MockFS) RemoveAll(path string) error { return nil }
+func (m *MockFS) Stat(path string) (os.FileInfo, error) { return nil, nil }
+func (m *MockFS) MkdirAll(path string, perm os.FileMode) error { return nil }
+func (m *MockFS) UserHomeDir() (string, error) { return "/home/test", nil }
+func (m *MockFS) TempDir() string { return "/tmp" }
+func (m *MockFS) Open(path string) (middleware.File, error)       { return nil, nil }
+func (m *MockFS) OpenFile(path string, flag int, perm os.FileMode) (middleware.File, error) {
+	return nil, nil
+}
+func (m *MockFS) ReadFile(path string) ([]byte, error)  { return nil, nil }
+func (m *MockFS) Remove(path string) error               { return nil }
+func (m *MockFS) Rename(oldpath, newpath string) error   { return nil }
 
 func TestManager_MountVirtualFS(t *testing.T) {
 	mock := &MockFS{}
