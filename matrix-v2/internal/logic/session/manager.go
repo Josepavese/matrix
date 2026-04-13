@@ -14,7 +14,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
-// Session metadata stored in the SSOT Vault
+// SessionMeta stores metadata for an active agent session in the SSOT vault.
 type SessionMeta struct {
 	ID             string    `json:"id"`
 	AgentSessionID string    `json:"agent_session_id"`
@@ -84,7 +84,7 @@ func (m *Manager) getOrCreateQueue(channelID string) *OrderedMerge {
 		return q
 	}
 
-	q := NewOrderedMerge(func(seq int, result RouteResult) {
+	q := NewOrderedMerge(func(_ int, result RouteResult) {
 		if result.Err != nil || result.AgentSessionID == "" {
 			return
 		}
@@ -293,6 +293,7 @@ func (m *Manager) handleWizardCommand(channelID string) (string, error) {
 	return prefix + "\n\n" + prompt, nil
 }
 
+// HandleAuthCallback processes an OAuth callback from an external auth provider.
 func (m *Manager) HandleAuthCallback(channelID, provider, code string) (string, error) {
 	return m.wizard.HandleAuthCallback(channelID, provider, code)
 }

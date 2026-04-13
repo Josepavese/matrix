@@ -16,7 +16,7 @@ type acpAuthHandler struct {
 	wizard *Wizard
 }
 
-func (h *acpAuthHandler) Methods(ctx context.Context) ([]AuthMethod, error) {
+func (h *acpAuthHandler) Methods(_ context.Context) ([]AuthMethod, error) {
 	// Default for unknown agents: prompt for a generic API key
 	return []AuthMethod{
 		{
@@ -28,7 +28,7 @@ func (h *acpAuthHandler) Methods(ctx context.Context) ([]AuthMethod, error) {
 	}, nil
 }
 
-func (h *acpAuthHandler) Authenticate(ctx context.Context, method AuthMethod, input string) (*AuthResult, string, error) {
+func (h *acpAuthHandler) Authenticate(_ context.Context, method AuthMethod, input string) (*AuthResult, string, error) {
 	switch method.Type {
 	case "env_var":
 		return h.authenticateEnvVar(method, input)

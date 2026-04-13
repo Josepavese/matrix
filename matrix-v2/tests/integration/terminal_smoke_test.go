@@ -3,7 +3,6 @@ package integration
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"testing"
@@ -24,7 +23,7 @@ type realAgentResolver struct {
 	wsAddr   string // used for ws protocol
 }
 
-func (r *realAgentResolver) GetAgentEndpoint(agentID string) (protocol, address string, args, env []string, err error) {
+func (r *realAgentResolver) GetAgentEndpoint(_ string) (protocol, address string, args, env []string, err error) {
 	if r.protocol == "ws" && r.wsAddr != "" {
 		return "ws", r.wsAddr, nil, r.env, nil
 	}
@@ -48,16 +47,6 @@ func lookPath(t *testing.T, name string) string {
 		t.Skipf("%s binary not found in PATH", name)
 	}
 	return path
-}
-
-// getFreePort returns an available TCP port.
-func getFreePort() (int, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	_ = l.Close()
-	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
 // TestSmoke_TerminalCreate_GeminiAgent tests terminal/create with Gemini via stdio ACP.

@@ -17,17 +17,19 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		os.Exit(1)
 	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	cleanup := func() { _ = os.RemoveAll(tmpDir) }
 
 	binPath = filepath.Join(tmpDir, "matrix")
 	cmd := exec.Command("go", "build", "-o", binPath, "github.com/jose/matrix-v2/cmd/matrix")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_, _ = os.Stderr.Write(out)
+		cleanup()
 		return
 	}
 
 	// Run tests
 	code := testscript.RunMain(m, map[string]func() int{})
+	cleanup()
 	os.Exit(code)
 }
 

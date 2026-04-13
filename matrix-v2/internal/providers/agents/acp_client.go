@@ -1,3 +1,4 @@
+// Package agents provides the ACP agent client pool and request routing.
 package agents
 
 import (
@@ -173,9 +174,9 @@ func (c *ACPClient) handleNotification(notif *jsonRPCResponse) {
 	if *notif.Method == "session/update" {
 		var update middleware.SessionNotification
 		if err := json.Unmarshal(notif.Params, &update); err == nil {
-			if update.SessionId != "" {
+			if update.SessionID != "" {
 				c.mu.RLock()
-				obs, ok := c.observers[update.SessionId]
+				obs, ok := c.observers[update.SessionID]
 				c.mu.RUnlock()
 				if ok && obs != nil {
 					obs.OnUpdate(update)
@@ -280,6 +281,7 @@ func isACPWireLoggingEnabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("MATRIX_LOG_ACP_WIRE")), "true")
 }
 
+// Initialize sends an ACP initialize request to the agent.
 func (c *ACPClient) Initialize(ctx context.Context, req middleware.InitializeRequest) (*middleware.InitializeResponse, error) {
 	resp, err := c.doCall(ctx, "initialize", req)
 	if err != nil {
@@ -302,6 +304,7 @@ func (c *ACPClient) Authenticate(ctx context.Context, methodID string, credentia
 	return err
 }
 
+// NewSession creates a new ACP session with the agent.
 func (c *ACPClient) NewSession(ctx context.Context, req middleware.NewSessionRequest) (*middleware.NewSessionResponse, error) {
 	resp, err := c.doCall(ctx, "session/new", req)
 	if err != nil {
@@ -314,14 +317,15 @@ func (c *ACPClient) NewSession(ctx context.Context, req middleware.NewSessionReq
 	return &res, nil
 }
 
+// Prompt sends a prompt to the agent within an existing session.
 func (c *ACPClient) Prompt(ctx context.Context, req middleware.PromptRequest, observer middleware.SessionObserver) (*middleware.PromptResponse, error) {
 	if observer != nil {
 		c.mu.Lock()
-		c.observers[req.SessionId] = observer
+		c.observers[req.SessionID] = observer
 		c.mu.Unlock()
 		defer func() {
 			c.mu.Lock()
-			delete(c.observers, req.SessionId)
+			delete(c.observers, req.SessionID)
 			c.mu.Unlock()
 		}()
 	}

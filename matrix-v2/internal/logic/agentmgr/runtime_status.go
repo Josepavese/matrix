@@ -10,6 +10,7 @@ import (
 
 const runtimeStatePrefix = "runtime.agent."
 
+// RuntimeState holds the persisted runtime status for a single agent.
 type RuntimeState struct {
 	AgentID   string    `json:"agent_id"`
 	Protocol  string    `json:"protocol"`
@@ -22,6 +23,7 @@ type RuntimeState struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// AgentRuntimeReport is a diagnostic report for a single agent's runtime state.
 type AgentRuntimeReport struct {
 	AgentID   string    `json:"agent_id"`
 	Protocol  string    `json:"protocol"`
@@ -46,6 +48,7 @@ func runtimeStateKey(agentID string) string {
 	return runtimeStatePrefix + agentID
 }
 
+// SaveRuntimeState persists a RuntimeState entry to the vault.
 func SaveRuntimeState(store middleware.Storage, state RuntimeState) error {
 	state.UpdatedAt = time.Now().UTC()
 	data, err := json.Marshal(state)
@@ -55,6 +58,7 @@ func SaveRuntimeState(store middleware.Storage, state RuntimeState) error {
 	return store.Set(runtimeStateKey(state.AgentID), data)
 }
 
+// LoadRuntimeStates loads all agent runtime states from the vault.
 func LoadRuntimeStates(store middleware.Storage) (map[string]RuntimeState, error) {
 	keys, err := store.List(runtimeStatePrefix)
 	if err != nil {
@@ -78,6 +82,7 @@ func LoadRuntimeStates(store middleware.Storage) (map[string]RuntimeState, error
 	return states, nil
 }
 
+// BuildRuntimeReports generates runtime reports for all registered agents.
 func BuildRuntimeReports(store middleware.Storage, reg *Registry, proc middleware.Process, canDial func(string) bool) ([]AgentRuntimeReport, []string, error) {
 	states, err := LoadRuntimeStates(store)
 	if err != nil {

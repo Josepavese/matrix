@@ -1,3 +1,4 @@
+// Package system_tools implements built-in tools exposed to the Matrix meta-agent for OS-level operations.
 package system_tools
 
 import (
@@ -66,12 +67,14 @@ func GetSystemTools() []middleware.Tool {
 	}
 }
 
+// Handler executes system-level tools for the Meta-Agent.
 type Handler struct {
 	config    middleware.ConfigManager
 	storage   middleware.Storage
 	installer *agentmgr.Installer
 }
 
+// NewHandler creates a system tools Handler.
 func NewHandler(config middleware.ConfigManager, storage middleware.Storage, installer *agentmgr.Installer) *Handler {
 	return &Handler{config: config, storage: storage, installer: installer}
 }

@@ -9,7 +9,7 @@ var logsDoctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Inspect runtime logging health and retention state",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		report, err := buildLogsDoctorReport()
 		if err != nil {
 			exitf("Error: %v", err)

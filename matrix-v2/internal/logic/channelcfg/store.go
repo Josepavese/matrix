@@ -8,6 +8,7 @@ import (
 	"github.com/jose/matrix-v2/internal/logic/config"
 )
 
+// ProviderKey builds a full config key for a channel provider setting.
 func ProviderKey(provider, key string) (string, error) {
 	provider = strings.TrimSpace(provider)
 	key = strings.TrimSpace(key)
@@ -23,6 +24,7 @@ func ProviderKey(provider, key string) (string, error) {
 	return "channel." + provider + "." + key, nil
 }
 
+// SetOverride sets a channel provider override in the config manager.
 func SetOverride(cfgMgr *config.Manager, provider, key, value string) error {
 	fullKey, err := ProviderKey(provider, key)
 	if err != nil {
@@ -31,6 +33,7 @@ func SetOverride(cfgMgr *config.Manager, provider, key, value string) error {
 	return cfgMgr.Set(fullKey, value)
 }
 
+// DeleteOverride removes a channel provider override.
 func DeleteOverride(cfgMgr *config.Manager, provider, key string) error {
 	fullKey, err := ProviderKey(provider, key)
 	if err != nil {
@@ -39,6 +42,7 @@ func DeleteOverride(cfgMgr *config.Manager, provider, key string) error {
 	return cfgMgr.Delete(fullKey)
 }
 
+// ListOverrides returns all overrides for a channel provider.
 func ListOverrides(cfgMgr *config.Manager, provider string) (map[string]string, error) {
 	if _, err := providerDefinitionFor(provider); err != nil {
 		return nil, err
@@ -62,6 +66,7 @@ func ListOverrides(cfgMgr *config.Manager, provider string) (map[string]string, 
 	return values, nil
 }
 
+// SortedKeys returns map keys in sorted order.
 func SortedKeys(values map[string]string) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {

@@ -1,3 +1,4 @@
+// Package telegram implements a Telegram bot interface for the Matrix agent system.
 package telegram
 
 import (

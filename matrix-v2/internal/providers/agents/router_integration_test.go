@@ -20,7 +20,7 @@ type mockResolver struct {
 	address  string
 }
 
-func (m *mockResolver) GetAgentEndpoint(agentID string) (string, string, []string, []string, error) {
+func (m *mockResolver) GetAgentEndpoint(_ string) (string, string, []string, []string, error) {
 	return m.protocol, m.address, nil, nil, nil
 }
 

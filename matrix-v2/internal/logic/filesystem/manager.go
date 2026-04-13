@@ -1,3 +1,4 @@
+// Package filesystem provides virtual filesystem mount/unmount logic.
 package filesystem
 
 import (

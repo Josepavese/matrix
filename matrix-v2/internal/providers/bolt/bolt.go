@@ -1,3 +1,4 @@
+// Package bolt implements a BoltDB-based storage provider for the Matrix vault.
 package bolt
 
 import (

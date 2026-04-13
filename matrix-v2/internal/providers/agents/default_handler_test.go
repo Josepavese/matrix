@@ -100,7 +100,10 @@ func TestHandleTerminalCreate_NonzeroExit(t *testing.T) {
 		t.Fatalf("HandleRequest should not error for nonzero exit: %v", err)
 	}
 
-	m := result.(map[string]interface{})
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result is not a map, got %T", result)
+	}
 	exitCode, _ := m["exitCode"].(int)
 	if exitCode != 42 {
 		t.Errorf("exitCode = %d, want 42", exitCode)
@@ -134,13 +137,19 @@ func TestHandleTerminalCreate_CwdPropagation(t *testing.T) {
 		t.Fatalf("HandleRequest: %v", err)
 	}
 
-	m := result.(map[string]interface{})
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result is not a map, got %T", result)
+	}
 	exitCode, _ := m["exitCode"].(int)
 	if exitCode != 0 {
 		t.Fatalf("exitCode = %d, want 0; stderr: %s", exitCode, m["stderr"])
 	}
 
-	stdout := m["stdout"].(string)
+	stdout, ok := m["stdout"].(string)
+	if !ok {
+		t.Fatal("stdout is not a string")
+	}
 	if !strings.Contains(stdout, "found") {
 		t.Errorf("stdout should contain 'found', got: %q — command ran in wrong directory", stdout)
 	}
@@ -171,8 +180,14 @@ func TestHandleTerminalCreate_CwdFromRequest(t *testing.T) {
 		t.Fatalf("HandleRequest: %v", err)
 	}
 
-	m := result.(map[string]interface{})
-	stdout := m["stdout"].(string)
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result is not a map, got %T", result)
+	}
+	stdout, ok := m["stdout"].(string)
+	if !ok {
+		t.Fatal("stdout is not a string")
+	}
 	if !strings.Contains(stdout, "inner-content") {
 		t.Errorf("stdout should contain 'inner-content', got: %q", stdout)
 	}
@@ -197,8 +212,12 @@ func TestHandleFSRead_Success(t *testing.T) {
 		t.Fatalf("fs/read_text_file: %v", err)
 	}
 
-	m := result.(map[string]interface{})
-	if m["content"].(string) != "hello fs" {
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result is not a map, got %T", result)
+	}
+	content, _ := m["content"].(string)
+	if content != "hello fs" {
 		t.Errorf("content = %q, want 'hello fs'", m["content"])
 	}
 }
@@ -219,8 +238,12 @@ func TestHandleFSWrite_Success(t *testing.T) {
 		t.Fatalf("fs/write_text_file: %v", err)
 	}
 
-	m := result.(map[string]interface{})
-	if m["status"].(string) != "ok" {
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result is not a map, got %T", result)
+	}
+	status, _ := m["status"].(string)
+	if status != "ok" {
 		t.Errorf("status = %v, want ok", m["status"])
 	}
 
@@ -292,7 +315,7 @@ func TestResolvePath_BoundaryCases(t *testing.T) {
 			}
 			if !tc.empty && result != "" {
 				// Verify resolved path is within cwd
-				if result != tmpDir && !(len(result) > len(tmpDir) && result[:len(tmpDir)+1] == tmpDir+"/") {
+				if result != tmpDir && (len(result) <= len(tmpDir) || result[:len(tmpDir)+1] != tmpDir+"/") {
 					t.Errorf("resolvePath(%q) = %q, not within cwd %s", tc.input, result, tmpDir)
 				}
 			}
@@ -315,9 +338,13 @@ func TestPermissionRequest_TrustMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("permission request: %v", err)
 	}
-	m := result.(map[string]interface{})
-	outcome := m["outcome"].(map[string]interface{})
-	if outcome["outcome"].(string) != "selected" {
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result is not a map, got %T", result)
+	}
+	outcome, _ := m["outcome"].(map[string]interface{})
+	outcomeStr, _ := outcome["outcome"].(string)
+	if outcomeStr != "selected" {
 		t.Errorf("expected selected outcome, got %v", outcome["outcome"])
 	}
 
@@ -327,9 +354,13 @@ func TestPermissionRequest_TrustMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("permission request (denied): %v", err)
 	}
-	m = result.(map[string]interface{})
-	outcome = m["outcome"].(map[string]interface{})
-	if outcome["outcome"].(string) != "denied" {
+	m, ok = result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result is not a map: %T", result)
+	}
+	outcome, _ = m["outcome"].(map[string]interface{})
+	outcomeStr2, _ := outcome["outcome"].(string)
+	if outcomeStr2 != "denied" {
 		t.Errorf("expected denied outcome, got %v", outcome["outcome"])
 	}
 }
@@ -363,8 +394,12 @@ func TestHandleRequest_DefaultAutoApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unknown method: %v", err)
 	}
-	m := result.(map[string]interface{})
-	if m["status"].(string) != "ok" {
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result is not a map, got %T", result)
+	}
+	status, _ := m["status"].(string)
+	if status != "ok" {
 		t.Errorf("unknown method should auto-approve, got %v", m["status"])
 	}
 }

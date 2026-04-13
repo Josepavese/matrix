@@ -6,6 +6,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// LocalInput holds parameters for building a local runtime report.
 type LocalInput struct {
 	VaultPath   string
 	JSONRPCAddr string
@@ -17,6 +18,7 @@ type LocalInput struct {
 	BuildInput *BuildInput
 }
 
+// BuildLocalReport builds a runtime report by probing local endpoints.
 func BuildLocalReport(input LocalInput) (map[string]any, error) {
 	ctx := context.Background()
 	if CanDial(input.Net, input.ACPHTTPAddr) {

@@ -16,7 +16,7 @@ var agentInfoCmd = &cobra.Command{
 	Use:   "info <agent_id>",
 	Short: "Show remote agent details from the ACP Registry",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		agentID := args[0]
 
 		provider, err := bolt.NewProvider(DefaultVaultPath)

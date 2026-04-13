@@ -17,7 +17,7 @@ var channelListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List supported channel providers",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		if err := cmdutil.PrintJSON(cmd, map[string]any{"providers": channelcfg.SupportedProviders()}); err != nil {
 			exitf("Error: %v", err)
 		}

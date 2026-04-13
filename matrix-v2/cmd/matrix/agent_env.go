@@ -16,7 +16,7 @@ var agentEnvListCmd = &cobra.Command{
 	Use:   "list <agent_id>",
 	Short: "List SSOT environment overrides for an agent",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		agentID := args[0]
 		ctx, cleanup, err := NewAgentStoreContext(DefaultVaultPath)
 		if err != nil {
@@ -38,7 +38,7 @@ var agentEnvSetCmd = &cobra.Command{
 	Use:   "set <agent_id> <key> <value>",
 	Short: "Set an agent environment override in SSOT",
 	Args:  cobra.ExactArgs(3),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		agentID, key, value := args[0], args[1], args[2]
 		ctx, cleanup, err := NewAgentStoreContext(DefaultVaultPath)
 		if err != nil {
@@ -62,7 +62,7 @@ var agentEnvUnsetCmd = &cobra.Command{
 	Use:   "unset <agent_id> <key>",
 	Short: "Remove an agent environment override from SSOT",
 	Args:  cobra.ExactArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		agentID, key := args[0], args[1]
 		ctx, cleanup, err := NewAgentStoreContext(DefaultVaultPath)
 		if err != nil {

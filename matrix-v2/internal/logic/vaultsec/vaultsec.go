@@ -12,6 +12,7 @@ import (
 	bbolt "go.etcd.io/bbolt"
 )
 
+// BuildReport generates a vault security report.
 func BuildReport(fs middleware.FS, path string) (map[string]any, error) {
 	_, keyStatus, err := ResolveMasterKey(fs)
 	if err != nil {
@@ -49,7 +50,7 @@ func handleMissingVault(report map[string]any, keyStatus KeyStatus, err error) (
 	return report, nil
 }
 
-func collectWarnings(fs middleware.FS, path string, info os.FileInfo, keyStatus KeyStatus, report map[string]any) []string {
+func collectWarnings(_ middleware.FS, path string, info os.FileInfo, keyStatus KeyStatus, report map[string]any) []string {
 	warnings := baseWarnings(keyStatus)
 	report["exists"] = true
 	report["size_bytes"] = info.Size()
@@ -88,6 +89,7 @@ func encryptionReport(keyStatus KeyStatus, meta encryptionMeta) map[string]any {
 	}
 }
 
+// CreateBackup copies the vault file to a backup directory.
 func CreateBackup(fs middleware.FS, path, destDir string, now time.Time) (string, error) {
 	if destDir == "" {
 		destDir = filepath.Join(".", "backups")

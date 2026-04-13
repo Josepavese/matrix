@@ -68,6 +68,7 @@ type Router struct {
 	keepAliveCancel context.CancelFunc
 }
 
+// NewRouter creates a new agent Router with the given endpoint resolver.
 func NewRouter(resolver middleware.AgentEndpointResolver) *Router {
 	return &Router{
 		resolver: resolver,
@@ -362,7 +363,7 @@ type simpleObserver struct {
 }
 
 func (o *simpleObserver) OnUpdate(notif middleware.SessionNotification) {
-	log := slog.With("component", "acp_observer", "session", notif.SessionId, "update_type", notif.Update.SessionUpdate)
+	log := slog.With("component", "acp_observer", "session", notif.SessionID, "update_type", notif.Update.SessionUpdate)
 	log.Info("session update received", "event", "session_update", "update_type", notif.Update.SessionUpdate, "text_len", len(notif.Update.Content.Text), "text_preview", truncate(notif.Update.Content.Text, 120))
 
 	switch notif.Update.SessionUpdate {
@@ -509,20 +510,20 @@ func (r *Router) createSession(ctx context.Context, client middleware.AgentClien
 	if err != nil {
 		return "", fmt.Errorf("ACP new session failed: %w", err)
 	}
-	log.Info("created acp session", "event", "session_created", "agent_session", newSessResp.SessionId, "tools_count", len(tools))
+	log.Info("created acp session", "event", "session_created", "agent_session", newSessResp.SessionID, "tools_count", len(tools))
 
 	// Try to set the most permissive mode available.
 	// Mode IDs are agent-defined (e.g. "code", "yolo", "autoEdit").
 	// We look for known auto-approve modes, falling back to the first available.
 	if modeID := pickAutoApproveMode(newSessResp); modeID != "" {
-		if err := client.SetMode(ctx, newSessResp.SessionId, modeID); err != nil {
+		if err := client.SetMode(ctx, newSessResp.SessionID, modeID); err != nil {
 			log.Warn("failed to set agent mode, continuing anyway", "event", "mode_set_failed", "modeId", modeID, "error", err)
 		} else {
-			log.Info("set agent mode", "event", "mode_set", "agent_session", newSessResp.SessionId, "modeId", modeID)
+			log.Info("set agent mode", "event", "mode_set", "agent_session", newSessResp.SessionID, "modeId", modeID)
 		}
 	}
 
-	return newSessResp.SessionId, nil
+	return newSessResp.SessionID, nil
 }
 
 // pickAutoApproveMode finds the most permissive mode from the session/new response.
@@ -536,14 +537,14 @@ func pickAutoApproveMode(resp *middleware.NewSessionResponse) string {
 		for _, opt := range resp.ConfigOptions {
 			if opt.Category == "mode" {
 				for _, v := range opt.Options {
-					available = append(available, v.Id)
+					available = append(available, v.ID)
 				}
 			}
 		}
 	}
 	if resp.Modes != nil {
 		for _, m := range resp.Modes.AvailableModes {
-			available = append(available, m.Id)
+			available = append(available, m.ID)
 		}
 	}
 	if len(available) == 0 {
@@ -594,7 +595,7 @@ func (r *Router) executePrompt(ctx context.Context, client middleware.AgentClien
 	// Execute the prompt with a streaming observer
 	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: req.ThoughtNotifier}
 	promptReq := middleware.PromptRequest{
-		SessionId: req.AgentSessionID,
+		SessionID: req.AgentSessionID,
 		Prompt: []middleware.Content{
 			{Type: "text", Text: req.Message},
 		},
@@ -610,7 +611,7 @@ func (r *Router) executePrompt(ctx context.Context, client middleware.AgentClien
 				return "", "", nil, err
 			}
 			obs = &simpleObserver{updates: make(chan struct{}, 1), notifier: req.ThoughtNotifier}
-			promptReq.SessionId = req.AgentSessionID
+			promptReq.SessionID = req.AgentSessionID
 			log.Debug("retrying acp prompt", "event", "prompt_retry", "agent_session", req.AgentSessionID, "message_len", len(req.Message))
 			resp, err = client.Prompt(ctx, promptReq, obs)
 		}

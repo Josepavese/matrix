@@ -1,3 +1,4 @@
+// Package acp implements the Agent Communication Protocol HTTP server.
 package acp
 
 import (

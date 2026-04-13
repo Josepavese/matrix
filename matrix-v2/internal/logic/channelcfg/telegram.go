@@ -11,6 +11,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// TelegramConfig holds the resolved Telegram channel configuration.
 type TelegramConfig struct {
 	Token   string  `json:"token"`
 	Enabled bool    `json:"enabled"`
@@ -51,6 +52,7 @@ type telegramOverlay struct {
 	HasAdmins  bool
 }
 
+// LoadTelegramConfig loads Telegram configuration from seed, file override, and SSOT overrides.
 func LoadTelegramConfig(reader middleware.ConfigReader, cfgMgr *config.Manager) (TelegramConfig, string, error) {
 	cfg, source, err := loadTelegramSeed(reader)
 	if err != nil {

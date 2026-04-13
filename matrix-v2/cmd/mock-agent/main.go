@@ -1,3 +1,4 @@
+// Package main implements a mock ACP agent for testing.
 package main
 
 import (

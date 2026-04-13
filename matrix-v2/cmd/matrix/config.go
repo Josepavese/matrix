@@ -15,7 +15,7 @@ var configCmd = &cobra.Command{
 	Short: "Manage Matrix V2 SSOT configuration",
 	Long: `Manage Matrix V2 configuration stored in the SSOT Vault.
 	All values are stored with dot-notation keys (e.g. provider.openai.key).`,
-	Run: func(_ *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		fmt.Println("Use: matrix config [set|get|delete|list]")
 	},
 }

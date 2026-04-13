@@ -2,6 +2,7 @@ package channelcfg
 
 import "strings"
 
+// RedactMap redacts sensitive values in a map.
 func RedactMap(values map[string]string) map[string]string {
 	redacted := make(map[string]string, len(values))
 	for key, value := range values {
@@ -14,6 +15,7 @@ func RedactMap(values map[string]string) map[string]string {
 	return redacted
 }
 
+// RedactValue redacts a single value if its key looks sensitive.
 func RedactValue(key, value string) (string, bool) {
 	if !isSecretKey(key) {
 		return "", false
@@ -21,6 +23,7 @@ func RedactValue(key, value string) (string, bool) {
 	return RedactSecret(value), true
 }
 
+// RedactSecret masks the middle of a secret string.
 func RedactSecret(value string) string {
 	if value == "" {
 		return ""
@@ -31,6 +34,7 @@ func RedactSecret(value string) string {
 	return value[:4] + "..." + value[len(value)-4:]
 }
 
+// IsSecretKey reports whether a key name looks like a sensitive credential.
 func IsSecretKey(key string) bool {
 	key = strings.ToLower(strings.TrimSpace(key))
 	return strings.Contains(key, "token") || strings.Contains(key, "secret") || strings.Contains(key, "key")

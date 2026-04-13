@@ -4,6 +4,7 @@ package vaultsec
 
 import "os"
 
+// ApplySecurePermissions restricts file permissions to owner-only read/write.
 func ApplySecurePermissions(path string) error {
 	return os.Chmod(path, 0o600)
 }

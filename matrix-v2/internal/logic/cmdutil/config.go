@@ -1,3 +1,4 @@
+// Package cmdutil provides command-line utility functions for output formatting and config access.
 package cmdutil
 
 import (

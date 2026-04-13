@@ -29,7 +29,7 @@ func newMockTransport() *mockTransport {
 	}
 }
 
-func (m *mockTransport) Send(ctx context.Context, message []byte) error {
+func (m *mockTransport) Send(_ context.Context, message []byte) error {
 	m.mu.Lock()
 	m.received = append(m.received, message)
 	m.mu.Unlock()
@@ -136,15 +136,15 @@ func TestACPClient_FullLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewSession failed: %v", err)
 		}
-		if res.SessionId != "test-session-123" {
-			t.Errorf("Expected test-session-123, got %s", res.SessionId)
+		if res.SessionID != "test-session-123" {
+			t.Errorf("Expected test-session-123, got %s", res.SessionID)
 		}
 	})
 
 	// 3. Prompt
 	t.Run("Prompt", func(t *testing.T) {
 		req := middleware.PromptRequest{
-			SessionId: "test-session-123",
+			SessionID: "test-session-123",
 			Prompt:    []middleware.Content{{Type: "text", Text: "Hello"}},
 		}
 		obs := &testObserver{}

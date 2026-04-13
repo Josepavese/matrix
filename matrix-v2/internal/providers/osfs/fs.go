@@ -20,7 +20,7 @@ type osFile struct {
 }
 
 // Mount is a no-op for the native OS filesystem provider.
-func (p *FSProvider) Mount(dir string) error {
+func (p *FSProvider) Mount(_ string) error {
 	return nil
 }
 

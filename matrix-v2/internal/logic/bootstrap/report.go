@@ -1,3 +1,4 @@
+// Package bootstrap provides startup health-check reporting for the Matrix runtime.
 package bootstrap
 
 import (

@@ -34,7 +34,7 @@ func NewUnixTransport(ctx context.Context, socketPath string) (*UnixTransport, e
 
 // Send writes a JSON-RPC message followed by a newline to the Unix socket.
 // It is safe for concurrent use.
-func (t *UnixTransport) Send(ctx context.Context, message []byte) error {
+func (t *UnixTransport) Send(_ context.Context, message []byte) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 

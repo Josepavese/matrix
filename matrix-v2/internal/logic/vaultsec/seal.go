@@ -2,6 +2,7 @@ package vaultsec
 
 import "github.com/jose/matrix-v2/internal/middleware"
 
+// SealStorage rewrites all vault entries with encryption.
 func SealStorage(store middleware.Storage) (int, error) {
 	keys, err := store.List("")
 	if err != nil {

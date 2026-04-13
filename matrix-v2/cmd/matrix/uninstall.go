@@ -16,7 +16,7 @@ var uninstallCmd = &cobra.Command{
 	Use:   "uninstall <agent_id>",
 	Short: "Uninstall an AI agent and remove its local files and registration",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		agentID := args[0]
 
 		// 1. Setup Dependencies

@@ -13,23 +13,23 @@ type recoveryClient struct {
 	promptCalls     int
 }
 
-func (c *recoveryClient) Initialize(ctx context.Context, req middleware.InitializeRequest) (*middleware.InitializeResponse, error) {
+func (c *recoveryClient) Initialize(_ context.Context, _ middleware.InitializeRequest) (*middleware.InitializeResponse, error) {
 	return &middleware.InitializeResponse{}, nil
 }
 
-func (c *recoveryClient) NewSession(ctx context.Context, req middleware.NewSessionRequest) (*middleware.NewSessionResponse, error) {
+func (c *recoveryClient) NewSession(_ context.Context, _ middleware.NewSessionRequest) (*middleware.NewSessionResponse, error) {
 	c.newSessionCalls++
-	return &middleware.NewSessionResponse{SessionId: fmt.Sprintf("session-%d", c.newSessionCalls)}, nil
+	return &middleware.NewSessionResponse{SessionID: fmt.Sprintf("session-%d", c.newSessionCalls)}, nil
 }
 
-func (c *recoveryClient) Prompt(ctx context.Context, req middleware.PromptRequest, observer middleware.SessionObserver) (*middleware.PromptResponse, error) {
+func (c *recoveryClient) Prompt(_ context.Context, req middleware.PromptRequest, observer middleware.SessionObserver) (*middleware.PromptResponse, error) {
 	c.promptCalls++
 	if c.promptCalls == 1 {
 		return nil, fmt.Errorf("RPC error -32602: Invalid params: Session not found: stale-session")
 	}
 	if observer != nil {
 		observer.OnUpdate(middleware.SessionNotification{
-			SessionId: req.SessionId,
+			SessionID: req.SessionID,
 			Update: middleware.SessionUpdate{
 				SessionUpdate: "agent_message_chunk",
 				Content: middleware.Content{
@@ -42,8 +42,8 @@ func (c *recoveryClient) Prompt(ctx context.Context, req middleware.PromptReques
 	return &middleware.PromptResponse{StopReason: "end_turn"}, nil
 }
 
-func (c *recoveryClient) SetRequestHandler(handler middleware.RequestHandler)         {}
-func (c *recoveryClient) SetMode(ctx context.Context, sessionID, modeID string) error { return nil }
+func (c *recoveryClient) SetRequestHandler(_ middleware.RequestHandler) {}
+func (c *recoveryClient) SetMode(_ context.Context, _, _ string) error  { return nil }
 
 func TestRouter_ExecutePrompt_RecoversFromMissingSession(t *testing.T) {
 	router := NewRouter(nil)

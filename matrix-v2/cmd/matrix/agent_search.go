@@ -17,7 +17,7 @@ var agentSearchCmd = &cobra.Command{
 	Short: "Search the ACP Registry for available agents",
 	Long:  "Search the ACP Registry for agents by name, description, or ID. Without a query, lists all agents.",
 	Args:  cobra.MaximumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		query := ""
 		if len(args) == 1 {
 			query = strings.ToLower(args[0])

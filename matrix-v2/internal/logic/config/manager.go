@@ -1,3 +1,4 @@
+// Package config provides SSOT configuration management.
 package config
 
 import (

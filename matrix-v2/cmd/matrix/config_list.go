@@ -13,7 +13,7 @@ var configListCmd = &cobra.Command{
 	Short:   "List all configuration keys",
 	Example: `  matrix config list`,
 	Args:    cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, _ []string) {
 		mgr, cleanup, err := openConfigManager()
 		if err != nil {
 			exitf("Error: %v", err)

@@ -1,3 +1,4 @@
+// Package onboarding implements the first-run setup wizard.
 package onboarding
 
 import (
@@ -12,6 +13,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// WizardState holds the persisted state of an in-progress wizard session.
 type WizardState struct {
 	Step      int               `json:"step"`
 	Language  string            `json:"language"`
@@ -40,6 +42,7 @@ type WizardDependencies struct {
 	Net       middleware.Network
 }
 
+// Wizard orchestrates the first-run onboarding flow.
 type Wizard struct {
 	storage   middleware.Storage
 	config    middleware.ConfigManager
@@ -52,6 +55,7 @@ type Wizard struct {
 	handlers  *authHandlerRegistry
 }
 
+// NewWizard creates a new onboarding Wizard with the given dependencies.
 func NewWizard(deps WizardDependencies) *Wizard {
 	w := &Wizard{
 		storage:   deps.Storage,

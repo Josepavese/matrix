@@ -19,7 +19,7 @@ type openrouterAuthHandler struct {
 	wizard *Wizard
 }
 
-func (h *openrouterAuthHandler) Methods(ctx context.Context) ([]AuthMethod, error) {
+func (h *openrouterAuthHandler) Methods(_ context.Context) ([]AuthMethod, error) {
 	return []AuthMethod{
 		{
 			ID:          "api_key",
@@ -57,7 +57,7 @@ func (h *openrouterAuthHandler) authenticateAPIKey(_ context.Context, input stri
 	}, "", nil
 }
 
-func (h *openrouterAuthHandler) authenticateOAuth(ctx context.Context, input string) (*AuthResult, string, error) {
+func (h *openrouterAuthHandler) authenticateOAuth(_ context.Context, input string) (*AuthResult, string, error) {
 	if input == "" {
 		// Generate auth URL — the verifier is stored in wizard state by the caller
 		return nil, "OAUTH_URL_NEEDED", nil
@@ -89,7 +89,7 @@ func (h *openrouterAuthHandler) generateAuthURL(channelID string) (string, strin
 // HandleAuthCallback handles the OAuth callback from OpenRouter.
 // The channelID parameter is the raw state value from the callback URL,
 // which includes an HMAC token for CSRF validation.
-func (w *Wizard) HandleAuthCallback(channelID, provider, code string) (string, error) {
+func (w *Wizard) HandleAuthCallback(channelID, _ string, code string) (string, error) {
 	// channelID here is the CSRF state from the OAuth callback.
 	// The actual channel ID and PKCE verifier are stored in wizard state.
 	// We validate the CSRF token against the stored verifier.

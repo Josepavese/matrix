@@ -9,13 +9,16 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// KeyPrefix is the vault key prefix for agent configuration entries.
 const KeyPrefix = "agent.config."
 
+// Override holds runtime overrides for an agent.
 type Override struct {
 	Active *bool    `json:"active,omitempty"`
 	Env    []string `json:"env,omitempty"`
 }
 
+// Config holds an agent's command, args, environment and protocol settings.
 type Config struct {
 	Command         string   `json:"command"`
 	Args            []string `json:"args"`
@@ -26,15 +29,18 @@ type Config struct {
 	Active          *bool    `json:"active,omitempty"`
 }
 
+// Entry bundles a Config with its Override for a single agent.
 type Entry struct {
 	Config   Config   `json:"config"`
 	Override Override `json:"override"`
 }
 
+// Key returns the vault key for an agent's configuration.
 func Key(agentID string) string {
 	return KeyPrefix + agentID
 }
 
+// LoadEntry reads an agent entry (config + override) from the vault.
 func LoadEntry(storage middleware.Storage, agentID string) (Entry, error) {
 	var entry Entry
 	if storage == nil {
@@ -54,6 +60,7 @@ func LoadEntry(storage middleware.Storage, agentID string) (Entry, error) {
 	return entry, nil
 }
 
+// SaveEntry persists an agent entry (config + override) to the vault.
 func SaveEntry(storage middleware.Storage, agentID string, entry Entry) error {
 	if storage == nil {
 		return fmt.Errorf("storage not available")
@@ -68,6 +75,7 @@ func SaveEntry(storage middleware.Storage, agentID string, entry Entry) error {
 	return nil
 }
 
+// Load reads only the Override portion for an agent.
 func Load(storage middleware.Storage, agentID string) (Override, error) {
 	entry, err := LoadEntry(storage, agentID)
 	if err != nil {
@@ -76,6 +84,7 @@ func Load(storage middleware.Storage, agentID string) (Override, error) {
 	return entry.Override, nil
 }
 
+// Save updates the Override portion for an agent, preserving the existing Config.
 func Save(storage middleware.Storage, agentID string, override Override) error {
 	entry, err := LoadEntry(storage, agentID)
 	if err != nil {
@@ -85,6 +94,7 @@ func Save(storage middleware.Storage, agentID string, override Override) error {
 	return SaveEntry(storage, agentID, entry)
 }
 
+// DeleteEntry removes an agent's configuration entry from the vault.
 func DeleteEntry(storage middleware.Storage, agentID string) error {
 	if storage == nil {
 		return fmt.Errorf("storage not available")
@@ -95,6 +105,7 @@ func DeleteEntry(storage middleware.Storage, agentID string) error {
 	return nil
 }
 
+// ListAgentIDs returns all agent IDs that have configuration entries.
 func ListAgentIDs(storage middleware.Storage) ([]string, error) {
 	if storage == nil {
 		return nil, fmt.Errorf("storage not available")
@@ -111,6 +122,7 @@ func ListAgentIDs(storage middleware.Storage) ([]string, error) {
 	return ids, nil
 }
 
+// UpsertEnv inserts or updates an env entry in the slice.
 func UpsertEnv(envs []string, key, value string) []string {
 	prefix := key + "="
 	replaced := false
@@ -131,6 +143,7 @@ func UpsertEnv(envs []string, key, value string) []string {
 	return result
 }
 
+// RemoveEnv removes all env entries matching the given key.
 func RemoveEnv(envs []string, key string) []string {
 	prefix := key + "="
 	result := make([]string, 0, len(envs))

@@ -1,3 +1,4 @@
+// Package runtimecheck provides runtime diagnostics and health checks.
 package runtimecheck
 
 import (
@@ -6,10 +7,12 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+// CanDial checks if an address is reachable.
 func CanDial(net middleware.Network, address string) bool {
 	return net.CanDial(address)
 }
 
+// AppendRuntimeWarnings appends default runtime warnings to the slice.
 func AppendRuntimeWarnings(report map[string]any, warnings *[]string) {
 	if !ReportBool(report, "vault_exists") {
 		*warnings = append(*warnings, "vault database not found")
@@ -22,6 +25,7 @@ func AppendRuntimeWarnings(report map[string]any, warnings *[]string) {
 	}
 }
 
+// ValidateRuntimeReport checks that a runtime report has expected boolean fields.
 func ValidateRuntimeReport(report map[string]any) error {
 	for _, key := range []string{"vault_exists", "jsonrpc_daemon_up", "acp_http_up"} {
 		if _, ok := report[key].(bool); !ok {
@@ -31,6 +35,7 @@ func ValidateRuntimeReport(report map[string]any) error {
 	return nil
 }
 
+// ReportBool extracts a boolean from a report map.
 func ReportBool(report map[string]any, key string) bool {
 	value, ok := report[key].(bool)
 	return ok && value
