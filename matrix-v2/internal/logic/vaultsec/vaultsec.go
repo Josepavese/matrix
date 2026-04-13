@@ -100,7 +100,7 @@ func CreateBackup(fs middleware.FS, path, destDir string, now time.Time) (string
 	if err != nil {
 		return "", err
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	filename := fmt.Sprintf("matrix-vault-%s.db", now.UTC().Format("20060102-150405"))
 	destPath := filepath.Join(destDir, filename)
@@ -134,7 +134,7 @@ func inspectEncryption(path string) (encryptionMeta, error) {
 	if err != nil {
 		return encryptionMeta{}, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	meta := encryptionMeta{}
 	err = db.View(func(tx *bbolt.Tx) error {

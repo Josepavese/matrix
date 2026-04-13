@@ -52,7 +52,7 @@ func (p *Provider) Download(ctx context.Context, url, destPath string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -68,7 +68,7 @@ func (p *Provider) Download(ctx context.Context, url, destPath string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	if _, err := io.Copy(out, resp.Body); err != nil {
 		return err
@@ -87,7 +87,7 @@ func (p *Provider) FetchJSON(ctx context.Context, url string, target interface{}
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -130,7 +130,7 @@ func (p *Provider) Fetch(ctx context.Context, url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -156,7 +156,7 @@ func (p *Provider) PostJSON(ctx context.Context, url string, body interface{}) (
 	if err != nil {
 		return nil, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 	if err != nil {

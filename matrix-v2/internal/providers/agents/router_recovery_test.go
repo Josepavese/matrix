@@ -42,7 +42,7 @@ func (c *recoveryClient) Prompt(ctx context.Context, req middleware.PromptReques
 	return &middleware.PromptResponse{StopReason: "end_turn"}, nil
 }
 
-func (c *recoveryClient) SetRequestHandler(handler middleware.RequestHandler) {}
+func (c *recoveryClient) SetRequestHandler(handler middleware.RequestHandler)         {}
 func (c *recoveryClient) SetMode(ctx context.Context, sessionID, modeID string) error { return nil }
 
 func TestRouter_ExecutePrompt_RecoversFromMissingSession(t *testing.T) {

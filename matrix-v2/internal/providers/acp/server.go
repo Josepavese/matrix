@@ -67,7 +67,7 @@ func (s *Server) HandleOpenRouterCallback(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, "<html><body><h1>%s</h1><p>You can close this window and go back to Telegram.</p></body></html>", res)
+	_, _ = fmt.Fprintf(w, "<html><body><h1>%s</h1><p>You can close this window and go back to Telegram.</p></body></html>", res)
 }
 
 // HandleRuns is the HTTP handler for POST /runs

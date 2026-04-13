@@ -44,7 +44,7 @@ func NewRegistry(loader middleware.ConfigReader, store middleware.Storage) (*Reg
 		if err != nil {
 			return nil, err
 		}
-		
+
 		// Map Entry (storable) to AgentConfig (runtime)
 		configs[id] = AgentConfig{
 			Command:         entry.Config.Command,

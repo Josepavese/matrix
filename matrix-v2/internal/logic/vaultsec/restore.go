@@ -79,13 +79,13 @@ func copyFile(fs middleware.FS, sourcePath, targetPath string) error {
 	if err != nil {
 		return err
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	dst, err := fs.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
-	defer dst.Close()
+	defer func() { _ = dst.Close() }()
 
 	_, err = io.Copy(dst, src)
 	return err

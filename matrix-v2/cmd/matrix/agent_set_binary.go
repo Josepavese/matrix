@@ -34,7 +34,7 @@ var agentSetBinaryCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Vault error: %v\n", err)
 			os.Exit(1)
 		}
-		defer provider.Close()
+		defer func() { _ = provider.Close() }()
 
 		// 3. Load or Create Entry
 		entry, err := agentcfg.LoadEntry(provider, agentID)

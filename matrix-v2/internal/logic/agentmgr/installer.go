@@ -132,7 +132,7 @@ func (i *Installer) installBinary(ctx context.Context, manifest *AgentManifest) 
 	if err := i.net.Download(ctx, dist.Archive, tmpFile); err != nil {
 		return "", fmt.Errorf("download failed: %w", err)
 	}
-	defer i.fs.RemoveAll(tmpFile)
+	defer func() { _ = i.fs.RemoveAll(tmpFile) }()
 
 	fmt.Printf("Extracting to %s...\n", agentDir)
 	if err := i.fs.MkdirAll(agentDir, 0755); err != nil {

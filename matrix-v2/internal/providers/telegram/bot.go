@@ -14,27 +14,27 @@ import (
 
 // Bot implements middleware.MessagingGateway for Telegram.
 type Bot struct {
-	token  string
-	router middleware.SessionRouter
-	api    *tgbotapi.BotAPI
-	stopCh chan struct{}
+	token    string
+	router   middleware.SessionRouter
+	api      *tgbotapi.BotAPI
+	stopCh   chan struct{}
 	stopOnce sync.Once
 }
 
 // thoughtMessenger implements ThoughtNotifier for Telegram.
 // It creates a temporary "thinking" message and edits it in real-time.
 type thoughtMessenger struct {
-	api             *tgbotapi.BotAPI
-	chatID          int64
-	replyToID       int
-	messageID       int
-	mu              sync.Mutex
-	thoughts        string
-	tools           string
-	lastEdit        string
-	rateLimit       time.Time
-	agentID         string
-	agentSessionID  string
+	api            *tgbotapi.BotAPI
+	chatID         int64
+	replyToID      int
+	messageID      int
+	mu             sync.Mutex
+	thoughts       string
+	tools          string
+	lastEdit       string
+	rateLimit      time.Time
+	agentID        string
+	agentSessionID string
 }
 
 func newThoughtMessenger(api *tgbotapi.BotAPI, chatID int64, replyToID int) *thoughtMessenger {

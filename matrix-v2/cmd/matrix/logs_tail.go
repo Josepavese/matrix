@@ -13,7 +13,7 @@ var logsTailCmd = &cobra.Command{
 	Use:   "tail",
 	Short: "Print the last lines of the active runtime log file",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, _ []string) {
 		cfg, cleanup, err := openLogConfig()
 		if err != nil {
 			exitf("Error: %v", err)

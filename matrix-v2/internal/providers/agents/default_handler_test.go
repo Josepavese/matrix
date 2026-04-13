@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"strings"
+
 	"github.com/jose/matrix-v2/internal/providers/exec"
 	"github.com/jose/matrix-v2/internal/providers/osfs"
-	"strings"
 )
 
 func TestHandleTerminalCreate_Echo(t *testing.T) {
@@ -114,7 +115,9 @@ func TestHandleTerminalCreate_CwdPropagation(t *testing.T) {
 	tmpDir := t.TempDir()
 	markerFile := "cwd_marker.txt"
 	markerPath := filepath.Join(tmpDir, markerFile)
-	os.WriteFile(markerPath, []byte("found"), 0644)
+	if err := os.WriteFile(markerPath, []byte("found"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	handler := newConfigurableRequestHandler(nil).
 		WithProcess(exec.NewProvider()).
@@ -146,8 +149,12 @@ func TestHandleTerminalCreate_CwdPropagation(t *testing.T) {
 func TestHandleTerminalCreate_CwdFromRequest(t *testing.T) {
 	outerDir := t.TempDir()
 	innerDir := filepath.Join(outerDir, "sub")
-	os.MkdirAll(innerDir, 0755)
-	os.WriteFile(filepath.Join(innerDir, "inner.txt"), []byte("inner-content"), 0644)
+	if err := os.MkdirAll(innerDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(innerDir, "inner.txt"), []byte("inner-content"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	handler := newConfigurableRequestHandler(nil).
 		WithProcess(exec.NewProvider()).
@@ -174,7 +181,9 @@ func TestHandleTerminalCreate_CwdFromRequest(t *testing.T) {
 func TestHandleFSRead_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
-	os.WriteFile(testFile, []byte("hello fs"), 0644)
+	if err := os.WriteFile(testFile, []byte("hello fs"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	handler := newConfigurableRequestHandler(nil).
 		WithFS(osfs.NewFSProvider(), tmpDir)
@@ -258,9 +267,9 @@ func TestResolvePath_BoundaryCases(t *testing.T) {
 	handler := newConfigurableRequestHandler(nil).WithFS(nil, tmpDir)
 
 	tests := []struct {
-		name   string
-		input  string
-		empty  bool
+		name  string
+		input string
+		empty bool
 	}{
 		{"empty string", "", true},
 		{"simple file", "foo.txt", false},
@@ -325,17 +334,24 @@ func TestPermissionRequest_TrustMode(t *testing.T) {
 	}
 }
 
-func TestTerminalMethods_Stub(t *testing.T) {
+func TestTerminalMethods_MissingTerminalID(t *testing.T) {
 	handler := newConfigurableRequestHandler(nil)
 
 	for _, method := range []string{"terminal/output", "terminal/wait_for_exit", "terminal/kill", "terminal/release"} {
-		result, err := handler.HandleRequest(context.Background(), method, json.RawMessage(`{}`))
-		if err != nil {
-			t.Errorf("%s: unexpected error: %v", method, err)
+		_, err := handler.HandleRequest(context.Background(), method, json.RawMessage(`{}`))
+		if err == nil {
+			t.Errorf("%s: expected error for missing terminalId", method)
 		}
-		m := result.(map[string]interface{})
-		if m["status"].(string) != "not_implemented" {
-			t.Errorf("%s: expected not_implemented, got %v", method, m["status"])
+	}
+}
+
+func TestTerminalMethods_UnknownTerminal(t *testing.T) {
+	handler := newConfigurableRequestHandler(nil)
+
+	for _, method := range []string{"terminal/output", "terminal/wait_for_exit", "terminal/kill", "terminal/release"} {
+		_, err := handler.HandleRequest(context.Background(), method, json.RawMessage(`{"terminalId":"nonexistent"}`))
+		if err == nil {
+			t.Errorf("%s: expected error for unknown terminalId", method)
 		}
 	}
 }

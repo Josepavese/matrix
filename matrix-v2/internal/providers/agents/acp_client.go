@@ -292,6 +292,16 @@ func (c *ACPClient) Initialize(ctx context.Context, req middleware.InitializeReq
 	return &res, nil
 }
 
+// Authenticate sends an authenticate JSON-RPC call to the agent with the given method and credentials.
+func (c *ACPClient) Authenticate(ctx context.Context, methodID string, credentials map[string]string) error {
+	params := map[string]interface{}{
+		"methodId":    methodID,
+		"credentials": credentials,
+	}
+	_, err := c.doCall(ctx, "authenticate", params)
+	return err
+}
+
 func (c *ACPClient) NewSession(ctx context.Context, req middleware.NewSessionRequest) (*middleware.NewSessionResponse, error) {
 	resp, err := c.doCall(ctx, "session/new", req)
 	if err != nil {

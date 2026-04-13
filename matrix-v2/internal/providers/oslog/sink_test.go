@@ -23,7 +23,7 @@ func TestFactoryBuildFileSinkWithRotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
-	defer sink.Close()
+	defer func() { _ = sink.Close() }()
 
 	payload := strings.Repeat("x", 32) + "\n"
 	if _, err := sink.Writer().Write([]byte(payload)); err != nil {
@@ -52,7 +52,7 @@ func TestFactoryBuildBothSink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
-	defer sink.Close()
+	defer func() { _ = sink.Close() }()
 
 	if sink.Descriptor() == "" {
 		t.Fatal("expected non-empty descriptor")

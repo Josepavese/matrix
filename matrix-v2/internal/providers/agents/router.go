@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -274,36 +275,49 @@ func (r *Router) createClient(ctx context.Context, agentID string, log *slog.Log
 		return nil, "", err
 	}
 
-		acpClient := NewACPClient(ctx, transport)
-		handler := newConfigurableRequestHandler(r.trustMode).WithFS(r.fs, r.cwd)
-		if r.proc != nil {
-			handler.WithProcess(r.proc)
-		}
-		acpClient.SetRequestHandler(handler)
-		initReq := middleware.InitializeRequest{
-			ProtocolVersion: 1,
-			ClientInfo:      map[string]interface{}{"name": "matrix", "version": "1.0"},
-			ClientCapabilities: &middleware.ClientCapabilities{
-				Fs: &middleware.FsCapability{
-					ReadTextFile:  r.fs != nil,
-					WriteTextFile: r.fs != nil,
-				},
-				Terminal: r.proc != nil,
+	acpClient := NewACPClient(ctx, transport)
+	handler := newConfigurableRequestHandler(r.trustMode).WithFS(r.fs, r.cwd)
+	if r.proc != nil {
+		handler.WithProcess(r.proc)
+	}
+	acpClient.SetRequestHandler(handler)
+	initReq := middleware.InitializeRequest{
+		ProtocolVersion: 1,
+		ClientInfo:      map[string]interface{}{"name": "matrix", "version": "1.0"},
+		ClientCapabilities: &middleware.ClientCapabilities{
+			Fs: &middleware.FsCapability{
+				ReadTextFile:  r.fs != nil,
+				WriteTextFile: r.fs != nil,
 			},
-		}
+			Terminal: r.proc != nil,
+		},
+	}
 	initResp, err := acpClient.Initialize(ctx, initReq)
 	if err != nil {
-		transport.Close()
+		_ = transport.Close()
 		return nil, "", fmt.Errorf("ACP initialize failed: %w", err)
 	}
 	if len(initResp.AuthMethods) > 0 {
-		log.Warn("agent requires authentication — interactive auth not yet supported",
+		log.Info("agent requires authentication",
 			"event", "auth_required",
 			"agent", agentID,
 			"methods", len(initResp.AuthMethods),
 		)
 		for _, m := range initResp.AuthMethods {
 			log.Debug("auth method", "type", m.Type, "id", m.ID, "description", m.Description)
+			if m.Type == "env_var" && m.EnvVar != "" {
+				if val, ok := os.LookupEnv(m.EnvVar); ok {
+					log.Info("auto-authenticating with env var", "envVar", m.EnvVar, "methodId", m.ID)
+					creds := map[string]string{"api_key": val}
+					if err := acpClient.Authenticate(ctx, m.ID, creds); err != nil {
+						log.Warn("authentication failed", "methodId", m.ID, "error", err)
+					} else {
+						log.Info("authentication succeeded", "methodId", m.ID)
+					}
+				} else {
+					log.Warn("auth env var not set", "envVar", m.EnvVar)
+				}
+			}
 		}
 	}
 	return acpClient, protocol, nil
@@ -341,9 +355,9 @@ func createTransport(ctx context.Context, spec transportSpec) (middleware.AgentT
 // It also forwards real-time thought/tool updates to an optional ThoughtNotifier
 // so the UI (e.g. Telegram) can show a live "thinking" indicator.
 type simpleObserver struct {
-	mu      sync.Mutex
-	content string
-	updates chan struct{}
+	mu       sync.Mutex
+	content  string
+	updates  chan struct{}
 	notifier middleware.ThoughtNotifier
 }
 

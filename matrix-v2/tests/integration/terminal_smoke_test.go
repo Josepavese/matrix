@@ -56,7 +56,7 @@ func getFreePort() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	l.Close()
+	_ = l.Close()
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
@@ -114,7 +114,9 @@ func TestSmoke_CwdCoherence_GeminiAgent(t *testing.T) {
 	// Create a unique marker file in tmpDir
 	markerContent := "cwd-correct-xyzzy"
 	markerFile := "cwd_test_marker.txt"
-	os.WriteFile(tmpDir+"/"+markerFile, []byte(markerContent), 0644)
+	if err := os.WriteFile(tmpDir+"/"+markerFile, []byte(markerContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	resolver := &realAgentResolver{
 		protocol: "stdio",

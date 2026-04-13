@@ -302,8 +302,10 @@ func TestTeeHandlerWithGroup(t *testing.T) {
 }
 
 func TestLoadSetting(t *testing.T) {
-	os.Setenv("TEST_MATRIX_VAR", "from_env")
-	defer os.Unsetenv("TEST_MATRIX_VAR")
+	if err := os.Setenv("TEST_MATRIX_VAR", "from_env"); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Unsetenv("TEST_MATRIX_VAR") }()
 
 	t.Run("env var takes precedence", func(t *testing.T) {
 		got := loadSetting(nil, "some.config.key", "TEST_MATRIX_VAR", "fallback")
@@ -320,8 +322,10 @@ func TestLoadSetting(t *testing.T) {
 	})
 
 	t.Run("env var with whitespace is trimmed", func(t *testing.T) {
-		os.Setenv("TEST_WHITESPACE_VAR", "  trimmed  ")
-		defer os.Unsetenv("TEST_WHITESPACE_VAR")
+		if err := os.Setenv("TEST_WHITESPACE_VAR", "  trimmed  "); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Unsetenv("TEST_WHITESPACE_VAR") }()
 
 		got := loadSetting(nil, "key", "TEST_WHITESPACE_VAR", "fallback")
 		if got != "trimmed" {

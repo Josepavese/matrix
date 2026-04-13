@@ -1,9 +1,9 @@
 package main
 
 import (
-	logiclogging "github.com/jose/matrix-v2/internal/logic/logging"
 	"github.com/jose/matrix-v2/internal/logic/agentmgr"
 	"github.com/jose/matrix-v2/internal/logic/config"
+	logiclogging "github.com/jose/matrix-v2/internal/logic/logging"
 	"github.com/jose/matrix-v2/internal/logic/runtimecheck"
 	"github.com/jose/matrix-v2/internal/logic/vault"
 	"github.com/jose/matrix-v2/internal/providers/bolt"
@@ -67,7 +67,7 @@ func buildRuntimeDoctorReport() (map[string]any, error) {
 	cfgRdr := osfs.NewConfigProvider()
 	registry, err := agentmgr.NewRegistry(cfgRdr, provider)
 	if err != nil {
-		provider.Close()
+		_ = provider.Close()
 		return runtimecheck.BuildLocalReport(runtimecheck.LocalInput{
 			VaultPath:   DefaultVaultPath,
 			JSONRPCAddr: "127.0.0.1:9090",

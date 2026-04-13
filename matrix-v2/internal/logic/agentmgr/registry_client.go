@@ -12,7 +12,7 @@ import (
 
 // RegistryIndex represents the top-level structure of the ACP Registry CDN.
 type RegistryIndex struct {
-	Version string           `json:"version"`
+	Version string          `json:"version"`
 	Agents  []AgentManifest `json:"agents"`
 }
 
@@ -75,8 +75,8 @@ type UvxDist struct {
 
 // ResolvedDist represents a resolved distribution ready for installation.
 type ResolvedDist struct {
-	Type    string   // "binary", "npx", "uvx"
-	Command string   // "" for binary (resolved later), "npx"/"uvx" otherwise
+	Type    string // "binary", "npx", "uvx"
+	Command string // "" for binary (resolved later), "npx"/"uvx" otherwise
 	Args    []string
 	Env     []string // flattened KEY=VALUE pairs
 }

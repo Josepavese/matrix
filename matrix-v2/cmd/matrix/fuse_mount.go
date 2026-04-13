@@ -14,7 +14,7 @@ var fuseMountCmd = &cobra.Command{
 	Use:   "mount [dir]",
 	Short: "Mount the Matrix virtual filesystem to a directory",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		provider := fusefs.NewProvider()
 		mgr := filesystem.NewManager(provider)
 

@@ -1,3 +1,4 @@
+// Package signal provides a cross-platform signal handling provider using os/signal.
 package signal
 
 import (

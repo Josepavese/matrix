@@ -2,6 +2,7 @@ package middleware
 
 import "io"
 
+// LogSinkOptions configures the destination and rotation parameters for a log sink.
 type LogSinkOptions struct {
 	Target     string
 	FilePath   string

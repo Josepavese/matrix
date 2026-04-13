@@ -10,6 +10,8 @@ import (
 	"os"
 	goexec "os/exec"
 
+	"errors"
+
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
@@ -67,7 +69,8 @@ func (p *Provider) ExecSeparate(ctx context.Context, spec middleware.CommandSpec
 	err := cmd.Run()
 	exitCode := 0
 	if err != nil {
-		if exitErr, ok := err.(*goexec.ExitError); ok {
+		var exitErr *goexec.ExitError
+		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else {
 			return nil, &middleware.Error{
@@ -156,7 +159,7 @@ type processHandle struct {
 func (p *processHandle) Wait() error {
 	defer func() {
 		if p.stdinWr != nil {
-			p.stdinWr.Close()
+			_ = p.stdinWr.Close()
 		}
 	}()
 	return p.cmd.Wait()
@@ -164,7 +167,7 @@ func (p *processHandle) Wait() error {
 
 func (p *processHandle) Kill() error {
 	if p.stdinWr != nil {
-		p.stdinWr.Close()
+		_ = p.stdinWr.Close()
 	}
 	if p.cmd.Process != nil {
 		return p.cmd.Process.Kill()
@@ -195,7 +198,7 @@ func (p *Provider) Start(spec middleware.CommandSpec) (middleware.ProcessHandle,
 
 	if err := cmd.Start(); err != nil {
 		if pw != nil {
-			pw.Close()
+			_ = pw.Close()
 		}
 		return nil, &middleware.Error{
 			Code:    "ERR_EXEC_START_FAILED",
@@ -265,8 +268,8 @@ func (p *Provider) StartPiped(spec middleware.CommandSpec) (middleware.PipedProc
 	cmd.Stderr = pw
 
 	if err := cmd.Start(); err != nil {
-		pr.Close()
-		pw.Close()
+		_ = pr.Close()
+		_ = pw.Close()
 		return nil, &middleware.Error{
 			Code:    "ERR_EXEC_START_FAILED",
 			Message: fmt.Sprintf("Failed to start piped process: %s", spec.Runner),
@@ -277,8 +280,8 @@ func (p *Provider) StartPiped(spec middleware.CommandSpec) (middleware.PipedProc
 	// Close the write end in the parent after the child has inherited it.
 	// The child's copy remains open until the process exits.
 	go func() {
-		cmd.Wait()
-		pw.Close()
+		_ = cmd.Wait()
+		_ = pw.Close()
 	}()
 
 	return &pipedProcess{

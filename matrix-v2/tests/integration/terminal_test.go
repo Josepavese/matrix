@@ -2,8 +2,8 @@ package integration
 
 import (
 	"context"
-	goexec "os/exec"
 	"os"
+	goexec "os/exec"
 	"path/filepath"
 	"testing"
 	"time"

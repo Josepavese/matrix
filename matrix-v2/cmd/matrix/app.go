@@ -27,10 +27,10 @@ type AppContext struct {
 
 // AgentContext holds dependencies for agent-related commands.
 type AgentContext struct {
-	Store    middleware.Storage
-	Registry *agentmgr.Registry
+	Store     middleware.Storage
+	Registry  *agentmgr.Registry
 	ConfigRdr middleware.ConfigReader
-	closeFn  func()
+	closeFn   func()
 }
 
 // InstallerContext holds dependencies for install/uninstall commands.
@@ -88,7 +88,7 @@ func NewAgentContext(vaultPath string) (*AgentContext, func(), error) {
 	configRdr := osfs.NewConfigProvider()
 	registry, err := agentmgr.NewRegistry(configRdr, provider)
 	if err != nil {
-		provider.Close()
+		_ = provider.Close()
 		return nil, nil, fmt.Errorf("registry error: %w", err)
 	}
 	return &AgentContext{
@@ -109,7 +109,7 @@ func NewAgentStoreContext(vaultPath string) (*AgentContext, func(), error) {
 	configRdr := osfs.NewConfigProvider()
 	registry, err := agentmgr.NewRegistry(configRdr, provider)
 	if err != nil {
-		provider.Close()
+		_ = provider.Close()
 		return nil, nil, fmt.Errorf("registry error: %w", err)
 	}
 	return &AgentContext{

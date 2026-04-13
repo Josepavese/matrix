@@ -15,7 +15,7 @@ func TestProvider_SetAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create provider: %v", err)
 	}
-	defer provider.Close()
+	defer func() { _ = provider.Close() }()
 
 	key := "test.key"
 	val := []byte("test_value")
@@ -44,7 +44,7 @@ func TestProvider_GetNonExistent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create provider: %v", err)
 	}
-	defer provider.Close()
+	defer func() { _ = provider.Close() }()
 
 	got, err := provider.Get("does_not_exist")
 	if err != nil {
@@ -63,7 +63,7 @@ func TestProvider_ConcurrentAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create provider: %v", err)
 	}
-	defer provider.Close()
+	defer func() { _ = provider.Close() }()
 
 	key := "concurrent.key"
 	val := []byte("safe")

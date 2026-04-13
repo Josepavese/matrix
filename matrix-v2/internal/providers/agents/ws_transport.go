@@ -20,7 +20,7 @@ func NewWSTransport(ctx context.Context, url string) (*WSTransport, error) {
 	dialer := websocket.DefaultDialer
 	conn, resp, err := dialer.DialContext(ctx, url, nil)
 	if resp != nil && resp.Body != nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 	if err != nil {
 		if resp != nil {
@@ -62,7 +62,7 @@ func (t *WSTransport) Receive(ctx context.Context) ([]byte, error) {
 	select {
 	case <-ctx.Done():
 		// Close the connection to unblock the ReadMessage goroutine
-		t.conn.Close()
+		_ = t.conn.Close()
 		<-ch // wait for goroutine to finish
 		return nil, ctx.Err()
 	case result := <-ch:

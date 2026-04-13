@@ -38,7 +38,18 @@ nido start "$VM_NAME"
 echo "🛠️ Installazione dipendenze nella VM (APM Dependencies)..."
 # Attendiamo che SSH sia pronto
 sleep 10
-nido ssh "$VM_NAME" "sudo apt-get update && sudo apt-get install -y nodejs npm python3 python3-pip git"
+nido ssh "$VM_NAME" "sudo apt-get update && sudo apt-get install -y python3 python3-pip git curl"
+
+echo "📦 Installazione NVM e Node.js (v22)..."
+# Install NVM
+nido ssh "$VM_NAME" "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
+
+# Use nvm to install node (version from SSOT)
+NODE_VER=$(jq -r '.node_version' matrix-v2/configs/node_env.json)
+nido ssh "$VM_NAME" "export NVM_DIR=\"\$HOME/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && \\. \"\$NVM_DIR/nvm.sh\" && nvm install $NODE_VER && nvm use $NODE_VER && nvm alias default $NODE_VER"
+
+echo "🤖 Installazione Agenti Globali..."
+nido ssh "$VM_NAME" "export NVM_DIR=\"\$HOME/.nvm\" && [ -s \"\$NVM_DIR/nvm.sh\" ] && \\. \"\$NVM_DIR/nvm.sh\" && npm install -g @openai/codex"
 
 echo "❄️ Creazione template per i prossimi test..."
 nido stop "$VM_NAME"

@@ -145,7 +145,7 @@ func newTestWizardWithAgents() *Wizard {
 		{ID: "codex", Name: "Codex", Description: "OpenAI code agent", DistTypes: []string{"binary", "npx"}},
 	}
 	for _, a := range agents {
-		agentcfg.SaveMeta(w.storage, a.ID, a)
+		if err := agentcfg.SaveMeta(w.storage, a.ID, a); err != nil { panic(err) }
 	}
 	return w
 }
@@ -167,7 +167,7 @@ func TestWizard_GenericAgent_APIKey(t *testing.T) {
 	w := newTestWizardWithAgents()
 
 	// Step 0->1: Initial entry
-	resp, err := w.Process("ch2", "")
+	_, err := w.Process("ch2", "")
 	if err != nil {
 		t.Fatalf("step 0: %v", err)
 	}
@@ -391,7 +391,7 @@ func TestACPAuthHandler_AgentMeta_TerminalAuth(t *testing.T) {
 	}
 
 	// First call: show command from _meta
-	result, prompt, err := h.Authenticate(context.Background(), method, "")
+	_, prompt, err := h.Authenticate(context.Background(), method, "")
 	if err != nil {
 		t.Fatalf("Authenticate (prompt): %v", err)
 	}
@@ -400,7 +400,7 @@ func TestACPAuthHandler_AgentMeta_TerminalAuth(t *testing.T) {
 	}
 
 	// Second call: done
-	result, prompt, err = h.Authenticate(context.Background(), method, "done")
+	result, _, err := h.Authenticate(context.Background(), method, "done")
 	if err != nil {
 		t.Fatalf("Authenticate (done): %v", err)
 	}
@@ -425,7 +425,7 @@ func TestACPAuthHandler_AgentMeta_APIKey(t *testing.T) {
 	}
 
 	// First call: prompt for key
-	result, prompt, err := h.Authenticate(context.Background(), method, "")
+	_, prompt, err := h.Authenticate(context.Background(), method, "")
 	if err != nil {
 		t.Fatalf("Authenticate (prompt): %v", err)
 	}
@@ -434,7 +434,7 @@ func TestACPAuthHandler_AgentMeta_APIKey(t *testing.T) {
 	}
 
 	// Second call: provide key
-	result, prompt, err = h.Authenticate(context.Background(), method, "AIza-sy-test-key")
+	result, _, err := h.Authenticate(context.Background(), method, "AIza-sy-test-key")
 	if err != nil {
 		t.Fatalf("Authenticate (key): %v", err)
 	}

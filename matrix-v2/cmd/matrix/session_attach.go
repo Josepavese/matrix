@@ -13,7 +13,7 @@ var sessionAttachCmd = &cobra.Command{
 	Use:   "attach [channel_id] [session_id]",
 	Short: "Attach a channel to an existing session",
 	Args:  cobra.ExactArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		channelID := args[0]
 		sessionID := args[1]
 
@@ -22,7 +22,7 @@ var sessionAttachCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Vault error: %v\n", err)
 			os.Exit(1)
 		}
-		defer provider.Close()
+		defer func() { _ = provider.Close() }()
 
 		mgr := session.NewManager(provider, nil, nil, nil) // AgentRouter, Wizard, SystemTools not needed for attaching
 		err = mgr.AttachChannel(channelID, sessionID)
