@@ -1,0 +1,29 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#0B1020"/>
+  <rect x="40" y="40" width="1120" height="550" rx="28" fill="url(#bg)"/>
+  <rect x="92" y="108" width="210" height="34" rx="17" fill="#14304D"/>
+  <text x="114" y="131" fill="#8EEBDB" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">HERO PLACEHOLDER</text>
+  <text x="92" y="220" fill="#F5F7FB" font-family="Arial, Helvetica, sans-serif" font-size="64" font-weight="700">One control plane for</text>
+  <text x="92" y="292" fill="#F5F7FB" font-family="Arial, Helvetica, sans-serif" font-size="64" font-weight="700">real coding agents.</text>
+  <text x="92" y="362" fill="#9FB2CC" font-family="Arial, Helvetica, sans-serif" font-size="28">Codex. Claude. Gemini. OpenCode. One workspace fabric.</text>
+  <rect x="92" y="420" width="220" height="56" rx="16" fill="#00D1B2"/>
+  <text x="125" y="456" fill="#081019" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Main Product Shot</text>
+  <rect x="674" y="116" width="404" height="360" rx="24" fill="#0F172A" stroke="#28415E"/>
+  <rect x="704" y="150" width="344" height="44" rx="12" fill="#111F33"/>
+  <text x="728" y="178" fill="#8FB6E8" font-family="Arial, Helvetica, sans-serif" font-size="20">workspace: billing-api</text>
+  <rect x="704" y="214" width="160" height="110" rx="16" fill="#0E2732" stroke="#00D1B2"/>
+  <text x="726" y="270" fill="#E7FFFB" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">Codex</text>
+  <text x="726" y="300" fill="#8EEBDB" font-family="Arial, Helvetica, sans-serif" font-size="18">implementation</text>
+  <rect x="888" y="214" width="160" height="110" rx="16" fill="#1F1630" stroke="#FF7A59"/>
+  <text x="910" y="270" fill="#FFF1EC" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">Claude</text>
+  <text x="910" y="300" fill="#FFC0AF" font-family="Arial, Helvetica, sans-serif" font-size="18">review</text>
+  <rect x="704" y="344" width="344" height="100" rx="16" fill="#0E1628"/>
+  <text x="726" y="382" fill="#F5F7FB" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Timeline / Memory / Decisions</text>
+  <text x="726" y="414" fill="#9FB2CC" font-family="Arial, Helvetica, sans-serif" font-size="18">This slot is reserved for the main README hero visual.</text>
+  <defs>
+    <linearGradient id="bg" x1="40" y1="40" x2="1160" y2="590" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F1A2E"/>
+      <stop offset="1" stop-color="#0A1324"/>
+    </linearGradient>
+  </defs>
+</svg>
