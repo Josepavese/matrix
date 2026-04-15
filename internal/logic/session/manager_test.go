@@ -1,0 +1,1295 @@
+package session
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/jose/matrix-v2/internal/logic/onboarding"
+	"github.com/jose/matrix-v2/internal/logic/workspace"
+	"github.com/jose/matrix-v2/internal/middleware"
+)
+
+// mockStorage is a simple in-memory storage for testing Session routing
+type mockStorage struct {
+	data map[string][]byte
+}
+
+func (m *mockStorage) Get(key string) ([]byte, error) {
+	return m.data[key], nil
+}
+
+func (m *mockStorage) Set(key string, val []byte) error {
+	if m.data == nil {
+		m.data = make(map[string][]byte)
+	}
+	m.data[key] = val
+	return nil
+}
+
+func (m *mockStorage) Delete(key string) error {
+	delete(m.data, key)
+	return nil
+}
+
+func (m *mockStorage) List(prefix string) ([]string, error) {
+	var keys []string
+	for k := range m.data {
+		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
+			keys = append(keys, k)
+		}
+	}
+	return keys, nil
+}
+
+// mockRouter records the last message received
+type mockRouter struct {
+	lastSession string
+	lastMsg     string
+	remote      []middleware.RemoteSessionInfo
+	deleted     []string
+	canceled    []string
+	metadata    middleware.ConversationMetadata
+}
+
+func (m *mockRouter) Route(_ context.Context, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
+	m.lastSession = req.LogicalSessionID
+	m.lastMsg = req.Message
+	return "Ok", req.AgentSessionID, nil, m.metadata, nil
+}
+
+func (m *mockRouter) ListAgentSessions(_ context.Context, _ string) ([]middleware.RemoteSessionInfo, middleware.ConversationSessionCapabilities, error) {
+	return m.remote, middleware.ConversationSessionCapabilities{List: true, Load: true, Delete: true}, nil
+}
+
+func (m *mockRouter) GetAgentSession(_ context.Context, _ string, remoteSessionID string) (middleware.RemoteSessionInfo, error) {
+	for _, session := range m.remote {
+		if session.RemoteSessionID == remoteSessionID || session.DisplayID == remoteSessionID {
+			return session, nil
+		}
+	}
+	return middleware.RemoteSessionInfo{}, nil
+}
+
+func (m *mockRouter) DeleteAgentSession(_ context.Context, _ string, remoteSessionID string) error {
+	m.deleted = append(m.deleted, remoteSessionID)
+	return nil
+}
+
+func (m *mockRouter) CancelAgentSession(_ context.Context, _ string, remoteSessionID string) error {
+	m.canceled = append(m.canceled, remoteSessionID)
+	return nil
+}
+
+type mockResolver struct{}
+type mockLocalizer struct{}
+
+func (m *mockResolver) GetAgentEndpoint(_ string) (middleware.ProtocolEndpoint, error) {
+	return middleware.ProtocolEndpoint{
+		Kind:      middleware.ProtocolKindACP,
+		Transport: "stdio",
+		Command:   "mock-agent",
+	}, nil
+}
+
+func (m *mockLocalizer) GetString(_ string, key string) string {
+	return key
+}
+
+func newTestWizard(storage middleware.Storage) *onboarding.Wizard {
+	return onboarding.NewWizard(onboarding.WizardDependencies{
+		Storage:   storage,
+		Localizer: &mockLocalizer{},
+	})
+}
+
+func TestSessionManager_GetOrCreate(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		metadata: middleware.ConversationMetadata{
+			Title:     "Remote Session Title",
+			UpdatedAt: "2026-04-14T20:00:00Z",
+			Status:    "active",
+			Meta: map[string]interface{}{
+				"source": "agent",
+			},
+		},
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	// Create a new session for telegram channel
+	sessID1, err := mgr.GetOrCreateSession("telegram_1", "codex")
+	if err != nil {
+		t.Fatalf("Failed to create session: %v", err)
+	}
+	if sessID1 == "" {
+		t.Fatal("Expected a non-empty session ID")
+	}
+
+	// Repeated calls on the same channel should yield the same SessionID
+	sessID2, err := mgr.GetOrCreateSession("telegram_1", "codex")
+	if err != nil {
+		t.Fatalf("Failed to retrieve existing session: %v", err)
+	}
+	if sessID1 != sessID2 {
+		t.Errorf("Expected session %s to match %s", sessID1, sessID2)
+	}
+}
+
+func TestSessionManager_Route(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		metadata: middleware.ConversationMetadata{
+			Title:     "Remote Session Title",
+			UpdatedAt: "2026-04-14T20:00:00Z",
+			Status:    "active",
+			Meta: map[string]interface{}{
+				"source": "agent",
+			},
+		},
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	msg := "Hello"
+	res, err := mgr.Route(context.Background(), "web_token_abc", "test-agent", msg, nil)
+	if err != nil {
+		t.Fatalf("Route failed: %v", err)
+	}
+	if res != "Ok" {
+		t.Errorf("Expected completed status, got %s", res)
+	}
+
+	// Verify the router received the right payload
+	if router.lastSession == "" {
+		t.Error("AgentRouter did not receive a SessionID")
+	}
+	if router.lastMsg != "Hello" {
+		t.Errorf("AgentRouter received unexpected input: %+v", router.lastMsg)
+	}
+}
+
+func TestSessionManager_MirrorsRemoteSessionMetadata(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		metadata: middleware.ConversationMetadata{
+			Title:     "Remote Session Title",
+			UpdatedAt: "2026-04-14T20:00:00Z",
+			Status:    "active",
+			Meta: map[string]interface{}{
+				"source": "agent",
+			},
+		},
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	mgr.SetEndpointResolver(&mockResolver{})
+
+	sessionID, err := mgr.GetOrCreateSession("mirror-ch", "gemini")
+	if err != nil {
+		t.Fatalf("GetOrCreateSession: %v", err)
+	}
+	if _, err := mgr.Route(context.Background(), "mirror-ch", "gemini", "Hello", nil); err != nil {
+		t.Fatalf("Route failed: %v", err)
+	}
+
+	raw, err := storage.Get("session.meta." + sessionID)
+	if err != nil {
+		t.Fatalf("Get session meta: %v", err)
+	}
+	var meta SessionMeta
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		t.Fatalf("Unmarshal session meta: %v", err)
+	}
+	if meta.ProtocolKind != "acp" {
+		t.Fatalf("expected protocol_kind=acp, got %q", meta.ProtocolKind)
+	}
+	if meta.MirrorStatus != "mirrored" {
+		t.Fatalf("expected mirror_status=mirrored, got %q", meta.MirrorStatus)
+	}
+	if meta.RemoteTitle != "Remote Session Title" {
+		t.Fatalf("expected remote_title to mirror metadata, got %q", meta.RemoteTitle)
+	}
+	if meta.RemoteStatus != "active" {
+		t.Fatalf("expected remote_status=active, got %q", meta.RemoteStatus)
+	}
+	if meta.RemoteMeta["source"] != "agent" {
+		t.Fatalf("expected remote_meta[source]=agent, got %+v", meta.RemoteMeta)
+	}
+	if meta.LastSyncedAt.IsZero() {
+		t.Fatal("expected last_synced_at to be populated")
+	}
+	if meta.RemoteUpdatedAt.IsZero() {
+		t.Fatal("expected remote_updated_at from metadata")
+	}
+}
+
+func TestSessionManager_Attach(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	// Channel A generates Session 1
+	sess1, err := mgr.GetOrCreateSession("channelA", "assistant")
+	if err != nil {
+		t.Fatalf("Failed to get or create session for channelA: %v", err)
+	}
+
+	// Verify we can attach Channel B to Session 1
+	err = mgr.AttachChannel("channelB", sess1)
+	if err != nil {
+		t.Fatalf("Failed to attach channel: %v", err)
+	}
+
+	// Channel B should now route to Session 1
+	sessB, err := mgr.GetOrCreateSession("channelB", "assistant")
+	if err != nil {
+		t.Fatalf("Failed to get or create session for channelB: %v", err)
+	}
+	if sess1 != sessB {
+		t.Errorf("Attach failed. Channel B points to %s, expected %s", sessB, sess1)
+	}
+}
+
+func TestSessionManager_SessionListIncludesRemoteSessions(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		remote: []middleware.RemoteSessionInfo{
+			{RemoteSessionID: "acp-remote-1", DisplayID: "acp-remote-1", Title: "Remote Draft", ProtocolKind: middleware.ProtocolKindACP},
+		},
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	if _, err := mgr.GetOrCreateSession("telegram_1", "codex"); err != nil {
+		t.Fatalf("GetOrCreateSession: %v", err)
+	}
+
+	got, err := mgr.Route(context.Background(), "telegram_1", "codex", "/session list", nil)
+	if err != nil {
+		t.Fatalf("Route list failed: %v", err)
+	}
+	if got == "" || !contains(got, "Remote sessions:") || !contains(got, "acp-remote-1") {
+		t.Fatalf("expected remote sessions in list, got %q", got)
+	}
+}
+
+func TestSessionManager_TypedStatusNewAndName(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	newResult, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID: "typed_1",
+		Action:    "new",
+		Target:    "claude",
+	})
+	if err != nil {
+		t.Fatalf("HandleSessionActionTyped(new): %v", err)
+	}
+	if newResult.Action != "new" || newResult.Session == nil || newResult.Session.AgentID != "claude" {
+		t.Fatalf("unexpected new result: %+v", newResult)
+	}
+
+	nameResult, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID: "typed_1",
+		Action:    "name",
+		Target:    "bugfix",
+	})
+	if err != nil {
+		t.Fatalf("HandleSessionActionTyped(name): %v", err)
+	}
+	if nameResult.Action != "name" || nameResult.Session == nil || nameResult.Session.Alias != "bugfix" {
+		t.Fatalf("unexpected name result: %+v", nameResult)
+	}
+
+	statusResult, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID: "typed_1",
+		Action:    "status",
+	})
+	if err != nil {
+		t.Fatalf("HandleSessionActionTyped(status): %v", err)
+	}
+	if statusResult.Action != "status" || statusResult.Session == nil || statusResult.Session.LogicalSessionID != newResult.ActiveSessionID {
+		t.Fatalf("unexpected status result: %+v", statusResult)
+	}
+	if statusResult.Session.Alias != "bugfix" {
+		t.Fatalf("expected alias to be mirrored in status result, got %+v", statusResult.Session)
+	}
+}
+
+func TestSessionManager_RouteConversationBindsWorkspace(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:             "billing-api",
+		Name:           "billing-api",
+		RootPath:       "/tmp/billing-api",
+		DefaultAgentID: "claude",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:   "telegram_workspace_1",
+		WorkspaceID: "billing-api",
+		Input:       "hello",
+	}); err != nil {
+		t.Fatalf("RouteConversation: %v", err)
+	}
+
+	state, err := mgr.getChannelState("telegram_workspace_1")
+	if err != nil {
+		t.Fatalf("getChannelState: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(state.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	if meta.WorkspaceID != "billing-api" {
+		t.Fatalf("expected workspace_id=billing-api, got %q", meta.WorkspaceID)
+	}
+	if meta.WorkspacePath != "/tmp/billing-api" {
+		t.Fatalf("expected workspace_path=/tmp/billing-api, got %q", meta.WorkspacePath)
+	}
+	if meta.AgentID != "claude" {
+		t.Fatalf("expected workspace default agent claude, got %q", meta.AgentID)
+	}
+	if state.PreferredWorkspaceID != "billing-api" {
+		t.Fatalf("expected preferred workspace to be updated, got %q", state.PreferredWorkspaceID)
+	}
+	events, err := workspace.LoadTimeline(storage, "billing-api", 10)
+	if err != nil {
+		t.Fatalf("LoadTimeline: %v", err)
+	}
+	foundCreated := false
+	foundDecision := false
+	for _, event := range events {
+		switch event.Type {
+		case "session.created":
+			foundCreated = true
+		case "decision.recorded":
+			foundDecision = true
+		}
+	}
+	if !foundCreated || !foundDecision {
+		t.Fatalf("expected session.created and decision.recorded in workspace timeline, got %+v", events)
+	}
+}
+
+func TestSessionManager_ReusesWorkspaceSessionAcrossChannels(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:       "billing-api",
+		Name:     "billing-api",
+		RootPath: "/tmp/billing-api",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:   "channel_a",
+		AgentID:     "codex",
+		WorkspaceID: "billing-api",
+		Input:       "hello",
+	}); err != nil {
+		t.Fatalf("RouteConversation(channel_a): %v", err)
+	}
+	stateA, err := mgr.getChannelState("channel_a")
+	if err != nil {
+		t.Fatalf("getChannelState(channel_a): %v", err)
+	}
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:   "channel_b",
+		AgentID:     "codex",
+		WorkspaceID: "billing-api",
+		Input:       "continue",
+	}); err != nil {
+		t.Fatalf("RouteConversation(channel_b): %v", err)
+	}
+	stateB, err := mgr.getChannelState("channel_b")
+	if err != nil {
+		t.Fatalf("getChannelState(channel_b): %v", err)
+	}
+	if stateA.ActiveSessionID != stateB.ActiveSessionID {
+		t.Fatalf("expected same session to be reused for workspace, got %s vs %s", stateA.ActiveSessionID, stateB.ActiveSessionID)
+	}
+}
+
+func TestSessionManager_WorkspaceCommands(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:             "billing-api",
+		Name:           "billing-api",
+		RootPath:       "/tmp/billing-api",
+		DefaultAgentID: "claude",
+	}); err != nil {
+		t.Fatalf("SaveMeta billing-api: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:       "frontend",
+		Name:     "frontend",
+		RootPath: "/tmp/frontend",
+	}); err != nil {
+		t.Fatalf("SaveMeta frontend: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID: "workspace_cmd_ch",
+		AgentID:   "codex",
+		Input:     "hello",
+	}); err != nil {
+		t.Fatalf("RouteConversation: %v", err)
+	}
+
+	listOut, err := mgr.Route(context.Background(), "workspace_cmd_ch", "codex", "/workspace list", nil)
+	if err != nil {
+		t.Fatalf("/workspace list failed: %v", err)
+	}
+	if !contains(listOut, "billing-api") || !contains(listOut, "frontend") {
+		t.Fatalf("expected configured workspaces in list, got %q", listOut)
+	}
+
+	bindOut, err := mgr.Route(context.Background(), "workspace_cmd_ch", "codex", "/workspace bind billing-api", nil)
+	if err != nil {
+		t.Fatalf("/workspace bind failed: %v", err)
+	}
+	if !contains(bindOut, "billing-api") {
+		t.Fatalf("expected bind response to mention workspace, got %q", bindOut)
+	}
+	state, err := mgr.getChannelState("workspace_cmd_ch")
+	if err != nil {
+		t.Fatalf("getChannelState: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(state.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	if meta.WorkspaceID != "billing-api" {
+		t.Fatalf("expected active session bound to billing-api, got %q", meta.WorkspaceID)
+	}
+
+	switchOut, err := mgr.Route(context.Background(), "workspace_switch_ch", "codex", "/workspace switch billing-api", nil)
+	if err != nil {
+		t.Fatalf("/workspace switch failed: %v", err)
+	}
+	if !contains(switchOut, "billing-api") {
+		t.Fatalf("expected switch response to mention workspace, got %q", switchOut)
+	}
+	switchState, err := mgr.getChannelState("workspace_switch_ch")
+	if err != nil {
+		t.Fatalf("getChannelState(switch): %v", err)
+	}
+	if switchState.ActiveSessionID != state.ActiveSessionID {
+		t.Fatalf("expected switch to reuse workspace session, got %s vs %s", switchState.ActiveSessionID, state.ActiveSessionID)
+	}
+}
+
+func TestSessionManager_HandoffCreatesTransferPacket(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:              "billing-api",
+		Name:            "billing-api",
+		RootPath:        "/tmp/billing-api",
+		DefaultAgentID:  "codex",
+		ReviewerAgentID: "claude",
+		DefaultMode:     "implementation",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:   "handoff_ch",
+		AgentID:     "codex",
+		WorkspaceID: "billing-api",
+		Input:       "Implement the billing retry fix",
+	}); err != nil {
+		t.Fatalf("RouteConversation: %v", err)
+	}
+
+	result, err := mgr.HandleIntentTyped(context.Background(), middleware.IntentActionRequest{
+		ChannelID: "handoff_ch",
+		Intent:    "handoff",
+		AgentID:   "claude",
+		Note:      "Review the current retry patch.",
+	})
+	if err != nil {
+		t.Fatalf("HandleIntentTyped(handoff): %v", err)
+	}
+	if result.Intent != "handoff" || result.Session == nil || result.Session.AgentID != "claude" {
+		t.Fatalf("unexpected handoff result: %+v", result)
+	}
+	if result.Handoff == nil || result.Handoff.FromAgentID != "codex" || result.Handoff.ToAgentID != "claude" {
+		t.Fatalf("unexpected handoff packet: %+v", result.Handoff)
+	}
+
+	state, err := mgr.getChannelState("handoff_ch")
+	if err != nil {
+		t.Fatalf("getChannelState: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(state.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	if meta.PendingHandoff == nil {
+		t.Fatal("expected pending handoff on target session")
+	}
+	if !contains(meta.PendingHandoff.Summary, "Review the current retry patch.") {
+		t.Fatalf("expected handoff summary to include operator note, got %q", meta.PendingHandoff.Summary)
+	}
+	events, err := workspace.LoadTimeline(storage, "billing-api", 10)
+	if err != nil {
+		t.Fatalf("LoadTimeline: %v", err)
+	}
+	foundIntent := false
+	foundHandoff := false
+	for _, event := range events {
+		switch event.Type {
+		case "intent.handoff", "intent.review":
+			foundIntent = true
+		case "handoff.created":
+			foundHandoff = true
+		}
+	}
+	if !foundIntent || !foundHandoff {
+		t.Fatalf("expected mode and handoff events, got %+v", events)
+	}
+}
+
+func TestSessionManager_RouteAppliesPendingHandoffPrompt(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:       "billing-api",
+		Name:     "billing-api",
+		RootPath: "/tmp/billing-api",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:   "handoff_route_ch",
+		AgentID:     "codex",
+		WorkspaceID: "billing-api",
+		Input:       "Start implementation",
+	}); err != nil {
+		t.Fatalf("RouteConversation: %v", err)
+	}
+	if _, err := mgr.HandleIntentTyped(context.Background(), middleware.IntentActionRequest{
+		ChannelID: "handoff_route_ch",
+		Intent:    "handoff",
+		AgentID:   "claude",
+		Note:      "Review the implementation plan.",
+	}); err != nil {
+		t.Fatalf("HandleIntentTyped(handoff): %v", err)
+	}
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:   "handoff_route_ch",
+		WorkspaceID: "billing-api",
+		Input:       "Check the current patch.",
+	}); err != nil {
+		t.Fatalf("RouteConversation after handoff: %v", err)
+	}
+	if !contains(router.lastMsg, "[Matrix handoff context]") {
+		t.Fatalf("expected handoff context to be injected, got %q", router.lastMsg)
+	}
+	if !contains(router.lastMsg, "Review the implementation plan.") {
+		t.Fatalf("expected handoff note in injected prompt, got %q", router.lastMsg)
+	}
+
+	state, err := mgr.getChannelState("handoff_route_ch")
+	if err != nil {
+		t.Fatalf("getChannelState: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(state.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	if meta.PendingHandoff != nil {
+		t.Fatal("expected pending handoff to be cleared after successful routed turn")
+	}
+	if meta.LastHandoff == nil || meta.LastHandoff.ToAgentID != "claude" {
+		t.Fatalf("expected last handoff to remain mirrored, got %+v", meta.LastHandoff)
+	}
+	events, err := workspace.LoadTimeline(storage, "billing-api", 10)
+	if err != nil {
+		t.Fatalf("LoadTimeline: %v", err)
+	}
+	foundApplied := false
+	for _, event := range events {
+		if event.Type == "handoff.applied" {
+			foundApplied = true
+			break
+		}
+	}
+	if !foundApplied {
+		t.Fatalf("expected handoff.applied event, got %+v", events)
+	}
+}
+
+func TestSessionManager_CancelWritesTimelineEvent(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:       "billing-api",
+		Name:     "billing-api",
+		RootPath: "/tmp/billing-api",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:   "cancel_timeline_ch",
+		AgentID:     "codex",
+		WorkspaceID: "billing-api",
+		Input:       "Start implementation",
+	}); err != nil {
+		t.Fatalf("RouteConversation: %v", err)
+	}
+	state, err := mgr.getChannelState("cancel_timeline_ch")
+	if err != nil {
+		t.Fatalf("getChannelState: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(state.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	meta.AgentSessionID = "remote-1"
+	if err := mgr.saveSessionMeta(meta); err != nil {
+		t.Fatalf("saveSessionMeta: %v", err)
+	}
+	if _, err := mgr.handleSessionCancelTyped(context.Background(), "cancel_timeline_ch", "en", ""); err != nil {
+		t.Fatalf("handleSessionCancelTyped: %v", err)
+	}
+	events, err := workspace.LoadTimeline(storage, "billing-api", 10)
+	if err != nil {
+		t.Fatalf("LoadTimeline: %v", err)
+	}
+	if len(events) == 0 || events[0].Type != "session.canceled" {
+		t.Fatalf("expected session.canceled event, got %+v", events)
+	}
+}
+
+func TestSessionManager_WorkspaceReadTyped(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:             "billing-api",
+		Name:           "billing-api",
+		RootPath:       "/tmp/billing-api",
+		DefaultAgentID: "claude",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:   "read_ws_ch",
+		WorkspaceID: "billing-api",
+		Input:       "hello",
+	}); err != nil {
+		t.Fatalf("RouteConversation: %v", err)
+	}
+
+	stateResult, err := mgr.HandleWorkspaceReadTyped(context.Background(), middleware.WorkspaceReadRequest{
+		ChannelID: "read_ws_ch",
+		Action:    "state",
+	})
+	if err != nil {
+		t.Fatalf("HandleWorkspaceReadTyped(state): %v", err)
+	}
+	if stateResult.State == nil || stateResult.State.WorkspaceID != "billing-api" {
+		t.Fatalf("unexpected workspace state result: %+v", stateResult)
+	}
+	if stateResult.State.LastDecision == nil || stateResult.State.LastDecision.SelectedAgentID != "claude" {
+		t.Fatalf("expected last decision to be mirrored in state result, got %+v", stateResult.State)
+	}
+
+	timelineResult, err := mgr.HandleWorkspaceReadTyped(context.Background(), middleware.WorkspaceReadRequest{
+		ChannelID: "read_ws_ch",
+		Action:    "timeline",
+	})
+	if err != nil {
+		t.Fatalf("HandleWorkspaceReadTyped(timeline): %v", err)
+	}
+	if len(timelineResult.Timeline) == 0 || timelineResult.Timeline[0].Type == "" {
+		t.Fatalf("unexpected workspace timeline result: %+v", timelineResult)
+	}
+
+	decisionsResult, err := mgr.HandleWorkspaceReadTyped(context.Background(), middleware.WorkspaceReadRequest{
+		ChannelID: "read_ws_ch",
+		Action:    "decisions",
+	})
+	if err != nil {
+		t.Fatalf("HandleWorkspaceReadTyped(decisions): %v", err)
+	}
+	if len(decisionsResult.Decisions) == 0 || decisionsResult.Decisions[0].SelectedAgentID != "claude" {
+		t.Fatalf("expected workspace decisions, got %+v", decisionsResult)
+	}
+
+	memoryResult, err := mgr.HandleWorkspaceReadTyped(context.Background(), middleware.WorkspaceReadRequest{
+		ChannelID: "read_ws_ch",
+		Action:    "memory",
+	})
+	if err != nil {
+		t.Fatalf("HandleWorkspaceReadTyped(memory): %v", err)
+	}
+	if len(memoryResult.Memory) == 0 {
+		t.Fatalf("expected workspace memory, got %+v", memoryResult)
+	}
+}
+
+func TestSessionManager_NowAndTimelineCommands(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:       "billing-api",
+		Name:     "billing-api",
+		RootPath: "/tmp/billing-api",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:   "timeline_cmd_ch",
+		AgentID:     "codex",
+		WorkspaceID: "billing-api",
+		Input:       "hello",
+	}); err != nil {
+		t.Fatalf("RouteConversation: %v", err)
+	}
+	nowOut, err := mgr.Route(context.Background(), "timeline_cmd_ch", "codex", "/now", nil)
+	if err != nil {
+		t.Fatalf("/now failed: %v", err)
+	}
+	if !contains(nowOut, "Workspace: billing-api") {
+		t.Fatalf("unexpected /now output: %q", nowOut)
+	}
+	if !contains(nowOut, "Decision:") {
+		t.Fatalf("expected decision trace in /now output, got %q", nowOut)
+	}
+	timelineOut, err := mgr.Route(context.Background(), "timeline_cmd_ch", "codex", "/timeline", nil)
+	if err != nil {
+		t.Fatalf("/timeline failed: %v", err)
+	}
+	if !contains(timelineOut, "Workspace timeline: billing-api") {
+		t.Fatalf("unexpected /timeline output: %q", timelineOut)
+	}
+	if !contains(timelineOut, "created session for codex") {
+		t.Fatalf("expected friendly timeline wording, got %q", timelineOut)
+	}
+	decisionsOut, err := mgr.Route(context.Background(), "timeline_cmd_ch", "codex", "/decisions", nil)
+	if err != nil {
+		t.Fatalf("/decisions failed: %v", err)
+	}
+	if !contains(decisionsOut, "Workspace decisions: billing-api") {
+		t.Fatalf("unexpected /decisions output: %q", decisionsOut)
+	}
+	whyOut, err := mgr.Route(context.Background(), "timeline_cmd_ch", "codex", "/why", nil)
+	if err != nil {
+		t.Fatalf("/why failed: %v", err)
+	}
+	if !contains(whyOut, "Workspace decisions: billing-api") {
+		t.Fatalf("unexpected /why output: %q", whyOut)
+	}
+	memoryOut, err := mgr.Route(context.Background(), "timeline_cmd_ch", "codex", "/memory", nil)
+	if err != nil {
+		t.Fatalf("/memory failed: %v", err)
+	}
+	if !contains(memoryOut, "Workspace memory: billing-api") {
+		t.Fatalf("unexpected /memory output: %q", memoryOut)
+	}
+	snapshotOut, err := mgr.Route(context.Background(), "timeline_cmd_ch", "codex", "/snapshot review-ready", nil)
+	if err != nil {
+		t.Fatalf("/snapshot failed: %v", err)
+	}
+	if !contains(snapshotOut, "Created snapshot") {
+		t.Fatalf("unexpected /snapshot output: %q", snapshotOut)
+	}
+	snapshotsOut, err := mgr.Route(context.Background(), "timeline_cmd_ch", "codex", "/snapshots", nil)
+	if err != nil {
+		t.Fatalf("/snapshots failed: %v", err)
+	}
+	if !contains(snapshotsOut, "Workspace snapshots: billing-api") {
+		t.Fatalf("unexpected /snapshots output: %q", snapshotsOut)
+	}
+}
+
+func TestSessionManager_TypedWorkspaceActions(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:             "billing-api",
+		Name:           "billing-api",
+		RootPath:       "/tmp/billing-api",
+		DefaultAgentID: "claude",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	listResult, err := mgr.HandleWorkspaceActionTyped(context.Background(), middleware.WorkspaceActionRequest{
+		ChannelID: "typed_ws",
+		Action:    "list",
+	})
+	if err != nil {
+		t.Fatalf("HandleWorkspaceActionTyped(list): %v", err)
+	}
+	if len(listResult.Workspaces) != 1 || listResult.Workspaces[0].ID != "billing-api" {
+		t.Fatalf("unexpected workspace list result: %+v", listResult)
+	}
+
+	switchResult, err := mgr.HandleWorkspaceActionTyped(context.Background(), middleware.WorkspaceActionRequest{
+		ChannelID: "typed_ws",
+		Action:    "switch",
+		Target:    "billing-api",
+	})
+	if err != nil {
+		t.Fatalf("HandleWorkspaceActionTyped(switch): %v", err)
+	}
+	if switchResult.Workspace == nil || switchResult.Workspace.ID != "billing-api" {
+		t.Fatalf("unexpected workspace switch result: %+v", switchResult)
+	}
+	if switchResult.Session == nil || switchResult.Session.WorkspaceID != "billing-api" {
+		t.Fatalf("expected switched session to be bound to workspace, got %+v", switchResult.Session)
+	}
+}
+
+func TestSessionManager_WorkspaceAliases(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:             "billing-api",
+		Name:           "billing-api",
+		RootPath:       "/tmp/billing-api",
+		DefaultAgentID: "claude",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	listOut, err := mgr.Route(context.Background(), "alias_ch", "codex", "/workspaces", nil)
+	if err != nil {
+		t.Fatalf("/workspaces failed: %v", err)
+	}
+	if !contains(listOut, "billing-api") {
+		t.Fatalf("expected /workspaces to list billing-api, got %q", listOut)
+	}
+
+	useOut, err := mgr.Route(context.Background(), "alias_ch", "codex", "/use billing-api", nil)
+	if err != nil {
+		t.Fatalf("/use failed: %v", err)
+	}
+	if !contains(useOut, "billing-api") {
+		t.Fatalf("expected /use to mention billing-api, got %q", useOut)
+	}
+	state, err := mgr.getChannelState("alias_ch")
+	if err != nil {
+		t.Fatalf("getChannelState: %v", err)
+	}
+	if state.PreferredWorkspaceID != "billing-api" {
+		t.Fatalf("expected preferred workspace billing-api, got %q", state.PreferredWorkspaceID)
+	}
+}
+
+func TestSessionManager_StatusAlias(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:             "billing-api",
+		Name:           "billing-api",
+		RootPath:       "/tmp/billing-api",
+		DefaultAgentID: "claude",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{
+		metadata: middleware.ConversationMetadata{
+			Title:  "Invoice fix",
+			Status: "active",
+		},
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:   "status_ch",
+		WorkspaceID: "billing-api",
+		Input:       "hello",
+	}); err != nil {
+		t.Fatalf("RouteConversation: %v", err)
+	}
+
+	out, err := mgr.Route(context.Background(), "status_ch", "claude", "/status", nil)
+	if err != nil {
+		t.Fatalf("/status failed: %v", err)
+	}
+	if !contains(out, "billing-api") || !contains(out, "claude") || !contains(out, "Invoice fix") {
+		t.Fatalf("expected high-level status summary, got %q", out)
+	}
+}
+
+func TestSessionManager_HighLevelIntents(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{
+		ID:              "billing-api",
+		Name:            "billing-api",
+		RootPath:        "/tmp/billing-api",
+		DefaultAgentID:  "codex",
+		ReviewerAgentID: "claude",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	if _, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:   "intent_ch",
+		WorkspaceID: "billing-api",
+		AgentID:     "codex",
+		Input:       "hello",
+	}); err != nil {
+		t.Fatalf("RouteConversation: %v", err)
+	}
+
+	continueOut, err := mgr.Route(context.Background(), "intent_ch", "codex", "/continue", nil)
+	if err != nil {
+		t.Fatalf("/continue failed: %v", err)
+	}
+	if !contains(continueOut, "billing-api") || !contains(continueOut, "codex") {
+		t.Fatalf("unexpected continue output: %q", continueOut)
+	}
+
+	reviewOut, err := mgr.Route(context.Background(), "intent_ch", "codex", "/review", nil)
+	if err != nil {
+		t.Fatalf("/review failed: %v", err)
+	}
+	if !contains(reviewOut, "billing-api") || !contains(reviewOut, "claude") {
+		t.Fatalf("unexpected review output: %q", reviewOut)
+	}
+	state, err := mgr.getChannelState("intent_ch")
+	if err != nil {
+		t.Fatalf("getChannelState: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(state.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	if meta.AgentID != "claude" {
+		t.Fatalf("expected review intent to switch to reviewer agent, got %q", meta.AgentID)
+	}
+	if meta.Mode != modeReview {
+		t.Fatalf("expected review mode, got %q", meta.Mode)
+	}
+
+	resumeOut, err := mgr.Route(context.Background(), "intent_ch", "codex", "/resume billing-api", nil)
+	if err != nil {
+		t.Fatalf("/resume failed: %v", err)
+	}
+	if !contains(resumeOut, "billing-api") {
+		t.Fatalf("unexpected resume output: %q", resumeOut)
+	}
+
+	explainOut, err := mgr.Route(context.Background(), "intent_ch", "codex", "/explain", nil)
+	if err != nil {
+		t.Fatalf("/explain failed: %v", err)
+	}
+	if !contains(explainOut, "billing-api") || !contains(explainOut, "claude") {
+		t.Fatalf("unexpected explain output: %q", explainOut)
+	}
+	meta, found, err = mgr.loadSessionMeta(state.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta after explain: err=%v found=%v", err, found)
+	}
+	if meta.Mode != modeExplain {
+		t.Fatalf("expected explain mode, got %q", meta.Mode)
+	}
+}
+
+func TestSessionManager_SessionSwitchImportsRemoteSession(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		remote: []middleware.RemoteSessionInfo{
+			{RemoteSessionID: "acp-remote-2", DisplayID: "acp-remote-2", Title: "Imported Remote", ProtocolKind: middleware.ProtocolKindACP},
+		},
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	if _, err := mgr.GetOrCreateSession("telegram_2", "codex"); err != nil {
+		t.Fatalf("GetOrCreateSession: %v", err)
+	}
+
+	got, err := mgr.Route(context.Background(), "telegram_2", "codex", "/session switch acp-remote-2", nil)
+	if err != nil {
+		t.Fatalf("Route switch failed: %v", err)
+	}
+	if !contains(got, "Switched to remote acp session") {
+		t.Fatalf("expected remote switch response, got %q", got)
+	}
+
+	state, err := mgr.getChannelState("telegram_2")
+	if err != nil {
+		t.Fatalf("getChannelState: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(state.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("expected imported session meta, err=%v found=%v", err, found)
+	}
+	if meta.AgentSessionID != "acp-remote-2" {
+		t.Fatalf("expected imported remote session id, got %q", meta.AgentSessionID)
+	}
+	if meta.RemoteTitle != "Imported Remote" {
+		t.Fatalf("expected imported remote title, got %q", meta.RemoteTitle)
+	}
+}
+
+func TestSessionManager_SessionDeleteRemovesMirrorAndCallsRemoteDelete(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	sessionID, err := mgr.GetOrCreateSession("telegram_3", "codex")
+	if err != nil {
+		t.Fatalf("GetOrCreateSession: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(sessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	meta.AgentSessionID = "acp-remote-3"
+	if err := mgr.saveSessionMeta(meta); err != nil {
+		t.Fatalf("saveSessionMeta: %v", err)
+	}
+
+	got, err := mgr.Route(context.Background(), "telegram_3", "codex", "/session delete", nil)
+	if err != nil {
+		t.Fatalf("Route delete failed: %v", err)
+	}
+	if !contains(got, "Deleted session:") {
+		t.Fatalf("expected delete response, got %q", got)
+	}
+	if len(router.deleted) != 1 || router.deleted[0] != "acp-remote-3" {
+		t.Fatalf("expected remote delete call, got %+v", router.deleted)
+	}
+	raw, _ := storage.Get("session.meta." + sessionID)
+	if len(raw) != 0 {
+		t.Fatalf("expected session meta deleted, got %q", string(raw))
+	}
+}
+
+func TestSessionManager_SessionDeleteDeletesRemoteOnlyTarget(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		remote: []middleware.RemoteSessionInfo{
+			{RemoteSessionID: "a2a-remote-1", DisplayID: "task-1", ProtocolKind: middleware.ProtocolKindA2A},
+		},
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	if _, err := mgr.GetOrCreateSession("telegram_4", "planner"); err != nil {
+		t.Fatalf("GetOrCreateSession: %v", err)
+	}
+
+	got, err := mgr.Route(context.Background(), "telegram_4", "planner", "/session delete task-1", nil)
+	if err != nil {
+		t.Fatalf("Route delete remote failed: %v", err)
+	}
+	if !contains(got, "Deleted remote a2a session: task-1") {
+		t.Fatalf("expected remote delete response, got %q", got)
+	}
+	if len(router.deleted) != 1 || router.deleted[0] != "a2a-remote-1" {
+		t.Fatalf("expected remote delete for task-1, got %+v", router.deleted)
+	}
+}
+
+func TestSessionManager_SessionCancelCancelsMirrorAndUpdatesStatus(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	sessionID, err := mgr.GetOrCreateSession("telegram_5", "codex")
+	if err != nil {
+		t.Fatalf("GetOrCreateSession: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(sessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	meta.AgentSessionID = "acp-remote-cancel"
+	if err := mgr.saveSessionMeta(meta); err != nil {
+		t.Fatalf("saveSessionMeta: %v", err)
+	}
+
+	got, err := mgr.Route(context.Background(), "telegram_5", "codex", "/session cancel", nil)
+	if err != nil {
+		t.Fatalf("Route cancel failed: %v", err)
+	}
+	if !contains(got, "Canceled session:") {
+		t.Fatalf("expected cancel response, got %q", got)
+	}
+	if len(router.canceled) != 1 || router.canceled[0] != "acp-remote-cancel" {
+		t.Fatalf("expected remote cancel call, got %+v", router.canceled)
+	}
+	meta, found, err = mgr.loadSessionMeta(sessionID)
+	if err != nil || !found {
+		t.Fatalf("reload session meta: err=%v found=%v", err, found)
+	}
+	if meta.RemoteStatus != "canceled" {
+		t.Fatalf("expected remote status canceled, got %q", meta.RemoteStatus)
+	}
+}
+
+func TestSessionManager_SessionCancelCancelsRemoteOnlyTarget(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		remote: []middleware.RemoteSessionInfo{
+			{RemoteSessionID: "a2a-remote-cancel-1", DisplayID: "task-cancel-1", ProtocolKind: middleware.ProtocolKindA2A},
+		},
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	if _, err := mgr.GetOrCreateSession("telegram_6", "planner"); err != nil {
+		t.Fatalf("GetOrCreateSession: %v", err)
+	}
+
+	got, err := mgr.Route(context.Background(), "telegram_6", "planner", "/session cancel task-cancel-1", nil)
+	if err != nil {
+		t.Fatalf("Route cancel remote failed: %v", err)
+	}
+	if !contains(got, "Canceled remote a2a session: task-cancel-1") {
+		t.Fatalf("expected remote cancel response, got %q", got)
+	}
+	if len(router.canceled) != 1 || router.canceled[0] != "a2a-remote-cancel-1" {
+		t.Fatalf("expected remote cancel for task-cancel-1, got %+v", router.canceled)
+	}
+}
+
+func TestSessionManager_CancelAliasCancelsActiveSession(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	sessionID, err := mgr.GetOrCreateSession("telegram_7", "codex")
+	if err != nil {
+		t.Fatalf("GetOrCreateSession: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(sessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	meta.AgentSessionID = "acp-remote-alias"
+	if err := mgr.saveSessionMeta(meta); err != nil {
+		t.Fatalf("saveSessionMeta: %v", err)
+	}
+
+	got, err := mgr.Route(context.Background(), "telegram_7", "codex", "/cancel", nil)
+	if err != nil {
+		t.Fatalf("Route cancel alias failed: %v", err)
+	}
+	if !contains(got, "Canceled session:") {
+		t.Fatalf("expected cancel alias response, got %q", got)
+	}
+	if len(router.canceled) != 1 || router.canceled[0] != "acp-remote-alias" {
+		t.Fatalf("expected remote cancel call, got %+v", router.canceled)
+	}
+}
+
+func TestSessionManager_StopAliasCancelsRemoteTarget(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		remote: []middleware.RemoteSessionInfo{
+			{RemoteSessionID: "a2a-remote-stop-1", DisplayID: "task-stop-1", ProtocolKind: middleware.ProtocolKindA2A},
+		},
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	if _, err := mgr.GetOrCreateSession("telegram_8", "planner"); err != nil {
+		t.Fatalf("GetOrCreateSession: %v", err)
+	}
+
+	got, err := mgr.Route(context.Background(), "telegram_8", "planner", "/stop task-stop-1", nil)
+	if err != nil {
+		t.Fatalf("Route stop alias failed: %v", err)
+	}
+	if !contains(got, "Canceled remote a2a session: task-stop-1") {
+		t.Fatalf("expected stop alias response, got %q", got)
+	}
+	if len(router.canceled) != 1 || router.canceled[0] != "a2a-remote-stop-1" {
+		t.Fatalf("expected remote cancel for stop alias, got %+v", router.canceled)
+	}
+}
+
+func contains(s, substr string) bool {
+	return strings.Contains(s, substr)
+}

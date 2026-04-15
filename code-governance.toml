@@ -1,0 +1,48 @@
+[budgets]
+package_loc = 800
+file_loc = 280
+function_loc = 55
+function_params = 4
+
+[quality]
+avg_function_loc_warn = 24
+p95_function_loc_warn = 50
+branch_points_warn = 10
+long_function_ratio_warn = 0.08
+
+[scope]
+roots = ["cmd", "internal", "pkg"]
+exclude_dirs = ["vendor", "tests/mocks"]
+
+[package_overrides]
+"cmd/matrix" = 2400
+"internal/logic/agentmgr" = 900
+"internal/logic/onboarding" = 1400
+"internal/logic/session" = 1400
+"internal/providers/agents" = 1700
+
+[file_overrides]
+"internal/logic/agentcatalog/service.go" = 330
+"internal/logic/agentdiscovery/discovery.go" = 430
+"internal/logic/onboarding/wizard.go" = 330
+"internal/logic/onboarding/wizard_steps.go" = 340
+"internal/logic/session/manager.go" = 320
+"internal/logic/session/manager_commands.go" = 760
+"internal/providers/agents/a2a_adapter.go" = 320
+"internal/providers/agents/acp_adapter.go" = 360
+"internal/providers/agents/default_handler.go" = 360
+"internal/providers/agents/router.go" = 480
+"pkg/zedacp/client.go" = 380
+
+[function_overrides]
+"cmd/mock-agent/main.go::main" = 100
+"internal/logic/session/manager_routing.go::Manager.persistAgentSession" = 70
+"internal/providers/agents/acp_adapter.go::acpConversationClient.ExecuteTurn" = 80
+"internal/providers/agents/router.go::simpleObserver.OnUpdate" = 70
+
+[function_param_overrides]
+"internal/logic/channelruntime/runtime.go::StartAll" = 5
+"internal/logic/session/manager_routing.go::Manager.Route" = 5
+"internal/logic/session/manager_routing.go::Manager.routeAgentTurn" = 5
+"internal/logic/vaultsec/restore.go::RestoreBackup" = 5
+"internal/logic/vaultsec/vaultsec.go::collectWarnings" = 5

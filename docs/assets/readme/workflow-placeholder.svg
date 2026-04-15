@@ -1,0 +1,25 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="720" fill="#0B1020"/>
+  <text x="72" y="92" fill="#F5F7FB" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700">How Matrix works</text>
+  <text x="72" y="130" fill="#8FA6C4" font-family="Arial, Helvetica, sans-serif" font-size="22">Placeholder infographic for the core workflow.</text>
+  <rect x="72" y="186" width="240" height="168" rx="22" fill="#112038" stroke="#28517D"/>
+  <text x="104" y="240" fill="#F5F7FB" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700">1. Enter</text>
+  <text x="104" y="286" fill="#95B2D6" font-family="Arial, Helvetica, sans-serif" font-size="22">Telegram, HTTP,</text>
+  <text x="104" y="316" fill="#95B2D6" font-family="Arial, Helvetica, sans-serif" font-size="22">CLI, future channels</text>
+  <rect x="480" y="186" width="240" height="168" rx="22" fill="#0E2732" stroke="#00D1B2"/>
+  <text x="512" y="240" fill="#F5FFFD" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700">2. Route</text>
+  <text x="512" y="286" fill="#ABF5E8" font-family="Arial, Helvetica, sans-serif" font-size="22">workspace, session,</text>
+  <text x="512" y="316" fill="#ABF5E8" font-family="Arial, Helvetica, sans-serif" font-size="22">intent, mode</text>
+  <rect x="888" y="186" width="240" height="168" rx="22" fill="#1F1630" stroke="#FF7A59"/>
+  <text x="920" y="240" fill="#FFF4F0" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700">3. Operate</text>
+  <text x="920" y="286" fill="#FFD3C7" font-family="Arial, Helvetica, sans-serif" font-size="22">Codex, Claude,</text>
+  <text x="920" y="316" fill="#FFD3C7" font-family="Arial, Helvetica, sans-serif" font-size="22">Gemini, OpenCode</text>
+  <path d="M328 270H464" stroke="#3B82F6" stroke-width="8" stroke-linecap="round"/>
+  <path d="M736 270H872" stroke="#3B82F6" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="396" cy="270" r="10" fill="#3B82F6"/>
+  <circle cx="804" cy="270" r="10" fill="#3B82F6"/>
+  <rect x="72" y="430" width="1056" height="212" rx="24" fill="#0F172A" stroke="#2A3E59"/>
+  <text x="106" y="488" fill="#F5F7FB" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700">Suggested final visual</text>
+  <text x="106" y="534" fill="#9FB2CC" font-family="Arial, Helvetica, sans-serif" font-size="24">A horizontal system diagram showing channel ingress, workspace/session fabric,</text>
+  <text x="106" y="566" fill="#9FB2CC" font-family="Arial, Helvetica, sans-serif" font-size="24">agent specialists, and local state surfaces: timeline, memory, snapshots, decisions.</text>
+</svg>

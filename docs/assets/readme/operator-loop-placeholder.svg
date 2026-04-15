@@ -1,0 +1,21 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="720" fill="#0B1020"/>
+  <text x="72" y="92" fill="#F5F7FB" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700">The operator loop</text>
+  <text x="72" y="130" fill="#8FA6C4" font-family="Arial, Helvetica, sans-serif" font-size="22">Placeholder infographic for the product demo loop.</text>
+  <circle cx="600" cy="388" r="210" fill="#0E1628" stroke="#29405C" stroke-width="2"/>
+  <circle cx="600" cy="388" r="84" fill="#00D1B2"/>
+  <text x="543" y="397" fill="#081019" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700">WORK</text>
+  <rect x="532" y="116" width="136" height="64" rx="18" fill="#14304D"/>
+  <text x="553" y="157" fill="#D8F4FF" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">Resume</text>
+  <rect x="856" y="356" width="136" height="64" rx="18" fill="#1F1630"/>
+  <text x="883" y="397" fill="#FFE7E0" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">Review</text>
+  <rect x="532" y="596" width="136" height="64" rx="18" fill="#0E2732"/>
+  <text x="549" y="637" fill="#E6FFFA" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">Snapshot</text>
+  <rect x="208" y="356" width="136" height="64" rx="18" fill="#2B1F12"/>
+  <text x="233" y="397" fill="#FFE3C9" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">Handoff</text>
+  <path d="M600 180C736 180 846 252 900 356" stroke="#3B82F6" stroke-width="8" stroke-linecap="round"/>
+  <path d="M900 420C846 524 736 596 600 596" stroke="#FF7A59" stroke-width="8" stroke-linecap="round"/>
+  <path d="M532 628C396 628 286 556 232 452" stroke="#A3E635" stroke-width="8" stroke-linecap="round"/>
+  <path d="M232 356C286 252 396 180 532 180" stroke="#00D1B2" stroke-width="8" stroke-linecap="round"/>
+  <text x="72" y="688" fill="#9FB2CC" font-family="Arial, Helvetica, sans-serif" font-size="22">Suggested final visual: a clean loop showing implement -> review -> snapshot -> resume / handoff.</text>
+</svg>
