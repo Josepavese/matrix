@@ -83,6 +83,43 @@ tar -xzf "$archive" -C "$tmp_dir"
 mkdir -p "$matrix_home/bin" "$matrix_home/configs" "$matrix_home/data" "$matrix_home/logs" "$matrix_home/artifacts" "$matrix_home/backups" "$matrix_home/tmp"
 install -m 0755 "$tmp_dir/matrix" "$matrix_home/bin/matrix"
 
+user_bin="$HOME/.local/bin"
+launcher="$user_bin/matrix"
+mkdir -p "$user_bin"
+if ln -sfn "$matrix_home/bin/matrix" "$launcher" 2>/dev/null; then
+  :
+else
+  cp "$matrix_home/bin/matrix" "$launcher"
+  chmod 0755 "$launcher"
+fi
+
+ensure_path_file() {
+  profile="$1"
+  marker="# Matrix PAL PATH"
+  if [ -f "$profile" ] && grep -F "$marker" "$profile" >/dev/null 2>&1; then
+    return
+  fi
+  {
+    echo
+    echo "$marker"
+    echo "case \":\$PATH:\" in"
+    echo "  *\":$user_bin:\"*) ;;"
+    echo "  *) export PATH=\"$user_bin:\$PATH\" ;;"
+    echo "esac"
+  } >> "$profile"
+}
+
+case ":$PATH:" in
+  *":$user_bin:"*) path_ready=1 ;;
+  *)
+    path_ready=0
+    ensure_path_file "$HOME/.profile"
+    if [ "$(basename "${SHELL:-}")" = "zsh" ]; then
+      ensure_path_file "$HOME/.zshrc"
+    fi
+    ;;
+esac
+
 if [ -d "$tmp_dir/configs" ]; then
   find "$tmp_dir/configs" -type f | while IFS= read -r src; do
     rel="${src#$tmp_dir/configs/}"
@@ -97,11 +134,12 @@ fi
 echo "Matrix installed."
 echo "PAL home: $matrix_home"
 echo "Binary:   $matrix_home/bin/matrix"
+echo "Launcher: $launcher"
 echo
 echo "Run:"
-echo "  MATRIX_HOME=\"$matrix_home\" \"$matrix_home/bin/matrix\" home"
-echo "  MATRIX_HOME=\"$matrix_home\" \"$matrix_home/bin/matrix\" bootstrap doctor"
+echo "  matrix home"
+echo "  matrix bootstrap doctor"
 echo
-echo "Optional PATH:"
-echo "  export MATRIX_HOME=\"$matrix_home\""
-echo "  export PATH=\"\$MATRIX_HOME/bin:\$PATH\""
+if [ "$path_ready" -eq 0 ]; then
+  echo "PATH was updated in your shell profile. Open a new shell if 'matrix' is not found in this one."
+fi

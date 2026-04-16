@@ -29,9 +29,6 @@ func Resolve() (string, error) {
 	if home := strings.TrimSpace(os.Getenv(EnvName)); home != "" {
 		return filepath.Abs(home)
 	}
-	if IsRepoDevRoot() {
-		return os.Getwd()
-	}
 	userHome, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to determine user home: %w", err)
@@ -50,16 +47,6 @@ func Resolve() (string, error) {
 		}
 		return filepath.Join(userHome, ".local", "share", "matrix"), nil
 	}
-}
-
-func IsRepoDevRoot() bool {
-	if _, err := os.Stat("go.mod"); err != nil {
-		return false
-	}
-	if _, err := os.Stat(filepath.Join("configs", "agents.json")); err != nil {
-		return false
-	}
-	return true
 }
 
 func Ensure(home string) error {
