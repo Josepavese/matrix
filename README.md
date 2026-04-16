@@ -1,16 +1,20 @@
-# Matrix
-
 <p align="center">
-  <strong>The communication crossroads for humans and AI agents.</strong><br/>
-  One matrix for human→multi-agent and agent→agent work across channels, protocols, and workspaces.
+  <strong>
+    <span style="color:#FACC15">⚠️ WARNING: Matrix is still in an experimental testing phase.</span>
+  </strong><br/>
+  <span style="color:#FACC15">APIs, commands, storage layout, agent integrations, and deployment procedures may change quickly. Use it for evaluation, prototyping, and controlled local workflows, not unattended production operations.</span>
 </p>
 
 <p align="center">
   <img src="docs/assets/readme/hero.png" alt="Matrix communication matrix hero" width="1000" />
 </p>
 
-> **Warning**
-> Matrix is still in an experimental testing phase. APIs, commands, storage layout, agent integrations, and deployment procedures may change quickly. Use it for evaluation, prototyping, and controlled local workflows, not unattended production operations.
+# Matrix
+
+<p align="center">
+  <strong>The communication crossroads for humans and AI agents.</strong><br/>
+  One matrix for human→multi-agent and agent→agent work across channels, protocols, and workspaces.
+</p>
 
 <p align="center">
   <strong>Human-to-agent.</strong> <strong>Agent-to-agent.</strong> <strong>Protocol-neutral.</strong>
