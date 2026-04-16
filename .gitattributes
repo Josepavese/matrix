@@ -1,0 +1,30 @@
+# GitHub Linguist language statistics
+#
+# Keep repository language stats focused on the shipped Matrix product code.
+# Product code lives in cmd/matrix, internal, and pkg. The paths below are
+# documentation, repo automation, test fixtures, generated visuals, or local
+# agent metadata and should not affect GitHub's "Languages" bar.
+
+# Documentation and product collateral.
+README.md linguist-documentation
+PRODUCT.md linguist-documentation
+docs/** linguist-documentation
+docs/assets/** linguist-generated
+
+# Local agent metadata and workspace helpers.
+.agent/** linguist-generated
+.claude linguist-generated
+
+# Repository automation, release, linting, and governance.
+.github/** linguist-generated
+.golangci.yml linguist-generated
+.goreleaser.yml linguist-generated
+code-governance.toml linguist-generated
+scripts/** linguist-generated
+
+# Test-only code and fixtures.
+tests/** linguist-generated
+cmd/mock-agent/** linguist-generated
+
+# Runtime/demo configuration data is not implementation language signal.
+configs/** linguist-generated
