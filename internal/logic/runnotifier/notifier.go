@@ -16,6 +16,16 @@ type Notifier struct {
 	agentID          string
 	protocol         string
 	activeToolCallID string
+	activeTool       toolContext
+}
+
+type toolContext struct {
+	EventID   string
+	ToolID    string
+	Name      string
+	Kind      string
+	Path      string
+	Operation string
 }
 
 func New(store *runtrace.Store, runID, agentID, protocol string) *Notifier {
@@ -102,13 +112,24 @@ func (n *Notifier) appendToolRequested(update middleware.ThoughtUpdate) {
 		"frontend_visible":   true,
 	})
 	event.ProtocolMeta = frontendevents.ProtocolMeta(update.Metadata)
-	_, _ = n.store.AppendEvent(event)
+	stored, _ := n.store.AppendEvent(event)
+	n.activeTool = toolContext{
+		EventID:   stored.ID,
+		ToolID:    toolID,
+		Name:      tool.Name,
+		Kind:      tool.Kind,
+		Path:      stringFromMap(tool.Inputs, "path"),
+		Operation: stringFromMap(tool.Inputs, "operation"),
+	}
 }
 
 func (n *Notifier) appendToolResult(update middleware.ThoughtUpdate) {
 	content := strings.TrimSpace(frontendevents.FirstNonEmpty(update.Content, update.Title))
 	tool := frontendevents.NormalizeTool(content, update.Metadata, inferToolName(content))
 	toolID := frontendevents.FirstNonEmpty(n.activeToolCallID, frontendevents.StableToolCallID(n.runID, tool.Name, content, update.Metadata))
+	if toolID == n.activeTool.ToolID {
+		tool = frontendevents.EnrichToolWithContext(tool, n.activeTool.Path, n.activeTool.Operation)
+	}
 	event := n.baseEvent("tool.result.received", "tool", tool.Status, content)
 	event.ProtocolMethod = "session/update"
 	event.ToolCallID = toolID
@@ -125,6 +146,7 @@ func (n *Notifier) appendToolResult(update middleware.ThoughtUpdate) {
 	event.ProtocolMeta = frontendevents.ProtocolMeta(update.Metadata)
 	if event.Status == runtrace.StatusCompleted || event.Status == runtrace.StatusFailed {
 		n.activeToolCallID = ""
+		n.activeTool = toolContext{}
 	}
 	_, _ = n.store.AppendEvent(event)
 }
@@ -132,6 +154,7 @@ func (n *Notifier) appendToolResult(update middleware.ThoughtUpdate) {
 func (n *Notifier) appendPermission(update middleware.ThoughtUpdate) {
 	content := strings.TrimSpace(update.Content)
 	permission := frontendevents.NormalizePermission(n.runID, content, update.Metadata)
+	n.enrichActiveToolFromPermission(permission)
 	requested := n.baseEvent("permission.requested", "agent", "pending", content)
 	requested.ProtocolMethod = permission.ProtocolMethod
 	requested.PermissionID = permission.ID
@@ -153,6 +176,53 @@ func (n *Notifier) appendPermission(update middleware.ThoughtUpdate) {
 	})
 	resolved.ProtocolMeta = frontendevents.ProtocolMeta(update.Metadata)
 	_, _ = n.store.AppendEvent(resolved)
+}
+
+func (n *Notifier) enrichActiveToolFromPermission(permission frontendevents.PermissionEvent) {
+	if n.activeTool.ToolID == "" {
+		return
+	}
+	path := frontendevents.FirstNonEmpty(n.activeTool.Path, stringFromMap(permission.RequestInputs, "path"))
+	operation := frontendevents.FirstNonEmpty(n.activeTool.Operation, stringFromMap(permission.RequestInputs, "operation"))
+	if operation == "" {
+		operation = stringFromMap(permission.ResolutionOutputs, "operation")
+	}
+	if path == "" && operation == "" {
+		return
+	}
+	n.activeTool.Path = path
+	n.activeTool.Operation = operation
+	if n.activeTool.EventID == "" {
+		return
+	}
+	event, found, err := n.store.LoadEvent(n.runID, n.activeTool.EventID)
+	if err != nil || !found {
+		return
+	}
+	tool := frontendevents.ToolEvent{
+		Name:         event.ToolName,
+		Kind:         event.ToolKind,
+		Status:       event.Status,
+		Summary:      event.Summary,
+		Inputs:       event.Inputs,
+		Outputs:      event.Outputs,
+		ArtifactRefs: event.ArtifactRefs,
+	}
+	tool = frontendevents.EnrichToolWithContext(tool, path, operation)
+	event.Summary = tool.Summary
+	event.Inputs = tool.Inputs
+	event.Outputs = tool.Outputs
+	event.ArtifactRefs = tool.ArtifactRefs
+	event.Metadata = frontendevents.Merge(event.Metadata, map[string]interface{}{"enriched_from_permission": true})
+	_, _ = n.store.AppendEvent(event)
+}
+
+func stringFromMap(values map[string]interface{}, key string) string {
+	if values == nil {
+		return ""
+	}
+	value, _ := values[key].(string)
+	return strings.TrimSpace(value)
 }
 
 func (n *Notifier) baseEvent(kind, actor, status, content string) runtrace.Event {

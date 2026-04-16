@@ -449,6 +449,19 @@ func toolUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
 	meta := make(map[string]interface{}, len(notif.Update.Meta)+4)
 	meta["source_update_type"] = notif.Update.SessionUpdate
 	meta["content_type"] = notif.Update.Content.Type
+	meta["protocol"] = "acp"
+	meta["protocol_method"] = "session/update"
+	meta["acp"] = map[string]interface{}{
+		"session_id":     notif.SessionID,
+		"session_update": notif.Update.SessionUpdate,
+		"content": map[string]interface{}{
+			"type": notif.Update.Content.Type,
+			"text": notif.Update.Content.Text,
+		},
+		"title":      notif.Update.Title,
+		"updated_at": notif.Update.UpdatedAt,
+		"_meta":      notif.Update.Meta,
+	}
 	if strings.TrimSpace(notif.Update.Title) != "" {
 		meta["title"] = notif.Update.Title
 	}
