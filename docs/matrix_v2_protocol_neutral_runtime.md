@@ -203,7 +203,14 @@ Defaulting:
 
 Response model:
 
-- `/v1/runs` returns a synchronous JSON object with `output`
+- `/v1/runs` always materializes a `run_id` and returns `trace_url`, `events_url`, and `actions_url`
+- `/v1/runs` supports `sync`, `async`, and `stream` execution modes under one Matrix envelope
+- `/v1/runs` has no default absolute turn timeout; callers may opt into an emergency wall-clock fuse with `emergency_kill_seconds`
+- synchronous `/v1/runs` responses include `output` when the run completes inline
+- `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`
+- `GET /v1/runs/{run_id}/events` returns ordered run events
+- `POST /v1/runs/{run_id}/actions` exposes operational run controls such as `cancel`
+- `POST /v1/event-sinks` registers generic run-event consumers
 - `/v1/session-actions` returns a synchronous typed JSON object describing the session action result
 - `/v1/workspace-state`, `/v1/workspace-timeline`, `/v1/workspace-decisions`, `/v1/workspace-memory`, and `/v1/workspace-snapshots` return synchronous typed read models
 - the same typed action surface is shared by the session manager for chat-style channels and HTTP callers

@@ -142,15 +142,16 @@ The profile should not expose internal implementation details such as:
 
 Those belong below the orchestration layer.
 
-## Next Evolution
+## Run Observability
 
-The next logical step after this profile is not another endpoint. It is to add stronger execution traceability for the same capabilities:
+The next layer after the orchestration profile is execution traceability for the same capabilities:
 
 - decision trace
 - routing explanation
 - why a session was resumed
 - why a handoff was created
 - which snapshot or memory segment informed a transition
+- which run events, artifacts, outcomes, and operational controls belong to a communication run
 
 That will let a supervisory AI not only call Matrix, but also audit Matrix’s behavior.
 
@@ -159,3 +160,15 @@ Decision trace is now part of the product surface through:
 - `GET /v1/workspace-decisions`
 - `/why`
 - `/decisions [workspace]`
+
+Communication run trace is now part of the product surface through:
+
+- `POST /v1/runs`
+- `GET /v1/runs/{run_id}/trace`
+- `GET /v1/runs/{run_id}/events`
+- `POST /v1/runs/{run_id}/actions`
+- `POST /v1/event-sinks`
+
+Communication runs do not have a default absolute timeout. Supervisors should use stream/async observation and explicit `cancel`/`stop`; `emergency_kill_seconds` is available only as an opt-in safety fuse.
+
+The detailed contract is documented in [matrix_agent_communication_run_trace.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_agent_communication_run_trace.md).

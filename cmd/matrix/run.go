@@ -109,6 +109,8 @@ var runCmd = &cobra.Command{
 
 		// ACP REST Server
 		acpServer := acp.NewServer(sessionMgr)
+		acpServer.WithTraceStorage(d.App.Store)
+		acpServer.WithEndpointResolver(d.Supervisor)
 		acpServer.WithDefaultAgent(d.App.Config.GetWithDefault("default_agent", DefaultAgent))
 		if apiKey := d.App.Config.GetWithDefault("acp_api_key", ""); apiKey != "" {
 			acpServer.WithAPIKey(apiKey)
@@ -116,6 +118,7 @@ var runCmd = &cobra.Command{
 		}
 		mux := http.NewServeMux()
 		acpServer.RegisterRoutes(mux)
+		go acpServer.StartRunSinkDeliveryWorker(ctx)
 		a2aServer := matrixa2a.NewServer(sessionMgr, "http://"+acpHTTPAddr, d.App.Config.GetWithDefault("default_agent", DefaultAgent))
 		a2aServer.RegisterRoutes(mux)
 		mux.HandleFunc("/_matrix/runtime", func(w http.ResponseWriter, _ *http.Request) {
