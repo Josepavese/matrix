@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/jose/matrix-v2/internal/logic/cmdutil"
 	"github.com/jose/matrix-v2/internal/logic/vaultsec"
@@ -83,7 +84,7 @@ func evaluateReadiness(runtimeReport, loggingReport, storageReport, vaultReport 
 		}
 	}
 	appendWarnings(&warnings, loggingReport["warnings"])
-	appendWarnings(&warnings, runtimeReport["warnings"])
+	appendRuntimeWarnings(&warnings, runtimeReport["warnings"], expectRuntimeUp)
 	if workspaces, ok := storageReport["workspaces"].([]map[string]any); ok {
 		for _, ws := range workspaces {
 			addPruneWarning(&warnings, ws)
@@ -141,4 +142,32 @@ func appendWarnings(warnings *[]string, raw any) {
 	case []string:
 		*warnings = append(*warnings, values...)
 	}
+}
+
+func appendRuntimeWarnings(warnings *[]string, raw any, expectRuntimeUp bool) {
+	appendFilteredWarning := func(text string) {
+		if !expectRuntimeUp && isOptionalRuntimeDownWarning(text) {
+			return
+		}
+		*warnings = append(*warnings, text)
+	}
+
+	switch values := raw.(type) {
+	case []any:
+		for _, value := range values {
+			if text, ok := value.(string); ok {
+				appendFilteredWarning(text)
+			}
+		}
+	case []string:
+		for _, text := range values {
+			appendFilteredWarning(text)
+		}
+	}
+}
+
+func isOptionalRuntimeDownWarning(text string) bool {
+	return strings.HasPrefix(text, "jsonrpc daemon is not reachable") ||
+		strings.HasPrefix(text, "acp http server is not reachable") ||
+		strings.HasPrefix(text, "a2a http server is not reachable")
 }
