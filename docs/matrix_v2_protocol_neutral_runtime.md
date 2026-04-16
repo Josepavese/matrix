@@ -184,7 +184,8 @@ Current target semantics:
 
 Behavior:
 
-- if first-run is not completed, the request is intercepted by the onboarding wizard
+- if first-run is not completed, interactive channel requests are intercepted by the onboarding wizard
+- if first-run is not completed, non-interactive HTTP `/v1/runs` requests fail with HTTP `409` and `code=SETUP_REQUIRED`
 - once configured, the request is routed through the session manager
 - the session manager resolves or creates the logical session for `channel_id`
 - the active session agent wins over `agent_id` after the session exists
@@ -207,6 +208,7 @@ Response model:
 - `/v1/runs` supports `sync`, `async`, and `stream` execution modes under one Matrix envelope
 - `/v1/runs` has no default absolute turn timeout; callers may opt into an emergency wall-clock fuse with `emergency_kill_seconds`
 - synchronous `/v1/runs` responses include `output` when the run completes inline
+- synchronous `/v1/runs` returns structured HTTP `409` `SETUP_REQUIRED` instead of wizard text when `system.configured=false`
 - `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`
 - `GET /v1/runs/{run_id}/events` returns ordered run events
 - `POST /v1/runs/{run_id}/actions` exposes operational run controls such as `cancel`
@@ -220,6 +222,13 @@ Auth and callbacks:
 
 - `/v1/runs` can be protected with `X-Matrix-Key`
 - `/v1/auth/openrouter/callback` is the versioned auxiliary HTTP callback endpoint used by the onboarding/auth flow, not a general ingress surface
+
+Readiness:
+
+- `matrix bootstrap doctor` reports `system_configured`, active agents, and setup guidance before traffic is sent;
+- `matrix agent doctor <id>` reports effective protocol endpoint data and probes ACP stdio commands with a safe `--help` invocation;
+- ACP stdio probe fields are `command_probe_ok`, `command_probe_exit_code`, and `command_probe_error`;
+- a failed ACP stdio probe means Matrix can see a path but the command is not runtime-ready, for example because the binary is corrupt or the configured subcommand is wrong.
 
 Versioning policy:
 

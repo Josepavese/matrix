@@ -124,6 +124,7 @@ func (s *Store) appendFinalMessage(run Run, output string) error {
 		Protocol:      run.Protocol,
 		ContentRef:    run.OutputRef,
 		ContentDigest: run.OutputDigest,
+		Message:       output,
 		ProtocolMeta:  map[string]interface{}{"execution_mode": run.ExecutionMode},
 	})
 	return err
