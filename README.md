@@ -9,6 +9,9 @@
   <img src="docs/assets/readme/hero.png" alt="Matrix communication matrix hero" width="1000" />
 </p>
 
+> **Warning**
+> Matrix is still in an experimental testing phase. APIs, commands, storage layout, agent integrations, and deployment procedures may change quickly. Use it for evaluation, prototyping, and controlled local workflows, not unattended production operations.
+
 <p align="center">
   <strong>Human-to-agent.</strong> <strong>Agent-to-agent.</strong> <strong>Protocol-neutral.</strong>
 </p>
