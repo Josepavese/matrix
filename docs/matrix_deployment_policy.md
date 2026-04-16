@@ -13,6 +13,7 @@ No release should depend on memory, chat history, or one person remembering whic
 3. **Every CI failure is tracked before more code is added.**
 4. **Every release is reproducible from the repository root.**
 5. **Every warning is either accepted explicitly or fixed.**
+6. **Every generated release artifact is install-smoked before the deploy is considered done.**
 
 ## Required Gates
 
@@ -25,6 +26,7 @@ These gates must be green before a production-oriented release:
 - build
 - release dry-run
 - install artifact layout check
+- local PAL install update
 - readiness check
 
 Local preflight command:
@@ -46,6 +48,28 @@ CI is split into independent jobs:
 This is intentional.
 
 If governance fails, tests and build still run. The team gets the full failure map instead of losing signal after the first failed step.
+
+### Actions To Watch
+
+Every push to `main` must leave the `CI` workflow green.
+
+Watch these jobs explicitly:
+
+- `governance`: code size, structure, and repository hygiene.
+- `lint`: `golangci-lint` static analysis.
+- `test`: full Go test suite.
+- `build`: CLI build check.
+- `release-dry-run`: GoReleaser snapshot for Linux, macOS, and Windows on amd64 and arm64.
+
+The `release-dry-run` job is a packaging gate, not a cosmetic check. It must prove that the release config can generate the installable archive set that the no-clone installers expect.
+
+Tag pushes also start the `Release` workflow.
+
+Watch this job explicitly:
+
+- `goreleaser`: publishes the tagged release artifacts and checksums.
+
+The `Release` workflow is allowed only after `CI` is green on the exact commit being tagged.
 
 ## Action Failure Policy
 
@@ -104,6 +128,14 @@ git status --short
 bash scripts/deploy_preflight.sh
 ```
 
+For a complete local deploy, use the wrapper:
+
+```bash
+scripts/deploy_local.sh
+```
+
+It runs preflight, generates GoReleaser snapshot artifacts, and installs the host artifact into the local PAL home.
+
 ### 2. Runtime Readiness
 
 ```bash
@@ -142,7 +174,32 @@ The dry-run must produce OS/architecture archives that include:
 
 Installers must install into one PAL home and must not require cloning the repository.
 
-### 5. Tag Release
+### 5. Local PAL Install Update
+
+After the executables and archives have been generated, update the local system from the generated host-matching artifact:
+
+```bash
+scripts/deploy_local_install.sh
+```
+
+This step installs from `dist/`, not from source. It is the deploy smoke that proves the generated package can update the local PAL home.
+
+Expected behavior:
+
+- selects the current host OS and architecture
+- installs `matrix` into `MATRIX_HOME/bin`
+- creates the PAL home directories if missing
+- copies only missing seed configs
+- leaves existing vault data untouched
+- prints the resolved PAL home from the installed binary
+
+Use a custom PAL home for isolated deploy drills:
+
+```bash
+MATRIX_HOME="$(mktemp -d)" scripts/deploy_local_install.sh
+```
+
+### 6. Tag Release
 
 Only tag after CI is green on `main`.
 
@@ -150,6 +207,8 @@ Only tag after CI is green on `main`.
 git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
+
+After pushing the tag, watch the `Release` workflow until the `goreleaser` job is green.
 
 ## Governance Policy
 
@@ -182,6 +241,7 @@ Any deploy workflow change must update:
 - this document
 - [matrix_release_runbook.md](matrix_release_runbook.md)
 - CI workflow if commands changed
+- local deploy scripts if install behavior changed
 
 ## Done Criteria
 
@@ -190,5 +250,6 @@ A deployment process is considered healthy when:
 - `main` is green
 - failed Actions are triaged immediately
 - release commands are documented
+- local PAL install update has been run from generated artifacts
 - local preflight matches CI gates
 - readiness output is reviewed before deploy

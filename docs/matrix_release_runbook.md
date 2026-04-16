@@ -16,6 +16,14 @@ Run:
 bash scripts/deploy_preflight.sh
 ```
 
+For the full local deploy path, run:
+
+```bash
+scripts/deploy_local.sh
+```
+
+This wrapper runs preflight, generates snapshot artifacts, and updates the local PAL home from the generated artifact.
+
 The preflight includes GoReleaser config validation. Before tagging a release, also run a snapshot release and inspect archive layout:
 
 ```bash
@@ -23,6 +31,20 @@ goreleaser release --snapshot --clean
 ```
 
 Each archive must contain the executable, `configs/`, installers, and installation docs.
+
+After artifacts are generated, install the host-matching archive into the local PAL home:
+
+```bash
+scripts/deploy_local_install.sh
+```
+
+This is the final local deploy step. It must run from the generated archive in `dist/`, not from `go run` or a source build.
+
+For an isolated smoke install:
+
+```bash
+MATRIX_HOME="$(mktemp -d)" scripts/deploy_local_install.sh
+```
 
 If you expect a live local runtime to be up before release validation:
 
@@ -53,6 +75,8 @@ Matrix will refuse restore while the local runtime appears active on the default
 Minimum criteria for a local release candidate:
 
 - CI is green on `main`
+- the `CI` workflow jobs `governance`, `lint`, `test`, `build`, and `release-dry-run` are green
+- tagged releases publish through the `Release` workflow `goreleaser` job
 - `matrix readiness` returns `ready` or `ready_with_warnings`
 - vault schema is `current`
 - no unexpected retention overflows remain
@@ -60,6 +84,7 @@ Minimum criteria for a local release candidate:
 - backup command works
 - restore path has been drilled recently
 - release archives install into one PAL home through `install/install.sh` and `install/install.ps1`
+- local PAL home has been updated from the generated host artifact through `scripts/deploy_local_install.sh`
 
 ## Things That Still Need Human Review
 
