@@ -8,6 +8,7 @@ import (
 
 func TestEncryptDecryptBytes(t *testing.T) {
 	key := bytes.Repeat([]byte{7}, 32)
+	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
 	t.Setenv("MATRIX_VAULT_MASTER_KEY", base64.StdEncoding.EncodeToString(key))
 
 	plain := []byte(`"secret"`)
@@ -30,6 +31,7 @@ func TestEncryptDecryptBytes(t *testing.T) {
 
 func TestDecryptEncryptedBytesWithoutKeyFails(t *testing.T) {
 	key := bytes.Repeat([]byte{9}, 32)
+	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
 	t.Setenv("MATRIX_VAULT_MASTER_KEY", base64.StdEncoding.EncodeToString(key))
 	encrypted, err := EncryptBytes([]byte(`"secret"`))
 	if err != nil {
@@ -37,6 +39,7 @@ func TestDecryptEncryptedBytesWithoutKeyFails(t *testing.T) {
 	}
 
 	t.Setenv("MATRIX_VAULT_MASTER_KEY", "")
+	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
 	if _, err := DecryptBytes(encrypted); err == nil {
 		t.Fatalf("expected decrypt failure without key")
 	}

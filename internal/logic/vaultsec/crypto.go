@@ -27,10 +27,7 @@ type KeyStatus struct {
 // ResolveMasterKey locates and returns the vault encryption master key.
 func ResolveMasterKey(fs middleware.FS) ([]byte, KeyStatus, error) {
 	if filePath := strings.TrimSpace(os.Getenv("MATRIX_VAULT_MASTER_KEY_FILE")); filePath != "" {
-		if fs == nil {
-			return nil, KeyStatus{}, fmt.Errorf("MATRIX_VAULT_MASTER_KEY_FILE is set but filesystem provider is nil")
-		}
-		data, err := fs.ReadFile(filePath)
+		data, err := readMasterKeyFile(fs, filePath)
 		if err != nil {
 			return nil, KeyStatus{}, err
 		}
@@ -48,6 +45,13 @@ func ResolveMasterKey(fs middleware.FS) ([]byte, KeyStatus, error) {
 		return key, KeyStatus{Configured: true, Source: "env:MATRIX_VAULT_MASTER_KEY", Algorithm: "aes-256-gcm"}, nil
 	}
 	return nil, KeyStatus{Configured: false}, nil
+}
+
+func readMasterKeyFile(fs middleware.FS, filePath string) ([]byte, error) {
+	if fs != nil {
+		return fs.ReadFile(filePath)
+	}
+	return os.ReadFile(filePath)
 }
 
 // EncryptBytes encrypts a byte slice using AES-GCM with the resolved master key.
