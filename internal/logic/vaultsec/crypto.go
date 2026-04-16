@@ -10,12 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/jose/matrix-v2/internal/logic/matrixhome"
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 const encryptedPrefix = "ENCV1:"
+const defaultMasterKeyPath = "configs/vault-master.key"
 
 // KeyStatus describes the state of the vault encryption master key.
 type KeyStatus struct {
@@ -44,7 +47,29 @@ func ResolveMasterKey(fs middleware.FS) ([]byte, KeyStatus, error) {
 		}
 		return key, KeyStatus{Configured: true, Source: "env:MATRIX_VAULT_MASTER_KEY", Algorithm: "aes-256-gcm"}, nil
 	}
+	if filePath, ok := defaultMasterKeyFile(); ok {
+		data, err := readMasterKeyFile(fs, filePath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return nil, KeyStatus{}, err
+			}
+		} else {
+			key, err := parseMasterKey(string(data))
+			if err != nil {
+				return nil, KeyStatus{}, err
+			}
+			return key, KeyStatus{Configured: true, Source: "matrix_home:" + defaultMasterKeyPath, Algorithm: "aes-256-gcm"}, nil
+		}
+	}
 	return nil, KeyStatus{Configured: false}, nil
+}
+
+func defaultMasterKeyFile() (string, bool) {
+	home, err := matrixhome.Resolve()
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(home, defaultMasterKeyPath), true
 }
 
 func readMasterKeyFile(fs middleware.FS, filePath string) ([]byte, error) {

@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dist_dir="${MATRIX_DIST_DIR:-$repo_root/dist}"
-version="${MATRIX_VERSION:-0.0.0-snapshot}"
+version="${MATRIX_VERSION:-}"
 
 usage() {
   cat <<'USAGE'
@@ -14,7 +14,7 @@ Installs the host-matching Matrix artifact from dist/ into the local PAL home.
 Environment:
   MATRIX_HOME      Override target PAL home.
   MATRIX_DIST_DIR  Override artifact directory. Default: ./dist
-  MATRIX_VERSION   Artifact version prefix. Default: 0.0.0-snapshot
+  MATRIX_VERSION   Optional artifact version prefix. Auto-detected when unset.
 USAGE
 }
 
@@ -63,9 +63,25 @@ else
   matrix_home="${XDG_DATA_HOME:-$HOME/.local/share}/matrix"
 fi
 
-archive="$dist_dir/matrix_${version}_${goos}_${goarch}.tar.gz"
+if [[ -n "$version" ]]; then
+  archive="$dist_dir/matrix_${version}_${goos}_${goarch}.tar.gz"
+else
+  shopt -s nullglob
+  matches=("$dist_dir"/matrix_*_"${goos}_${goarch}".tar.gz)
+  shopt -u nullglob
+  if [[ "${#matches[@]}" -eq 0 ]]; then
+    archive=""
+  else
+    IFS=$'\n' read -r -d '' -a sorted_matches < <(printf '%s\n' "${matches[@]}" | sort -V && printf '\0')
+    archive="${sorted_matches[-1]}"
+  fi
+fi
 if [[ ! -f "$archive" ]]; then
-  echo "missing local deploy artifact: $archive" >&2
+  if [[ -n "$version" ]]; then
+    echo "missing local deploy artifact: $archive" >&2
+  else
+    echo "missing local deploy artifact for ${goos}_${goarch} in $dist_dir" >&2
+  fi
   echo "run: goreleaser release --snapshot --clean" >&2
   exit 1
 fi
