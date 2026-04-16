@@ -15,7 +15,7 @@ type Surface struct {
 	Actions     []string `json:"actions,omitempty"`
 }
 
-// Profile is the machine-readable description of Matrix as an orchestration substrate.
+// Profile is the machine-readable description of Matrix as an agent communication matrix.
 type Profile struct {
 	Name         string       `json:"name"`
 	Category     string       `json:"category"`
@@ -28,10 +28,10 @@ type Profile struct {
 func ProfileV1() Profile {
 	return Profile{
 		Name:     "matrix",
-		Category: "local-first Agent Session Fabric",
-		Role:     "orchestration substrate for humans and supervisory AI",
+		Category: "local-first Agent Communication Matrix",
+		Role:     "communication crossroads for humans, supervisory AI, and agents",
 		Capabilities: []Capability{
-			{ID: "conversation.route", Category: "conversation", Description: "Route one user turn into the active workspace/session context.", Surfaces: []string{"http:/v1/runs"}},
+			{ID: "conversation.route", Category: "conversation", Description: "Route one human, channel, or agent turn into the active workspace/session context.", Surfaces: []string{"http:/v1/runs"}},
 			{ID: "session.lifecycle", Category: "session", Description: "Create, inspect, switch, cancel, and delete logical sessions.", Surfaces: []string{"http:/v1/session-actions", "chat:/session", "chat:/cancel", "chat:/stop"}},
 			{ID: "workspace.control", Category: "workspace", Description: "List, switch, bind, and snapshot workspace contexts.", Surfaces: []string{"http:/v1/workspace-actions", "chat:/workspace", "chat:/use", "chat:/snapshot"}},
 			{ID: "workspace.state", Category: "workspace", Description: "Read the current materialized state of a workspace.", Surfaces: []string{"http:/v1/workspace-state", "chat:/now", "cli:workspace state"}},

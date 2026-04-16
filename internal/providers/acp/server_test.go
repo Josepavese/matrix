@@ -521,7 +521,7 @@ func TestHandleOrchestrationCapabilities_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &profile); err != nil {
 		t.Fatalf("response parse error: %v", err)
 	}
-	if profile.Category != "local-first Agent Session Fabric" {
+	if profile.Category != "local-first Agent Communication Matrix" {
 		t.Fatalf("unexpected category: %q", profile.Category)
 	}
 	if len(profile.Capabilities) == 0 || len(profile.Surfaces) == 0 {

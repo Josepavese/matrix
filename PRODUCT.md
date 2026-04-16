@@ -2,10 +2,11 @@
 
 ## The Product
 
-**Matrix is the control plane for real coding agents.**
+**Matrix is the communication matrix for real coding agents.**
 
-It gives developers one operating surface across:
+It is the central junction where communication flows between:
 
+- humans
 - agents
 - channels
 - workspaces
@@ -14,11 +15,11 @@ It gives developers one operating surface across:
 
 The goal is simple:
 
-> bring the best agent for the job, keep one workspace fabric
+> connect every human-to-agent and agent-to-agent flow through one durable communication surface
 
 ## The Category
 
-Matrix should be positioned as a **local-first Agent Session Fabric**.
+Matrix should be positioned as a **local-first Agent Communication Matrix**.
 
 That means:
 
@@ -27,7 +28,7 @@ That means:
 - not just a protocol bridge
 - not a vague "AI operating system"
 
-Matrix is the layer that keeps the work continuous while agents, channels, and protocols change.
+Matrix is the layer that keeps communication, work, and state continuous while agents, channels, and protocols change.
 
 Deeper strategy is documented in [docs/matrix_category_thesis.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_category_thesis.md).
 
@@ -35,11 +36,13 @@ Deeper strategy is documented in [docs/matrix_category_thesis.md](/home/jose/hpd
 
 The wedge is clear:
 
-**operate real coding agents from one durable workspace/session surface**
+**route real coding-agent communication through one durable workspace/session matrix**
 
 This is the problem Matrix solves:
 
 - agent sprawl
+- disconnected human-to-agent channels
+- disconnected agent-to-agent handoffs
 - fragmented sessions
 - context loss across channels
 - invisible orchestration
@@ -49,23 +52,26 @@ This is the problem Matrix solves:
 
 - developers using more than one coding agent
 - small engineering teams with real multi-agent workflows
-- AI-native teams that want a local-first control plane
-- supervisory AI systems that need a reliable orchestration substrate
+- AI-native teams that want a local-first communication layer
+- supervisory AI systems that need a reliable communication substrate
 
 ## Core Promise
 
 Matrix gives you:
 
-- **one workspace fabric**  
+- **one communication matrix**
+  humans, channels, protocols, and agents meet in one routing layer
+
+- **one workspace fabric**
   work stays attached to the workspace, not to one temporary chat
 
-- **one session surface**  
+- **one session lifecycle**
   resume, switch, review, handoff, cancel, snapshot
 
 - **one local source of truth**  
   vault, memory, timeline, snapshots, decision trace
 
-- **one operator view**  
+- **one visibility layer**
   see what happened, why it happened, and what state the work is in now
 
 ## What Matrix Supports
@@ -128,7 +134,7 @@ Most tools do one of these:
 
 Matrix does something else:
 
-**it operates external agents as one continuous system of work**
+**it connects external agents as one continuous system of communication and work**
 
 That difference becomes visible through:
 
@@ -138,6 +144,7 @@ That difference becomes visible through:
 - snapshots
 - decision trace
 - handoff between specialists
+- uniform human-to-agent and agent-to-agent flows
 
 ## Explicit Non-Goals
 
@@ -155,6 +162,7 @@ Matrix is “on profile” when it is:
 
 - clear to understand in under two minutes
 - useful with real agents, not synthetic demos
+- credible as the central communication junction for humans and agents
 - local-first in state and control
 - visible in its orchestration, not opaque
 - consistent across channels and machine surfaces

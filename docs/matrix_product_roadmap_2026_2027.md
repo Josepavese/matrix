@@ -4,28 +4,30 @@
 
 This roadmap translates the Matrix category thesis into a product plan.
 
-The target is not "more features." The target is to make **Agent Session Fabric** feel like a real category with a clear product shape, a visible wedge, and a credible expansion path.
+The target is not "more features." The target is to make **Agent Communication Matrix** feel like a real category with a clear product shape, a visible wedge, and a credible expansion path.
 
 The supporting thesis is documented in [matrix_category_thesis.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_category_thesis.md).
 
 ## Product North Star
 
-Matrix becomes the **local-first operating layer for external agent sessions**.
+Matrix becomes the **local-first communication crossroads for humans and external agents**.
 
 The product should make one promise extremely clear:
 
-> Use the best agent available, but operate all of them through one durable session surface.
+> Every channel, every agent, and every handoff flows through one durable communication matrix.
 
 ## Product Layers
 
 The product should be organized around four layers.
 
-### 1. Session Fabric Core
+### 1. Communication Matrix Core
 
 This is the non-negotiable core.
 
 It includes:
 
+- human-to-agent ingress
+- agent-to-agent handoff semantics
 - protocol-neutral conversation runtime
 - session lifecycle control
 - vault as SSOT and mirror
@@ -79,6 +81,7 @@ Already present in product or codebase:
 - discovery-neutral onboarding
 - typed session lifecycle actions
 - channel-neutral runtime
+- shared human-to-agent control semantics across channels
 - local vault control
 - local mirror of remote session metadata
 - HTTP and Telegram ingress semantics built on shared session logic
@@ -89,7 +92,7 @@ This means the product does not need a reinvention. It needs focus and sequencin
 
 The initial product wedge should be:
 
-### Operate real coding agents from any channel with one session fabric
+### Route real coding-agent communication from any channel through one matrix
 
 That wedge is:
 
@@ -123,16 +126,17 @@ Make the current product legible and category-consistent.
 
 In progress and largely done in documentation.
 
-## Phase 1: Make The Session Fabric Obvious
+## Phase 1: Make The Communication Matrix Obvious
 
 ### Objective
 
-Turn the existing runtime into a product that obviously revolves around session operations, not just message routing.
+Turn the existing runtime into a product that obviously revolves around communication flows and session operations, not just message routing.
 
 ### Key Work
 
 - strengthen `session` CLI and HTTP action surfaces
 - expose identical lifecycle semantics on every channel
+- make human-to-agent and agent-to-agent flows explicit in docs and APIs
 - make remote mirror state more inspectable
 - improve operator visibility of active, remote, mirrored, and detached sessions
 - add explicit session provenance:
@@ -144,7 +148,7 @@ Turn the existing runtime into a product that obviously revolves around session 
 
 ### Product Outcome
 
-Users stop thinking "Matrix routes prompts" and start thinking "Matrix operates sessions."
+Users stop thinking "Matrix routes prompts" and start thinking "Matrix is where agent communication flows are controlled."
 
 ### Suggested Additions
 
@@ -164,7 +168,7 @@ Bind sessions to real work context, not only to a channel identity.
 
 Without workspace affinity, Matrix risks feeling like a better bot bridge.
 
-With workspace affinity, Matrix becomes the persistent operating layer for real development work.
+With workspace affinity, Matrix becomes the persistent communication layer for real development work.
 
 ### Key Work
 
@@ -201,7 +205,7 @@ Make Matrix choose intelligently rather than simply remembering a default agent.
 
 ### Product Outcome
 
-Matrix becomes the operator that decides *where* a session should run, not only *how* to reach the current endpoint.
+Matrix becomes the communication router that decides *where* work should flow, not only *how* to reach the current endpoint.
 
 ### Strategic Effect
 
@@ -310,9 +314,9 @@ Audience:
 
 Promise:
 
-- one place to operate your real agents
+- one place where your real agents and channels meet
 
-### Edition 2: Team Session Fabric
+### Edition 2: Team Communication Matrix
 
 Audience:
 
@@ -321,7 +325,7 @@ Audience:
 
 Promise:
 
-- shared policy, visibility, and portable session control
+- shared policy, visibility, and portable communication/session control
 
 ### Edition 3: Enterprise Edge Control Layer
 
@@ -332,7 +336,7 @@ Audience:
 
 Promise:
 
-- local control, auditability, and protocol-neutral session governance
+- local control, auditability, and protocol-neutral communication governance
 
 ## Website And Messaging
 
@@ -340,18 +344,18 @@ Recommended homepage message:
 
 ### Headline
 
-**Operate real AI agents through one durable session fabric.**
+**Every channel. Every agent. One communication matrix.**
 
 ### Subheadline
 
-Matrix is the local-first control layer that unifies coding agents across protocols and channels without losing continuity, policy, or operational visibility.
+Matrix is the local-first communication crossroads that routes human-to-agent and agent-to-agent work across protocols, channels, and workspaces without losing continuity, policy, or operational visibility.
 
 ### Proof Points
 
 - Bring your own agents
 - ACP today, A2A ready
-- One session surface across CLI, HTTP, and chat
-- Local vault as control plane and mirror
+- One communication surface across CLI, HTTP, and chat
+- Local vault as control and mirror
 - Switch, inspect, cancel, and recover without protocol knowledge
 
 ## Demo Strategy
@@ -372,7 +376,7 @@ That demo communicates the category much better than a generic "ask AI a questio
 
 Matrix should optimize for:
 
-- operational continuity
+- communication continuity
 - heterogeneous agent control
 - local-first governance
 - session mobility
@@ -389,7 +393,7 @@ The recommended roadmap commitment is:
 
 ### Short term
 
-- make the session fabric visible and inspectable
+- make the communication matrix visible and inspectable
 - add workspace affinity
 - add policy routing
 
@@ -400,6 +404,6 @@ The recommended roadmap commitment is:
 
 ### Long term
 
-- package Matrix as the operator console and control layer for heterogeneous agent fleets
+- package Matrix as the communication console for heterogeneous agent fleets
 
 If executed well, this creates a category that is meaningfully separate from both agent builders and protocol projects.

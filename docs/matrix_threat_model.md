@@ -2,7 +2,7 @@
 
 ## Goal
 
-Matrix is a local-first orchestration runtime. Its main risks are not the same as a hosted SaaS control plane.
+Matrix is a local-first agent communication runtime. Its main risks are not the same as a hosted SaaS control plane.
 
 The threat model must focus on:
 

@@ -113,7 +113,7 @@ A materialized summary of the latest meaningful state of the workspace:
 
 Session history remains important, but the timeline is anchored on the workspace.
 
-This is what makes Matrix feel like the operating layer for real work rather
+This is what makes Matrix feel like the communication layer for real work rather
 than a better per-chat history.
 
 ### 2. Events Are Semantic, Not Raw Trace Spam
