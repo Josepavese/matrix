@@ -203,6 +203,10 @@ MATRIX_HOME="$(mktemp -d)" scripts/deploy_local_install.sh
 
 Only tag after CI is green on `main`.
 
+Use semantic versions in `vX.Y.Z` form. When Matrix creates a release
+autonomously, increment only `Z` from the latest existing tag. Increment `X`
+or `Y` only when explicitly requested by the maintainer.
+
 ```bash
 git tag vX.Y.Z
 git push origin vX.Y.Z
