@@ -9,9 +9,9 @@ type mockStorage struct {
 	data map[string][]byte
 }
 
-func (m *mockStorage) Get(key string) ([]byte, error)       { return m.data[key], nil }
-func (m *mockStorage) Delete(key string) error              { delete(m.data, key); return nil }
-func (m *mockStorage) List(prefix string) ([]string, error) { return nil, nil }
+func (m *mockStorage) Get(key string) ([]byte, error)  { return m.data[key], nil }
+func (m *mockStorage) Delete(key string) error         { delete(m.data, key); return nil }
+func (m *mockStorage) List(_ string) ([]string, error) { return nil, nil }
 func (m *mockStorage) Set(key string, val []byte) error {
 	if m.data == nil {
 		m.data = map[string][]byte{}

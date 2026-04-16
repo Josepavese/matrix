@@ -143,7 +143,7 @@ func (m *Manager) handleWorkspaceStatusTyped(channelID, lang string) (middleware
 	}, nil
 }
 
-func (m *Manager) handleWorkspaceSwitchTyped(ctx context.Context, channelID, lang, args string) (middleware.WorkspaceActionResult, error) {
+func (m *Manager) handleWorkspaceSwitchTyped(_ context.Context, channelID, lang, args string) (middleware.WorkspaceActionResult, error) {
 	workspaceID := strings.TrimSpace(args)
 	if workspaceID == "" {
 		return middleware.WorkspaceActionResult{Action: "switch", Message: m.wizard.GetString(lang, "workspace_switch_usage")}, nil
@@ -214,7 +214,7 @@ func (m *Manager) handleWorkspaceBindTyped(channelID, lang, args string) (middle
 	}, nil
 }
 
-func (m *Manager) handleWorkspaceSnapshotTyped(channelID, _lang, note string) (middleware.WorkspaceActionResult, error) {
+func (m *Manager) handleWorkspaceSnapshotTyped(channelID, _ string, note string) (middleware.WorkspaceActionResult, error) {
 	ws, meta, err := m.resolveWorkspaceReadContext(channelID, "")
 	if err != nil {
 		return middleware.WorkspaceActionResult{}, err

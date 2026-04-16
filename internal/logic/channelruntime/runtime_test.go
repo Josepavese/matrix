@@ -41,7 +41,7 @@ type memStorage struct{ values map[string][]byte }
 func (m memStorage) Get(key string) ([]byte, error)   { return m.values[key], nil }
 func (m memStorage) Set(key string, val []byte) error { m.values[key] = val; return nil }
 func (m memStorage) Delete(key string) error          { delete(m.values, key); return nil }
-func (m memStorage) List(prefix string) ([]string, error) {
+func (m memStorage) List(_ string) ([]string, error) {
 	return nil, nil
 }
 

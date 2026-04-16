@@ -520,34 +520,6 @@ func isSessionNotFoundError(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "session not found")
 }
 
-func (r *Router) createSession(ctx context.Context, client middleware.AgentClient, logicalSessionID string, tools []middleware.Tool) (string, error) {
-	log := slog.With("component", "agent_router", "logical_session", logicalSessionID)
-	newSessReq := middleware.NewSessionRequest{
-		ClientTitle: logicalSessionID,
-		Cwd:         r.cwd,
-		McpServers:  []middleware.McpServerConfig{},
-		Tools:       tools,
-	}
-	newSessResp, err := client.NewSession(ctx, newSessReq)
-	if err != nil {
-		return "", fmt.Errorf("ACP new session failed: %w", err)
-	}
-	log.Info("created acp session", "event", "session_created", "agent_session", newSessResp.SessionID, "tools_count", len(tools))
-
-	// Try to set the most permissive mode available.
-	// Mode IDs are agent-defined (e.g. "code", "yolo", "autoEdit").
-	// We look for known auto-approve modes, falling back to the first available.
-	if modeID := pickAutoApproveMode(newSessResp); modeID != "" {
-		if err := client.SetMode(ctx, newSessResp.SessionID, modeID); err != nil {
-			log.Warn("failed to set agent mode, continuing anyway", "event", "mode_set_failed", "modeId", modeID, "error", err)
-		} else {
-			log.Info("set agent mode", "event", "mode_set", "agent_session", newSessResp.SessionID, "modeId", modeID)
-		}
-	}
-
-	return newSessResp.SessionID, nil
-}
-
 // pickAutoApproveMode finds the most permissive mode from the session/new response.
 // Priority: build > yolo > auto > autoEdit > code > agent > first available.
 // Mode IDs are agent-defined strings, so we match case-insensitively against

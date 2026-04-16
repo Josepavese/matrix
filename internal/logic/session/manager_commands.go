@@ -348,14 +348,6 @@ func (m *Manager) handleSessionCancelTyped(ctx context.Context, channelID, lang,
 	}, nil
 }
 
-func (m *Manager) switchToPreviousSession(channelID, lang string, state ChannelState) (string, error) {
-	result, err := m.switchToPreviousSessionTyped(channelID, lang, state)
-	if err != nil {
-		return "", err
-	}
-	return m.renderSessionAction(result, lang), nil
-}
-
 func (m *Manager) switchToPreviousSessionTyped(channelID, lang string, state ChannelState) (middleware.SessionActionResult, error) {
 	if len(state.History) <= 1 {
 		return middleware.SessionActionResult{Action: "switch", Message: m.wizard.GetString(lang, "session_history_switch_no_prev")}, nil
@@ -370,14 +362,6 @@ func (m *Manager) switchToPreviousSessionTyped(channelID, lang string, state Cha
 		ActiveSessionID: state.History[1],
 		Session:         m.toSessionEntry(meta, true),
 	}, nil
-}
-
-func (m *Manager) createRequestedAgentSession(channelID, lang, args string) (string, error) {
-	result, err := m.createRequestedAgentSessionTyped(channelID, lang, args)
-	if err != nil {
-		return "", err
-	}
-	return m.renderSessionAction(result, lang), nil
 }
 
 func (m *Manager) createRequestedAgentSessionTyped(channelID, lang, args string) (middleware.SessionActionResult, error) {
@@ -523,14 +507,11 @@ func (m *Manager) sessionControllerForChannel(channelID string) (middleware.Agen
 }
 
 func (m *Manager) trySwitchToRemoteSession(ctx context.Context, channelID, target string) (middleware.SessionActionResult, bool, error) {
-	controller, agentID, err := m.sessionControllerForChannel(channelID)
-	if err != nil {
+	controller, agentID, _ := m.sessionControllerForChannel(channelID)
+	if controller == nil {
 		return middleware.SessionActionResult{}, false, nil
 	}
-	remoteSessions, _, err := controller.ListAgentSessions(ctx, agentID)
-	if err != nil {
-		return middleware.SessionActionResult{}, false, nil
-	}
+	remoteSessions, _, _ := controller.ListAgentSessions(ctx, agentID)
 	match := matchRemoteSessionTarget(target, remoteSessions)
 	if match == nil {
 		return middleware.SessionActionResult{}, false, nil
@@ -654,14 +635,11 @@ func (m *Manager) cancelRemoteSession(ctx context.Context, meta SessionMeta) err
 }
 
 func (m *Manager) tryDeleteRemoteSession(ctx context.Context, channelID, target string) (middleware.SessionActionResult, bool, error) {
-	controller, agentID, err := m.sessionControllerForChannel(channelID)
-	if err != nil {
+	controller, agentID, _ := m.sessionControllerForChannel(channelID)
+	if controller == nil {
 		return middleware.SessionActionResult{}, false, nil
 	}
-	remoteSessions, _, err := controller.ListAgentSessions(ctx, agentID)
-	if err != nil {
-		return middleware.SessionActionResult{}, false, nil
-	}
+	remoteSessions, _, _ := controller.ListAgentSessions(ctx, agentID)
 	match := matchRemoteSessionTarget(target, remoteSessions)
 	if match == nil {
 		return middleware.SessionActionResult{}, false, nil
@@ -677,14 +655,11 @@ func (m *Manager) tryDeleteRemoteSession(ctx context.Context, channelID, target 
 }
 
 func (m *Manager) tryCancelRemoteSession(ctx context.Context, channelID, target string) (middleware.SessionActionResult, bool, error) {
-	controller, agentID, err := m.sessionControllerForChannel(channelID)
-	if err != nil {
+	controller, agentID, _ := m.sessionControllerForChannel(channelID)
+	if controller == nil {
 		return middleware.SessionActionResult{}, false, nil
 	}
-	remoteSessions, _, err := controller.ListAgentSessions(ctx, agentID)
-	if err != nil {
-		return middleware.SessionActionResult{}, false, nil
-	}
+	remoteSessions, _, _ := controller.ListAgentSessions(ctx, agentID)
 	match := matchRemoteSessionTarget(target, remoteSessions)
 	if match == nil {
 		return middleware.SessionActionResult{}, false, nil

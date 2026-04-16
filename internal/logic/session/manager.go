@@ -362,11 +362,6 @@ func (m *Manager) GetOrCreateSession(channelID, targetAgent string) (string, err
 	return m.forceNewSessionWithWorkspace(channelID, targetAgent, "", "")
 }
 
-// forceNewSession creates a new session and maps the channel to it.
-func (m *Manager) forceNewSession(channelID, targetAgent string) (string, error) {
-	return m.forceNewSessionWithWorkspace(channelID, targetAgent, "", "")
-}
-
 func (m *Manager) forceNewSessionWithWorkspace(channelID, targetAgent, workspaceID, workspacePath string) (string, error) {
 	sessionID := uuid.New().String()
 

@@ -119,19 +119,6 @@ func (w *Wizard) installedAgents() []AgentEntry {
 	return entries
 }
 
-// installedIDSet returns a set of installed agent IDs.
-func (w *Wizard) installedIDSet() map[string]bool {
-	ids, err := agentcfg.ListMetaIDs(w.storage)
-	if err != nil {
-		return nil
-	}
-	m := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		m[id] = true
-	}
-	return m
-}
-
 // IsConfigured checks the SSOT Vault to see if Matrix has completed First-Run.
 func (w *Wizard) IsConfigured() bool {
 	data, err := w.storage.Get("system.configured")

@@ -135,7 +135,6 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 	}, obs)
 	if err != nil && remoteSessionID != "" && isSessionNotFoundError(err) {
 		log.Warn("ACP session lost, recreating", "agent_session", remoteSessionID)
-		remoteSessionID = ""
 		return c.ExecuteTurn(ctx, middleware.ConversationTurn{
 			AgentID:          turn.AgentID,
 			LogicalSessionID: turn.LogicalSessionID,

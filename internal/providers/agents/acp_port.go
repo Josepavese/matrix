@@ -18,12 +18,10 @@ type (
 	acpInitializeResponse   = zedacp.InitializeResponse
 	acpClientCapabilities   = zedacp.ClientCapabilities
 	acpFsCapability         = zedacp.FsCapability
-	acpAuthMethod           = zedacp.AuthMethod
 	acpNewSessionRequest    = zedacp.NewSessionRequest
 	acpNewSessionResponse   = zedacp.NewSessionResponse
 	acpLoadSessionRequest   = zedacp.LoadSessionRequest
 	acpListSessionsResponse = zedacp.ListSessionsResponse
-	acpSessionInfo          = zedacp.SessionInfo
 	acpMcpServerConfig      = zedacp.McpServerConfig
 	acpTool                 = zedacp.Tool
 	acpPromptRequest        = zedacp.PromptRequest

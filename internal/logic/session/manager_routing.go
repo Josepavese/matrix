@@ -108,15 +108,6 @@ func (m *Manager) tryHandleCommand(ctx context.Context, channelID, input string)
 	}
 }
 
-func (m *Manager) routeAgentTurn(ctx context.Context, channelID, agentID, input string, notifier middleware.ThoughtNotifier) (string, error) {
-	return m.routeResolvedSession(ctx, middleware.ConversationRequest{
-		ChannelID: channelID,
-		AgentID:   agentID,
-		Input:     input,
-		Notifier:  notifier,
-	}, "", agentID)
-}
-
 func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.ConversationRequest, preResolvedSessionID string, fallbackAgentID string) (string, error) {
 	channelID := req.ChannelID
 	agentID := req.AgentID
