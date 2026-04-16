@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -492,11 +493,10 @@ func TestEventSinkReceivesRunEvents(t *testing.T) {
 }
 
 func TestEventSinkRetriesPendingDelivery(t *testing.T) {
-	calls := 0
+	var calls atomic.Int32
 	delivered := make(chan string, 1)
 	sinkServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
-		if calls == 1 {
+		if calls.Add(1) == 1 {
 			http.Error(w, "temporary failure", http.StatusInternalServerError)
 			return
 		}

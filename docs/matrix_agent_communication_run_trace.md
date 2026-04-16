@@ -130,6 +130,49 @@ Matrix keeps the primary taxonomy operational and protocol-neutral:
 
 Provider-specific details belong in `protocol_meta`.
 
+## Frontend Event Contract
+
+Matrix exposes a provider-agnostic frontend event contract for agent activity. It is intended for Zed ACP facades, web consoles, terminal UIs, telemetry dashboards, and future channel adapters.
+
+Every exported event has:
+
+- `id`: unique Matrix event id;
+- `sequence`: monotonic run-local event order;
+- `kind`: protocol-neutral event family;
+- `status`: normalized lifecycle status when applicable;
+- `metadata.frontend_visible`: whether a frontend should normally render the event;
+- `metadata.audit_visible`: whether the event is useful for audit even when hidden from the main frontend timeline.
+
+Tool events use stable correlation fields:
+
+- `tool_call_id`: stable id shared by `tool.call.requested` and related `tool.result.received` updates;
+- `tool_name`: normalized tool name such as `write_file`, `read_file`, `edit_file`, `search`, `list_files`, or `shell`;
+- `tool_kind`: frontend category such as `read`, `edit`, `delete`, `move`, `search`, `execute`, `fetch`, or `other`;
+- `summary`: short safe UI text;
+- `inputs`: structured safe input fields;
+- `outputs`: structured safe output fields;
+- `artifact_refs`: externally addressable artifacts when known.
+
+Permission events use stable correlation fields:
+
+- `permission_id`: stable id shared by `permission.requested` and `permission.resolved`;
+- `summary`: short audit text;
+- `inputs`: safe requested-operation fields;
+- `outputs`: decision fields such as `decision` and `option_id`;
+- `metadata.frontend_visible=false` by default;
+- `metadata.audit_visible=true` by default.
+
+Lifecycle status vocabulary:
+
+```text
+pending
+running
+completed
+failed
+```
+
+Frontend consumers should use `kind`, `tool_call_id`, `permission_id`, `sequence`, and visibility metadata instead of parsing provider-specific `session/update` payloads or natural-language logs.
+
 ## Privacy
 
 Default policy:
@@ -190,6 +233,12 @@ Sinks consume Matrix events and trace references, not Noema objects.
 
 The initial Matrix implementation introduces `internal/logic/runtrace` as the internal store and projection module.
 
+Supporting libraries:
+
+- `internal/logic/frontendevents`: provider-neutral normalization for frontend/audit tool and permission fields;
+- `internal/logic/runnotifier`: bridge from live `ThoughtNotifier` updates into run trace events;
+- `internal/logic/memstore`: reusable in-memory `middleware.Storage` for tests and embedded servers.
+
 The HTTP server persists run records and ordered run events to Matrix vault storage when the daemon wires `WithTraceStorage`. Tests and embedded servers fall back to an in-memory storage implementation.
 
 Current surfaces:
@@ -239,10 +288,11 @@ Event sink delivery:
 Redaction enforcement:
 
 - `refs` and `redacted` modes suppress event `message` fields in trace projections;
-- `redacted` mode also strips tool names and event metadata;
+- `redacted` mode also strips frontend tool summaries, structured inputs/outputs, artifact refs, and event metadata;
 - an omitted trace policy defaults to `content_mode=refs`, `redaction_profile=default`, and `include_protocol_meta=true`;
 - `include_protocol_meta=false` strips protocol metadata from exported trace events;
 - `inline` mode keeps final agent content in `agent.message.final.message` and `outcome.summary`;
+- `inline` plus `redaction_profile=frontend` keeps safe tool fields such as `tool_name`, `tool_kind`, `summary`, lifecycle `status`, `inputs`, and `outputs`;
 - raw prompt/tool/file content is not stored inline by the run trace path.
 
 Headless setup behavior:

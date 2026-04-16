@@ -64,12 +64,16 @@ const (
 	ThoughtTypeToolCall
 	// ThoughtTypeToolResult indicates a tool execution result.
 	ThoughtTypeToolResult
+	// ThoughtTypePermission indicates an agent permission request or decision.
+	ThoughtTypePermission
 )
 
 // ThoughtUpdate represents a real-time intermediate update during agent execution.
 type ThoughtUpdate struct {
-	Type    ThoughtUpdateType
-	Content string
+	Type     ThoughtUpdateType
+	Content  string
+	Title    string
+	Metadata map[string]interface{}
 }
 
 // ThoughtNotifier receives real-time thought and tool updates during a prompt turn.

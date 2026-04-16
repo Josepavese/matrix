@@ -387,8 +387,10 @@ func (o *simpleObserver) OnUpdate(notif acpSessionNotification) {
 				t = middleware.ThoughtTypeToolResult
 			}
 			o.notifier.OnThought(middleware.ThoughtUpdate{
-				Type:    t,
-				Content: notif.Update.Content.Text,
+				Type:     t,
+				Content:  notif.Update.Content.Text,
+				Title:    notif.Update.Title,
+				Metadata: toolUpdateMetadata(notif),
 			})
 		}
 	}
@@ -439,6 +441,22 @@ func (o *simpleObserver) Metadata() middleware.ConversationMetadata {
 		for k, v := range o.metadata.Meta {
 			meta.Meta[k] = v
 		}
+	}
+	return meta
+}
+
+func toolUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
+	meta := make(map[string]interface{}, len(notif.Update.Meta)+4)
+	meta["source_update_type"] = notif.Update.SessionUpdate
+	meta["content_type"] = notif.Update.Content.Type
+	if strings.TrimSpace(notif.Update.Title) != "" {
+		meta["title"] = notif.Update.Title
+	}
+	if strings.TrimSpace(notif.SessionID) != "" {
+		meta["remote_session_id"] = notif.SessionID
+	}
+	for k, v := range notif.Update.Meta {
+		meta[k] = v
 	}
 	return meta
 }

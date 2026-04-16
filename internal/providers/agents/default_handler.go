@@ -25,10 +25,12 @@ var _ interface {
 // When trustMode is false, it denies permission requests (deny-by-default).
 // It also handles fs/ and terminal/ ACP methods.
 type defaultRequestHandler struct {
-	trustMode func() bool        // returns true if auto-approve is enabled; defaults to true if nil
-	fs        middleware.FS      // filesystem operations for fs/* methods
-	proc      middleware.Process // process execution for terminal/* methods
-	cwd       string             // working directory for path validation
+	trustMode  func() bool        // returns true if auto-approve is enabled; defaults to true if nil
+	fs         middleware.FS      // filesystem operations for fs/* methods
+	proc       middleware.Process // process execution for terminal/* methods
+	cwd        string             // working directory for path validation
+	notifier   middleware.ThoughtNotifier
+	notifierMu sync.Mutex
 
 	// terminalRegistry holds active terminal sessions for async terminal methods.
 	terminals   map[string]*terminalSession
@@ -64,6 +66,13 @@ func (h *defaultRequestHandler) WithFS(fs middleware.FS, cwd string) *defaultReq
 // WithProcess configures process execution for terminal/* ACP methods.
 func (h *defaultRequestHandler) WithProcess(proc middleware.Process) *defaultRequestHandler {
 	h.proc = proc
+	return h
+}
+
+func (h *defaultRequestHandler) WithNotifier(notifier middleware.ThoughtNotifier) *defaultRequestHandler {
+	h.notifierMu.Lock()
+	defer h.notifierMu.Unlock()
+	h.notifier = notifier
 	return h
 }
 
@@ -113,13 +122,16 @@ func (h *defaultRequestHandler) handlePermissionRequest(_ context.Context, log *
 	if err := json.Unmarshal(params, &req); err != nil {
 		log.Warn("failed to parse permission request", "error", err)
 		if h.isTrustMode() {
+			h.notifyPermission(permissionAudit{params: params, decision: "approved", optionID: "allow-once", auto: true})
 			return h.approveResponse("allow-once"), nil
 		}
+		h.notifyPermission(permissionAudit{params: params, decision: "denied"})
 		return h.denyResponse(), nil
 	}
 
 	if !h.isTrustMode() {
 		log.Info("denying permission (trust mode off)", "event", "permission_denied", "options_count", len(req.Options))
+		h.notifyPermission(permissionAudit{params: params, options: req.Options, decision: "denied"})
 		return h.denyResponse(), nil
 	}
 
@@ -131,6 +143,7 @@ func (h *defaultRequestHandler) handlePermissionRequest(_ context.Context, log *
 		}
 	}
 	log.Info("auto-approving permission", "event", "permission_approved", "optionID", optionID, "options_count", len(req.Options))
+	h.notifyPermission(permissionAudit{params: params, options: req.Options, decision: "approved", optionID: optionID, auto: true})
 	return h.approveResponse(optionID), nil
 }
 
