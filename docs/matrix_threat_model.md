@@ -54,12 +54,13 @@ Mitigations already present:
 
 - secure file permissions
 - optional encryption with configured master key
+- default master key discovery from `MATRIX_HOME/configs/vault-master.key`
 - `matrix vault doctor`
 - `matrix vault seal`
 
 Remaining operator requirement:
 
-- configure the vault master key in any serious deployment
+- configure and protect the vault master key file in any serious deployment
 
 ### 2. Tool overreach
 
@@ -124,7 +125,7 @@ Mitigations already present:
 
 Recommended production rules:
 
-- always configure a vault master key
+- always configure a vault master key at `MATRIX_HOME/configs/vault-master.key`
 - always review `matrix readiness`
 - keep HTTP ingress behind network controls
 - periodically run `matrix workspace prune --all`

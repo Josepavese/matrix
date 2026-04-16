@@ -150,6 +150,10 @@ Use strict mode only when the target environment has the required vault and runt
 go run ./cmd/matrix readiness --strict
 ```
 
+The normal vault master key location is `MATRIX_HOME/configs/vault-master.key`.
+Release and runtime validation must not require exporting a key variable when
+that file exists. Environment variables are overrides, not the default UX.
+
 ### 3. Backup
 
 Before a real environment deploy:

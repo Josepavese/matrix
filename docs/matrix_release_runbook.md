@@ -56,6 +56,18 @@ Without `--expect-runtime-up`, an inactive runtime is not a release warning.
 Use that mode for artifact and install validation. Use `--expect-runtime-up`
 only for environments where the daemon is expected to be serving traffic.
 
+## Vault Key Runtime Context
+
+The normal runtime key location is:
+
+```text
+MATRIX_HOME/configs/vault-master.key
+```
+
+Matrix discovers this file automatically. `MATRIX_VAULT_MASTER_KEY_FILE` and
+`MATRIX_VAULT_MASTER_KEY` remain supported as explicit overrides for isolated
+tests, CI, and emergency operations.
+
 ## Backup
 
 Always back up the vault before any release deployment or manual restore drill:
