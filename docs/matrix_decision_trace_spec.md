@@ -20,11 +20,12 @@ This is not a debugging-only feature.
 
 Decision trace is part of the product promise because Matrix is positioning itself as:
 
-- a local-first Agent Session Fabric
-- an orchestration substrate for humans and supervisory AI
+- a local-first Agent Communication Matrix
+- a communication crossroads for humans, supervisory AI, and agents
 
 That means Matrix must expose not only state and history, but also:
 
+- communication routing rationale
 - routing rationale
 - orchestration rationale
 - fallback rationale

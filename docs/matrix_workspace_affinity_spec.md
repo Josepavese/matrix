@@ -14,7 +14,7 @@ With workspace affinity, the model becomes:
 - `logical session -> workspace identity`
 - `workspace identity -> preferred sessions, policies, and default agent behavior`
 
-This is the feature that most clearly moves Matrix from "advanced routing bridge" to "Agent Session Fabric for real work."
+This is the feature that most clearly moves Matrix from "message router" to "Agent Communication Matrix for real work."
 
 ## Product Intent
 
@@ -475,4 +475,4 @@ The recommended architectural move is:
 
 **Make workspace a first-class object in the vault and a first-class annotation on sessions, while keeping channels as ingress surfaces rather than the identity of work.**
 
-That is the cleanest path from the current Matrix runtime to a true Agent Session Fabric.
+That is the cleanest path from the current Matrix runtime to a true Agent Communication Matrix.

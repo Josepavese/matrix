@@ -10,15 +10,16 @@ That means Matrix needs a stable, machine-readable description of:
 - which surfaces expose those capabilities
 - how an orchestrator should think about Matrix
 
-The goal is not to turn Matrix into the main planning AI. The goal is to make Matrix a reliable orchestration substrate that a planner, operator, or meta-agent can call.
+The goal is not to turn Matrix into the main planning AI. The goal is to make Matrix a reliable communication matrix that a human, planner, operator, meta-agent, or peer agent can call.
 
 ## Position
 
-Matrix is a **local-first Agent Session Fabric**.
+Matrix is a **local-first Agent Communication Matrix**.
 
 In orchestration terms, Matrix is:
 
-- a control plane for workspace-scoped work
+- a communication crossroads for workspace-scoped work
+- a neutral junction for human-to-agent and agent-to-agent flows
 - a local mirror of session state, memory, timeline, and snapshots
 - a neutral execution substrate for ACP and A2A agents
 - a shared command surface that can be driven by chat, HTTP, CLI, or another AI
@@ -121,7 +122,7 @@ With a formal orchestration surface, Matrix becomes:
 
 This supports the long-term product thesis:
 
-> Matrix is an orchestration substrate that can be driven directly by a human or by a supervisory AI.
+> Matrix is an agent communication matrix that can be driven directly by a human, a supervisory AI, or another agent.
 
 ## Design Rules
 

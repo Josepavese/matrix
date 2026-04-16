@@ -4,11 +4,11 @@
 
 Matrix is not an agent builder.
 
-Matrix is the **control plane for real coding agents**.
+Matrix is the **communication crossroads for real coding agents**.
 
 Core claim:
 
-> Run the best agent for the job. Keep one workspace, one session fabric, one operating surface.
+> Every channel. Every agent. One communication matrix.
 
 ## Tone Of Voice
 
@@ -28,20 +28,24 @@ Writing rules:
 
 ## Messaging Pillars
 
-### 1. One surface
+### 1. One communication matrix
+
+Human-to-agent, human-to-multi-agent, and agent-to-agent flows meet in one neutral junction.
+
+### 2. One surface
 
 Codex, Claude, Gemini, OpenCode, ACP, A2A, Telegram, HTTP.
 One operating model.
 
-### 2. Session continuity
+### 3. Session continuity
 
 Matrix preserves work continuity across channels, workspaces, and specialists.
 
-### 3. Local control
+### 4. Local control
 
 State, memory, decisions, snapshots, and orchestration traces stay local-first.
 
-### 4. Operator visibility
+### 5. Operator visibility
 
 Timeline, memory, snapshots, and decision trace make orchestration inspectable.
 
@@ -72,8 +76,8 @@ Timeline, memory, snapshots, and decision trace make orchestration inspectable.
 The README should do four things fast:
 
 1. make the category clear
-2. make the wedge obvious
-3. show the operating model visually
+2. show Matrix as the central junction for communication flows
+3. make the wedge obvious
 4. give a quick path to run it
 
 The README should stay light on text and push deeper explanation into the docs folder.
