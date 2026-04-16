@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,9 @@ import (
 
 func (m *Manager) RouteConversation(ctx context.Context, req middleware.ConversationRequest) (string, error) {
 	if !m.wizard.IsConfigured() {
+		if req.NonInteractive {
+			return "", errors.Join(middleware.ErrSetupRequired, fmt.Errorf("system.configured is false or missing"))
+		}
 		return m.wizard.Process(req.ChannelID, req.Input)
 	}
 	if handled, response, err := m.tryHandleCommand(ctx, req.ChannelID, req.Input); handled {

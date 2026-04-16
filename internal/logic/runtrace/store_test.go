@@ -81,6 +81,45 @@ func TestStorePreservesExplicitProtocolMetaExclusion(t *testing.T) {
 	}
 }
 
+func TestInlineTraceProjectionContainsFrontendFinalContent(t *testing.T) {
+	store := NewStore(NewMemoryStorage())
+	run, _, err := store.Start(Run{
+		AgentID:     "opencode",
+		Protocol:    "acp",
+		ChannelID:   "noema-zed",
+		TracePolicy: TracePolicy{ContentMode: ContentModeInline, RedactionProfile: "frontend", IncludeProtocolMeta: false},
+	})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if _, err := store.Complete(run.ID, "hello from opencode", "end_turn"); err != nil {
+		t.Fatalf("complete run: %v", err)
+	}
+	trace, found, err := store.Trace(run.ID)
+	if err != nil || !found {
+		t.Fatalf("trace found=%v err=%v", found, err)
+	}
+	if trace.Outcome.Summary != "hello from opencode" {
+		t.Fatalf("expected inline summary, got %q", trace.Outcome.Summary)
+	}
+	foundFinal := false
+	for _, event := range trace.Events {
+		if event.Kind != "agent.message.final" {
+			continue
+		}
+		foundFinal = true
+		if event.Message != "hello from opencode" {
+			t.Fatalf("expected final event inline message, got %q", event.Message)
+		}
+		if event.ProtocolMeta != nil {
+			t.Fatalf("expected protocol metadata to be excluded, got %#v", event.ProtocolMeta)
+		}
+	}
+	if !foundFinal {
+		t.Fatal("expected agent.message.final event")
+	}
+}
+
 func TestStoreRegisterSinkRequiresHTTPURL(t *testing.T) {
 	store := NewStore(NewMemoryStorage())
 	if _, err := store.RegisterSink(Sink{URL: "file:///tmp/sink"}); err == nil {

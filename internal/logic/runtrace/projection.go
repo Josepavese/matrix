@@ -18,13 +18,17 @@ func Project(run Run, events []Event) Trace {
 		contentRef = "matrix://runs/" + run.ID + "/input"
 	}
 	events = applyTracePolicy(events, run.TracePolicy)
+	outcome := Outcome{Status: run.Status, StopReason: run.StopReason, SummaryRef: run.OutputRef, Error: run.Error}
+	if run.TracePolicy.ContentMode == ContentModeInline {
+		outcome.Summary = run.Output
+	}
 	return Trace{
 		Schema:      SchemaAgentCommunicationRunTraceV0,
 		Run:         projectRun(run),
 		Surface:     projectSurface(run, contentRef),
 		Routing:     projectRouting(run),
 		Events:      events,
-		Outcome:     projectOutcome(run),
+		Outcome:     outcome,
 		TracePolicy: run.TracePolicy,
 		Context:     run.Context,
 	}
@@ -83,14 +87,5 @@ func projectRouting(run Run) Routing {
 		SelectedProtocol:   run.Protocol,
 		SelectedWorkspace:  run.WorkspaceID,
 		SelectedRemoteSess: run.RemoteSessionID,
-	}
-}
-
-func projectOutcome(run Run) Outcome {
-	return Outcome{
-		Status:     run.Status,
-		StopReason: run.StopReason,
-		SummaryRef: run.OutputRef,
-		Error:      run.Error,
 	}
 }

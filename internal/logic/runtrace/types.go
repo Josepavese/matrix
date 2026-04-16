@@ -130,6 +130,7 @@ type Outcome struct {
 	Status     string `json:"status"`
 	StopReason string `json:"stop_reason,omitempty"`
 	SummaryRef string `json:"summary_ref,omitempty"`
+	Summary    string `json:"summary,omitempty"`
 	Error      string `json:"error,omitempty"`
 }
 

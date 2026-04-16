@@ -148,6 +148,14 @@ redacted  = redacted placeholders or summaries
 inline    = raw content allowed by explicit policy
 ```
 
+Frontend projection contract:
+
+- `content_mode=inline` guarantees the final agent answer is directly renderable from `agent.message.final.message`.
+- `content_mode=inline` also exposes the final answer in `outcome.summary` for clients that render a single terminal message.
+- `outcome.summary_ref` and event `content_ref` remain present for audit and replay, but frontend consumers do not need to dereference `matrix://...` refs to display the final answer.
+- `include_protocol_meta=false` strips protocol/debug metadata from trace event projections while preserving protocol-neutral event kinds and renderable agent content.
+- Matrix technical events such as `run.started`, `routing.decision`, and `session.resumed` remain part of the trace; frontend facades can filter them without losing final content.
+
 ## Run Actions
 
 Run actions are operational controls.
@@ -192,6 +200,7 @@ Current surfaces:
 - `POST /v1/runs/{run_id}/actions` supports `cancel`.
 - `emergency_kill_seconds` is the only wall-clock kill path and is disabled by default.
 - `POST /v1/event-sinks` persists generic sink registration and queues HTTP delivery for matching run events through the persistent delivery outbox.
+- non-interactive `/v1/runs` never emits first-run wizard prompts as agent output; when `system.configured` is false or missing, sync callers receive HTTP `409` with `code=SETUP_REQUIRED`.
 
 Captured event sources:
 
@@ -233,7 +242,16 @@ Redaction enforcement:
 - `redacted` mode also strips tool names and event metadata;
 - an omitted trace policy defaults to `content_mode=refs`, `redaction_profile=default`, and `include_protocol_meta=true`;
 - `include_protocol_meta=false` strips protocol metadata from exported trace events;
+- `inline` mode keeps final agent content in `agent.message.final.message` and `outcome.summary`;
 - raw prompt/tool/file content is not stored inline by the run trace path.
+
+Headless setup behavior:
+
+- interactive channels may still enter the first-run wizard when Matrix is not configured;
+- `/v1/runs` is treated as non-interactive machine ingress and returns a structured setup error instead of wizard text;
+- the structured response uses HTTP `409` and `code=SETUP_REQUIRED`;
+- `matrix bootstrap doctor` exposes `system_configured` so installers and sidecars can block traffic until setup is complete;
+- headless deployments must provision at least one active agent and complete setup before routing production `/v1/runs` traffic.
 
 Concurrency and durability:
 
@@ -268,7 +286,8 @@ Observed real agent outputs:
 
 Operational notes:
 
-- a fresh Matrix daemon still routes the first interaction through onboarding until `system.configured=true`;
+- a fresh Matrix daemon still routes interactive channel traffic through onboarding until `system.configured=true`;
+- non-interactive `/v1/runs` traffic fails with `SETUP_REQUIRED` until setup is complete, so external frontends never receive wizard prompts as fake agent answers;
 - after onboarding, provider selection remains channel-neutral and resolves through the Matrix agent catalog/session layer;
 - real provider latency depends on the external agent, so run surfaces must be treated as asynchronous operational surfaces even when the caller chooses `sync`;
 - no absolute run timeout is applied by default; emergency wall-clock termination is opt-in through `emergency_kill_seconds`.

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/jose/matrix-v2/internal/logic/agentcfg"
+	"github.com/jose/matrix-v2/internal/logic/agentdoctor"
 	"github.com/jose/matrix-v2/internal/middleware"
 	"github.com/spf13/cobra"
 )
@@ -73,6 +74,7 @@ var agentDoctorCmd = &cobra.Command{
 				"override_active":               override.Active,
 				"override_env_count":            len(override.Env),
 				"command_in_path":               false,
+				"command_probe_ok":              false,
 				"agents_config_path_override":   os.Getenv("MATRIX_AGENTS_CONFIG") != "",
 				"telegram_config_path_override": os.Getenv("MATRIX_TELEGRAM_CONFIG") != "",
 			}
@@ -82,6 +84,14 @@ var agentDoctorCmd = &cobra.Command{
 					item["command_in_path"] = true
 				} else if _, err := execLookPath(cfg.Command); err == nil {
 					item["command_in_path"] = true
+				}
+			}
+			if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && endpoint.Command != "" {
+				probe := agentdoctor.ProbeCommand(endpoint.Command, endpoint.Args, cfg.Env, cfg.EnvIsolation)
+				item["command_probe_ok"] = probe.OK
+				item["command_probe_exit_code"] = probe.ExitCode
+				if probe.Error != "" {
+					item["command_probe_error"] = probe.Error
 				}
 			}
 
@@ -106,6 +116,9 @@ var agentDoctorCmd = &cobra.Command{
 			}
 			if len(cfg.Env) == 0 {
 				warnings = append(warnings, "no effective environment overrides")
+			}
+			if probeOK, _ := item["command_probe_ok"].(bool); endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && !probeOK {
+				warnings = append(warnings, "ACP stdio command probe failed")
 			}
 			item["warnings"] = warnings
 

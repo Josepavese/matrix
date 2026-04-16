@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -243,6 +244,30 @@ func TestHandleRuns_Success(t *testing.T) {
 	}
 }
 
+func TestHandleRuns_SetupRequiredIsStructuredConflict(t *testing.T) {
+	router := &mockSessionRouter{err: errors.Join(middleware.ErrSetupRequired, errors.New("system.configured is false"))}
+	_, mux := setupServer(router, "", "")
+
+	body, _ := json.Marshal(map[string]string{"channel_id": "noema", "input": "hello", "agent_id": "opencode"})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 setup required, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response parse error: %v", err)
+	}
+	if resp["code"] != "SETUP_REQUIRED" {
+		t.Fatalf("expected SETUP_REQUIRED, got %#v", resp)
+	}
+	if resp["run_id"] == "" {
+		t.Fatal("expected run_id for failed trace")
+	}
+}
+
 func TestHandleRunTraceAndEvents(t *testing.T) {
 	router := &mockSessionRouter{response: "Hello from agent"}
 	_, mux := setupServer(router, "", "")
@@ -292,6 +317,72 @@ func TestHandleRunTraceAndEvents(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 events, got %d: %s", w.Code, w.Body.String())
 	}
+}
+
+func TestHandleRunTraceInlineFrontendProjection(t *testing.T) {
+	router := &mockSessionRouter{response: "hello from opencode"}
+	_, mux := setupServer(router, "", "")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id": "noema-realtest-opencode",
+		"input":      "ping",
+		"agent_id":   "opencode",
+		"trace_policy": map[string]interface{}{
+			"content_mode":          "inline",
+			"redaction_profile":     "frontend",
+			"include_protocol_meta": false,
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("response parse error: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, created["trace_url"], nil)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 trace, got %d: %s", w.Code, w.Body.String())
+	}
+	var trace struct {
+		Events []struct {
+			Kind         string         `json:"kind"`
+			Message      string         `json:"message"`
+			ProtocolMeta map[string]any `json:"protocol_meta"`
+		} `json:"events"`
+		Outcome struct {
+			Summary    string `json:"summary"`
+			SummaryRef string `json:"summary_ref"`
+		} `json:"outcome"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &trace); err != nil {
+		t.Fatalf("trace parse error: %v", err)
+	}
+	if trace.Outcome.Summary != "hello from opencode" {
+		t.Fatalf("expected inline outcome summary, got %#v", trace.Outcome)
+	}
+	if trace.Outcome.SummaryRef == "" {
+		t.Fatal("expected summary ref to remain available for audit")
+	}
+	for _, event := range trace.Events {
+		if event.Kind != "agent.message.final" {
+			continue
+		}
+		if event.Message != "hello from opencode" {
+			t.Fatalf("expected inline final message, got %q", event.Message)
+		}
+		if event.ProtocolMeta != nil {
+			t.Fatalf("expected protocol meta excluded, got %#v", event.ProtocolMeta)
+		}
+		return
+	}
+	t.Fatal("expected agent.message.final event")
 }
 
 func TestHandleRunActionsCancel(t *testing.T) {

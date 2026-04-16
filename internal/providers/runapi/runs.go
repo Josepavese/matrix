@@ -122,6 +122,15 @@ func (s *Server) dispatchByExecutionMode(w http.ResponseWriter, r *http.Request,
 		res, err := s.executeRun(ctx, exec)
 		if err != nil {
 			slog.Error("matrix run bridge failed", "error", err)
+			if isSetupRequired(err) {
+				writeJSON(w, http.StatusConflict, map[string]string{
+					"code":    "SETUP_REQUIRED",
+					"message": "Matrix setup is required before non-interactive /v1/runs routing.",
+					"hint":    "Run `matrix bootstrap doctor` and complete setup, or set system.configured only after provisioning the required agents.",
+					"run_id":  exec.runID,
+				})
+				return
+			}
 			if isEmergencyTimeout(ctx, err, exec) {
 				http.Error(w, "Gateway Timeout: emergency kill deadline reached", http.StatusGatewayTimeout)
 				return
@@ -160,12 +169,13 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (string, err
 func (s *Server) route(ctx context.Context, req runRequest, agentID string, notifier middleware.ThoughtNotifier) (string, error) {
 	if richer, ok := s.router.(middleware.ConversationRequestRouter); ok {
 		return richer.RouteConversation(ctx, middleware.ConversationRequest{
-			ChannelID:     req.ChannelID,
-			AgentID:       agentID,
-			WorkspaceID:   req.WorkspaceID,
-			WorkspacePath: req.WorkspacePath,
-			Input:         req.Input,
-			Notifier:      notifier,
+			ChannelID:      req.ChannelID,
+			AgentID:        agentID,
+			WorkspaceID:    req.WorkspaceID,
+			WorkspacePath:  req.WorkspacePath,
+			Input:          req.Input,
+			Notifier:       notifier,
+			NonInteractive: true,
 		})
 	}
 	return s.router.Route(ctx, req.ChannelID, agentID, req.Input, notifier)
@@ -214,4 +224,8 @@ func emergencyTimeout(req runRequest) time.Duration {
 
 func isEmergencyTimeout(ctx context.Context, err error, exec runExecution) bool {
 	return exec.emergencyTimeout > 0 && (errors.Is(err, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded)
+}
+
+func isSetupRequired(err error) bool {
+	return errors.Is(err, middleware.ErrSetupRequired)
 }

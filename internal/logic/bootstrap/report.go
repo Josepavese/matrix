@@ -50,7 +50,7 @@ func BuildGuide(systemConfigured, telegramEnabled, telegramConfigured bool, acti
 		steps = append(steps, "Telegram is optional; leave it disabled unless you want a chat gateway.")
 	}
 	if !systemConfigured {
-		steps = append(steps, "First-run onboarding is not complete yet: start `matrix run` and send the first message through a channel or `/v1/runs`.")
+		steps = append(steps, "First-run onboarding is not complete yet: start `matrix run` and complete setup through an interactive channel before sending non-interactive `/v1/runs` traffic.")
 	}
 	steps = append(steps,
 		"Run `matrix doctor` before starting the daemon if you want a full local health snapshot.",

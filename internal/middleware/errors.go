@@ -24,4 +24,5 @@ var (
 	ErrAgentUnavailable = &Error{Code: "AGENT_UNAVAILABLE", Message: "agent endpoint unreachable"}
 	ErrAuthFailed       = &Error{Code: "AUTH_FAILED", Message: "authentication failed"}
 	ErrAgentNotFound    = &Error{Code: "AGENT_NOT_FOUND", Message: "agent not found in registry"}
+	ErrSetupRequired    = &Error{Code: "SETUP_REQUIRED", Message: "matrix setup is required before non-interactive routing"}
 )

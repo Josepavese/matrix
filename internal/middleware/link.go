@@ -21,12 +21,13 @@ type ChannelResponse struct {
 // workspace-aware callers. It keeps channel identity as ingress metadata while
 // letting the runtime resolve work context from workspace hints.
 type ConversationRequest struct {
-	ChannelID     string
-	AgentID       string
-	WorkspaceID   string
-	WorkspacePath string
-	Input         string
-	Notifier      ThoughtNotifier
+	ChannelID      string
+	AgentID        string
+	WorkspaceID    string
+	WorkspacePath  string
+	Input          string
+	Notifier       ThoughtNotifier
+	NonInteractive bool
 }
 
 // SessionActionRequest is the typed, channel-neutral request envelope for session lifecycle operations.
