@@ -16,6 +16,14 @@ Run:
 bash scripts/deploy_preflight.sh
 ```
 
+The preflight includes GoReleaser config validation. Before tagging a release, also run a snapshot release and inspect archive layout:
+
+```bash
+goreleaser release --snapshot --clean
+```
+
+Each archive must contain the executable, `configs/`, installers, and installation docs.
+
 If you expect a live local runtime to be up before release validation:
 
 ```bash
@@ -51,6 +59,7 @@ Minimum criteria for a local release candidate:
 - test suite is green
 - backup command works
 - restore path has been drilled recently
+- release archives install into one PAL home through `install/install.sh` and `install/install.ps1`
 
 ## Things That Still Need Human Review
 

@@ -66,9 +66,9 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.24.4'
-    - name: GoReleaser check
+    - name: GoReleaser snapshot
       uses: goreleaser/goreleaser-action@v5
       with:
         distribution: goreleaser
         version: v2.15.3
-        args: check
+        args: release --snapshot --clean

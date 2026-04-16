@@ -94,11 +94,32 @@ This is the loop Matrix is built for:
 
 ## Quick Start
 
+Install without cloning the repo.
+
+Linux and macOS:
+
 ```bash
-go build -o matrix ./cmd/matrix
-./matrix bootstrap doctor
-./matrix run
+curl -fsSL https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.sh | sh
+export MATRIX_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/matrix"
+export PATH="$MATRIX_HOME/bin:$PATH"
+
+matrix home
+matrix bootstrap doctor
+matrix run
 ```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.ps1 | iex
+$env:MATRIX_HOME = "$env:LOCALAPPDATA\Matrix"
+
+& "$env:MATRIX_HOME\bin\matrix.exe" home
+& "$env:MATRIX_HOME\bin\matrix.exe" bootstrap doctor
+& "$env:MATRIX_HOME\bin\matrix.exe" run
+```
+
+Matrix installs into one PAL home. Binaries, configs, vault DB, logs, artifacts, backups, and temporary files live under that home; the installer downloads only the matching release asset.
 
 ## Core Surfaces
 
@@ -126,6 +147,7 @@ go build -o matrix ./cmd/matrix
 - [Workspace affinity](docs/matrix_workspace_affinity_spec.md)
 - [Workspace timeline](docs/matrix_workspace_timeline_spec.md)
 - [Protocol-neutral runtime](docs/matrix_v2_protocol_neutral_runtime.md)
+- [Installation](docs/matrix_installation.md)
 - [Orchestration surface](docs/matrix_orchestration_surface_spec.md)
 - [Decision trace](docs/matrix_decision_trace_spec.md)
 - [Agent communication run trace](docs/matrix_agent_communication_run_trace.md)

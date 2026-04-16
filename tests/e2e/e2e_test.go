@@ -39,6 +39,7 @@ func TestScripts(t *testing.T) {
 		Setup: func(env *testscript.Env) error {
 			// Add the temp directory containing the 'matrix' binary to PATH
 			env.Setenv("PATH", filepath.Dir(binPath)+string(os.PathListSeparator)+os.Getenv("PATH"))
+			env.Setenv("MATRIX_HOME", filepath.Join(env.WorkDir, ".matrix-home"))
 			return nil
 		},
 	})
