@@ -63,22 +63,6 @@ func (s *Server) resolveProtocol(agentID string) string {
 	return string(endpoint.Kind)
 }
 
-func inferToolName(content string) string {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return ""
-	}
-	for _, sep := range []string{" ", "\n", ":", "("} {
-		if idx := strings.Index(content, sep); idx > 0 {
-			return strings.TrimSpace(content[:idx])
-		}
-	}
-	if len(content) > 64 {
-		return content[:64]
-	}
-	return content
-}
-
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {

@@ -14,6 +14,19 @@ func (s *Store) AppendEvent(event Event) (Event, error) {
 	if s == nil || s.storage == nil {
 		return Event{}, fmt.Errorf("run trace storage not available")
 	}
+	event.RunID = strings.TrimSpace(event.RunID)
+	if event.RunID == "" {
+		return Event{}, fmt.Errorf("run id is required")
+	}
+	s.eventMu.Lock()
+	defer s.eventMu.Unlock()
+	if event.Sequence <= 0 {
+		ids, err := s.loadEventIndex(event.RunID)
+		if err != nil {
+			return Event{}, err
+		}
+		event.Sequence = len(ids) + 1
+	}
 	event, err := normalizeEvent(event)
 	if err != nil {
 		return Event{}, err
@@ -25,9 +38,7 @@ func (s *Store) AppendEvent(event Event) (Event, error) {
 	if err := s.storage.Set(EventKey(event.RunID, event.ID), payload); err != nil {
 		return Event{}, fmt.Errorf("failed to store run event %s: %w", event.ID, err)
 	}
-	s.eventMu.Lock()
 	err = s.updateEventIndex(event.RunID, event.ID)
-	s.eventMu.Unlock()
 	if err != nil {
 		return Event{}, err
 	}
@@ -79,6 +90,9 @@ func (s *Store) LoadEventsAfter(runID, afterEventID string, limit int) ([]Event,
 		return nil, err
 	}
 	sort.SliceStable(events, func(i, j int) bool {
+		if events[i].Sequence > 0 && events[j].Sequence > 0 {
+			return events[i].Sequence < events[j].Sequence
+		}
 		return events[i].Timestamp.Before(events[j].Timestamp)
 	})
 	return events, nil

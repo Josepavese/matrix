@@ -61,6 +61,7 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 
 	return &acpConversationClient{
 		client:               client,
+		handler:              handler,
 		cwd:                  deps.Cwd,
 		loadSessionSupport:   supportsLoadSession(initResp),
 		deleteSessionSupport: supportsDeleteSession(initResp),
@@ -70,6 +71,7 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 
 type acpConversationClient struct {
 	client               ACPClient
+	handler              *defaultRequestHandler
 	cwd                  string
 	loadSessionSupport   bool
 	deleteSessionSupport bool
@@ -124,6 +126,9 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 
 	if turn.ThoughtNotifier != nil {
 		turn.ThoughtNotifier.SetHeader(turn.AgentID, remoteSessionID)
+	}
+	if c.handler != nil {
+		c.handler.WithNotifier(turn.ThoughtNotifier)
 	}
 
 	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier}

@@ -211,6 +211,7 @@ Response model:
 - synchronous `/v1/runs` returns structured HTTP `409` `SETUP_REQUIRED` instead of wizard text when `system.configured=false`
 - `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`
 - `GET /v1/runs/{run_id}/events` returns ordered run events
+- tool and permission events expose provider-neutral frontend fields such as `sequence`, `tool_call_id`, `permission_id`, `tool_name`, `tool_kind`, `summary`, `inputs`, `outputs`, `artifact_refs`, and visibility metadata
 - `POST /v1/runs/{run_id}/actions` exposes operational run controls such as `cancel`
 - `POST /v1/event-sinks` registers generic run-event consumers
 - `/v1/session-actions` returns a synchronous typed JSON object describing the session action result

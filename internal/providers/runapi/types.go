@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/jose/matrix-v2/internal/logic/memstore"
 	"github.com/jose/matrix-v2/internal/logic/rundelivery"
 	"github.com/jose/matrix-v2/internal/logic/runtrace"
 	"github.com/jose/matrix-v2/internal/middleware"
@@ -67,7 +68,7 @@ type eventSinkRequest struct {
 }
 
 func NewServer(router Router) *Server {
-	storage := runtrace.NewMemoryStorage()
+	storage := memstore.New()
 	server := &Server{
 		router:       router,
 		defaultAgent: "opencode",

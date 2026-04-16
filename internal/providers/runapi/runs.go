@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jose/matrix-v2/internal/logic/runnotifier"
 	"github.com/jose/matrix-v2/internal/logic/runtrace"
 	"github.com/jose/matrix-v2/internal/middleware"
 )
@@ -144,7 +145,7 @@ func (s *Server) dispatchByExecutionMode(w http.ResponseWriter, r *http.Request,
 
 func (s *Server) executeRun(ctx context.Context, exec runExecution) (string, error) {
 	before := s.sessionSnapshot(ctx, exec.req.ChannelID, exec.req.WorkspaceID)
-	notifier := &runTraceNotifier{store: s.runStore, runID: exec.runID, agentID: exec.agentID, protocol: s.resolveProtocol(exec.agentID)}
+	notifier := runnotifier.New(s.runStore, exec.runID, exec.agentID, s.resolveProtocol(exec.agentID))
 	res, err := s.route(ctx, exec.req, exec.agentID, notifier)
 	if err != nil {
 		if isEmergencyTimeout(ctx, err, exec) {

@@ -67,6 +67,7 @@ type TracePolicy struct {
 type Event struct {
 	ID             string                 `json:"id"`
 	RunID          string                 `json:"run_id"`
+	Sequence       int                    `json:"sequence,omitempty"`
 	Kind           string                 `json:"kind"`
 	Actor          string                 `json:"actor"`
 	Status         string                 `json:"status,omitempty"`
@@ -74,7 +75,13 @@ type Event struct {
 	Protocol       string                 `json:"protocol,omitempty"`
 	ProtocolMethod string                 `json:"protocol_method,omitempty"`
 	ProtocolMeta   map[string]interface{} `json:"protocol_meta,omitempty"`
+	ToolCallID     string                 `json:"tool_call_id,omitempty"`
 	ToolName       string                 `json:"tool_name,omitempty"`
+	ToolKind       string                 `json:"tool_kind,omitempty"`
+	PermissionID   string                 `json:"permission_id,omitempty"`
+	Summary        string                 `json:"summary,omitempty"`
+	Inputs         map[string]interface{} `json:"inputs,omitempty"`
+	Outputs        map[string]interface{} `json:"outputs,omitempty"`
 	ContentRef     string                 `json:"content_ref,omitempty"`
 	ContentDigest  string                 `json:"content_digest,omitempty"`
 	ArtifactRefs   []string               `json:"artifact_refs,omitempty"`

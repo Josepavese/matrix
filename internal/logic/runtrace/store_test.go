@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	"github.com/jose/matrix-v2/internal/logic/memstore"
 )
 
 func TestStoreProjectsTrace(t *testing.T) {
-	store := NewStore(NewMemoryStorage())
+	store := NewStore(memstore.New())
 	run, _, err := store.Start(Run{
 		AgentID:       "codex",
 		Protocol:      "acp",
@@ -49,7 +51,7 @@ func TestStoreProjectsTrace(t *testing.T) {
 }
 
 func TestStoreDefaultsEmptyTracePolicyToProtocolMetaIncluded(t *testing.T) {
-	store := NewStore(NewMemoryStorage())
+	store := NewStore(memstore.New())
 	run, _, err := store.Start(Run{AgentID: "opencode", ChannelID: "http.test", ExecutionMode: ExecutionModeSync})
 	if err != nil {
 		t.Fatalf("start run: %v", err)
@@ -66,7 +68,7 @@ func TestStoreDefaultsEmptyTracePolicyToProtocolMetaIncluded(t *testing.T) {
 }
 
 func TestStorePreservesExplicitProtocolMetaExclusion(t *testing.T) {
-	store := NewStore(NewMemoryStorage())
+	store := NewStore(memstore.New())
 	run, _, err := store.Start(Run{
 		AgentID:       "opencode",
 		ChannelID:     "http.test",
@@ -82,7 +84,7 @@ func TestStorePreservesExplicitProtocolMetaExclusion(t *testing.T) {
 }
 
 func TestInlineTraceProjectionContainsFrontendFinalContent(t *testing.T) {
-	store := NewStore(NewMemoryStorage())
+	store := NewStore(memstore.New())
 	run, _, err := store.Start(Run{
 		AgentID:     "opencode",
 		Protocol:    "acp",
@@ -121,7 +123,7 @@ func TestInlineTraceProjectionContainsFrontendFinalContent(t *testing.T) {
 }
 
 func TestStoreRegisterSinkRequiresHTTPURL(t *testing.T) {
-	store := NewStore(NewMemoryStorage())
+	store := NewStore(memstore.New())
 	if _, err := store.RegisterSink(Sink{URL: "file:///tmp/sink"}); err == nil {
 		t.Fatal("expected non-http sink url to fail")
 	}
@@ -131,7 +133,7 @@ func TestStoreRegisterSinkRequiresHTTPURL(t *testing.T) {
 }
 
 func TestStoreCancelRun(t *testing.T) {
-	store := NewStore(NewMemoryStorage())
+	store := NewStore(memstore.New())
 	run, _, err := store.Start(Run{AgentID: "gemini", ChannelID: "telegram.user", ExecutionMode: ExecutionModeAsync})
 	if err != nil {
 		t.Fatalf("start run: %v", err)
@@ -153,7 +155,7 @@ func TestStoreCancelRun(t *testing.T) {
 }
 
 func TestStoreAppendEventConcurrentPreservesIndex(t *testing.T) {
-	store := NewStore(NewMemoryStorage())
+	store := NewStore(memstore.New())
 	run, _, err := store.Start(Run{AgentID: "opencode", ChannelID: "http.test", ExecutionMode: ExecutionModeSync})
 	if err != nil {
 		t.Fatalf("start run: %v", err)
@@ -189,5 +191,10 @@ func TestStoreAppendEventConcurrentPreservesIndex(t *testing.T) {
 	}
 	if got, want := len(events), eventCount+1; got != want {
 		t.Fatalf("expected %d indexed events, got %d", want, got)
+	}
+	for i, event := range events {
+		if event.Sequence != i+1 {
+			t.Fatalf("expected sequence %d at index %d, got %d", i+1, i, event.Sequence)
+		}
 	}
 }

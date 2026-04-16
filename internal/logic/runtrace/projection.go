@@ -51,6 +51,11 @@ func applyEventTracePolicy(event Event, policy TracePolicy) Event {
 	}
 	if policy.ContentMode == ContentModeRedacted {
 		event.ToolName = ""
+		event.ToolKind = ""
+		event.Summary = ""
+		event.Inputs = nil
+		event.Outputs = nil
+		event.ArtifactRefs = nil
 		event.Metadata = nil
 	}
 	return event
