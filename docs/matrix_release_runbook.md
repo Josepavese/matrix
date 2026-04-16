@@ -6,19 +6,14 @@ A release should not depend on tribal knowledge.
 
 This runbook defines the minimum repeatable release flow for Matrix in its current local-first form.
 
+The governing policy is [matrix_deployment_policy.md](matrix_deployment_policy.md).
+
 ## Preflight
 
 Run:
 
 ```bash
-matrix vault migrate
-matrix readiness
-matrix readiness --strict
-matrix doctor
-matrix logs doctor
-matrix workspace retention
-matrix workspace prune --all
-go test ./...
+bash scripts/deploy_preflight.sh
 ```
 
 If you expect a live local runtime to be up before release validation:
@@ -49,6 +44,7 @@ Matrix will refuse restore while the local runtime appears active on the default
 
 Minimum criteria for a local release candidate:
 
+- CI is green on `main`
 - `matrix readiness` returns `ready` or `ready_with_warnings`
 - vault schema is `current`
 - no unexpected retention overflows remain
