@@ -52,6 +52,10 @@ If you expect a live local runtime to be up before release validation:
 matrix readiness --expect-runtime-up
 ```
 
+Without `--expect-runtime-up`, an inactive runtime is not a release warning.
+Use that mode for artifact and install validation. Use `--expect-runtime-up`
+only for environments where the daemon is expected to be serving traffic.
+
 ## Backup
 
 Always back up the vault before any release deployment or manual restore drill:
