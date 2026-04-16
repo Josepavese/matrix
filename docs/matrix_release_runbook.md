@@ -90,6 +90,14 @@ Minimum criteria for a local release candidate:
 - release archives install into one PAL home through `install/install.sh` and `install/install.ps1`
 - local PAL home has been updated from the generated host artifact through `scripts/deploy_local_install.sh`
 
+## Versioning Rule
+
+Matrix releases use tags in `vX.Y.Z` form.
+
+When creating a release autonomously, increase only the patch component `Z`.
+Do not increase `X` or `Y` unless the maintainer explicitly requests a major
+or minor release.
+
 ## Things That Still Need Human Review
 
 The runbook does not replace:
