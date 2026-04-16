@@ -173,6 +173,16 @@ failed
 
 Frontend consumers should use `kind`, `tool_call_id`, `permission_id`, `sequence`, and visibility metadata instead of parsing provider-specific `session/update` payloads or natural-language logs.
 
+Tool enrichment is intentionally layered:
+
+- provider structured tool fields are used first;
+- provider metadata is used when it carries safe fields such as `path`, `file`, `command`, or `operation`;
+- a pending tool call can be enriched from the correlated permission request for the same active tool window;
+- file artifact references are emitted as `file://...` only for completed edit/delete/move-style operations with a safe absolute path;
+- Matrix avoids arbitrary natural-language inference when no structured source exists.
+
+Native protocol payloads are preserved only as evidence in `protocol_meta`. ACP updates are stored under `protocol_meta.acp` when available. A2A or future providers should follow the same pattern, for example `protocol_meta.a2a`, while keeping the Matrix event kind and fields provider-neutral. Frontends that need ACP-native projection can build it from Matrix neutral events plus `protocol_meta.acp`; generic channel adapters should consume the neutral contract.
+
 ## Privacy
 
 Default policy:
@@ -266,6 +276,8 @@ Run enrichment:
 - remote session ids are captured from notifier headers when providers emit them;
 - logical session, remote session, protocol, workspace, mode, and status are copied from the channel-neutral session status surface when available;
 - trace events keep protocol-specific details in `protocol_meta`, never as primary schema concepts.
+- ACP `session/update` payloads are preserved in `protocol_meta.acp` for lossless inspection when `include_protocol_meta=true`;
+- permission payloads can enrich the currently active tool event with path/operation, but permission events remain hidden from frontend timelines by default.
 
 Event reads:
 

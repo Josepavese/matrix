@@ -43,6 +43,9 @@ func permissionInputs(content string, metadata map[string]interface{}) map[strin
 	if path := FirstPath(content, metadata); path != "" {
 		inputs["path"] = path
 	}
+	if operation := ToolOperation(content, metadata); operation != "" {
+		inputs["operation"] = operation
+	}
 	if options, ok := metadata["options"]; ok && options != nil {
 		inputs["options"] = options
 	}

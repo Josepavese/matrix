@@ -1,7 +1,6 @@
 package frontendevents
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/jose/matrix-v2/internal/logic/runtrace"
@@ -26,16 +25,49 @@ func NormalizeTool(content string, metadata map[string]interface{}, fallbackName
 	))
 	kind := NormalizeToolKind(name, content)
 	path := FirstPath(content, metadata)
+	operation := ToolOperation(content, metadata)
 	status := NormalizeToolStatus(FirstNonEmpty(StringValue(metadata, "status"), statusFromSourceUpdate(metadata)))
 	return ToolEvent{
 		Name:         name,
 		Kind:         kind,
 		Status:       status,
-		Summary:      toolSummary(status, name, path, content),
-		Inputs:       toolInputs(path),
-		Outputs:      toolOutputs(path, status),
+		Summary:      toolSummary(toolSummaryContext{Status: status, Name: name, Kind: kind, Path: path, Operation: operation, Content: content}),
+		Inputs:       toolInputs(path, operation),
+		Outputs:      toolOutputs(path, operation, status),
 		ArtifactRefs: toolArtifactRefs(path, kind, status),
 	}
+}
+
+func EnrichToolWithContext(tool ToolEvent, path, operation string) ToolEvent {
+	path = strings.TrimSpace(path)
+	operation = strings.TrimSpace(operation)
+	if path == "" && operation == "" {
+		return tool
+	}
+	if path != "" {
+		tool.Inputs = mergeToolMap(tool.Inputs, map[string]interface{}{"path": path})
+		if tool.Status == runtrace.StatusCompleted {
+			tool.Outputs = mergeToolMap(tool.Outputs, map[string]interface{}{"path": path})
+			if len(tool.ArtifactRefs) == 0 {
+				tool.ArtifactRefs = toolArtifactRefs(path, tool.Kind, tool.Status)
+			}
+		}
+	}
+	if operation != "" {
+		tool.Inputs = mergeToolMap(tool.Inputs, map[string]interface{}{"operation": operation})
+		if tool.Status == runtrace.StatusCompleted && tool.Kind == "execute" {
+			tool.Outputs = mergeToolMap(tool.Outputs, map[string]interface{}{"operation": operation})
+		}
+	}
+	tool.Summary = toolSummary(toolSummaryContext{
+		Status:    tool.Status,
+		Name:      tool.Name,
+		Kind:      tool.Kind,
+		Path:      path,
+		Operation: operation,
+		Content:   tool.Summary,
+	})
+	return tool
 }
 
 func NormalizeToolName(raw string) string {
@@ -75,18 +107,32 @@ func NormalizeToolStatus(raw string) string {
 	}
 }
 
-func toolInputs(path string) map[string]interface{} {
-	if path == "" {
+func toolInputs(path, operation string) map[string]interface{} {
+	if path == "" && operation == "" {
 		return nil
 	}
-	return map[string]interface{}{"path": path}
+	inputs := map[string]interface{}{}
+	if path != "" {
+		inputs["path"] = path
+	}
+	if operation != "" {
+		inputs["operation"] = operation
+	}
+	return inputs
 }
 
-func toolOutputs(path, status string) map[string]interface{} {
-	if path == "" || status != runtrace.StatusCompleted {
+func toolOutputs(path, operation, status string) map[string]interface{} {
+	if status != runtrace.StatusCompleted || (path == "" && operation == "") {
 		return nil
 	}
-	return map[string]interface{}{"path": path}
+	outputs := map[string]interface{}{}
+	if path != "" {
+		outputs["path"] = path
+	}
+	if operation != "" {
+		outputs["operation"] = operation
+	}
+	return outputs
 }
 
 func toolArtifactRefs(path, kind, status string) []string {
@@ -103,18 +149,19 @@ func statusFromSourceUpdate(metadata map[string]interface{}) string {
 	return runtrace.StatusCompleted
 }
 
-func toolSummary(status, name, path, content string) string {
-	action := map[string]string{"pending": "Start", "running": "Run", runtrace.StatusCompleted: "Completed", runtrace.StatusFailed: "Failed"}[status]
-	if action == "" {
-		action = "Run"
+func mergeToolMap(base, extra map[string]interface{}) map[string]interface{} {
+	if len(extra) == 0 {
+		return base
 	}
-	if path != "" {
-		return fmt.Sprintf("%s %s on %s", action, name, path)
+	if base == nil {
+		base = map[string]interface{}{}
 	}
-	if content != "" {
-		return truncateSummary(content)
+	for k, v := range extra {
+		if v != "" && v != nil {
+			base[k] = v
+		}
 	}
-	return fmt.Sprintf("%s %s", action, name)
+	return base
 }
 
 func containsAny(value string, tokens []string) bool {

@@ -152,3 +152,81 @@ func TestNotifierRecordsPermissionAuditEvents(t *testing.T) {
 		t.Fatalf("expected permission resolution outputs, got %#v", resolved.Outputs)
 	}
 }
+
+func TestNotifierCorrelatesACPToolWithPermissionContext(t *testing.T) {
+	store := runtrace.NewStore(memstore.New())
+	run, _, err := store.Start(runtrace.Run{
+		AgentID:     "opencode",
+		Protocol:    "acp",
+		ChannelID:   "http.test",
+		TracePolicy: runtrace.TracePolicy{ContentMode: runtrace.ContentModeInline, RedactionProfile: "frontend", IncludeProtocolMeta: false},
+	})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	notifier := New(store, run.ID, "opencode", "acp")
+	notifier.OnThought(middleware.ThoughtUpdate{
+		Type:    middleware.ThoughtTypeToolCall,
+		Content: "write",
+		Metadata: map[string]interface{}{
+			"source_update_type": "tool_call",
+		},
+	})
+	notifier.OnThought(middleware.ThoughtUpdate{
+		Type:    middleware.ThoughtTypePermission,
+		Content: `{"path":"/tmp/noema_matrix_contract.sh","command":"chmod +x /tmp/noema_matrix_contract.sh"}`,
+		Metadata: map[string]interface{}{
+			"protocol_method": "session/request_permission",
+			"decision":        "approved",
+			"option_id":       "once",
+			"approval_mode":   "auto",
+		},
+	})
+	notifier.OnThought(middleware.ThoughtUpdate{
+		Type:    middleware.ThoughtTypeToolResult,
+		Content: "write",
+		Metadata: map[string]interface{}{
+			"source_update_type": "tool_call_update",
+		},
+	})
+
+	trace, found, err := store.Trace(run.ID)
+	if err != nil || !found {
+		t.Fatalf("trace found=%v err=%v", found, err)
+	}
+	var requested, completed, permission *runtrace.Event
+	for i := range trace.Events {
+		switch trace.Events[i].Kind {
+		case "tool.call.requested":
+			requested = &trace.Events[i]
+		case "tool.result.received":
+			completed = &trace.Events[i]
+		case "permission.requested":
+			permission = &trace.Events[i]
+		}
+	}
+	if requested == nil || completed == nil || permission == nil {
+		t.Fatalf("expected tool and permission events: %#v", trace.Events)
+	}
+	if requested.Summary != "Create /tmp/noema_matrix_contract.sh" {
+		t.Fatalf("expected enriched requested summary, got %q", requested.Summary)
+	}
+	if requested.Inputs["path"] != "/tmp/noema_matrix_contract.sh" {
+		t.Fatalf("expected requested path from permission context, got %#v", requested.Inputs)
+	}
+	if completed.Summary != "Created /tmp/noema_matrix_contract.sh" {
+		t.Fatalf("expected enriched completion summary, got %q", completed.Summary)
+	}
+	if completed.Outputs["path"] != "/tmp/noema_matrix_contract.sh" {
+		t.Fatalf("expected completed output path, got %#v", completed.Outputs)
+	}
+	if len(completed.ArtifactRefs) != 1 || completed.ArtifactRefs[0] != "file:///tmp/noema_matrix_contract.sh" {
+		t.Fatalf("expected completed artifact ref, got %#v", completed.ArtifactRefs)
+	}
+	if requested.Metadata["frontend_visible"] != true || permission.Metadata["frontend_visible"] != false {
+		t.Fatalf("unexpected frontend visibility: tool=%#v permission=%#v", requested.Metadata, permission.Metadata)
+	}
+	if requested.ProtocolMeta != nil || completed.ProtocolMeta != nil {
+		t.Fatalf("expected frontend projection without protocol meta: requested=%#v completed=%#v", requested.ProtocolMeta, completed.ProtocolMeta)
+	}
+}
