@@ -30,7 +30,16 @@ MATRIX_HOME/
   tmp/          temporary runtime workspace
 ```
 
-The binary changes into `MATRIX_HOME` at startup unless it detects repository development mode.
+At startup, the binary resolves the PAL home and changes into it before loading configs or the vault.
+`MATRIX_HOME` is an advanced override for development, smoke tests, staging, and parallel installs. Normal usage does not require setting it.
+
+The installer prepares a user-level `matrix` command. After installation, the normal UX is:
+
+```bash
+matrix home
+matrix bootstrap doctor
+matrix run
+```
 
 ## Linux And macOS
 
@@ -55,20 +64,12 @@ MATRIX_HOME="$HOME/.matrix-pal" curl -fsSL https://raw.githubusercontent.com/Jos
 Run:
 
 ```bash
-export MATRIX_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/matrix"
-export PATH="$MATRIX_HOME/bin:$PATH"
-
 matrix home
 matrix bootstrap doctor
 matrix run
 ```
 
-On macOS, use:
-
-```bash
-export MATRIX_HOME="$HOME/Library/Application Support/Matrix"
-export PATH="$MATRIX_HOME/bin:$PATH"
-```
+If the current shell cannot find `matrix`, open a new shell. The installer adds `~/.local/bin` to the shell profile when needed.
 
 ## Windows PowerShell
 
@@ -95,11 +96,12 @@ irm https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.ps1
 Run:
 
 ```powershell
-$env:MATRIX_HOME = "$env:LOCALAPPDATA\Matrix"
-& "$env:MATRIX_HOME\bin\matrix.exe" home
-& "$env:MATRIX_HOME\bin\matrix.exe" bootstrap doctor
-& "$env:MATRIX_HOME\bin\matrix.exe" run
+matrix home
+matrix bootstrap doctor
+matrix run
 ```
+
+If the current shell cannot find `matrix`, open a new PowerShell session. The installer adds the Matrix `bin` directory to the user `Path`.
 
 ## Release Artifacts
 

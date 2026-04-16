@@ -49,7 +49,29 @@ try {
     New-Item -ItemType Directory -Force -Path (Join-Path $MatrixHome $dir) | Out-Null
   }
 
-  Copy-Item -Path (Join-Path $tmp "matrix.exe") -Destination (Join-Path $MatrixHome "bin\matrix.exe") -Force
+  $binDir = Join-Path $MatrixHome "bin"
+  $binary = Join-Path $binDir "matrix.exe"
+  Copy-Item -Path (Join-Path $tmp "matrix.exe") -Destination $binary -Force
+
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  if ([string]::IsNullOrWhiteSpace($userPath)) {
+    $userPath = ""
+  }
+  $pathParts = $userPath -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+  $hasBin = $false
+  foreach ($part in $pathParts) {
+    if ($part.TrimEnd("\") -ieq $binDir.TrimEnd("\")) {
+      $hasBin = $true
+      break
+    }
+  }
+  if (-not $hasBin) {
+    $newUserPath = if ($userPath.Trim().Length -gt 0) { "$userPath;$binDir" } else { $binDir }
+    [Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
+  }
+  if (($env:Path -split ";") -notcontains $binDir) {
+    $env:Path = "$env:Path;$binDir"
+  }
 
   $srcConfigs = Join-Path $tmp "configs"
   if (Test-Path $srcConfigs) {
@@ -72,6 +94,7 @@ Write-Host "PAL home: $MatrixHome"
 Write-Host "Binary:   $(Join-Path $MatrixHome 'bin\matrix.exe')"
 Write-Host ""
 Write-Host "Run:"
-Write-Host "  `$env:MATRIX_HOME = '$MatrixHome'"
-Write-Host "  & '$MatrixHome\bin\matrix.exe' home"
-Write-Host "  & '$MatrixHome\bin\matrix.exe' bootstrap doctor"
+Write-Host "  matrix home"
+Write-Host "  matrix bootstrap doctor"
+Write-Host ""
+Write-Host "If this shell cannot find matrix, open a new PowerShell session."

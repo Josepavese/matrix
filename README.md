@@ -100,8 +100,6 @@ Linux and macOS:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.sh | sh
-export MATRIX_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/matrix"
-export PATH="$MATRIX_HOME/bin:$PATH"
 
 matrix home
 matrix bootstrap doctor
@@ -112,14 +110,15 @@ Windows PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.ps1 | iex
-$env:MATRIX_HOME = "$env:LOCALAPPDATA\Matrix"
 
-& "$env:MATRIX_HOME\bin\matrix.exe" home
-& "$env:MATRIX_HOME\bin\matrix.exe" bootstrap doctor
-& "$env:MATRIX_HOME\bin\matrix.exe" run
+matrix home
+matrix bootstrap doctor
+matrix run
 ```
 
 Matrix installs into one PAL home. Binaries, configs, vault DB, logs, artifacts, backups, and temporary files live under that home; the installer downloads only the matching release asset.
+
+`MATRIX_HOME` is only an advanced override for development, staging, smoke tests, or parallel installs. Normal usage is just `matrix`.
 
 ## Core Surfaces
 
