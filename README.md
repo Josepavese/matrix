@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme/hero-placeholder.svg" alt="Matrix hero placeholder" width="1000" />
+  <img src="docs/assets/readme/hero.png" alt="Matrix communication matrix hero" width="1000" />
 </p>
 
 <p align="center">
@@ -56,7 +56,7 @@ Not another chat wrapper.
 ## How It Works
 
 <p align="center">
-  <img src="docs/assets/readme/workflow-placeholder.svg" alt="Matrix workflow placeholder" width="1000" />
+  <img src="docs/assets/readme/workflow.png" alt="Matrix workflow infographic" width="1000" />
 </p>
 
 1. A human, channel, agent, or supervisory AI enters through Telegram, HTTP, CLI, ACP, or A2A.
@@ -66,7 +66,7 @@ Not another chat wrapper.
 ## The Operator Loop
 
 <p align="center">
-  <img src="docs/assets/readme/operator-loop-placeholder.svg" alt="Matrix operator loop placeholder" width="1000" />
+  <img src="docs/assets/readme/operator-loop.png" alt="Matrix operator loop infographic" width="1000" />
 </p>
 
 This is the loop Matrix is built for:
@@ -128,4 +128,4 @@ go build -o matrix ./cmd/matrix
 - **Primary colors:** `#0B1020`, `#00D1B2`, `#3B82F6`, `#F5F7FB`
 - **Accent colors:** `#FF7A59`, `#A3E635`
 
-The current images are placeholders sized for future infographics and product visuals.
+The README images are product visuals generated from the visual direction above.
