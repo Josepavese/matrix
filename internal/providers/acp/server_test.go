@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jose/matrix-v2/internal/logic/orchestration"
+	"github.com/jose/matrix-v2/internal/logic/runtrace"
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
@@ -30,21 +32,30 @@ type mockSessionRouter struct {
 	workspaceTypedResult middleware.WorkspaceActionResult
 	workspaceReadResult  middleware.WorkspaceReadResult
 	intentTypedResult    middleware.IntentActionResult
+	waitForContextDone   bool
 }
 
-func (m *mockSessionRouter) Route(_ context.Context, channelID, agentID, input string, _ middleware.ThoughtNotifier) (string, error) {
+func (m *mockSessionRouter) Route(ctx context.Context, channelID, agentID, input string, _ middleware.ThoughtNotifier) (string, error) {
 	m.lastChannelID = channelID
 	m.lastAgentID = agentID
 	m.lastInput = input
+	if m.waitForContextDone {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
 	return m.response, m.err
 }
 
-func (m *mockSessionRouter) RouteConversation(_ context.Context, req middleware.ConversationRequest) (string, error) {
+func (m *mockSessionRouter) RouteConversation(ctx context.Context, req middleware.ConversationRequest) (string, error) {
 	m.lastChannelID = req.ChannelID
 	m.lastAgentID = req.AgentID
 	m.lastInput = req.Input
 	m.lastWorkspaceID = req.WorkspaceID
 	m.lastWorkspacePath = req.WorkspacePath
+	if m.waitForContextDone {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
 	return m.response, m.err
 }
 
@@ -224,7 +235,228 @@ func TestHandleRuns_Success(t *testing.T) {
 	if resp["output"] != "Hello from agent" {
 		t.Errorf("unexpected output: %s", resp["output"])
 	}
+	if resp["run_id"] == "" {
+		t.Fatal("expected run_id in response")
+	}
+	if resp["trace_url"] == "" || resp["events_url"] == "" || resp["actions_url"] == "" {
+		t.Fatalf("expected run observation urls, got %#v", resp)
+	}
 }
+
+func TestHandleRunTraceAndEvents(t *testing.T) {
+	router := &mockSessionRouter{response: "Hello from agent"}
+	_, mux := setupServer(router, "", "")
+
+	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "input": "hello", "agent_id": "gemini"})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var created map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("response parse error: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, created["trace_url"], nil)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 trace, got %d: %s", w.Code, w.Body.String())
+	}
+	var trace struct {
+		Schema string `json:"schema"`
+		Run    struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"run"`
+		Events []map[string]interface{} `json:"events"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &trace); err != nil {
+		t.Fatalf("trace parse error: %v", err)
+	}
+	if trace.Schema != "matrix.agent_communication_run_trace.v0" {
+		t.Fatalf("unexpected schema: %s", trace.Schema)
+	}
+	if trace.Run.ID != created["run_id"] || trace.Run.Status != "completed" {
+		t.Fatalf("unexpected trace run: %#v", trace.Run)
+	}
+	if len(trace.Events) < 4 {
+		t.Fatalf("expected run events, got %d", len(trace.Events))
+	}
+
+	req = httptest.NewRequest(http.MethodGet, created["events_url"], nil)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 events, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleRunActionsCancel(t *testing.T) {
+	router := &mockSessionRouter{response: "ok"}
+	_, mux := setupServer(router, "", "")
+
+	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "input": "hello", "execution_mode": "async"})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+	var created map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("response parse error: %v", err)
+	}
+
+	actionBody, _ := json.Marshal(map[string]string{"action": "cancel", "reason": "consumer_policy"})
+	req = httptest.NewRequest(http.MethodPost, created["actions_url"], bytes.NewReader(actionBody))
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 cancel, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleRunsNoDefaultHardTimeout(t *testing.T) {
+	router := &mockSessionRouter{response: "slow-ok"}
+	_, mux := setupServer(router, "", "")
+
+	body, _ := json.Marshal(map[string]interface{}{"channel_id": "ch1", "input": "hello"})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 without emergency timeout, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleRunsEmergencyKillTimeoutIsExplicit(t *testing.T) {
+	router := &mockSessionRouter{waitForContextDone: true}
+	_, mux := setupServer(router, "", "")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":             "ch1",
+		"input":                  "hello",
+		"emergency_kill_seconds": 1,
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusGatewayTimeout {
+		t.Fatalf("expected 504 emergency timeout, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleEventSinks(t *testing.T) {
+	_, mux := setupServer(&mockSessionRouter{}, "", "")
+	body, _ := json.Marshal(map[string]interface{}{"url": "https://example.invalid/matrix-events", "event_kinds": []string{"run.completed"}})
+	req := httptest.NewRequest(http.MethodPost, EventSinksPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response parse error: %v", err)
+	}
+	if resp["id"] == "" {
+		t.Fatalf("expected sink id, got %#v", resp)
+	}
+}
+
+func TestEventSinkReceivesRunEvents(t *testing.T) {
+	delivered := make(chan string, 1)
+	sinkServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Event runtrace.Event `json:"event"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode sink payload: %v", err)
+		}
+		delivered <- payload.Event.Kind
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer sinkServer.Close()
+
+	server, _ := setupServer(&mockSessionRouter{}, "", "")
+	if _, err := server.runs.Store().RegisterSink(runtrace.Sink{URL: sinkServer.URL, EventKinds: []string{"run.started"}}); err != nil {
+		t.Fatalf("register sink: %v", err)
+	}
+	run, _, err := server.runs.Store().Start(runtrace.Run{AgentID: "codex", ChannelID: "http.test"})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	_ = run
+	select {
+	case kind := <-delivered:
+		if kind != "run.started" {
+			t.Fatalf("unexpected delivered kind: %s", kind)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for sink delivery")
+	}
+}
+
+func TestEventSinkRetriesPendingDelivery(t *testing.T) {
+	calls := 0
+	delivered := make(chan string, 1)
+	sinkServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			http.Error(w, "temporary failure", http.StatusInternalServerError)
+			return
+		}
+		var payload struct {
+			Event runtrace.Event `json:"event"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode sink payload: %v", err)
+		}
+		delivered <- payload.Event.Kind
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer sinkServer.Close()
+
+	server, _ := setupServer(&mockSessionRouter{}, "", "")
+	sink, err := server.runs.Store().RegisterSink(runtrace.Sink{URL: sinkServer.URL, EventKinds: []string{"run.started"}})
+	if err != nil {
+		t.Fatalf("register sink: %v", err)
+	}
+	event := runtrace.Event{ID: "evt-test", RunID: "run-test", Kind: "run.started", Actor: "matrix"}
+	if _, err := server.runs.Store().AppendEvent(event); err != nil {
+		t.Fatalf("append event: %v", err)
+	}
+	delivery, err := server.runs.DeliveryStore().Enqueue(sink, event)
+	if err != nil {
+		t.Fatalf("enqueue delivery: %v", err)
+	}
+	if err := server.runs.DeliveryStore().MarkFailed(delivery.ID, errTemporary{}, 8); err != nil {
+		t.Fatalf("mark delivery failed: %v", err)
+	}
+	loaded, _, _ := server.runs.DeliveryStore().Load(delivery.ID)
+	loaded.NextAttemptAt = time.Now().Add(-time.Second)
+	if err := server.runs.DeliveryStore().Save(loaded); err != nil {
+		t.Fatalf("save delivery: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go server.runs.StartSinkDeliveryWorker(ctx)
+	select {
+	case kind := <-delivered:
+		if kind != "run.started" {
+			t.Fatalf("unexpected delivered kind: %s", kind)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for retry delivery")
+	}
+}
+
+type errTemporary struct{}
+
+func (errTemporary) Error() string { return "temporary" }
 
 func TestHandleRuns_DefaultAgent(t *testing.T) {
 	router := &mockSessionRouter{response: "ok"}

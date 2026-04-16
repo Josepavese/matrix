@@ -72,7 +72,7 @@ Matrix gives you:
   vault, memory, timeline, snapshots, decision trace
 
 - **one visibility layer**
-  see what happened, why it happened, and what state the work is in now
+  see what happened, why it happened, what state the work is in now, and which run evidence an external supervisor can consume
 
 ## What Matrix Supports
 
@@ -90,6 +90,10 @@ The supported product surface is centered on real operation:
 Operational APIs:
 
 - `POST /v1/runs`
+- `GET /v1/runs/{run_id}/trace`
+- `GET /v1/runs/{run_id}/events`
+- `POST /v1/runs/{run_id}/actions`
+- `POST /v1/event-sinks`
 - `POST /v1/session-actions`
 - `POST /v1/workspace-actions`
 - `GET /v1/workspace-state`
@@ -144,6 +148,7 @@ That difference becomes visible through:
 - snapshots
 - decision trace
 - handoff between specialists
+- protocol-neutral communication run traces
 - uniform human-to-agent and agent-to-agent flows
 
 ## Explicit Non-Goals
@@ -174,3 +179,4 @@ Matrix is “on profile” when it is:
 - [docs/matrix_workspace_affinity_spec.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_workspace_affinity_spec.md)
 - [docs/matrix_workspace_timeline_spec.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_workspace_timeline_spec.md)
 - [docs/matrix_orchestration_surface_spec.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_orchestration_surface_spec.md)
+- [docs/matrix_agent_communication_run_trace.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_agent_communication_run_trace.md)

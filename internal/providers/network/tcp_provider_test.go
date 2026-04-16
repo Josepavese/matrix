@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -85,6 +86,30 @@ func TestFetch_Non200(t *testing.T) {
 	}
 }
 
+func TestFetch_RetriesTransientServerError(t *testing.T) {
+	var calls int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if atomic.AddInt32(&calls, 1) < 2 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	p := NewProvider()
+	data, err := p.Fetch(context.Background(), ts.URL)
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if string(data) != "ok" {
+		t.Fatalf("expected retry success, got %q", string(data))
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 calls, got %d", calls)
+	}
+}
+
 func TestPostJSON_Success(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -135,5 +160,23 @@ func TestDownload_Non200(t *testing.T) {
 	err := p.Download(context.Background(), ts.URL, tmpFile)
 	if err == nil {
 		t.Error("expected error for 500")
+	}
+}
+
+func TestDownload_DoesNotRetryClientError(t *testing.T) {
+	var calls int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	p := NewProvider()
+	err := p.Download(context.Background(), ts.URL, t.TempDir()+"/missing.bin")
+	if err == nil {
+		t.Fatal("expected error for 404")
+	}
+	if calls != 1 {
+		t.Fatalf("expected no retry for 404, got %d calls", calls)
 	}
 }

@@ -55,7 +55,7 @@ Not another chat wrapper.
   Channels and protocols change. The work context does not.
 
 - **Visible orchestration**
-  Timeline, memory, snapshots, and decision trace stay local-first.
+  Timeline, memory, snapshots, decision trace, and communication run traces stay local-first.
 
 - **One communication surface**
   Telegram, HTTP, CLI, and future channels share the same semantics.
@@ -103,6 +103,10 @@ go build -o matrix ./cmd/matrix
 ## Core Surfaces
 
 - `POST /v1/runs`
+- `GET /v1/runs/{run_id}/trace`
+- `GET /v1/runs/{run_id}/events`
+- `POST /v1/runs/{run_id}/actions`
+- `POST /v1/event-sinks`
 - `POST /v1/session-actions`
 - `POST /v1/workspace-actions`
 - `GET /v1/workspace-state`
@@ -124,6 +128,8 @@ go build -o matrix ./cmd/matrix
 - [Protocol-neutral runtime](docs/matrix_v2_protocol_neutral_runtime.md)
 - [Orchestration surface](docs/matrix_orchestration_surface_spec.md)
 - [Decision trace](docs/matrix_decision_trace_spec.md)
+- [Agent communication run trace](docs/matrix_agent_communication_run_trace.md)
+- [Timeout and recovery policy](docs/matrix_timeout_recovery_policy.md)
 - [Production readiness](docs/matrix_production_readiness.md)
 - [Deployment policy](docs/matrix_deployment_policy.md)
 - [Threat model](docs/matrix_threat_model.md)

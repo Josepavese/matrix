@@ -4,6 +4,7 @@
 package acp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/jose/matrix-v2/internal/logic/orchestration"
 	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/jose/matrix-v2/internal/providers/runapi"
 )
 
 // SessionRouter abstracts the logic/session routing capability.
@@ -25,6 +27,7 @@ type Server struct {
 	router       SessionRouter
 	apiKey       string
 	defaultAgent string
+	runs         *runapi.Server
 }
 
 // NewServer creates a new ACP Server provider.
@@ -32,12 +35,14 @@ func NewServer(router SessionRouter) *Server {
 	return &Server{
 		router:       router,
 		defaultAgent: "opencode",
+		runs:         runapi.NewServer(router),
 	}
 }
 
 // WithAPIKey sets an optional API key for authenticating requests.
 func (s *Server) WithAPIKey(key string) *Server {
 	s.apiKey = key
+	s.runs.WithAPIKey(key)
 	return s
 }
 
@@ -45,12 +50,31 @@ func (s *Server) WithAPIKey(key string) *Server {
 func (s *Server) WithDefaultAgent(agentID string) *Server {
 	if agentID != "" {
 		s.defaultAgent = agentID
+		s.runs.WithDefaultAgent(agentID)
 	}
 	return s
 }
 
+// WithTraceStorage wires Matrix run traces to the canonical vault storage.
+func (s *Server) WithTraceStorage(storage middleware.Storage) *Server {
+	s.runs.WithTraceStorage(storage)
+	return s
+}
+
+// WithEndpointResolver lets run traces record the selected protocol family.
+func (s *Server) WithEndpointResolver(resolver middleware.AgentEndpointResolver) *Server {
+	s.runs.WithEndpointResolver(resolver)
+	return s
+}
+
+func (s *Server) StartRunSinkDeliveryWorker(ctx context.Context) {
+	s.runs.StartSinkDeliveryWorker(ctx)
+}
+
 const (
-	RunPathV1                = "/v1/runs"
+	RunPathV1                = runapi.RunPathV1
+	RunResourcePrefixV1      = runapi.RunResourcePrefixV1
+	EventSinksPathV1         = runapi.EventSinksPathV1
 	SessionActionPathV1      = "/v1/session-actions"
 	WorkspaceActionPathV1    = "/v1/workspace-actions"
 	WorkspaceStatePathV1     = "/v1/workspace-state"
@@ -63,16 +87,6 @@ const (
 	OrchestrationProfileV1   = "/v1/orchestration-capabilities"
 	OpenRouterCallbackV1     = "/v1/auth/openrouter/callback"
 )
-
-// payload POST /v1/runs
-// This is a Matrix request envelope, not a Zed ACP schema payload.
-type runRequest struct {
-	ChannelID     string `json:"channel_id"` // E.g., telegram.user123 (routing key)
-	Input         string `json:"input"`
-	AgentID       string `json:"agent_id"` // Target agent (e.g. opencode, gemini, claude)
-	WorkspaceID   string `json:"workspace_id,omitempty"`
-	WorkspacePath string `json:"workspace_path,omitempty"`
-}
 
 // payload POST /v1/session-actions
 // Target semantics depend on action:
@@ -131,71 +145,6 @@ func (s *Server) HandleOpenRouterCallback(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "text/html")
 	_, _ = fmt.Fprintf(w, "<html><body><h1>%s</h1><p>You can close this window and go back to Telegram.</p></body></html>", res)
-}
-
-// HandleRuns is the HTTP handler for POST /v1/runs.
-func (s *Server) HandleRuns(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// API key validation
-	if s.apiKey != "" {
-		if r.Header.Get("X-Matrix-Key") != s.apiKey {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-	}
-
-	var req runRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Bad Request: invalid json", http.StatusBadRequest)
-		return
-	}
-
-	if req.ChannelID == "" || req.Input == "" {
-		http.Error(w, "Bad Request: channel_id and input are required", http.StatusBadRequest)
-		return
-	}
-
-	agentID := req.AgentID
-	if agentID == "" {
-		agentID = s.defaultAgent
-	}
-	if richer, ok := s.router.(middleware.ConversationRequestRouter); ok {
-		res, err := richer.RouteConversation(r.Context(), middleware.ConversationRequest{
-			ChannelID:     req.ChannelID,
-			AgentID:       agentID,
-			WorkspaceID:   req.WorkspaceID,
-			WorkspacePath: req.WorkspacePath,
-			Input:         req.Input,
-		})
-		if err != nil {
-			slog.Error("matrix run bridge failed", "error", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		if err := json.NewEncoder(w).Encode(map[string]string{"output": res}); err != nil {
-			slog.Error("matrix run bridge failed to encode response", "error", err)
-		}
-		return
-	}
-	res, err := s.router.Route(r.Context(), req.ChannelID, agentID, req.Input, nil)
-	if err != nil {
-		// Distinguish HTTP 500
-		slog.Error("matrix run bridge failed", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(map[string]string{"output": res}); err != nil {
-		slog.Error("matrix run bridge failed to encode response", "error", err)
-	}
 }
 
 // HandleSessionActions is the typed HTTP handler for session lifecycle actions.
@@ -563,7 +512,7 @@ func (s *Server) HandleOrchestrationCapabilities(w http.ResponseWriter, r *http.
 
 // RegisterRoutes attaches Matrix's inbound HTTP endpoints to the provided mux.
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc(RunPathV1, s.HandleRuns)
+	s.runs.RegisterRoutes(mux)
 	mux.HandleFunc(SessionActionPathV1, s.HandleSessionActions)
 	mux.HandleFunc(WorkspaceActionPathV1, s.HandleWorkspaceActions)
 	mux.HandleFunc(WorkspaceStatePathV1, s.HandleWorkspaceState)
