@@ -24,6 +24,7 @@ These gates must be green before a production-oriented release:
 - race-enabled tests
 - build
 - release dry-run
+- install artifact layout check
 - readiness check
 
 Local preflight command:
@@ -130,6 +131,16 @@ matrix vault backup --dir ./backups
 ```bash
 goreleaser release --snapshot --clean
 ```
+
+The dry-run must produce OS/architecture archives that include:
+
+- `matrix` or `matrix.exe`
+- `configs/`
+- `install/install.sh`
+- `install/install.ps1`
+- installation documentation
+
+Installers must install into one PAL home and must not require cloning the repository.
 
 ### 5. Tag Release
 

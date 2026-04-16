@@ -10,6 +10,11 @@ The live product documentation is:
 
 - [`docs`](./)
 
+The install surface is:
+
+- [`install`](../install)
+  Release installers that download only the matching GitHub release asset and install Matrix into one PAL home.
+
 These two locations are the current source of truth for Matrix architecture, runtime behavior, product strategy, and operational guidance.
 
 ## Support Material
@@ -37,3 +42,4 @@ When deciding whether something belongs in the repo:
 1. If it is needed to build, test, run, or document the current Matrix product, keep it.
 2. If it is process material for humans only, keep it separate from product truth and do not let it drive implementation decisions.
 3. If it is generated output, do not keep it in version control.
+4. If it is a local config override or contains credentials, keep it out of version control and load it through the vault, environment, or PAL home.

@@ -1,0 +1,41 @@
+{
+  "claude": {
+    "args": [
+      "acp"
+    ],
+    "command": "claude",
+    "healthcheck_path": "",
+    "protocol": "stdio",
+    "env_isolation": true,
+    "active": false
+  },
+  "gemini": {
+    "args": [
+      "--experimental-acp"
+    ],
+    "command": "gemini",
+    "healthcheck_path": "",
+    "protocol": "stdio",
+    "env_isolation": true,
+    "active": true
+  },
+  "kimi": {
+    "args": [
+      "acp"
+    ],
+    "command": "kimi",
+    "healthcheck_path": "",
+    "protocol": "stdio",
+    "active": false
+  },
+  "opencode": {
+    "active": true,
+    "args": [
+      "acp"
+    ],
+    "command": "opencode",
+    "healthcheck_path": "",
+    "protocol": "stdio",
+    "env_isolation": true
+  }
+}

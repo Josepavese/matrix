@@ -120,7 +120,7 @@ func (r *Registry) IDs() []string {
 
 // SeedFromConfigFile reads agent definitions from a JSON config file and seeds
 // missing agents into the vault. This handles pre-installed agents (like opencode)
-// that are not installed via the ACP Registry but are available in configs/agents.local.json.
+// that are not installed via the ACP Registry but are available in configs/agents.json.
 func SeedFromConfigFile(store middleware.Storage, configReader middleware.ConfigReader, path string) error {
 	data, err := configReader.ReadConfig(path)
 	if err != nil {

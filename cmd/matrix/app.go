@@ -171,8 +171,8 @@ func NewDaemonContext(vaultPath string) (*DaemonContext, func(), error) {
 	execProv := execprovider.NewProvider()
 	netProv := networkprovider.NewProvider()
 
-	// Seed pre-installed agents from configs/agents.local.json into vault
-	if err := agentmgr.SeedFromConfigFile(app.Store, configMgr, "configs/agents.local.json"); err != nil {
+	// Seed pre-installed agents from the release-safe config into vault.
+	if err := agentmgr.SeedFromConfigFile(app.Store, configMgr, "configs/agents.json"); err != nil {
 		closeApp()
 		return nil, nil, fmt.Errorf("agent seed error: %w", err)
 	}

@@ -27,10 +27,10 @@ var vaultRestoreCmd = &cobra.Command{
 			exitf("Vault restore failed: %v", err)
 		}
 		if preBackup != "" {
-			cmd.Printf("restored matrix-vault.db (previous vault backed up to %s)\n", preBackup)
+			cmd.Printf("restored %s (previous vault backed up to %s)\n", DefaultVaultPath, preBackup)
 			return
 		}
-		cmd.Println("restored matrix-vault.db")
+		cmd.Printf("restored %s\n", DefaultVaultPath)
 	},
 }
 

@@ -32,6 +32,7 @@ debug.log
 
 # Config overrides (generated)
 configs/agents.local.json
+configs/*.local.json
 
 # Coverage / test artifacts
 coverage.out

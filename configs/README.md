@@ -6,7 +6,6 @@ This directory contains versioned defaults and templates.
 
 - `agents.json`
 - `telegram.json`
-- `telegram_test.json`
 - `node_env.json`
 - `locales/*.json`
 
@@ -52,7 +51,8 @@ Vault keys supported:
 11. Use `matrix vault restore <backup>` only while the runtime is stopped.
 12. Manage channel runtime overrides through `matrix channel ...`.
 13. Manage agent runtime state through `matrix agent ...`.
-14. Rotate any secret that was previously committed or shared.
+14. Never commit `*.local.json` files.
+15. Rotate any secret that was previously committed or shared.
 
 Do not manage `channel.*` keys through `matrix config ...`.
 Each channel provider exposes an explicit supported key set through `matrix channel show <provider>`.

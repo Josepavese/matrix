@@ -32,6 +32,20 @@ archives:
       - goos: windows
         formats:
           - zip
+    files:
+      - configs/README.md
+      - configs/agents.json
+      - configs/node_env.json
+      - configs/telegram.json
+      - configs/locales/**
+      - docs/matrix_installation.md
+      - docs/matrix_timeout_recovery_policy.md
+      - install/**
+
+release:
+  extra_files:
+    - glob: ./install/install.sh
+    - glob: ./install/install.ps1
 
 checksum:
   name_template: checksums.txt

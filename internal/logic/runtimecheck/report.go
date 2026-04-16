@@ -34,7 +34,7 @@ func BuildReport(input BuildInput) (map[string]any, error) {
 	}
 
 	report := map[string]any{
-		"vault_path":          "matrix-vault.db",
+		"vault_path":          "data/matrix-vault.db",
 		"vault_exists":        true,
 		"jsonrpc_daemon_addr": input.JSONRPCAddr,
 		"jsonrpc_daemon_up":   CanDial(input.Net, input.JSONRPCAddr),
