@@ -114,6 +114,7 @@ go build -o matrix ./cmd/matrix
 - [Orchestration surface](docs/matrix_orchestration_surface_spec.md)
 - [Decision trace](docs/matrix_decision_trace_spec.md)
 - [Production readiness](docs/matrix_production_readiness.md)
+- [Deployment policy](docs/matrix_deployment_policy.md)
 - [Threat model](docs/matrix_threat_model.md)
 - [Brand direction](docs/brand_direction.md)
 

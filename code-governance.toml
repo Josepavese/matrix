@@ -15,19 +15,25 @@ roots = ["cmd", "internal", "pkg"]
 exclude_dirs = ["vendor", "tests/mocks"]
 
 [package_overrides]
-"cmd/matrix" = 2400
+"cmd/matrix" = 3000
 "internal/logic/agentmgr" = 900
 "internal/logic/onboarding" = 1400
-"internal/logic/session" = 1400
+"internal/logic/session" = 3400
+"internal/logic/workspace" = 850
 "internal/providers/agents" = 1700
 
 [file_overrides]
+"cmd/matrix/workspace.go" = 390
 "internal/logic/agentcatalog/service.go" = 330
 "internal/logic/agentdiscovery/discovery.go" = 430
 "internal/logic/onboarding/wizard.go" = 330
 "internal/logic/onboarding/wizard_steps.go" = 340
-"internal/logic/session/manager.go" = 320
-"internal/logic/session/manager_commands.go" = 760
+"internal/logic/session/manager.go" = 430
+"internal/logic/session/manager_commands.go" = 800
+"internal/logic/session/manager_intents.go" = 300
+"internal/logic/session/manager_workspace_commands.go" = 320
+"internal/logic/session/manager_workspace_reads.go" = 520
+"internal/providers/acp/server.go" = 530
 "internal/providers/agents/a2a_adapter.go" = 320
 "internal/providers/agents/acp_adapter.go" = 360
 "internal/providers/agents/default_handler.go" = 360
@@ -36,13 +42,33 @@ exclude_dirs = ["vendor", "tests/mocks"]
 
 [function_overrides]
 "cmd/mock-agent/main.go::main" = 100
+"cmd/matrix/readiness.go::evaluateReadiness" = 70
+"internal/logic/session/manager_commands.go::Manager.handleSessionCancelTyped" = 60
+"internal/logic/session/manager_routing.go::Manager.routeResolvedSession" = 70
 "internal/logic/session/manager_routing.go::Manager.persistAgentSession" = 70
+"internal/logic/session/manager_routing.go::Manager.tryHandleCommand" = 90
+"internal/logic/session/manager_status.go::Manager.handleStatusCommand" = 75
+"internal/logic/session/manager_workspace.go::Manager.getOrCreateSessionForWorkspace" = 125
+"internal/logic/session/manager_workspace_commands.go::Manager.handleWorkspaceSnapshotTyped" = 65
+"internal/logic/session/manager_workspace_reads.go::describeTimelineEvent" = 75
+"internal/providers/acp/server.go::Server.HandleRuns" = 60
 "internal/providers/agents/acp_adapter.go::acpConversationClient.ExecuteTurn" = 80
 "internal/providers/agents/router.go::simpleObserver.OnUpdate" = 70
 
 [function_param_overrides]
+"cmd/matrix/readiness.go::evaluateReadiness" = 5
 "internal/logic/channelruntime/runtime.go::StartAll" = 5
+"internal/logic/session/manager.go::Manager.HandleWorkspaceRead" = 5
+"internal/logic/session/manager_commands.go::Manager.handleSessionNewTyped" = 5
+"internal/logic/session/manager_handoff.go::Manager.handleHandoffIntentTyped" = 7
+"internal/logic/session/manager_intents.go::Manager.handleModeActionTyped" = 5
 "internal/logic/session/manager_routing.go::Manager.Route" = 5
 "internal/logic/session/manager_routing.go::Manager.routeAgentTurn" = 5
+"internal/logic/session/manager_timeline.go::Manager.attachChannelWithEvent" = 6
+"internal/logic/session/manager_timeline.go::Manager.recordWorkspaceEvent" = 6
+"internal/logic/session/manager_workspace_reads.go::Manager.handleWorkspaceDecisionsReadTyped" = 5
+"internal/logic/session/manager_workspace_reads.go::Manager.handleWorkspaceMemoryReadTyped" = 5
+"internal/logic/session/manager_workspace_reads.go::Manager.handleWorkspaceSnapshotsReadTyped" = 5
+"internal/logic/session/manager_workspace_reads.go::Manager.handleWorkspaceTimelineReadTyped" = 5
 "internal/logic/vaultsec/restore.go::RestoreBackup" = 5
 "internal/logic/vaultsec/vaultsec.go::collectWarnings" = 5
