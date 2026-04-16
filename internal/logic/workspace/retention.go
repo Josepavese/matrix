@@ -77,10 +77,7 @@ func SaveRetentionPolicy(storage middleware.Storage, policy RetentionPolicy) err
 	if err := saveOptionalInt(storage, RetentionMemoryMaxKey, policy.MemoryMax); err != nil {
 		return err
 	}
-	if err := saveOptionalInt(storage, RetentionSnapshotsMaxKey, policy.SnapshotsMax); err != nil {
-		return err
-	}
-	return nil
+	return saveOptionalInt(storage, RetentionSnapshotsMaxKey, policy.SnapshotsMax)
 }
 
 func PruneWorkspace(storage middleware.Storage, workspaceID string, policy RetentionPolicy) (PruneReport, error) {

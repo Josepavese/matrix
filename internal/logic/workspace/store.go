@@ -161,10 +161,6 @@ func LoadSessionIndex(storage middleware.Storage, workspaceID string) ([]string,
 	return loadStringIndex(storage, SessionIndexKey(workspaceID))
 }
 
-func updateStringIndex(storage middleware.Storage, key, value string) error {
-	return updateStringIndexWithLimit(storage, key, value, maxIndexedAssociations)
-}
-
 func loadStringIndex(storage middleware.Storage, key string) ([]string, error) {
 	if storage == nil {
 		return nil, fmt.Errorf("storage not available")

@@ -59,7 +59,11 @@ func (n *testNet) FetchJSON(_ context.Context, url string, target interface{}) e
 	}
 	switch dst := target.(type) {
 	case *map[string]interface{}:
-		*dst = payload.(map[string]interface{})
+		mapped, ok := payload.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("payload for %s is not an object", url)
+		}
+		*dst = mapped
 		return nil
 	default:
 		data, err := json.Marshal(payload)

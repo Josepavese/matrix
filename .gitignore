@@ -2,7 +2,7 @@
 configs.tar.gz
 http.log
 matrix-bin.gz
-mock-agent
+/mock-agent
 
 # Local tooling output
 *.log

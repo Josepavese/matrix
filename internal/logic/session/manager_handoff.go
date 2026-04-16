@@ -10,7 +10,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
-func (m *Manager) handleHandoffIntentTyped(ctx context.Context, channelID, lang, workspaceID, agentID, target, note string) (middleware.IntentActionResult, error) {
+func (m *Manager) handleHandoffIntentTyped(_ context.Context, channelID, lang, workspaceID, agentID, target, note string) (middleware.IntentActionResult, error) {
 	toAgentID := strings.TrimSpace(agentID)
 	if toAgentID == "" {
 		toAgentID = strings.TrimSpace(target)

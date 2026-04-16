@@ -10,7 +10,7 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
-func (m *Manager) handleWorkspaceStateReadTyped(_ context.Context, channelID, _lang, workspaceID string) (middleware.WorkspaceReadResult, error) {
+func (m *Manager) handleWorkspaceStateReadTyped(_ context.Context, channelID, _, workspaceID string) (middleware.WorkspaceReadResult, error) {
 	ws, meta, err := m.resolveWorkspaceReadContext(channelID, workspaceID)
 	if err != nil {
 		return middleware.WorkspaceReadResult{}, err
@@ -37,7 +37,7 @@ func (m *Manager) handleWorkspaceStateReadTyped(_ context.Context, channelID, _l
 	}, nil
 }
 
-func (m *Manager) handleWorkspaceTimelineReadTyped(_ context.Context, channelID, _lang, workspaceID string, limit int) (middleware.WorkspaceReadResult, error) {
+func (m *Manager) handleWorkspaceTimelineReadTyped(_ context.Context, channelID, _, workspaceID string, limit int) (middleware.WorkspaceReadResult, error) {
 	ws, meta, err := m.resolveWorkspaceReadContext(channelID, workspaceID)
 	if err != nil {
 		return middleware.WorkspaceReadResult{}, err
@@ -67,7 +67,7 @@ func (m *Manager) handleWorkspaceTimelineReadTyped(_ context.Context, channelID,
 	}, nil
 }
 
-func (m *Manager) handleWorkspaceDecisionsReadTyped(_ context.Context, channelID, _lang, workspaceID string, limit int) (middleware.WorkspaceReadResult, error) {
+func (m *Manager) handleWorkspaceDecisionsReadTyped(_ context.Context, channelID, _, workspaceID string, limit int) (middleware.WorkspaceReadResult, error) {
 	ws, meta, err := m.resolveWorkspaceReadContext(channelID, workspaceID)
 	if err != nil {
 		return middleware.WorkspaceReadResult{}, err
@@ -102,7 +102,7 @@ func (m *Manager) handleWorkspaceDecisionsReadTyped(_ context.Context, channelID
 	}, nil
 }
 
-func (m *Manager) handleWorkspaceMemoryReadTyped(_ context.Context, channelID, _lang, workspaceID string, limit int) (middleware.WorkspaceReadResult, error) {
+func (m *Manager) handleWorkspaceMemoryReadTyped(_ context.Context, channelID, _, workspaceID string, limit int) (middleware.WorkspaceReadResult, error) {
 	ws, meta, err := m.resolveWorkspaceReadContext(channelID, workspaceID)
 	if err != nil {
 		return middleware.WorkspaceReadResult{}, err
@@ -132,7 +132,7 @@ func (m *Manager) handleWorkspaceMemoryReadTyped(_ context.Context, channelID, _
 	}, nil
 }
 
-func (m *Manager) handleWorkspaceSnapshotsReadTyped(_ context.Context, channelID, _lang, workspaceID string, limit int) (middleware.WorkspaceReadResult, error) {
+func (m *Manager) handleWorkspaceSnapshotsReadTyped(_ context.Context, channelID, _, workspaceID string, limit int) (middleware.WorkspaceReadResult, error) {
 	ws, meta, err := m.resolveWorkspaceReadContext(channelID, workspaceID)
 	if err != nil {
 		return middleware.WorkspaceReadResult{}, err

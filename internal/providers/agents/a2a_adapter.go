@@ -15,7 +15,7 @@ import (
 type a2aConversationFactory struct{}
 
 func (f *a2aConversationFactory) NewClient(ctx context.Context, endpoint middleware.ProtocolEndpoint, _ middleware.ConversationFactoryDeps) (middleware.ConversationClient, error) {
-	transport := a2a.TransportProtocolJSONRPC
+	var transport a2a.TransportProtocol
 	switch strings.ToUpper(strings.TrimSpace(endpoint.Transport)) {
 	case "", "JSONRPC":
 		transport = a2a.TransportProtocolJSONRPC

@@ -16,7 +16,7 @@ type recoveryClient struct {
 func (c *recoveryClient) Alive() bool  { return true }
 func (c *recoveryClient) Close() error { return nil }
 
-func (c *recoveryClient) ExecuteTurn(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
+func (c *recoveryClient) ExecuteTurn(_ context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
 	c.promptCalls++
 	if c.promptCalls == 1 && turn.RemoteSessionID != "" {
 		return middleware.ConversationResult{}, fmt.Errorf("ACP prompt failed: RPC error -32602: Invalid params: Session not found: stale-session")

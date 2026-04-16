@@ -79,7 +79,7 @@ func (m *Manager) handleResumeIntentTyped(ctx context.Context, channelID, lang, 
 	return middleware.IntentActionResult{Intent: "resume", Message: m.wizard.GetString(lang, "status_empty")}, nil
 }
 
-func (m *Manager) handleReviewIntentTyped(ctx context.Context, channelID, lang, target string) (middleware.IntentActionResult, error) {
+func (m *Manager) handleReviewIntentTyped(_ context.Context, channelID, lang, target string) (middleware.IntentActionResult, error) {
 	wsMeta, err := m.resolveIntentWorkspace(channelID, target)
 	if err != nil {
 		return middleware.IntentActionResult{}, err
