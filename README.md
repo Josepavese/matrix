@@ -17,7 +17,7 @@
 
 <p align="center">
   Talk to Claude, Gemini, OpenCode, and any ACP/A2A agent from Telegram, HTTP, or CLI.<br/>
-  Switch agents mid-work. Keep the context. Never start over.
+  Human to agent. One to many. Agent to agent. Many to many.
 </p>
 
 ---
@@ -56,6 +56,8 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
 ```
 
 **Talk from anywhere** -- Telegram, HTTP API, CLI. Same sessions. Same workspaces. Same state.
+
+**Let agents talk to agents** -- Matrix can be used as a tool by supervisory AIs or coding agents to route work to one agent, many agents, or other agent groups without binding to one protocol.
 
 ## Quick Start
 
@@ -107,9 +109,9 @@ Any agent that speaks ACP or A2A works. Search and install more with `matrix age
   <img src="docs/assets/readme/workflow.png" alt="How Matrix routes work" width="1000" />
 </p>
 
-1. You send a message via Telegram, HTTP, or CLI
-2. Matrix resolves the workspace, session, and target agent
-3. The prompt is routed to the agent (ACP or A2A -- you never think about it)
+1. A human, channel, agent, or supervisory AI enters through Telegram, HTTP, CLI, ACP, or A2A
+2. Matrix resolves workspace, session, intent, protocol, and target agent set
+3. Work is routed one-to-one, one-to-many, agent-to-agent, or many-to-many
 4. Results flow back. Everything is logged in the workspace timeline.
 
 ## The Operator Loop
@@ -132,6 +134,7 @@ Matrix is built for this cycle:
 |---|---|---|---|---|
 | Uses your existing agents | Yes | No (builds new ones) | Sometimes | Sometimes |
 | Agent-to-agent handoff | Yes | Rarely | No | No |
+| One-to-many and many-to-many routing | Yes | Sometimes | No | Rarely |
 | Workspace memory and timeline | Yes | No | No | No |
 | Cross-channel continuity | Yes | No | No | No |
 | Local-first with encryption | Yes | Varies | No | Varies |
