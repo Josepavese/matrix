@@ -340,6 +340,11 @@ func (c *Client) CancelSession(ctx context.Context, sessionID string) error {
 	return c.sendNotification(ctx, "session/cancel", map[string]interface{}{"sessionId": sessionID})
 }
 
+func (c *Client) CloseSession(ctx context.Context, sessionID string) error {
+	_, err := c.doCall(ctx, "session/close", map[string]interface{}{"sessionId": sessionID})
+	return err
+}
+
 func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
 	_, err := c.doCall(ctx, "session/delete", map[string]interface{}{"sessionId": sessionID})
 	return err

@@ -73,9 +73,24 @@ Every response includes:
   "output": "optional sync output",
   "trace_url": "/v1/runs/run-.../trace",
   "events_url": "/v1/runs/run-.../events",
-  "actions_url": "/v1/runs/run-.../actions"
+  "actions_url": "/v1/runs/run-.../actions",
+  "cleanup": {
+    "logical_session_id": "optional",
+    "remote_session_id": "optional",
+    "clean": true,
+    "remote_deleted": false,
+    "remote_closed": false,
+    "remote_canceled": true,
+    "remote_close_attempted": false,
+    "process_reap_attempted": true,
+    "process_reaped": true,
+    "process_retention_allowed": false,
+    "local_forgotten": true
+  }
 }
 ```
+
+`cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, and process fields instead of inferring cleanup from HTTP status alone.
 
 ## Canonical State
 
@@ -254,6 +269,7 @@ The HTTP server persists run records and ordered run events to Matrix vault stor
 Current surfaces:
 
 - `POST /v1/runs` creates `run_id`, records start/routing/prompt/final/completion events, and returns trace/event/action URLs.
+- `POST /v1/runs` can force isolated evaluation turns with `session_policy=new_ephemeral_delete_after_run` and `cleanup_policy=delete_remote_or_cancel_and_forget_local`.
 - `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`.
 - `GET /v1/runs/{run_id}/events` returns ordered run events.
 - `POST /v1/runs/{run_id}/actions` supports `cancel`.
@@ -269,12 +285,14 @@ Captured event sources:
 - Provider streaming updates through `ThoughtNotifier`: `agent.message.delta`.
 - Provider tool updates through `ThoughtNotifier`: `tool.call.requested`, `tool.result.received`.
 - Session status enrichment after route completion: `session.created` or `session.resumed`.
+- Session isolation and cleanup: `session.policy.applied` and `session.cleanup`.
 
 Run enrichment:
 
 - selected protocol is resolved through the configured agent endpoint resolver when available;
 - remote session ids are captured from notifier headers when providers emit them;
 - logical session, remote session, protocol, workspace, mode, and status are copied from the channel-neutral session status surface when available;
+- cleanup evidence records logical session id, remote session id, remote delete attempt/result, remote cancel fallback, workspace-bound agent client/process reap or allowed retention, local mirror removal, `clean`, and cleanup errors;
 - trace events keep protocol-specific details in `protocol_meta`, never as primary schema concepts.
 - ACP `session/update` payloads are preserved in `protocol_meta.acp` for lossless inspection when `include_protocol_meta=true`;
 - permission payloads can enrich the currently active tool event with path/operation, but permission events remain hidden from frontend timelines by default.

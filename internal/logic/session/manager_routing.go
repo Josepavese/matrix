@@ -148,6 +148,7 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 		AgentID:          effectiveAgentID,
 		LogicalSessionID: sessionID,
 		AgentSessionID:   meta.AgentSessionID,
+		WorkspacePath:    meta.WorkspacePath,
 		Message:          message,
 		ThoughtNotifier:  notifier,
 	})
@@ -196,7 +197,7 @@ func (m *Manager) applyToolCalls(response string, toolCalls []middleware.ToolCal
 }
 
 func (m *Manager) persistAgentSession(meta SessionMeta, newAgentSessionID string, metadata middleware.ConversationMetadata, routeErr error) {
-	if routeErr != nil {
+	if routeErr != nil && strings.TrimSpace(newAgentSessionID) == "" {
 		return
 	}
 

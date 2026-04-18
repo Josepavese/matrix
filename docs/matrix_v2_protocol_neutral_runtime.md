@@ -169,16 +169,23 @@ Important distinction:
 - `channel_id`: physical ingress identity or routing key
 - `input`: latest user message
 - `agent_id`: optional requested agent for new sessions
+- `workspace_id` or `workspace_path`: optional work context
+- `session_policy`: optional lifecycle policy. `new_ephemeral_delete_after_run` forces a fresh random logical session and schedules cleanup after the turn
+- `cleanup_policy`: optional cleanup policy for ephemeral run lifecycles. Supported values are `delete_remote_or_cancel_and_forget_local`, `delete_remote_or_forget_local`, `delete_remote`, and `forget_local`; by itself it does not clean up a normal active session
 
 `POST /v1/session-actions` accepts a typed action envelope:
 
 - `channel_id`: physical ingress identity or routing key
-- `action`: currently `cancel`, `delete`, `switch`, `list`, `status`, `new`, or `name`
+- `action`: currently `cancel`, `delete`, `cleanup`, `switch`, `list`, `status`, `new`, or `name`
 - `target`: optional action operand
+- `workspace_id` or `workspace_path`: optional binding for new sessions
+- `ephemeral`: optional flag for temporary sessions
+- `cleanup_policy`: optional lifecycle cleanup policy
+- `force_forget_local`: optional local mirror removal override for cleanup
 
 Current target semantics:
 
-- `cancel`, `delete`, `switch`: local or remote session selector
+- `cancel`, `delete`, `cleanup`, `switch`: local or remote session selector
 - `new`: requested agent id
 - `name`: alias for the active logical session
 
@@ -195,6 +202,7 @@ Behavior:
 - `/session cancel [target]` cancels the active or selected remote session/task while preserving the local mirror
 - `/cancel` and `/stop` are UX aliases for `/session cancel`
 - `/session delete [target]` removes the local mirror and calls the closest remote lifecycle operation available
+- `cleanup` produces explicit proof fields: `clean`, `remote_deleted`, `remote_canceled`, `process_reaped`, `process_retained`, `process_retention_allowed`, `local_forgotten`, and `remote_delete_unsupported`
 - `/session new [agent]`, `/session name <alias>`, and `/session status` are exposed by the same typed session-action core used by HTTP and future channel adapters
 
 Defaulting:
@@ -208,6 +216,7 @@ Response model:
 - `/v1/runs` supports `sync`, `async`, and `stream` execution modes under one Matrix envelope
 - `/v1/runs` has no default absolute turn timeout; callers may opt into an emergency wall-clock fuse with `emergency_kill_seconds`
 - synchronous `/v1/runs` responses include `output` when the run completes inline
+- isolated `/v1/runs` success and error responses may include `cleanup`; traces record `session.policy.applied` and `session.cleanup`. A `session.cleanup` event with `status=failed` and `clean=false` is explicit evidence that provider/process cleanup was incomplete
 - synchronous `/v1/runs` returns structured HTTP `409` `SETUP_REQUIRED` instead of wizard text when `system.configured=false`
 - `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`
 - `GET /v1/runs/{run_id}/events` returns ordered run events
@@ -255,9 +264,12 @@ Current mirror fields include:
 Current behavior:
 
 - ACP remote sessions are enumerated through `session/list`, resumed through `session/load`, and can be deleted when the provider advertises draft `sessionCapabilities.delete`
+- ACP remote sessions can be closed when the provider advertises preview `sessionCapabilities.close`; Matrix uses this before `session/cancel` when `session/delete` is unavailable
 - ACP remote sessions can also be interrupted through `session/cancel`, which Matrix sends as a JSON-RPC notification
 - A2A remote tasks are enumerated through `ListTasks`, imported through `GetTask`, and deleted through `CancelTask`
 - channel users do not select ACP or A2A explicitly; Matrix resolves the provider from SSOT and the active session
+
+As of 2026-04-18, Zed ACP exposes `session/list` in the stable schema, `session/close` as Preview RFD, and `session/delete` as Draft RFD. Matrix therefore treats delete and close as capability-gated provider features, not assumptions.
 
 The A2A ingress is implemented with the official Go SDK:
 

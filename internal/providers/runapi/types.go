@@ -41,6 +41,8 @@ type runRequest struct {
 	WorkspaceID          string                 `json:"workspace_id,omitempty"`
 	WorkspacePath        string                 `json:"workspace_path,omitempty"`
 	ExecutionMode        string                 `json:"execution_mode,omitempty"`
+	SessionPolicy        string                 `json:"session_policy,omitempty"`
+	CleanupPolicy        string                 `json:"cleanup_policy,omitempty"`
 	EmergencyKillSeconds int                    `json:"emergency_kill_seconds,omitempty"`
 	Context              []runtrace.ContextRef  `json:"context,omitempty"`
 	ClientMeta           map[string]interface{} `json:"client_meta,omitempty"`
@@ -48,12 +50,23 @@ type runRequest struct {
 }
 
 type runResponse struct {
-	RunID      string `json:"run_id"`
-	Status     string `json:"status"`
-	Output     string `json:"output,omitempty"`
-	TraceURL   string `json:"trace_url"`
-	EventsURL  string `json:"events_url"`
-	ActionsURL string `json:"actions_url"`
+	RunID      string                           `json:"run_id"`
+	Status     string                           `json:"status"`
+	Output     string                           `json:"output,omitempty"`
+	TraceURL   string                           `json:"trace_url"`
+	EventsURL  string                           `json:"events_url"`
+	ActionsURL string                           `json:"actions_url"`
+	Cleanup    *middleware.SessionCleanupResult `json:"cleanup,omitempty"`
+}
+
+type runErrorResponse struct {
+	RunID      string                           `json:"run_id"`
+	Status     string                           `json:"status"`
+	Error      string                           `json:"error"`
+	TraceURL   string                           `json:"trace_url"`
+	EventsURL  string                           `json:"events_url"`
+	ActionsURL string                           `json:"actions_url"`
+	Cleanup    *middleware.SessionCleanupResult `json:"cleanup,omitempty"`
 }
 
 type runActionRequest struct {

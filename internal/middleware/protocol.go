@@ -28,6 +28,7 @@ type ConversationTurn struct {
 	AgentID          string
 	LogicalSessionID string
 	RemoteSessionID  string
+	WorkspacePath    string
 	Message          string
 	Tools            []Tool
 	ThoughtNotifier  ThoughtNotifier
@@ -76,6 +77,7 @@ type ConversationSessionCapabilities struct {
 	List   bool
 	Load   bool
 	Cancel bool
+	Close  bool
 	Delete bool
 }
 
@@ -86,6 +88,7 @@ type ConversationSessionControl interface {
 	ListRemoteSessions(ctx context.Context) ([]RemoteSessionInfo, error)
 	GetRemoteSession(ctx context.Context, remoteSessionID string) (RemoteSessionInfo, error)
 	CancelRemoteSession(ctx context.Context, remoteSessionID string) error
+	CloseRemoteSession(ctx context.Context, remoteSessionID string) error
 	DeleteRemoteSession(ctx context.Context, remoteSessionID string) error
 }
 
@@ -113,5 +116,20 @@ type AgentSessionController interface {
 	ListAgentSessions(ctx context.Context, agentID string) ([]RemoteSessionInfo, ConversationSessionCapabilities, error)
 	GetAgentSession(ctx context.Context, agentID string, remoteSessionID string) (RemoteSessionInfo, error)
 	CancelAgentSession(ctx context.Context, agentID string, remoteSessionID string) error
+	CloseAgentSession(ctx context.Context, agentID string, remoteSessionID string) error
 	DeleteAgentSession(ctx context.Context, agentID string, remoteSessionID string) error
+}
+
+// AgentWorkspaceSessionController is an optional extension for lifecycle calls
+// that must target the same workspace-bound protocol client used for execution.
+type AgentWorkspaceSessionController interface {
+	CancelAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error
+	CloseAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error
+	DeleteAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error
+}
+
+// AgentClientReaper is an optional router capability used by strict ephemeral
+// cleanup flows to close the cached protocol client bound to an agent/workspace.
+type AgentClientReaper interface {
+	ReapAgentClient(ctx context.Context, agentID string, workspacePath string) (bool, error)
 }

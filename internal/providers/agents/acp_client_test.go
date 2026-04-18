@@ -78,6 +78,8 @@ func (m *mockTransport) Send(_ context.Context, message []byte) error {
 			resp.Result = []byte(`{"sessions": [{"sessionId": "test-session-123", "title": "Recovered Session"}]}`)
 		case "session/cancel":
 			return nil
+		case "session/close":
+			resp.Result = []byte(`{}`)
 		case "session/delete":
 			resp.Result = []byte(`null`)
 		case "session/prompt":
@@ -224,6 +226,25 @@ func TestACPClient_FullLifecycle(t *testing.T) {
 		}
 		if _, ok := raw["id"]; ok {
 			t.Fatalf("expected notification without id, got %+v", raw)
+		}
+	})
+
+	t.Run("CloseSession", func(t *testing.T) {
+		if err := client.CloseSession(ctx, "test-session-123"); err != nil {
+			t.Fatalf("CloseSession failed: %v", err)
+		}
+		transport.mu.Lock()
+		defer transport.mu.Unlock()
+		last := transport.received[len(transport.received)-1]
+		var raw map[string]interface{}
+		if err := json.Unmarshal(last, &raw); err != nil {
+			t.Fatalf("unmarshal sent request: %v", err)
+		}
+		if raw["method"] != "session/close" {
+			t.Fatalf("expected session/close request, got %+v", raw)
+		}
+		if _, ok := raw["id"]; !ok {
+			t.Fatalf("expected request id, got %+v", raw)
 		}
 	})
 

@@ -18,9 +18,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "cmd/matrix" = 3000
 "internal/logic/agentmgr" = 900
 "internal/logic/onboarding" = 1400
-"internal/logic/session" = 3400
+"internal/logic/session" = 3600
 "internal/logic/workspace" = 850
 "internal/providers/agents" = 1700
+"internal/providers/runapi" = 900
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390

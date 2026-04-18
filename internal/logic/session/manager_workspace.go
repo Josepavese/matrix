@@ -53,7 +53,7 @@ func (m *Manager) getOrCreateSessionForWorkspace(channelID, targetAgent, workspa
 	if err == nil && state.ActiveSessionID != "" {
 		meta, found, metaErr := m.loadSessionMeta(state.ActiveSessionID)
 		if metaErr == nil && found {
-			if (workspaceID == "" || meta.WorkspaceID == workspaceID) && (strings.TrimSpace(targetAgent) == "" || meta.AgentID == targetAgent) {
+			if sessionMatchesWorkspaceHints(meta, workspaceID, workspacePath) && (strings.TrimSpace(targetAgent) == "" || meta.AgentID == targetAgent) {
 				if err := m.updateChannelWorkspaceState(channelID, meta.WorkspaceID); err != nil {
 					return "", nil, err
 				}
@@ -196,6 +196,16 @@ func (m *Manager) bindSessionWorkspace(meta *SessionMeta, workspaceID, workspace
 		meta.Mode = modeImplementation
 	}
 	return nil
+}
+
+func sessionMatchesWorkspaceHints(meta SessionMeta, workspaceID, workspacePath string) bool {
+	if strings.TrimSpace(workspaceID) != "" && meta.WorkspaceID != workspaceID {
+		return false
+	}
+	if strings.TrimSpace(workspacePath) != "" && filepath.Clean(meta.WorkspacePath) != filepath.Clean(workspacePath) {
+		return false
+	}
+	return true
 }
 
 func (m *Manager) resolveWorkspaceHint(workspaceID, workspacePath string) (string, string, error) {

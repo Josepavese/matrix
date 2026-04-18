@@ -25,7 +25,7 @@ Local findings:
 - `go list -m -versions github.com/coder/acp-go-sdk` currently returns published module versions through `v0.6.3`
 - the repository README on `main` advertises `v0.10.8`, which suggests a gap between repository head and published module releases
 - the published `v0.6.3` module exposes client and agent side connections and is useful for both ACP client and server implementations
-- the published `v0.6.3` module does not expose the newer Matrix-needed surface around `session/list`, `session/delete`, and `session_info_update`
+- the published `v0.6.3` module does not expose the newer Matrix-needed surface around `session/list`, preview `session/close`, draft `session/delete`, and `session_info_update`
 
 ## What `coder/acp-go-sdk` Gets Right
 
@@ -46,6 +46,7 @@ Matrix now relies or is preparing to rely on:
 
 - `session/load`
 - `session/list`
+- `session/close` preview support when capability-gated
 - `session/delete` draft support when capability-gated
 - `session_info_update`
 - protocol-transparent remote session control in channel flows
@@ -81,6 +82,7 @@ Current concerns:
 
 - it is Matrix-maintained, so protocol catch-up is our burden
 - `session/cancel` semantics must stay aligned with current Zed ACP notifications
+- `session/close` semantics must stay aligned with the Preview RFD while it is not yet stable
 - long-term maintenance cost is on us unless we rebase or extract it cleanly
 
 So the right answer is not "never migrate". The right answer is "do not couple Matrix directly to a single ACP backend."
@@ -178,5 +180,6 @@ Matrix should:
 4. revisit migration when a community or official Go SDK offers:
    - published support for `session/list`
    - published support for `session_info_update`
+   - an acceptable story for preview `session/close`
    - an acceptable story for draft `session/delete`
    - stable releases that match repository head closely

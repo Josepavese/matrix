@@ -60,10 +60,48 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
 | `agent_id` | string | No | Target agent (defaults to the configured default agent) |
 | `workspace_id` | string | No | Target workspace |
 | `workspace_path` | string | No | Workspace root path |
+| `session_policy` | string | No | `new_ephemeral_delete_after_run` forces a fresh isolated session for the run |
+| `cleanup_policy` | string | No | Cleanup policy for `session_policy=new_ephemeral_delete_after_run`; ignored as a destructive cleanup trigger when `session_policy` is omitted |
+| `emergency_kill_seconds` | number | No | Explicit wall-clock emergency fuse. Omitted means no hard run timeout |
 
 **Response (sync mode):**
 
 Returns the agent's response when the run completes.
+
+For isolated evaluations, use:
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/runs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "eval.random-channel",
+    "input": "Run the fixture task",
+    "execution_mode": "sync",
+    "agent_id": "opencode",
+    "workspace_path": "/tmp/matrix-eval-fixture",
+    "session_policy": "new_ephemeral_delete_after_run",
+    "cleanup_policy": "delete_remote_or_cancel_and_forget_local"
+  }'
+```
+
+The response may include `cleanup`, and the run trace records `session.policy.applied` and `session.cleanup`. If the agent fails after Matrix creates an ephemeral session, sync and stream error responses also include `cleanup` so callers can verify whether Matrix forgot the local mirror, canceled/deleted the provider session when supported, and reaped the workspace-bound agent process.
+
+Cleanup proof includes:
+
+```json
+{
+  "clean": true,
+  "remote_delete_attempted": true,
+  "remote_deleted": false,
+  "remote_delete_unsupported": true,
+  "remote_cancel_attempted": true,
+  "remote_canceled": true,
+  "process_reap_attempted": true,
+  "process_reaped": true,
+  "process_retention_allowed": false,
+  "local_forgotten": true
+}
+```
 
 **Response (async mode):**
 
@@ -156,6 +194,21 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
   }'
 ```
 
+For ephemeral sessions without persistent workspace metadata:
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/session-actions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "eval.random-channel",
+    "action": "new",
+    "target": "opencode",
+    "workspace_path": "/tmp/matrix-eval-fixture",
+    "ephemeral": true,
+    "cleanup_policy": "delete_remote_or_cancel_and_forget_local"
+  }'
+```
+
 **Switch to a session:**
 
 ```bash
@@ -192,6 +245,22 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
   }'
 ```
 
+`delete` now returns a `cleanup` proof. If the provider does not support remote delete, Matrix attempts remote close when advertised by the protocol adapter, then remote cancel when policy allows it, then forgets the local mirror when requested by policy. After local deletion, Matrix closes the exact workspace-bound agent client when no other local session still references the same `agent_id + workspace_path`; otherwise it reports `process_retained=true` and `process_retention_allowed=true`.
+
+**Cleanup a session:**
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/session-actions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "docs.http",
+    "action": "cleanup",
+    "target": "sess-123",
+    "cleanup_policy": "delete_remote_or_cancel_and_forget_local",
+    "force_forget_local": true
+  }'
+```
+
 **Name a session:**
 
 ```bash
@@ -209,9 +278,15 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `channel_id` | string | Yes | Stable caller/channel id |
-| `action` | string | Yes | `new`, `list`, `switch`, `cancel`, `delete`, `name` |
+| `action` | string | Yes | `new`, `list`, `switch`, `cancel`, `delete`, `cleanup`, `name` |
 | `target` | string | No | Action operand: agent id, session selector, or alias |
 | `workspace_id` | string | No | Workspace to bind the session to |
+| `workspace_path` | string | No | Workspace root path for sessions that do not need persistent workspace metadata |
+| `ephemeral` | boolean | No | Marks a new session as temporary/evaluation-only |
+| `cleanup_policy` | string | No | Cleanup behavior for `delete`, `cleanup`, or ephemeral runs |
+| `force_forget_local` | boolean | No | Removes the Matrix local mirror even when remote delete is unsupported |
+
+Cleanup proof fields distinguish provider state from Matrix mirror state: `remote_deleted`, `remote_closed`, `remote_canceled`, `remote_*_attempted`, `remote_*_unsupported`, process reaping fields, and `local_forgotten`.
 
 ---
 

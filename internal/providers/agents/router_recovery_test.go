@@ -53,3 +53,110 @@ func TestRouter_ExecutePrompt_RecoversFromMissingSession(t *testing.T) {
 		t.Fatalf("expected 2 prompt calls, got %d", client.promptCalls)
 	}
 }
+
+type failingSessionClient struct{}
+
+func (c failingSessionClient) Close() error { return nil }
+
+func (c failingSessionClient) ExecuteTurn(context.Context, middleware.ConversationTurn) (middleware.ConversationResult, error) {
+	return middleware.ConversationResult{RemoteSessionID: "remote-before-error"}, fmt.Errorf("prompt failed")
+}
+
+func TestRouter_ExecutePrompt_ReturnsRemoteSessionIDOnPromptError(t *testing.T) {
+	router := NewRouter(nil)
+
+	_, sessionID, _, _, err := router.executePrompt(context.Background(), failingSessionClient{}, middleware.RouteRequest{
+		LogicalSessionID: "logical-session",
+		Message:          "hello",
+	})
+	if err == nil {
+		t.Fatalf("expected prompt error")
+	}
+	if sessionID != "remote-before-error" {
+		t.Fatalf("expected remote session id to be preserved for cleanup, got %q", sessionID)
+	}
+}
+
+type closableClient struct {
+	closed bool
+}
+
+func (c *closableClient) ExecuteTurn(context.Context, middleware.ConversationTurn) (middleware.ConversationResult, error) {
+	return middleware.ConversationResult{}, nil
+}
+
+func (c *closableClient) Close() error {
+	c.closed = true
+	return nil
+}
+
+func TestRouter_ReapAgentClientClosesExactWorkspaceClient(t *testing.T) {
+	router := NewRouter(nil)
+	client := &closableClient{}
+	key := clientCacheKey("opencode", "/tmp/ws")
+	router.clients[key] = client
+
+	reaped, err := router.ReapAgentClient(context.Background(), "opencode", "/tmp/ws")
+	if err != nil {
+		t.Fatalf("ReapAgentClient: %v", err)
+	}
+	if !reaped || !client.closed {
+		t.Fatalf("expected client to be closed, reaped=%v closed=%v", reaped, client.closed)
+	}
+	if _, ok := router.clients[key]; ok {
+		t.Fatalf("expected client cache entry to be evicted")
+	}
+}
+
+type controlClient struct {
+	deleted []string
+}
+
+func (c *controlClient) ExecuteTurn(context.Context, middleware.ConversationTurn) (middleware.ConversationResult, error) {
+	return middleware.ConversationResult{}, nil
+}
+
+func (c *controlClient) Close() error { return nil }
+
+func (c *controlClient) SessionCapabilities() middleware.ConversationSessionCapabilities {
+	return middleware.ConversationSessionCapabilities{Delete: true, Cancel: true}
+}
+
+func (c *controlClient) ListRemoteSessions(context.Context) ([]middleware.RemoteSessionInfo, error) {
+	return nil, nil
+}
+
+func (c *controlClient) GetRemoteSession(context.Context, string) (middleware.RemoteSessionInfo, error) {
+	return middleware.RemoteSessionInfo{}, nil
+}
+
+func (c *controlClient) CancelRemoteSession(context.Context, string) error {
+	return nil
+}
+
+func (c *controlClient) CloseRemoteSession(context.Context, string) error {
+	return nil
+}
+
+func (c *controlClient) DeleteRemoteSession(_ context.Context, remoteSessionID string) error {
+	c.deleted = append(c.deleted, remoteSessionID)
+	return nil
+}
+
+func TestRouter_DeleteAgentSessionForWorkspaceUsesExactWorkspaceClient(t *testing.T) {
+	router := NewRouter(nil)
+	defaultClient := &controlClient{}
+	workspaceClient := &controlClient{}
+	router.clients[clientCacheKey("opencode", ".")] = defaultClient
+	router.clients[clientCacheKey("opencode", "/tmp/ws")] = workspaceClient
+
+	if err := router.DeleteAgentSessionForWorkspace(context.Background(), "opencode", "remote-1", "/tmp/ws"); err != nil {
+		t.Fatalf("DeleteAgentSessionForWorkspace: %v", err)
+	}
+	if len(workspaceClient.deleted) != 1 || workspaceClient.deleted[0] != "remote-1" {
+		t.Fatalf("expected workspace client delete, got %+v", workspaceClient.deleted)
+	}
+	if len(defaultClient.deleted) != 0 {
+		t.Fatalf("default client must not receive workspace delete, got %+v", defaultClient.deleted)
+	}
+}

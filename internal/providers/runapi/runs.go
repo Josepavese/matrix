@@ -20,6 +20,11 @@ type runExecution struct {
 	emergencyTimeout time.Duration
 }
 
+type runExecutionResult struct {
+	output  string
+	cleanup *middleware.SessionCleanupResult
+}
+
 func (s *Server) HandleRuns(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -133,38 +138,62 @@ func (s *Server) dispatchByExecutionMode(w http.ResponseWriter, r *http.Request,
 				return
 			}
 			if isEmergencyTimeout(ctx, err, exec) {
-				http.Error(w, "Gateway Timeout: emergency kill deadline reached", http.StatusGatewayTimeout)
+				writeJSON(w, http.StatusGatewayTimeout, newRunErrorResponse(exec.runID, runtrace.StatusCancelled, "emergency kill deadline reached", res.cleanup))
 				return
 			}
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			writeJSON(w, http.StatusInternalServerError, newRunErrorResponse(exec.runID, runtrace.StatusFailed, err.Error(), res.cleanup))
 			return
 		}
-		writeJSON(w, http.StatusCreated, newRunResponse(exec.runID, runtrace.StatusCompleted, res))
+		writeJSON(w, http.StatusCreated, newRunResponse(exec.runID, runtrace.StatusCompleted, res.output, res.cleanup))
 	}
 }
 
-func (s *Server) executeRun(ctx context.Context, exec runExecution) (string, error) {
+func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutionResult, error) {
 	before := s.sessionSnapshot(ctx, exec.req.ChannelID, exec.req.WorkspaceID)
+	if err := s.prepareSessionForRun(ctx, exec); err != nil {
+		_, _ = s.runStore.Fail(exec.runID, err)
+		s.untrackRunCancel(exec.runID)
+		return runExecutionResult{}, err
+	}
 	notifier := runnotifier.New(s.runStore, exec.runID, exec.agentID, s.resolveProtocol(exec.agentID))
 	res, err := s.route(ctx, exec.req, exec.agentID, notifier)
 	if err != nil {
+		after := s.enrichRunFromSession(ctx, sessionEnrichmentRequest{
+			runID:       exec.runID,
+			channelID:   exec.req.ChannelID,
+			workspaceID: exec.req.WorkspaceID,
+			before:      before,
+		})
+		var cleanup *middleware.SessionCleanupResult
+		if runRequiresCleanup(exec.req) {
+			cleanup, _ = s.cleanupRunSession(ctx, exec, after)
+		}
 		if isEmergencyTimeout(ctx, err, exec) {
 			_, _ = s.runStore.Cancel(exec.runID, "emergency_kill_timeout")
 		} else {
 			_, _ = s.runStore.Fail(exec.runID, err)
 		}
 		s.untrackRunCancel(exec.runID)
-		return "", err
+		return runExecutionResult{cleanup: cleanup}, err
 	}
-	s.enrichRunFromSession(ctx, sessionEnrichmentRequest{
+	after := s.enrichRunFromSession(ctx, sessionEnrichmentRequest{
 		runID:       exec.runID,
 		channelID:   exec.req.ChannelID,
 		workspaceID: exec.req.WorkspaceID,
 		before:      before,
 	})
+	var cleanup *middleware.SessionCleanupResult
+	if runRequiresCleanup(exec.req) {
+		cleanup, err = s.cleanupRunSession(ctx, exec, after)
+		if err != nil {
+			_, _ = s.runStore.Fail(exec.runID, err)
+			s.untrackRunCancel(exec.runID)
+			return runExecutionResult{output: res, cleanup: cleanup}, err
+		}
+	}
 	_, err = s.runStore.Complete(exec.runID, res, "end_turn")
 	s.untrackRunCancel(exec.runID)
-	return res, err
+	return runExecutionResult{output: res, cleanup: cleanup}, err
 }
 
 func (s *Server) route(ctx context.Context, req runRequest, agentID string, notifier middleware.ThoughtNotifier) (string, error) {
@@ -197,10 +226,10 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request, exec ru
 		if isEmergencyTimeout(ctx, err, exec) {
 			status = runtrace.StatusCancelled
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"run_id": exec.runID, "status": status, "error": err.Error()})
+		_ = json.NewEncoder(w).Encode(newRunErrorResponse(exec.runID, status, err.Error(), res.cleanup))
 		return
 	}
-	_ = json.NewEncoder(w).Encode(newRunResponse(exec.runID, runtrace.StatusCompleted, res))
+	_ = json.NewEncoder(w).Encode(newRunResponse(exec.runID, runtrace.StatusCompleted, res.output, res.cleanup))
 }
 
 func (s *Server) executeRunAsync(ctx context.Context, exec runExecution) {

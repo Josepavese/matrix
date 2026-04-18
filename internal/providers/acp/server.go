@@ -94,10 +94,14 @@ const (
 // - new: agent id
 // - name: alias
 type sessionActionRequest struct {
-	ChannelID   string `json:"channel_id"`
-	Action      string `json:"action"`
-	Target      string `json:"target,omitempty"`
-	WorkspaceID string `json:"workspace_id,omitempty"`
+	ChannelID        string `json:"channel_id"`
+	Action           string `json:"action"`
+	Target           string `json:"target,omitempty"`
+	WorkspaceID      string `json:"workspace_id,omitempty"`
+	WorkspacePath    string `json:"workspace_path,omitempty"`
+	Ephemeral        bool   `json:"ephemeral,omitempty"`
+	CleanupPolicy    string `json:"cleanup_policy,omitempty"`
+	ForceForgetLocal bool   `json:"force_forget_local,omitempty"`
 }
 
 type workspaceActionRequest struct {
@@ -171,10 +175,14 @@ func (s *Server) HandleSessionActions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := s.router.HandleSessionActionTyped(r.Context(), middleware.SessionActionRequest{
-		ChannelID:   req.ChannelID,
-		Action:      req.Action,
-		Target:      req.Target,
-		WorkspaceID: req.WorkspaceID,
+		ChannelID:        req.ChannelID,
+		Action:           req.Action,
+		Target:           req.Target,
+		WorkspaceID:      req.WorkspaceID,
+		WorkspacePath:    req.WorkspacePath,
+		Ephemeral:        req.Ephemeral,
+		CleanupPolicy:    req.CleanupPolicy,
+		ForceForgetLocal: req.ForceForgetLocal,
 	})
 	if err != nil {
 		slog.Error("matrix session action failed", "error", err, "action", req.Action)
