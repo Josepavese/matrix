@@ -151,6 +151,11 @@ func UpdateSessionIndex(storage middleware.Storage, workspaceID, sessionID strin
 	return updateStringIndexWithLimit(storage, SessionIndexKey(workspaceID), sessionID, maxIndexedAssociations)
 }
 
+// RemoveSessionIndex removes a logical session from the workspace association index.
+func RemoveSessionIndex(storage middleware.Storage, workspaceID, sessionID string) error {
+	return removeStringIndexValue(storage, SessionIndexKey(workspaceID), sessionID)
+}
+
 // UpdateChannelIndex records a channel as recently associated with the workspace.
 func UpdateChannelIndex(storage middleware.Storage, workspaceID, channelID string) error {
 	return updateStringIndexWithLimit(storage, ChannelIndexKey(workspaceID), channelID, maxIndexedAssociations)
@@ -177,4 +182,28 @@ func loadStringIndex(storage middleware.Storage, key string) ([]string, error) {
 		return nil, fmt.Errorf("failed to decode workspace index %s: %w", key, err)
 	}
 	return values, nil
+}
+
+func removeStringIndexValue(storage middleware.Storage, key, value string) error {
+	values, err := loadStringIndex(storage, key)
+	if err != nil {
+		return err
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	next := make([]string, 0, len(values))
+	for _, item := range values {
+		if item != value {
+			next = append(next, item)
+		}
+	}
+	if len(next) == len(values) {
+		return nil
+	}
+	data, err := json.Marshal(next)
+	if err != nil {
+		return fmt.Errorf("failed to encode workspace index %s: %w", key, err)
+	}
+	return storage.Set(key, data)
 }

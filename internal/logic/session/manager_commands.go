@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jose/matrix-v2/internal/logic/workspace"
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
@@ -99,30 +100,15 @@ func (m *Manager) handleSessionNew(channelID, lang string, parts []string) (stri
 	if len(parts) >= 3 {
 		agentID = parts[2]
 	}
-	result, err := m.handleSessionNewTyped(channelID, lang, agentID, "", "")
+	result, err := m.handleSessionNewTyped(newSessionRequest{
+		ChannelID: channelID,
+		Lang:      lang,
+		AgentID:   agentID,
+	})
 	if err != nil {
 		return "", err
 	}
 	return m.renderSessionAction(result, lang), nil
-}
-
-func (m *Manager) handleSessionNewTyped(channelID, lang, agentID, workspaceID, workspacePath string) (middleware.SessionActionResult, error) {
-	resolvedAgentID := m.defaultAgent
-	if strings.TrimSpace(agentID) != "" {
-		resolvedAgentID = strings.TrimSpace(agentID)
-	}
-
-	sessionID, err := m.forceNewSessionWithWorkspace(channelID, resolvedAgentID, workspaceID, workspacePath)
-	if err != nil {
-		return middleware.SessionActionResult{}, err
-	}
-	meta, _, _ := m.loadSessionMeta(sessionID)
-	return middleware.SessionActionResult{
-		Action:          "new",
-		Message:         fmt.Sprintf(m.wizard.GetString(lang, "session_new_started"), resolvedAgentID, sessionID),
-		ActiveSessionID: sessionID,
-		Session:         m.toSessionEntry(meta, true),
-	}, nil
 }
 
 func (m *Manager) handleSessionList(ctx context.Context, channelID, lang string) (string, error) {
@@ -217,68 +203,15 @@ func (m *Manager) handleSessionSwitchTyped(ctx context.Context, channelID, lang,
 }
 
 func (m *Manager) handleSessionDelete(ctx context.Context, channelID, lang, args string) (string, error) {
-	result, err := m.handleSessionDeleteTyped(ctx, channelID, lang, args)
+	result, err := m.handleSessionDeleteTyped(ctx, sessionCleanupRequest{
+		ChannelID: channelID,
+		Lang:      lang,
+		Target:    args,
+	})
 	if err != nil {
 		return "", err
 	}
 	return m.renderSessionAction(result, lang), nil
-}
-
-func (m *Manager) handleSessionDeleteTyped(ctx context.Context, channelID, lang, args string) (middleware.SessionActionResult, error) {
-	targetID := strings.TrimSpace(args)
-	if targetID == "" {
-		state, err := m.getChannelState(channelID)
-		if err != nil {
-			return middleware.SessionActionResult{}, err
-		}
-		targetID = state.ActiveSessionID
-	}
-	if targetID == "" {
-		return middleware.SessionActionResult{Action: "delete", Message: m.wizard.GetString(lang, "session_history_empty")}, nil
-	}
-
-	state, err := m.getChannelState(channelID)
-	if err != nil {
-		return middleware.SessionActionResult{}, err
-	}
-	metas, err := m.loadSessionMetas(state.History)
-	if err != nil {
-		return middleware.SessionActionResult{}, err
-	}
-	resolved := resolveSessionTarget(targetID, state, metas)
-	if resolved != "" {
-		targetID = resolved
-	}
-
-	meta, found, err := m.loadSessionMeta(targetID)
-	if err != nil {
-		return middleware.SessionActionResult{}, err
-	}
-	if !found {
-		deleted, handled, err := m.tryDeleteRemoteSession(ctx, channelID, targetID)
-		if handled {
-			if err != nil {
-				return middleware.SessionActionResult{}, err
-			}
-			return deleted, nil
-		}
-		return middleware.SessionActionResult{}, fmt.Errorf("session %s not found", targetID)
-	}
-
-	if meta.AgentSessionID != "" {
-		if err := m.deleteRemoteSession(ctx, meta); err != nil {
-			return middleware.SessionActionResult{}, err
-		}
-	}
-	if err := m.removeSessionMirror(channelID, meta.ID); err != nil {
-		return middleware.SessionActionResult{}, err
-	}
-	m.recordWorkspaceEvent(meta, "session.deleted", channelID, "Deleted workspace session", "session-delete", nil)
-	return middleware.SessionActionResult{
-		Action:  "delete",
-		Message: fmt.Sprintf("Deleted session: %s", meta.ID),
-		Session: m.toSessionEntry(meta, false),
-	}, nil
 }
 
 func (m *Manager) handleSessionCancel(ctx context.Context, channelID, lang, args string) (string, error) {
@@ -612,28 +545,6 @@ func (m *Manager) importRemoteSession(channelID, agentID string, remote middlewa
 	return sessionID, nil
 }
 
-func (m *Manager) deleteRemoteSession(ctx context.Context, meta SessionMeta) error {
-	controller, ok := m.router.(middleware.AgentSessionController)
-	if !ok {
-		return nil
-	}
-	if strings.TrimSpace(meta.AgentSessionID) == "" {
-		return nil
-	}
-	return controller.DeleteAgentSession(ctx, meta.AgentID, meta.AgentSessionID)
-}
-
-func (m *Manager) cancelRemoteSession(ctx context.Context, meta SessionMeta) error {
-	controller, ok := m.router.(middleware.AgentSessionController)
-	if !ok {
-		return nil
-	}
-	if strings.TrimSpace(meta.AgentSessionID) == "" {
-		return nil
-	}
-	return controller.CancelAgentSession(ctx, meta.AgentID, meta.AgentSessionID)
-}
-
 func (m *Manager) tryDeleteRemoteSession(ctx context.Context, channelID, target string) (middleware.SessionActionResult, bool, error) {
 	controller, agentID, _ := m.sessionControllerForChannel(channelID)
 	if controller == nil {
@@ -692,6 +603,8 @@ func (m *Manager) toSessionEntry(meta SessionMeta, active bool) *middleware.Sess
 		CreatedAt:        meta.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:        meta.LastSyncedAt.Format(time.RFC3339),
 		Active:           active,
+		Ephemeral:        meta.Ephemeral,
+		CleanupPolicy:    meta.CleanupPolicy,
 		Meta:             meta.RemoteMeta,
 		PendingHandoff:   meta.PendingHandoff,
 		LastHandoff:      meta.LastHandoff,
@@ -784,6 +697,10 @@ func (m *Manager) formatSessionEntry(index int, lang string, session middleware.
 }
 
 func (m *Manager) removeSessionMirror(channelID, sessionID string) error {
+	meta, found, err := m.loadSessionMeta(sessionID)
+	if err != nil {
+		return err
+	}
 	channelKeys, err := m.storage.List("session.channel.")
 	if err != nil {
 		return err
@@ -819,6 +736,11 @@ func (m *Manager) removeSessionMirror(channelID, sessionID string) error {
 			return err
 		}
 		if err := m.storage.Set(key, payload); err != nil {
+			return err
+		}
+	}
+	if found && strings.TrimSpace(meta.WorkspaceID) != "" {
+		if err := workspace.RemoveSessionIndex(m.storage, meta.WorkspaceID, sessionID); err != nil {
 			return err
 		}
 	}

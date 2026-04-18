@@ -24,6 +24,9 @@ type mockSessionRouter struct {
 	lastWorkspacePath    string
 	lastAction           string
 	lastTarget           string
+	lastEphemeral        bool
+	lastCleanupPolicy    string
+	lastForceForgetLocal bool
 	lastIntentAgentID    string
 	lastIntentNote       string
 	response             string
@@ -73,6 +76,12 @@ func (m *mockSessionRouter) HandleSessionActionTyped(_ context.Context, req midd
 	m.lastAction = req.Action
 	m.lastTarget = req.Target
 	m.lastWorkspaceID = req.WorkspaceID
+	if req.WorkspacePath != "" {
+		m.lastWorkspacePath = req.WorkspacePath
+	}
+	m.lastEphemeral = req.Ephemeral
+	m.lastCleanupPolicy = req.CleanupPolicy
+	m.lastForceForgetLocal = req.ForceForgetLocal
 	if m.typedResult.Action == "" {
 		m.typedResult = middleware.SessionActionResult{Action: req.Action, Message: m.response}
 	}
@@ -967,7 +976,14 @@ func TestHandleSessionActions_NewAndNamePassThrough(t *testing.T) {
 	}}
 	_, mux := setupServer(router, "", "")
 
-	newBody, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "new", "target": "claude"})
+	newBody, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "ch1",
+		"action":         "new",
+		"target":         "claude",
+		"workspace_path": "/tmp/eval-ws",
+		"ephemeral":      true,
+		"cleanup_policy": "delete_remote_or_forget_local",
+	})
 	newReq := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(newBody))
 	newW := httptest.NewRecorder()
 	mux.ServeHTTP(newW, newReq)
@@ -977,6 +993,9 @@ func TestHandleSessionActions_NewAndNamePassThrough(t *testing.T) {
 	}
 	if router.lastAction != "new" || router.lastTarget != "claude" {
 		t.Fatalf("unexpected new routing: action=%s target=%s", router.lastAction, router.lastTarget)
+	}
+	if router.lastWorkspacePath != "/tmp/eval-ws" || !router.lastEphemeral || router.lastCleanupPolicy != "delete_remote_or_forget_local" {
+		t.Fatalf("expected ephemeral workspace path to pass through, path=%q ephemeral=%t cleanup=%q", router.lastWorkspacePath, router.lastEphemeral, router.lastCleanupPolicy)
 	}
 
 	router.typedResult = middleware.SessionActionResult{
@@ -1002,5 +1021,44 @@ func TestHandleSessionActions_NewAndNamePassThrough(t *testing.T) {
 	}
 	if resp.Action != "name" || resp.Session == nil || resp.Session.Alias != "bugfix" {
 		t.Fatalf("unexpected typed name response: %+v", resp)
+	}
+}
+
+func TestHandleSessionActions_CleanupPassesForceForget(t *testing.T) {
+	router := &mockSessionRouter{typedResult: middleware.SessionActionResult{
+		Action: "cleanup",
+		Cleanup: &middleware.SessionCleanupResult{
+			LogicalSessionID: "s1",
+			LocalForgotten:   true,
+		},
+	}}
+	_, mux := setupServer(router, "", "")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":         "ch1",
+		"action":             "cleanup",
+		"target":             "s1",
+		"cleanup_policy":     "delete_remote_or_forget_local",
+		"force_forget_local": true,
+	})
+	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if router.lastAction != "cleanup" || router.lastTarget != "s1" || !router.lastForceForgetLocal {
+		t.Fatalf("unexpected cleanup routing: action=%s target=%s force=%t", router.lastAction, router.lastTarget, router.lastForceForgetLocal)
+	}
+	if router.lastCleanupPolicy != "delete_remote_or_forget_local" {
+		t.Fatalf("expected cleanup policy passthrough, got %q", router.lastCleanupPolicy)
+	}
+	var resp middleware.SessionActionResult
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response parse error: %v", err)
+	}
+	if resp.Cleanup == nil || !resp.Cleanup.LocalForgotten {
+		t.Fatalf("expected cleanup proof, got %+v", resp)
 	}
 }

@@ -49,6 +49,7 @@ type RouteRequest struct {
 	AgentID          string
 	LogicalSessionID string
 	AgentSessionID   string
+	WorkspacePath    string
 	Message          string
 	Tools            []Tool
 	ThoughtNotifier  ThoughtNotifier // optional: receives real-time thought/tool updates during prompt

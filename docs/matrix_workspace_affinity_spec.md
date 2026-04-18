@@ -291,10 +291,14 @@ Recommended extension:
 
 ```go
 type SessionActionRequest struct {
-    ChannelID    string
-    Action       string
-    Target       string
-    WorkspaceID  string
+    ChannelID        string
+    Action           string
+    Target           string
+    WorkspaceID      string
+    WorkspacePath    string
+    Ephemeral        bool
+    CleanupPolicy    string
+    ForceForgetLocal bool
 }
 ```
 
@@ -306,10 +310,16 @@ Current `POST /v1/runs` should be allowed to accept optional:
 
 - `workspace_id`
 - `workspace_path`
+- `session_policy`
+- `cleanup_policy`
 
 Current `POST /v1/session-actions` should be allowed to accept optional:
 
 - `workspace_id`
+- `workspace_path`
+- `ephemeral`
+- `cleanup_policy`
+- `force_forget_local`
 
 ## 4. Telegram And Future Chat Channels
 

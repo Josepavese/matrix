@@ -21,6 +21,7 @@ type StdioTransport struct {
 
 func NewStdioTransport(ctx context.Context, executable string, env []string, args ...string) (*StdioTransport, error) {
 	cmd := exec.CommandContext(ctx, executable, args...)
+	prepareStdioCommand(cmd)
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
@@ -82,7 +83,7 @@ func (t *StdioTransport) Receive(_ context.Context) ([]byte, error) {
 func (t *StdioTransport) Close() error {
 	_ = t.stdin.Close()
 	_ = t.stdout.Close()
-	err := t.cmd.Cancel()
+	err := terminateStdioCommand(t.cmd)
 	t.wg.Wait()
 	return err
 }

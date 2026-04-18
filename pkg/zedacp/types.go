@@ -30,6 +30,7 @@ type ClientAPI interface {
 	LoadSession(ctx context.Context, req LoadSessionRequest, observer SessionObserver) error
 	ListSessions(ctx context.Context) (*ListSessionsResponse, error)
 	CancelSession(ctx context.Context, sessionID string) error
+	CloseSession(ctx context.Context, sessionID string) error
 	DeleteSession(ctx context.Context, sessionID string) error
 	Prompt(ctx context.Context, req PromptRequest, observer SessionObserver) (*PromptResponse, error)
 	SetRequestHandler(handler RequestHandler)

@@ -10,7 +10,7 @@ The package currently exposes:
 - a typed client-side ACP connection
 - stdio, websocket, and unix transports
 - request-handler and session-observer interfaces
-- session lifecycle methods including `session/list`, `session/load`, `session/cancel`, and draft `session/delete`
+- session lifecycle methods including `session/list`, `session/load`, `session/cancel`, preview `session/close`, and draft `session/delete`
 
 Matrix consumes this package through adapters in `internal/providers/agents`.
 
@@ -74,6 +74,8 @@ Near-term goals:
 
 - `session/list` and `session/load` are first-class and used by Matrix for protocol-transparent `/session list` and `/session switch`
 - `session/cancel` is emitted as an ACP notification, matching current Zed ACP semantics
+- `session/close` is implemented as an optional preview method; callers should gate it on advertised `sessionCapabilities.close`
 - `session_info_update` is accepted and surfaced so Matrix can mirror remote session metadata in the vault
 - `session/delete` is implemented as an optional draft method; callers should gate it on advertised `sessionCapabilities.delete`
+- capability flags accept the Zed object-style shape (`"close": {}`) and the older boolean shape used by some adapters
 - Matrix-specific ingress such as `/v1/runs` is intentionally outside this package

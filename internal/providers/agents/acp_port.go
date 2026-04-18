@@ -40,6 +40,7 @@ type acpClient interface {
 	LoadSession(ctx context.Context, req acpLoadSessionRequest, observer acpSessionObserver) error
 	ListSessions(ctx context.Context) (*acpListSessionsResponse, error)
 	CancelSession(ctx context.Context, sessionID string) error
+	CloseSession(ctx context.Context, sessionID string) error
 	DeleteSession(ctx context.Context, sessionID string) error
 	Prompt(ctx context.Context, req acpPromptRequest, observer acpSessionObserver) (*acpPromptResponse, error)
 	SetMode(ctx context.Context, sessionID, modeID string) error

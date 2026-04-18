@@ -105,12 +105,7 @@ func (c *a2aConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 }
 
 func (c *a2aConversationClient) SessionCapabilities() middleware.ConversationSessionCapabilities {
-	return middleware.ConversationSessionCapabilities{
-		List:   true,
-		Load:   true,
-		Cancel: true,
-		Delete: true,
-	}
+	return middleware.ConversationSessionCapabilities{List: true, Load: true, Cancel: true, Delete: true}
 }
 
 func (c *a2aConversationClient) ListRemoteSessions(ctx context.Context) ([]middleware.RemoteSessionInfo, error) {
@@ -139,11 +134,7 @@ func (c *a2aConversationClient) ListRemoteSessions(ctx context.Context) ([]middl
 }
 
 func (c *a2aConversationClient) GetRemoteSession(ctx context.Context, remoteSessionID string) (middleware.RemoteSessionInfo, error) {
-	state := decodeA2ARemoteSession(remoteSessionID)
-	taskID := strings.TrimSpace(state.TaskID)
-	if taskID == "" {
-		taskID = strings.TrimSpace(remoteSessionID)
-	}
+	taskID := a2aTaskID(remoteSessionID)
 	if taskID == "" {
 		return middleware.RemoteSessionInfo{}, fmt.Errorf("A2A task id is required")
 	}
@@ -169,11 +160,7 @@ func (c *a2aConversationClient) DeleteRemoteSession(ctx context.Context, remoteS
 }
 
 func (c *a2aConversationClient) CancelRemoteSession(ctx context.Context, remoteSessionID string) error {
-	state := decodeA2ARemoteSession(remoteSessionID)
-	taskID := strings.TrimSpace(state.TaskID)
-	if taskID == "" {
-		taskID = strings.TrimSpace(remoteSessionID)
-	}
+	taskID := a2aTaskID(remoteSessionID)
 	if taskID == "" {
 		return fmt.Errorf("A2A task id is required")
 	}
@@ -182,6 +169,10 @@ func (c *a2aConversationClient) CancelRemoteSession(ctx context.Context, remoteS
 		return nil
 	}
 	return err
+}
+
+func (c *a2aConversationClient) CloseRemoteSession(_ context.Context, _ string) error {
+	return fmt.Errorf("A2A remote session close is not supported")
 }
 
 func (c *a2aConversationClient) streamA2A(ctx context.Context, req *a2a.SendMessageRequest, turn middleware.ConversationTurn) (string, a2aRemoteSession, error) {
@@ -234,6 +225,13 @@ func decodeA2ARemoteSession(raw string) a2aRemoteSession {
 		return a2aRemoteSession{}
 	}
 	return state
+}
+
+func a2aTaskID(raw string) string {
+	if taskID := strings.TrimSpace(decodeA2ARemoteSession(raw).TaskID); taskID != "" {
+		return taskID
+	}
+	return strings.TrimSpace(raw)
 }
 
 func a2aResultFromSendMessage(resp a2a.SendMessageResult) middleware.ConversationResult {

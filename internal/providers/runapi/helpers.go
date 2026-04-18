@@ -8,16 +8,33 @@ import (
 	"strings"
 
 	"github.com/jose/matrix-v2/internal/logic/runtrace"
+	"github.com/jose/matrix-v2/internal/middleware"
 )
 
-func newRunResponse(runID, status, output string) runResponse {
-	return runResponse{
+func newRunResponse(runID, status, output string, cleanup ...*middleware.SessionCleanupResult) runResponse {
+	resp := runResponse{
 		RunID:      runID,
 		Status:     status,
 		Output:     output,
 		TraceURL:   RunResourcePrefixV1 + runID + "/trace",
 		EventsURL:  RunResourcePrefixV1 + runID + "/events",
 		ActionsURL: RunResourcePrefixV1 + runID + "/actions",
+	}
+	if len(cleanup) > 0 {
+		resp.Cleanup = cleanup[0]
+	}
+	return resp
+}
+
+func newRunErrorResponse(runID, status, errText string, cleanup *middleware.SessionCleanupResult) runErrorResponse {
+	return runErrorResponse{
+		RunID:      runID,
+		Status:     status,
+		Error:      errText,
+		TraceURL:   RunResourcePrefixV1 + runID + "/trace",
+		EventsURL:  RunResourcePrefixV1 + runID + "/events",
+		ActionsURL: RunResourcePrefixV1 + runID + "/actions",
+		Cleanup:    cleanup,
 	}
 }
 

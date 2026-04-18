@@ -164,10 +164,11 @@ func (r *Router) checkAndReconnect() {
 	}
 
 	log := slog.With("component", "agent_router_keepalive")
-	for _, agentID := range agentIDs {
-		log.Info("detected dead agent client, pre-warming replacement", "event", "keepalive_reconnect", "agent", agentID)
-		if err := r.preWarm(r.keepAliveCtx, agentID); err != nil {
-			log.Warn("keepalive pre-warm failed, will retry on next check", "event", "keepalive_prewarm_failed", "agent", agentID, "error", err)
+	for _, key := range agentIDs {
+		agentID, cwd := splitClientCacheKey(key)
+		log.Info("detected dead agent client, pre-warming replacement", "event", "keepalive_reconnect", "agent", agentID, "cwd", cwd)
+		if err := r.preWarm(r.keepAliveCtx, agentID, cwd); err != nil {
+			log.Warn("keepalive pre-warm failed, will retry on next check", "event", "keepalive_prewarm_failed", "agent", agentID, "cwd", cwd, "error", err)
 		}
 	}
 }
@@ -175,20 +176,21 @@ func (r *Router) checkAndReconnect() {
 // preWarm evicts a dead client entry and creates a fresh one in its place.
 // The new client is fully initialized (initialize handshake complete) so it is
 // ready for session/new + prompt on the next user message.
-func (r *Router) preWarm(ctx context.Context, agentID string) error {
+func (r *Router) preWarm(ctx context.Context, agentID string, cwd string) error {
 	log := slog.With("component", "agent_router", "agent", agentID)
+	key := clientCacheKey(agentID, cwd)
 
 	r.mu.Lock()
 	// Evict the dead entry
-	delete(r.clients, agentID)
+	delete(r.clients, key)
 
 	// Create a fresh client under the write lock
-	client, kind, err := r.createClient(ctx, agentID, log)
+	client, kind, err := r.createClient(ctx, agentID, cwd, log)
 	if err != nil {
 		r.mu.Unlock()
 		return err
 	}
-	r.clients[agentID] = client
+	r.clients[key] = client
 	r.mu.Unlock()
 
 	log.Info("keepalive: pre-warmed agent client", "event", "keepalive_prewarmed", "protocol_kind", kind)
@@ -197,120 +199,14 @@ func (r *Router) preWarm(ctx context.Context, agentID string) error {
 
 // Route finds the matching Agent Endpoint, connects a JSON-RPC struct, and executes the Prompt.
 func (r *Router) Route(ctx context.Context, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
-	client, err := r.getOrCreateClient(ctx, req.AgentID)
+	client, err := r.getOrCreateClient(ctx, req.AgentID, r.effectiveCwd(req.WorkspacePath))
 	if err != nil {
 		return "", "", nil, middleware.ConversationMetadata{}, err
 	}
 	return r.executePrompt(ctx, client, req)
 }
 
-func (r *Router) ListAgentSessions(ctx context.Context, agentID string) ([]middleware.RemoteSessionInfo, middleware.ConversationSessionCapabilities, error) {
-	client, err := r.getOrCreateClient(ctx, agentID)
-	if err != nil {
-		return nil, middleware.ConversationSessionCapabilities{}, err
-	}
-	controller, ok := client.(middleware.ConversationSessionControl)
-	if !ok {
-		return nil, middleware.ConversationSessionCapabilities{}, fmt.Errorf("agent %s does not expose remote session control", agentID)
-	}
-	sessions, err := controller.ListRemoteSessions(ctx)
-	if err != nil {
-		return nil, middleware.ConversationSessionCapabilities{}, err
-	}
-	return sessions, controller.SessionCapabilities(), nil
-}
-
-func (r *Router) GetAgentSession(ctx context.Context, agentID string, remoteSessionID string) (middleware.RemoteSessionInfo, error) {
-	client, err := r.getOrCreateClient(ctx, agentID)
-	if err != nil {
-		return middleware.RemoteSessionInfo{}, err
-	}
-	controller, ok := client.(middleware.ConversationSessionControl)
-	if !ok {
-		return middleware.RemoteSessionInfo{}, fmt.Errorf("agent %s does not expose remote session control", agentID)
-	}
-	return controller.GetRemoteSession(ctx, remoteSessionID)
-}
-
-func (r *Router) CancelAgentSession(ctx context.Context, agentID string, remoteSessionID string) error {
-	client, err := r.getOrCreateClient(ctx, agentID)
-	if err != nil {
-		return err
-	}
-	controller, ok := client.(middleware.ConversationSessionControl)
-	if !ok {
-		return fmt.Errorf("agent %s does not expose remote session control", agentID)
-	}
-	return controller.CancelRemoteSession(ctx, remoteSessionID)
-}
-
-func (r *Router) DeleteAgentSession(ctx context.Context, agentID string, remoteSessionID string) error {
-	client, err := r.getOrCreateClient(ctx, agentID)
-	if err != nil {
-		return err
-	}
-	controller, ok := client.(middleware.ConversationSessionControl)
-	if !ok {
-		return fmt.Errorf("agent %s does not expose remote session control", agentID)
-	}
-	return controller.DeleteRemoteSession(ctx, remoteSessionID)
-}
-
-// getOrCreateClient returns a cached client if healthy, or creates a new one.
-// The fast path (RLock only) is taken when a reusable client exists.
-// The slow path (full Lock) spawns a process, initializes, and caches.
-func (r *Router) getOrCreateClient(ctx context.Context, agentID string) (middleware.ConversationClient, error) {
-	log := slog.With("component", "agent_router", "agent", agentID)
-
-	// Fast path: reusable client exists
-	if client, ok := r.lookupReusableClient(agentID); ok {
-		log.Debug("reusing cached conversation client", "event", "client_reused")
-		return client, nil
-	}
-
-	// Slow path: create new client under write lock
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// Double-check after acquiring write lock (another goroutine may have created it)
-	if client, ok := r.lookupReusableClientLocked(agentID); ok {
-		return client, nil
-	}
-
-	// Evict dead entry before creating a new one
-	delete(r.clients, agentID)
-
-	client, kind, err := r.createClient(ctx, agentID, log)
-	if err != nil {
-		return nil, err
-	}
-	log.Info("conversation client initialized", "event", "client_initialized", "protocol_kind", kind)
-	r.clients[agentID] = client
-	return client, nil
-}
-
-func (r *Router) lookupReusableClient(agentID string) (middleware.ConversationClient, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.lookupReusableClientLocked(agentID)
-}
-
-func (r *Router) lookupReusableClientLocked(agentID string) (middleware.ConversationClient, bool) {
-	client, ok := r.clients[agentID]
-	if !ok || !isReusableClient(client) {
-		return nil, false
-	}
-	return client, true
-}
-
-func isReusableClient(client middleware.ConversationClient) bool {
-	if health, ok := client.(middleware.ConversationHealth); ok {
-		return health.Alive()
-	}
-	return true
-}
-
-func (r *Router) createClient(ctx context.Context, agentID string, log *slog.Logger) (middleware.ConversationClient, middleware.ProtocolKind, error) {
+func (r *Router) createClient(ctx context.Context, agentID string, cwd string, log *slog.Logger) (middleware.ConversationClient, middleware.ProtocolKind, error) {
 	endpoint, err := r.resolver.GetAgentEndpoint(agentID)
 	if err != nil {
 		return nil, "", fmt.Errorf("router failed to resolve endpoint for agent %s: %w", agentID, err)
@@ -323,7 +219,7 @@ func (r *Router) createClient(ctx context.Context, agentID string, log *slog.Log
 	}
 	client, err := factory.NewClient(ctx, endpoint, middleware.ConversationFactoryDeps{
 		FS:        r.fs,
-		Cwd:       r.cwd,
+		Cwd:       cwd,
 		Process:   r.proc,
 		TrustMode: r.trustMode,
 	})
@@ -603,6 +499,7 @@ func (r *Router) executePrompt(ctx context.Context, client middleware.Conversati
 		AgentID:          req.AgentID,
 		LogicalSessionID: req.LogicalSessionID,
 		RemoteSessionID:  req.AgentSessionID,
+		WorkspacePath:    req.WorkspacePath,
 		Message:          req.Message,
 		Tools:            req.Tools,
 		ThoughtNotifier:  req.ThoughtNotifier,
@@ -613,7 +510,7 @@ func (r *Router) executePrompt(ctx context.Context, client middleware.Conversati
 		result, err = client.ExecuteTurn(ctx, turn)
 	}
 	if err != nil {
-		return "", "", nil, middleware.ConversationMetadata{}, err
+		return "", result.RemoteSessionID, result.ToolCalls, result.Metadata, err
 	}
 	return result.Output, result.RemoteSessionID, result.ToolCalls, result.Metadata, nil
 }

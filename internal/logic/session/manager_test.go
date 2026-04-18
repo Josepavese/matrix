@@ -3,6 +3,8 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -50,6 +52,16 @@ type mockRouter struct {
 	remote      []middleware.RemoteSessionInfo
 	deleted     []string
 	canceled    []string
+	closed      []string
+	deletedWS   []string
+	canceledWS  []string
+	closedWS    []string
+	deleteErr   error
+	cancelErr   error
+	closeErr    error
+	closeOK     bool
+	reaped      []string
+	reapErr     error
 	metadata    middleware.ConversationMetadata
 }
 
@@ -60,7 +72,7 @@ func (m *mockRouter) Route(_ context.Context, req middleware.RouteRequest) (stri
 }
 
 func (m *mockRouter) ListAgentSessions(_ context.Context, _ string) ([]middleware.RemoteSessionInfo, middleware.ConversationSessionCapabilities, error) {
-	return m.remote, middleware.ConversationSessionCapabilities{List: true, Load: true, Delete: true}, nil
+	return m.remote, middleware.ConversationSessionCapabilities{List: true, Load: true, Cancel: true, Close: m.closeOK, Delete: true}, nil
 }
 
 func (m *mockRouter) GetAgentSession(_ context.Context, _ string, remoteSessionID string) (middleware.RemoteSessionInfo, error) {
@@ -74,12 +86,46 @@ func (m *mockRouter) GetAgentSession(_ context.Context, _ string, remoteSessionI
 
 func (m *mockRouter) DeleteAgentSession(_ context.Context, _ string, remoteSessionID string) error {
 	m.deleted = append(m.deleted, remoteSessionID)
-	return nil
+	return m.deleteErr
 }
 
 func (m *mockRouter) CancelAgentSession(_ context.Context, _ string, remoteSessionID string) error {
 	m.canceled = append(m.canceled, remoteSessionID)
-	return nil
+	return m.cancelErr
+}
+
+func (m *mockRouter) CloseAgentSession(_ context.Context, _ string, remoteSessionID string) error {
+	if !m.closeOK {
+		return fmt.Errorf("agent router does not expose remote session close")
+	}
+	m.closed = append(m.closed, remoteSessionID)
+	return m.closeErr
+}
+
+func (m *mockRouter) DeleteAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error {
+	m.deletedWS = append(m.deletedWS, remoteSessionID+"|"+workspacePath)
+	return m.DeleteAgentSession(ctx, agentID, remoteSessionID)
+}
+
+func (m *mockRouter) CancelAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error {
+	m.canceledWS = append(m.canceledWS, remoteSessionID+"|"+workspacePath)
+	return m.CancelAgentSession(ctx, agentID, remoteSessionID)
+}
+
+func (m *mockRouter) CloseAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error {
+	if !m.closeOK {
+		return fmt.Errorf("agent router does not expose remote session close")
+	}
+	m.closedWS = append(m.closedWS, remoteSessionID+"|"+workspacePath)
+	return m.CloseAgentSession(ctx, agentID, remoteSessionID)
+}
+
+func (m *mockRouter) ReapAgentClient(_ context.Context, agentID string, workspacePath string) (bool, error) {
+	m.reaped = append(m.reaped, agentID+"|"+workspacePath)
+	if m.reapErr != nil {
+		return false, m.reapErr
+	}
+	return true, nil
 }
 
 type mockResolver struct{}
@@ -1132,9 +1178,272 @@ func TestSessionManager_SessionDeleteRemovesMirrorAndCallsRemoteDelete(t *testin
 	if len(router.deleted) != 1 || router.deleted[0] != "acp-remote-3" {
 		t.Fatalf("expected remote delete call, got %+v", router.deleted)
 	}
+	if len(router.reaped) != 1 || router.reaped[0] != "codex|" {
+		t.Fatalf("expected unreferenced agent client reap, got %+v", router.reaped)
+	}
 	raw, _ := storage.Get("session.meta." + sessionID)
 	if len(raw) != 0 {
 		t.Fatalf("expected session meta deleted, got %q", string(raw))
+	}
+}
+
+func TestSessionManager_DeleteRetainsSharedAgentClient(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	first, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "channel-a",
+		Action:        "new",
+		Target:        "codex",
+		WorkspacePath: "/tmp/shared-ws",
+	})
+	if err != nil {
+		t.Fatalf("new first: %v", err)
+	}
+	if _, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "channel-b",
+		Action:        "new",
+		Target:        "codex",
+		WorkspacePath: "/tmp/shared-ws",
+	}); err != nil {
+		t.Fatalf("new second: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(first.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("load first: err=%v found=%v", err, found)
+	}
+	meta.AgentSessionID = "remote-shared-a"
+	if err := mgr.saveSessionMeta(meta); err != nil {
+		t.Fatalf("save first: %v", err)
+	}
+
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID: "channel-a",
+		Action:    "delete",
+		Target:    meta.ID,
+	})
+	if err != nil {
+		t.Fatalf("delete first: %v", err)
+	}
+	if result.Cleanup == nil {
+		t.Fatalf("expected cleanup proof")
+	}
+	if !result.Cleanup.ProcessRetained || !result.Cleanup.ProcessRetentionAllowed {
+		t.Fatalf("expected allowed process retention for shared client, got %+v", result.Cleanup)
+	}
+	if result.Cleanup.ProcessReapAttempted || len(router.reaped) != 0 {
+		t.Fatalf("shared client must not be reaped, proof=%+v reaped=%+v", result.Cleanup, router.reaped)
+	}
+	if !result.Cleanup.Clean {
+		t.Fatalf("allowed shared retention should still be clean, got %+v", result.Cleanup)
+	}
+}
+
+func TestSessionManager_NewEphemeralSessionAcceptsWorkspacePathWithoutRegisteredWorkspace(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	mgr := NewManager(storage, &mockRouter{}, newTestWizard(storage), nil)
+
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "eval-channel",
+		Action:        "new",
+		Target:        "opencode",
+		WorkspacePath: "/tmp/matrix-eval-workspace",
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("HandleSessionActionTyped new: %v", err)
+	}
+	if result.Session == nil {
+		t.Fatalf("expected session in result")
+	}
+	meta, found, err := mgr.loadSessionMeta(result.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	if meta.WorkspaceID != "" {
+		t.Fatalf("expected no stable workspace id, got %q", meta.WorkspaceID)
+	}
+	if meta.WorkspacePath != "/tmp/matrix-eval-workspace" {
+		t.Fatalf("expected workspace path, got %q", meta.WorkspacePath)
+	}
+	if !meta.Ephemeral {
+		t.Fatalf("expected ephemeral session")
+	}
+	if meta.CleanupPolicy != middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal {
+		t.Fatalf("expected normalized cleanup policy, got %q", meta.CleanupPolicy)
+	}
+}
+
+func TestSessionManager_CleanupFallsBackToCancelAndForgetsLocalMirror(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{ID: "eval-ws", RootPath: "/tmp/eval-ws"}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{deleteErr: errors.New("ACP agent does not advertise session/delete")}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	newResult, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "eval-channel",
+		Action:        "new",
+		Target:        "opencode",
+		WorkspaceID:   "eval-ws",
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(newResult.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	meta.AgentSessionID = "ses_eval_remote"
+	meta.ProtocolKind = string(middleware.ProtocolKindACP)
+	if err := mgr.saveSessionMeta(meta); err != nil {
+		t.Fatalf("saveSessionMeta: %v", err)
+	}
+
+	cleanup, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "eval-channel",
+		Action:           "cleanup",
+		Target:           meta.ID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if cleanup.Cleanup == nil {
+		t.Fatalf("expected cleanup proof")
+	}
+	proof := cleanup.Cleanup
+	if !proof.RemoteDeleteAttempted || proof.RemoteDeleted {
+		t.Fatalf("unexpected remote delete proof: %+v", proof)
+	}
+	if !proof.RemoteDeleteUnsupported {
+		t.Fatalf("expected delete unsupported proof: %+v", proof)
+	}
+	if !proof.RemoteCancelAttempted || !proof.RemoteCanceled {
+		t.Fatalf("expected remote cancel fallback: %+v", proof)
+	}
+	if !proof.LocalForgotten {
+		t.Fatalf("expected local forgotten proof: %+v", proof)
+	}
+	if !proof.ProcessReapAttempted || !proof.ProcessReaped {
+		t.Fatalf("expected ephemeral process reap proof: %+v", proof)
+	}
+	if !proof.Clean {
+		t.Fatalf("expected clean cleanup proof: %+v", proof)
+	}
+	if len(router.deleted) != 1 || router.deleted[0] != "ses_eval_remote" {
+		t.Fatalf("expected delete attempt, got %+v", router.deleted)
+	}
+	if len(router.deletedWS) != 1 || router.deletedWS[0] != "ses_eval_remote|/tmp/eval-ws" {
+		t.Fatalf("expected workspace-aware delete attempt, got %+v", router.deletedWS)
+	}
+	if len(router.canceled) != 1 || router.canceled[0] != "ses_eval_remote" {
+		t.Fatalf("expected cancel fallback, got %+v", router.canceled)
+	}
+	if len(router.canceledWS) != 1 || router.canceledWS[0] != "ses_eval_remote|/tmp/eval-ws" {
+		t.Fatalf("expected workspace-aware cancel fallback, got %+v", router.canceledWS)
+	}
+	if len(router.reaped) != 1 || router.reaped[0] != "opencode|/tmp/eval-ws" {
+		t.Fatalf("expected ephemeral client reap, got %+v", router.reaped)
+	}
+	raw, _ := storage.Get("session.meta." + meta.ID)
+	if len(raw) != 0 {
+		t.Fatalf("expected local session meta removed, got %q", string(raw))
+	}
+	index, err := workspace.LoadSessionIndex(storage, "eval-ws")
+	if err != nil {
+		t.Fatalf("LoadSessionIndex: %v", err)
+	}
+	for _, id := range index {
+		if id == meta.ID {
+			t.Fatalf("expected workspace index cleanup, got %+v", index)
+		}
+	}
+}
+
+func TestSessionManager_CleanupPrefersCloseBeforeCancelWhenDeleteUnsupported(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	if err := workspace.SaveMeta(storage, workspace.Meta{ID: "eval-ws", RootPath: "/tmp/eval-ws"}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+	router := &mockRouter{
+		deleteErr: errors.New("ACP agent does not advertise session/delete"),
+		closeOK:   true,
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	newResult, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "eval-channel",
+		Action:        "new",
+		Target:        "codex",
+		WorkspaceID:   "eval-ws",
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(newResult.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	meta.AgentSessionID = "ses_eval_remote_close"
+	meta.ProtocolKind = string(middleware.ProtocolKindACP)
+	if err := mgr.saveSessionMeta(meta); err != nil {
+		t.Fatalf("saveSessionMeta: %v", err)
+	}
+
+	cleanup, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "eval-channel",
+		Action:           "cleanup",
+		Target:           meta.ID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if cleanup.Cleanup == nil {
+		t.Fatalf("expected cleanup proof")
+	}
+	proof := cleanup.Cleanup
+	if !proof.RemoteDeleteAttempted || !proof.RemoteDeleteUnsupported || proof.RemoteDeleted {
+		t.Fatalf("unexpected remote delete proof: %+v", proof)
+	}
+	if !proof.RemoteCloseAttempted || !proof.RemoteClosed || proof.RemoteCloseUnsupported {
+		t.Fatalf("expected successful remote close fallback: %+v", proof)
+	}
+	if proof.RemoteCancelAttempted || proof.RemoteCanceled {
+		t.Fatalf("close success must avoid cancel fallback: %+v", proof)
+	}
+	if !proof.LocalForgotten || !proof.ProcessReapAttempted || !proof.ProcessReaped || !proof.Clean {
+		t.Fatalf("expected clean local/process cleanup proof: %+v", proof)
+	}
+	if len(router.closed) != 1 || router.closed[0] != "ses_eval_remote_close" {
+		t.Fatalf("expected close fallback, got %+v", router.closed)
+	}
+	if len(router.closedWS) != 1 || router.closedWS[0] != "ses_eval_remote_close|/tmp/eval-ws" {
+		t.Fatalf("expected workspace-aware close fallback, got %+v", router.closedWS)
+	}
+	if len(router.canceled) != 0 || len(router.canceledWS) != 0 {
+		t.Fatalf("did not expect cancel fallback, canceled=%+v canceledWS=%+v", router.canceled, router.canceledWS)
 	}
 }
 

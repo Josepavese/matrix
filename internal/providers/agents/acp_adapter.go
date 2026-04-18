@@ -63,8 +63,10 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		client:               client,
 		handler:              handler,
 		cwd:                  deps.Cwd,
+		listSessionSupport:   supportsSessionCapability(initResp, "list"),
 		loadSessionSupport:   supportsLoadSession(initResp),
-		deleteSessionSupport: supportsDeleteSession(initResp),
+		closeSessionSupport:  supportsSessionCapability(initResp, "close"),
+		deleteSessionSupport: supportsSessionCapability(initResp, "delete"),
 		loadedSessions:       map[string]bool{},
 	}, nil
 }
@@ -73,7 +75,9 @@ type acpConversationClient struct {
 	client               ACPClient
 	handler              *defaultRequestHandler
 	cwd                  string
+	listSessionSupport   bool
 	loadSessionSupport   bool
+	closeSessionSupport  bool
 	deleteSessionSupport bool
 	loadedSessions       map[string]bool
 }
@@ -93,10 +97,11 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 	log := slog.With("component", "acp_adapter", "logical_session", turn.LogicalSessionID, "agent", turn.AgentID)
 
 	remoteSessionID := turn.RemoteSessionID
+	cwd := c.turnCwd(turn)
 	if remoteSessionID == "" {
 		newSessResp, err := c.client.NewSession(ctx, acpNewSessionRequest{
 			ClientTitle: turn.LogicalSessionID,
-			Cwd:         c.cwd,
+			Cwd:         cwd,
 			McpServers:  []acpMcpServerConfig{},
 			Tools:       toZedACPTools(turn.Tools),
 		})
@@ -114,7 +119,7 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 		obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier}
 		if err := c.client.LoadSession(ctx, acpLoadSessionRequest{
 			SessionID:  remoteSessionID,
-			Cwd:        c.cwd,
+			Cwd:        cwd,
 			McpServers: []acpMcpServerConfig{},
 		}, obs); err != nil {
 			log.Warn("ACP session load failed, will fall back to prompt/recreate flow", "agent_session", remoteSessionID, "error", err)
@@ -143,13 +148,18 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 		return c.ExecuteTurn(ctx, middleware.ConversationTurn{
 			AgentID:          turn.AgentID,
 			LogicalSessionID: turn.LogicalSessionID,
+			WorkspacePath:    turn.WorkspacePath,
 			Message:          turn.Message,
 			Tools:            turn.Tools,
 			ThoughtNotifier:  turn.ThoughtNotifier,
 		})
 	}
 	if err != nil {
-		return middleware.ConversationResult{}, fmt.Errorf("ACP prompt failed: %w", err)
+		return middleware.ConversationResult{
+			Output:          obs.GetContent(),
+			RemoteSessionID: remoteSessionID,
+			Metadata:        obs.Metadata(),
+		}, fmt.Errorf("ACP prompt failed: %w", err)
 	}
 
 	obs.WaitIdle(ctx, 150*time.Millisecond)
@@ -161,16 +171,21 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 	}, nil
 }
 
-func (c *acpConversationClient) SessionCapabilities() middleware.ConversationSessionCapabilities {
-	return middleware.ConversationSessionCapabilities{
-		List:   true,
-		Load:   c.loadSessionSupport,
-		Cancel: true,
-		Delete: c.deleteSessionSupport,
+func (c *acpConversationClient) turnCwd(turn middleware.ConversationTurn) string {
+	if strings.TrimSpace(turn.WorkspacePath) != "" {
+		return strings.TrimSpace(turn.WorkspacePath)
 	}
+	return c.cwd
+}
+
+func (c *acpConversationClient) SessionCapabilities() middleware.ConversationSessionCapabilities {
+	return middleware.ConversationSessionCapabilities{List: c.listSessionSupport, Load: c.loadSessionSupport, Cancel: true, Close: c.closeSessionSupport, Delete: c.deleteSessionSupport}
 }
 
 func (c *acpConversationClient) ListRemoteSessions(ctx context.Context) ([]middleware.RemoteSessionInfo, error) {
+	if !c.listSessionSupport {
+		return nil, fmt.Errorf("ACP agent does not advertise session/list")
+	}
 	resp, err := c.client.ListSessions(ctx)
 	if err != nil {
 		return nil, err
@@ -235,6 +250,20 @@ func (c *acpConversationClient) CancelRemoteSession(ctx context.Context, remoteS
 		return fmt.Errorf("ACP session id is required")
 	}
 	return c.client.CancelSession(ctx, remoteSessionID)
+}
+
+func (c *acpConversationClient) CloseRemoteSession(ctx context.Context, remoteSessionID string) error {
+	if !c.closeSessionSupport {
+		return fmt.Errorf("ACP agent does not advertise session/close")
+	}
+	if strings.TrimSpace(remoteSessionID) == "" {
+		return fmt.Errorf("ACP session id is required")
+	}
+	if err := c.client.CloseSession(ctx, remoteSessionID); err != nil {
+		return err
+	}
+	delete(c.loadedSessions, remoteSessionID)
+	return nil
 }
 
 type transportSpec struct {
@@ -333,32 +362,4 @@ func fromZedACPSession(resp *acpNewSessionResponse) *middleware.NewSessionRespon
 		}
 	}
 	return out
-}
-
-func supportsLoadSession(resp *acpInitializeResponse) bool {
-	if resp == nil || resp.Capabilities == nil {
-		return false
-	}
-	raw, ok := resp.Capabilities["loadSession"]
-	if !ok {
-		return false
-	}
-	enabled, _ := raw.(bool)
-	return enabled
-}
-
-func supportsDeleteSession(resp *acpInitializeResponse) bool {
-	if resp == nil || resp.Capabilities == nil {
-		return false
-	}
-	raw, ok := resp.Capabilities["sessionCapabilities"]
-	if !ok {
-		return false
-	}
-	caps, ok := raw.(map[string]interface{})
-	if !ok {
-		return false
-	}
-	enabled, _ := caps["delete"].(bool)
-	return enabled
 }

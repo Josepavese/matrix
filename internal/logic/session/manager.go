@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jose/matrix-v2/internal/logic/onboarding"
 	"github.com/jose/matrix-v2/internal/logic/system_tools"
 	"github.com/jose/matrix-v2/internal/logic/workspace"
@@ -36,6 +35,8 @@ type SessionMeta struct {
 	WorkspaceRole    string                    `json:"workspace_role,omitempty"`
 	WorkspaceBoundAt time.Time                 `json:"workspace_bound_at,omitempty"`
 	Mode             string                    `json:"mode,omitempty"`
+	Ephemeral        bool                      `json:"ephemeral,omitempty"`
+	CleanupPolicy    string                    `json:"cleanup_policy,omitempty"`
 	PendingHandoff   *middleware.HandoffPacket `json:"pending_handoff,omitempty"`
 	LastHandoff      *middleware.HandoffPacket `json:"last_handoff,omitempty"`
 }
@@ -179,7 +180,21 @@ func (m *Manager) HandleSessionActionTyped(ctx context.Context, req middleware.S
 	case "cancel":
 		return m.handleSessionCancelTyped(ctx, req.ChannelID, lang, req.Target)
 	case "delete":
-		return m.handleSessionDeleteTyped(ctx, req.ChannelID, lang, req.Target)
+		return m.handleSessionDeleteTyped(ctx, sessionCleanupRequest{
+			ChannelID:        req.ChannelID,
+			Lang:             lang,
+			Target:           req.Target,
+			CleanupPolicy:    req.CleanupPolicy,
+			ForceForgetLocal: req.ForceForgetLocal,
+		})
+	case "cleanup":
+		return m.handleSessionCleanupTyped(ctx, sessionCleanupRequest{
+			ChannelID:        req.ChannelID,
+			Lang:             lang,
+			Target:           req.Target,
+			CleanupPolicy:    req.CleanupPolicy,
+			ForceForgetLocal: req.ForceForgetLocal,
+		})
 	case "switch":
 		return m.handleSessionSwitchTyped(ctx, req.ChannelID, lang, req.Target)
 	case "list":
@@ -187,7 +202,15 @@ func (m *Manager) HandleSessionActionTyped(ctx context.Context, req middleware.S
 	case "status":
 		return m.handleSessionStatusTyped(req.ChannelID, lang, req.WorkspaceID)
 	case "new":
-		return m.handleSessionNewTyped(req.ChannelID, lang, req.Target, req.WorkspaceID, "")
+		return m.handleSessionNewTyped(newSessionRequest{
+			ChannelID:     req.ChannelID,
+			Lang:          lang,
+			AgentID:       req.Target,
+			WorkspaceID:   req.WorkspaceID,
+			WorkspacePath: req.WorkspacePath,
+			Ephemeral:     req.Ephemeral,
+			CleanupPolicy: req.CleanupPolicy,
+		})
 	case "name":
 		return m.handleSessionNameTyped(req.ChannelID, lang, req.Target)
 	default:
@@ -265,7 +288,7 @@ func (m *Manager) getOrCreateQueue(channelID string) *OrderedMerge {
 	}
 
 	q := NewOrderedMerge(func(_ int, result RouteResult) {
-		if result.Err != nil {
+		if result.Err != nil && strings.TrimSpace(result.AgentSessionID) == "" {
 			return
 		}
 		state, err := m.getChannelState(channelID)
@@ -360,37 +383,6 @@ func (m *Manager) GetOrCreateSession(channelID, targetAgent string) (string, err
 		return state.ActiveSessionID, nil
 	}
 	return m.forceNewSessionWithWorkspace(channelID, targetAgent, "", "")
-}
-
-func (m *Manager) forceNewSessionWithWorkspace(channelID, targetAgent, workspaceID, workspacePath string) (string, error) {
-	sessionID := uuid.New().String()
-
-	meta := SessionMeta{
-		ID:           sessionID,
-		CreatedAt:    time.Now().UTC(),
-		AgentID:      targetAgent,
-		Status:       "active",
-		MirrorStatus: "pending",
-	}
-	if err := m.bindSessionWorkspace(&meta, workspaceID, workspacePath); err != nil {
-		return "", fmt.Errorf("failed to bind workspace: %w", err)
-	}
-	if err := m.saveSessionMeta(meta); err != nil {
-		return "", fmt.Errorf("failed to store session meta: %w", err)
-	}
-
-	if err := m.updateChannelState(channelID, sessionID); err != nil {
-		return "", fmt.Errorf("failed to store channel mapping: %w", err)
-	}
-	if err := m.updateChannelWorkspaceState(channelID, meta.WorkspaceID); err != nil {
-		return "", fmt.Errorf("failed to store channel workspace mapping: %w", err)
-	}
-	if err := m.indexSessionWorkspace(meta); err != nil {
-		return "", fmt.Errorf("failed to index session workspace: %w", err)
-	}
-	m.recordWorkspaceEvent(meta, "session.created", channelID, "Created workspace session", "session-create", nil)
-
-	return sessionID, nil
 }
 
 // AttachChannel forcefully maps an existing channel to a specific session ID.

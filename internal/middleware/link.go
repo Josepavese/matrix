@@ -30,14 +30,28 @@ type ConversationRequest struct {
 	NonInteractive bool
 }
 
+const (
+	SessionPolicyNewEphemeralDeleteAfterRun = "new_ephemeral_delete_after_run"
+
+	SessionCleanupPolicyDeleteRemote                         = "delete_remote"
+	SessionCleanupPolicyForgetLocal                          = "forget_local"
+	SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal   = "delete_remote_or_cancel_and_forget_local"
+	SessionCleanupPolicyDeleteRemoteOrForgetLocal            = "delete_remote_or_forget_local"
+	SessionCleanupPolicyDeleteRemoteOrCancelForgetLocalAlias = "delete_remote_or_cancel_forget_local"
+)
+
 // SessionActionRequest is the typed, channel-neutral request envelope for session lifecycle operations.
 type SessionActionRequest struct {
-	ChannelID   string
-	Action      string
-	WorkspaceID string
+	ChannelID        string
+	Action           string
+	WorkspaceID      string
+	WorkspacePath    string
+	Ephemeral        bool
+	CleanupPolicy    string
+	ForceForgetLocal bool
 	// Target carries the action operand when needed.
 	// Examples:
-	// - switch/delete/cancel: local or remote session selector
+	// - switch/delete/cancel/cleanup: local or remote session selector
 	// - new: requested agent id
 	// - name: alias to assign to the active logical session
 	Target string
@@ -75,19 +89,49 @@ type SessionEntry struct {
 	CreatedAt        string                 `json:"created_at,omitempty"`
 	UpdatedAt        string                 `json:"updated_at,omitempty"`
 	Active           bool                   `json:"active,omitempty"`
+	Ephemeral        bool                   `json:"ephemeral,omitempty"`
+	CleanupPolicy    string                 `json:"cleanup_policy,omitempty"`
 	Meta             map[string]interface{} `json:"meta,omitempty"`
 	PendingHandoff   *HandoffPacket         `json:"pending_handoff,omitempty"`
 	LastHandoff      *HandoffPacket         `json:"last_handoff,omitempty"`
 }
 
+// SessionCleanupResult is the audit record for Matrix session cleanup.
+// It is protocol-neutral and intentionally distinguishes remote provider state
+// from the local Matrix mirror.
+type SessionCleanupResult struct {
+	LogicalSessionID        string `json:"logical_session_id,omitempty"`
+	RemoteSessionID         string `json:"remote_session_id,omitempty"`
+	AgentID                 string `json:"agent_id,omitempty"`
+	ProtocolKind            string `json:"protocol_kind,omitempty"`
+	CleanupPolicy           string `json:"cleanup_policy,omitempty"`
+	Clean                   bool   `json:"clean"`
+	RemoteDeleteAttempted   bool   `json:"remote_delete_attempted"`
+	RemoteDeleted           bool   `json:"remote_deleted"`
+	RemoteDeleteUnsupported bool   `json:"remote_delete_unsupported,omitempty"`
+	RemoteCloseAttempted    bool   `json:"remote_close_attempted"`
+	RemoteClosed            bool   `json:"remote_closed"`
+	RemoteCloseUnsupported  bool   `json:"remote_close_unsupported,omitempty"`
+	RemoteCancelAttempted   bool   `json:"remote_cancel_attempted"`
+	RemoteCanceled          bool   `json:"remote_canceled"`
+	ProcessReapAttempted    bool   `json:"process_reap_attempted"`
+	ProcessReaped           bool   `json:"process_reaped"`
+	ProcessRetained         bool   `json:"process_retained,omitempty"`
+	ProcessRetentionAllowed bool   `json:"process_retention_allowed,omitempty"`
+	ProcessRetentionReason  string `json:"process_retention_reason,omitempty"`
+	LocalForgotten          bool   `json:"local_forgotten"`
+	Error                   string `json:"error,omitempty"`
+}
+
 // SessionActionResult is the typed, reusable result for session lifecycle operations.
 type SessionActionResult struct {
-	Action          string              `json:"action"`
-	Message         string              `json:"message,omitempty"`
-	ActiveSessionID string              `json:"active_session_id,omitempty"`
-	Session         *SessionEntry       `json:"session,omitempty"`
-	Sessions        []SessionEntry      `json:"sessions,omitempty"`
-	RemoteSessions  []RemoteSessionInfo `json:"remote_sessions,omitempty"`
+	Action          string                `json:"action"`
+	Message         string                `json:"message,omitempty"`
+	ActiveSessionID string                `json:"active_session_id,omitempty"`
+	Session         *SessionEntry         `json:"session,omitempty"`
+	Sessions        []SessionEntry        `json:"sessions,omitempty"`
+	RemoteSessions  []RemoteSessionInfo   `json:"remote_sessions,omitempty"`
+	Cleanup         *SessionCleanupResult `json:"cleanup,omitempty"`
 }
 
 // WorkspaceActionRequest is the typed, channel-neutral request envelope for workspace control.
