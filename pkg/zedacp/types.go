@@ -173,8 +173,9 @@ type ConfigOptionValue struct {
 }
 
 type PromptRequest struct {
-	SessionID string    `json:"sessionId"`
-	Prompt    []Content `json:"prompt"`
+	SessionID string                 `json:"sessionId"`
+	Prompt    []Content              `json:"prompt"`
+	Meta      map[string]interface{} `json:"_meta,omitempty"`
 }
 
 type PromptResponse struct {

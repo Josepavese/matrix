@@ -18,6 +18,8 @@ Matrix fixes that. It runs locally, connects to your agents, and gives you one c
 | [Core Concepts](Core-Concepts.md) | Understand workspaces, sessions, agents, and channels without the jargon |
 | [Using Agents](Using-Agents.md) | Search, install, configure, and switch between coding agents |
 | [Handoff](Handoff.md) | Transfer work from one agent to another with full context |
+| [Sidecar Capsules](Sidecar-Capsules.md) | Attach machine-trackable context to runs without polluting chat |
+| [Live Context Interrupt Policy](../matrix_live_context_interrupt_policy.md) | Understand cancel vs live attach, provider limits, and tested fallback behavior |
 | [Workspaces](Workspaces.md) | Organize work by project, track timelines, create snapshots, and build memory |
 | [Channels](Channels.md) | Set up Telegram, use the HTTP API, or drive Matrix from the CLI |
 | [API Reference](API-Reference.md) | Complete HTTP API documentation with request/response examples |
@@ -31,6 +33,8 @@ Matrix fixes that. It runs locally, connects to your agents, and gives you one c
 - [Run your first prompt](Getting-Started.md#your-first-prompt)
 - [Set up Telegram](Channels.md#telegram)
 - [Hand off work between agents](Handoff.md)
+- [Attach sidecar context](Sidecar-Capsules.md)
+- [Check live context interrupt policy](../matrix_live_context_interrupt_policy.md)
 - [Browse the API](API-Reference.md)
 
 ## Contributing

@@ -150,6 +150,7 @@ The [Matrix Wiki](docs/wiki/Home.md) is the developer guide. It covers everythin
 - [Core Concepts](docs/wiki/Core-Concepts.md) -- workspaces, sessions, agents, channels explained
 - [Using Agents](docs/wiki/Using-Agents.md) -- search, install, configure, and switch agents
 - [Handoff](docs/wiki/Handoff.md) -- transfer work between agents with context
+- [Sidecar Capsules](docs/wiki/Sidecar-Capsules.md) -- attach machine-trackable supervisor context to runs
 - [Workspaces](docs/wiki/Workspaces.md) -- timelines, memory, snapshots, decisions
 - [Channels](docs/wiki/Channels.md) -- Telegram, HTTP API, CLI setup
 - [API Reference](docs/wiki/API-Reference.md) -- every endpoint with examples

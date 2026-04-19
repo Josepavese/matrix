@@ -30,6 +30,7 @@ type ConversationTurn struct {
 	RemoteSessionID  string
 	WorkspacePath    string
 	Message          string
+	SidecarCapsules  []SidecarCapsule
 	Tools            []Tool
 	ThoughtNotifier  ThoughtNotifier
 }

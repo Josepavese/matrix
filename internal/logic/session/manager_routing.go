@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jose/matrix-v2/internal/logic/sessionqueue"
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
@@ -137,6 +138,9 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 	if meta.Mode == "" {
 		meta.Mode = modeImplementation
 	}
+	if header, ok := notifier.(interface{ SetLogicalSession(string, string) }); ok {
+		header.SetLogicalSession(sessionID, meta.WorkspaceID)
+	}
 	if strings.TrimSpace(input) != "" {
 		m.recordWorkspaceTurn(meta, "user", input)
 	}
@@ -150,20 +154,14 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 		AgentSessionID:   meta.AgentSessionID,
 		WorkspacePath:    meta.WorkspacePath,
 		Message:          message,
+		SidecarCapsules:  req.SidecarCapsules,
 		ThoughtNotifier:  notifier,
 	})
-	if routeErr == nil && meta.PendingHandoff != nil {
-		meta.LastHandoff = meta.PendingHandoff
-		m.recordWorkspaceEvent(meta, "handoff.applied", channelID, "Applied specialist handoff", "specialist-handoff", handoffMetadata(meta))
-		meta.PendingHandoff = nil
-		if err := m.saveSessionMeta(meta); err != nil {
-			log.Warn("failed to clear pending handoff", "error", err, "logical_session", sessionID)
-		}
-	}
+	m.applyPendingHandoff(&meta, channelID, log, routeErr)
 
 	responseTxt = m.applyToolCalls(responseTxt, toolCalls)
 	meta.AgentID = effectiveAgentID
-	queue.Submit(seq, RouteResult{
+	queue.Submit(seq, sessionqueue.RouteResult{
 		Content:        responseTxt,
 		AgentSessionID: newAgentSessionID,
 		Metadata:       metadata,
@@ -184,6 +182,18 @@ func (m *Manager) resolveRouteMeta(sessionID, requestedAgentID string) (SessionM
 		return SessionMeta{ID: sessionID, AgentID: requestedAgentID, MirrorStatus: "pending"}, requestedAgentID
 	}
 	return meta, meta.AgentID
+}
+
+func (m *Manager) applyPendingHandoff(meta *SessionMeta, channelID string, log *slog.Logger, routeErr error) {
+	if routeErr != nil || meta.PendingHandoff == nil {
+		return
+	}
+	meta.LastHandoff = meta.PendingHandoff
+	m.recordWorkspaceEvent(*meta, "handoff.applied", channelID, "Applied specialist handoff", "specialist-handoff", handoffMetadata(*meta))
+	meta.PendingHandoff = nil
+	if err := m.saveSessionMeta(*meta); err != nil {
+		log.Warn("failed to clear pending handoff", "error", err, "logical_session", meta.ID)
+	}
 }
 
 func (m *Manager) applyToolCalls(response string, toolCalls []middleware.ToolCall) string {

@@ -122,6 +122,65 @@ func TestInlineTraceProjectionContainsFrontendFinalContent(t *testing.T) {
 	}
 }
 
+func TestRedactedTracePreservesSidecarVisibilityMetadata(t *testing.T) {
+	store := NewStore(memstore.New())
+	run, _, err := store.Start(Run{
+		AgentID:     "opencode",
+		Protocol:    "acp",
+		ChannelID:   "noema.http",
+		TracePolicy: TracePolicy{ContentMode: ContentModeRedacted, RedactionProfile: "frontend", IncludeProtocolMeta: false},
+	})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if _, err := store.AppendEvent(Event{
+		RunID:             run.ID,
+		Kind:              "sidecar.capsule.delivered",
+		Actor:             "matrix",
+		Status:            StatusCompleted,
+		SidecarProvider:   "noema",
+		SidecarID:         "caps-redacted",
+		SidecarSchema:     "sidecar.intent.v0",
+		SidecarVisibility: "llm_visible",
+		Message:           "<noema>secret</noema>",
+		Metadata: map[string]interface{}{
+			"frontend_visible": false,
+			"audit_visible":    true,
+			"trace_visible":    true,
+			"intent":           "secret",
+		},
+	}); err != nil {
+		t.Fatalf("append sidecar event: %v", err)
+	}
+
+	trace, found, err := store.Trace(run.ID)
+	if err != nil || !found {
+		t.Fatalf("trace found=%v err=%v", found, err)
+	}
+	var sidecar *Event
+	for i := range trace.Events {
+		if trace.Events[i].Kind == "sidecar.capsule.delivered" {
+			sidecar = &trace.Events[i]
+			break
+		}
+	}
+	if sidecar == nil {
+		t.Fatal("expected sidecar event")
+	}
+	if sidecar.Message != "" || sidecar.Summary != "" {
+		t.Fatalf("expected redacted sidecar content, got message=%q summary=%q", sidecar.Message, sidecar.Summary)
+	}
+	if sidecar.SidecarProvider != "noema" || sidecar.SidecarID != "caps-redacted" {
+		t.Fatalf("expected sidecar identity to survive redaction, got %+v", sidecar)
+	}
+	if sidecar.Metadata["frontend_visible"] != false || sidecar.Metadata["audit_visible"] != true || sidecar.Metadata["trace_visible"] != true {
+		t.Fatalf("expected visibility metadata to survive redaction, got %+v", sidecar.Metadata)
+	}
+	if _, ok := sidecar.Metadata["intent"]; ok {
+		t.Fatalf("expected provider metadata to be redacted, got %+v", sidecar.Metadata)
+	}
+}
+
 func TestStoreRegisterSinkRequiresHTTPURL(t *testing.T) {
 	store := NewStore(memstore.New())
 	if _, err := store.RegisterSink(Sink{URL: "file:///tmp/sink"}); err == nil {

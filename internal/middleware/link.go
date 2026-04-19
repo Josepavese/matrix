@@ -4,12 +4,13 @@ import "context"
 
 // ChannelMessage is the neutral ingress payload emitted by a channel gateway.
 type ChannelMessage struct {
-	ChannelID      string
-	DefaultAgentID string
-	WorkspaceID    string
-	WorkspacePath  string
-	Input          string
-	Notifier       ThoughtNotifier
+	ChannelID       string
+	DefaultAgentID  string
+	WorkspaceID     string
+	WorkspacePath   string
+	Input           string
+	SidecarCapsules []SidecarCapsule
+	Notifier        ThoughtNotifier
 }
 
 // ChannelResponse is the neutral egress payload returned to a channel gateway.
@@ -21,13 +22,42 @@ type ChannelResponse struct {
 // workspace-aware callers. It keeps channel identity as ingress metadata while
 // letting the runtime resolve work context from workspace hints.
 type ConversationRequest struct {
-	ChannelID      string
-	AgentID        string
-	WorkspaceID    string
-	WorkspacePath  string
-	Input          string
-	Notifier       ThoughtNotifier
-	NonInteractive bool
+	ChannelID       string
+	AgentID         string
+	WorkspaceID     string
+	WorkspacePath   string
+	Input           string
+	SidecarCapsules []SidecarCapsule
+	Notifier        ThoughtNotifier
+	NonInteractive  bool
+}
+
+// RunContextAttachmentRequest asks a runtime to inject provider-neutral sidecar
+// context into an already selected logical/remote session.
+type RunContextAttachmentRequest struct {
+	RunID            string
+	DeliveryID       string
+	ChannelID        string
+	AgentID          string
+	WorkspaceID      string
+	WorkspacePath    string
+	LogicalSessionID string
+	RemoteSessionID  string
+	Reason           string
+	SidecarCapsules  []SidecarCapsule
+	Notifier         ThoughtNotifier
+}
+
+type RunContextAttachmentResult struct {
+	Action      string `json:"action"`
+	Status      string `json:"status"`
+	DeliveryID  string `json:"delivery_id,omitempty"`
+	Message     string `json:"message,omitempty"`
+	Unsupported bool   `json:"unsupported,omitempty"`
+}
+
+type RunContextAttacher interface {
+	AttachRunContext(ctx context.Context, req RunContextAttachmentRequest) (RunContextAttachmentResult, error)
 }
 
 const (

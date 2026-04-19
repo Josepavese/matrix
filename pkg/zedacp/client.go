@@ -93,11 +93,10 @@ func (c *Client) readLoop() {
 
 		c.logInbound(raw, msgBytes)
 
-		if method, ok := raw["method"].(string); ok && raw["id"] != nil {
+		if _, ok := raw["method"].(string); ok && raw["id"] != nil {
 			var req jsonRPCRequest
 			if err := json.Unmarshal(msgBytes, &req); err == nil {
 				go c.handleIncomingRequest(req)
-				_ = method
 				continue
 			}
 		}

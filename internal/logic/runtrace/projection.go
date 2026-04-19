@@ -56,9 +56,25 @@ func applyEventTracePolicy(event Event, policy TracePolicy) Event {
 		event.Inputs = nil
 		event.Outputs = nil
 		event.ArtifactRefs = nil
-		event.Metadata = nil
+		event.Metadata = redactedEventMetadata(event)
 	}
 	return event
+}
+
+func redactedEventMetadata(event Event) map[string]interface{} {
+	if event.Kind != "sidecar.capsule.delivered" {
+		return nil
+	}
+	out := map[string]interface{}{}
+	for _, key := range []string{"frontend_visible", "audit_visible", "trace_visible"} {
+		if value, ok := event.Metadata[key]; ok {
+			out[key] = value
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func projectRun(run Run) TraceRun {

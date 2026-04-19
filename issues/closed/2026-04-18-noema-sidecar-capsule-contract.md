@@ -240,3 +240,51 @@ This lets Noema remain focused on generating meaning capsules, while Matrix rema
 - Traces include a normalized `sidecar.capsule.delivered`-style event or equivalent.
 - Frontend consumers can reliably hide sidecar capsule internals from normal chat output while keeping trace/debug access.
 - The implementation remains optional and does not couple Matrix to Noema internals.
+
+## Matrix maintainer response
+
+Status: accepted and implemented as a generic Matrix contract.
+
+The request fits Matrix because it strengthens Matrix as the protocol-neutral communication plane. It does not require Matrix to parse Noema semantics, generate capsules, execute helper commands, or depend on Noema binaries.
+
+Implemented contract:
+
+- `POST /v1/runs` accepts `sidecar_capsules`.
+- `input` now accepts both the existing string form and the structured `{ "text": "..." }` form so upstream systems can keep task body and sidecar context separate.
+- Capsules are normalized and validated at ingress.
+- Required capsule identity for accepted payloads is `provider` and `id`.
+- `visibility` supports `llm_visible` and `trace_only`; empty visibility defaults to `llm_visible`.
+- Unknown future visibility values are accepted for forward compatibility and treated as non-prompt-visible by current Matrix releases.
+- `llm_visible` capsules require `content`.
+- `format` is optional and inferred as `noema_xml` when content contains `<noema`.
+
+Protocol projection:
+
+- ACP receives model-visible fallback text for `llm_visible` capsules by appending capsule content to the prompt.
+- ACP also receives `_meta` correlation under `matrix.dev/sidecar` and `<provider>.dev/sidecar`.
+- A2A receives one task text part, one structured data part per capsule with media type `application/vnd.<provider>.sidecar+json`, `matrix.sidecar` metadata, the Matrix sidecar extension URI, and text fallback for `llm_visible` capsules.
+- `trace_only` capsules are not appended as prompt text but remain structured and traceable.
+
+Trace contract:
+
+- Matrix emits `sidecar.capsule.delivered` events.
+- The event includes top-level identity fields: `sidecar_provider`, `sidecar_id`, `sidecar_schema`, `sidecar_version`, `sidecar_carrier`, and `sidecar_visibility`.
+- Default event metadata is `frontend_visible=false`, `audit_visible=true`, and `trace_visible=true`.
+- Raw capsule content follows trace policy. `refs` and `redacted` keep identity without inline content; `inline` may expose the raw carrier.
+
+Documentation:
+
+- Product design doc: `docs/matrix_sidecar_capsules.md`
+- Trace spec: `docs/matrix_agent_communication_run_trace.md`
+- Protocol-neutral runtime doc: `docs/matrix_v2_protocol_neutral_runtime.md`
+- Wiki page: `docs/wiki/Sidecar-Capsules.md`
+- Wiki API reference, channels, examples, home, and core concepts updated.
+
+Acceptance mapping:
+
+- Provider-neutral ingestion: covered by `sidecar_capsules`.
+- ACP projection: covered by prompt fallback plus `_meta`.
+- A2A projection: covered by data parts, metadata, extension URI, and fallback text.
+- Trace evidence: covered by `sidecar.capsule.delivered`.
+- Frontend filtering: covered by event metadata and docs.
+- No Noema coupling: provider/schema/content remain opaque Matrix data.

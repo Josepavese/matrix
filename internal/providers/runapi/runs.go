@@ -6,10 +6,12 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jose/matrix-v2/internal/logic/runnotifier"
 	"github.com/jose/matrix-v2/internal/logic/runtrace"
+	"github.com/jose/matrix-v2/internal/logic/sidecar"
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
@@ -59,8 +61,13 @@ func decodeRunRequest(w http.ResponseWriter, r *http.Request) (runRequest, bool)
 		http.Error(w, "Bad Request: invalid json", http.StatusBadRequest)
 		return runRequest{}, false
 	}
-	if req.ChannelID == "" || req.Input == "" {
+	if strings.TrimSpace(req.ChannelID) == "" || strings.TrimSpace(req.Input.String()) == "" {
 		http.Error(w, "Bad Request: channel_id and input are required", http.StatusBadRequest)
+		return runRequest{}, false
+	}
+	req.SidecarCapsules = sidecar.NormalizeCapsules(req.SidecarCapsules)
+	if err := sidecar.ValidateCapsules(req.SidecarCapsules); err != nil {
+		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
 		return runRequest{}, false
 	}
 	return req, true
@@ -75,7 +82,7 @@ func (s *Server) startRun(req runRequest, agentID string) (runtrace.Run, error) 
 		ChannelID:     req.ChannelID,
 		ExecutionMode: normalizeRunExecutionMode(req.ExecutionMode),
 		InputRef:      "matrix://pending/input",
-		InputDigest:   runtrace.DigestString(req.Input),
+		InputDigest:   runtrace.DigestString(req.Input.String()),
 		Context:       req.Context,
 		ClientMeta:    req.ClientMeta,
 		TracePolicy:   req.TracePolicy,
@@ -88,6 +95,7 @@ func (s *Server) startRun(req runRequest, agentID string) (runtrace.Run, error) 
 		return runtrace.Run{}, err
 	}
 	s.appendRouteEvents(run, req.AgentID, agentID)
+	s.appendSidecarEvents(run, req.SidecarCapsules)
 	return run, nil
 }
 
@@ -199,16 +207,17 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 func (s *Server) route(ctx context.Context, req runRequest, agentID string, notifier middleware.ThoughtNotifier) (string, error) {
 	if richer, ok := s.router.(middleware.ConversationRequestRouter); ok {
 		return richer.RouteConversation(ctx, middleware.ConversationRequest{
-			ChannelID:      req.ChannelID,
-			AgentID:        agentID,
-			WorkspaceID:    req.WorkspaceID,
-			WorkspacePath:  req.WorkspacePath,
-			Input:          req.Input,
-			Notifier:       notifier,
-			NonInteractive: true,
+			ChannelID:       req.ChannelID,
+			AgentID:         agentID,
+			WorkspaceID:     req.WorkspaceID,
+			WorkspacePath:   req.WorkspacePath,
+			Input:           req.Input.String(),
+			SidecarCapsules: req.SidecarCapsules,
+			Notifier:        notifier,
+			NonInteractive:  true,
 		})
 	}
-	return s.router.Route(ctx, req.ChannelID, agentID, req.Input, notifier)
+	return s.router.Route(ctx, req.ChannelID, agentID, sidecar.ProjectPrompt(req.Input.String(), req.SidecarCapsules), notifier)
 }
 
 func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request, exec runExecution) {

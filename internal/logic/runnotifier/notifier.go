@@ -73,6 +73,25 @@ func (n *Notifier) SetHeader(agentID, remoteSessionID string) {
 	}
 }
 
+func (n *Notifier) SetLogicalSession(logicalSessionID, workspaceID string) {
+	if n == nil || n.store == nil {
+		return
+	}
+	run, found, err := n.store.LoadRun(n.runID)
+	if err != nil || !found {
+		return
+	}
+	if strings.TrimSpace(logicalSessionID) != "" {
+		run.LogicalSessionID = strings.TrimSpace(logicalSessionID)
+	}
+	if strings.TrimSpace(workspaceID) != "" {
+		run.WorkspaceID = strings.TrimSpace(workspaceID)
+	}
+	if err := n.store.SaveRun(run); err != nil {
+		slog.Warn("failed to update run logical session metadata", "error", err, "run_id", n.runID)
+	}
+}
+
 func (n *Notifier) FormattedHeader() string {
 	return ""
 }

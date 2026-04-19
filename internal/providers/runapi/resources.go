@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jose/matrix-v2/internal/logic/runaction"
 	"github.com/jose/matrix-v2/internal/logic/runtrace"
+	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 func (s *Server) HandleRunResource(w http.ResponseWriter, r *http.Request) {
@@ -144,24 +146,17 @@ func (s *Server) handleRunActions(w http.ResponseWriter, r *http.Request, runID 
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req runActionRequest
+	var req runaction.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad Request: invalid json", http.StatusBadRequest)
 		return
 	}
-	switch strings.ToLower(strings.TrimSpace(req.Action)) {
-	case "cancel", "stop":
-		s.cancelActiveRun(runID)
-		run, err := s.runStore.Cancel(runID, req.Reason)
-		if err != nil {
-			slog.Error("matrix run cancel failed", "error", err, "run_id", runID)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		writeJSON(w, http.StatusAccepted, map[string]string{"run_id": run.ID, "status": run.Status, "action": "cancel"})
-	default:
-		http.Error(w, "Bad Request: unsupported action", http.StatusBadRequest)
+	attacher, _ := s.router.(middleware.RunContextAttacher)
+	code, resp := runaction.New(s.runStore, attacher, s.cancelActiveRun).Handle(r.Context(), runID, req)
+	if code >= http.StatusInternalServerError {
+		slog.Error("matrix run action failed", "run_id", runID, "action", req.Action, "message", resp.Message)
 	}
+	writeJSON(w, code, resp)
 }
 
 func (s *Server) trackRunCancel(runID string, cancel context.CancelFunc) {
