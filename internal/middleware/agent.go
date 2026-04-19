@@ -51,6 +51,7 @@ type RouteRequest struct {
 	AgentSessionID   string
 	WorkspacePath    string
 	Message          string
+	SidecarCapsules  []SidecarCapsule
 	Tools            []Tool
 	ThoughtNotifier  ThoughtNotifier // optional: receives real-time thought/tool updates during prompt
 }

@@ -142,8 +142,49 @@ Matrix keeps the primary taxonomy operational and protocol-neutral:
 - `tool.call.requested`
 - `tool.result.received`
 - `artifact.created`
+- `run.context.attached`
+- `sidecar.capsule.delivered`
 
 Provider-specific details belong in `protocol_meta`.
+
+## Sidecar Capsule Events
+
+External systems can attach sidecar capsules to `/v1/runs` without coupling
+Matrix to that system's semantics. Matrix records delivery through
+`sidecar.capsule.delivered`.
+
+The event keeps capsule identity in top-level trace fields so redaction can
+hide content while preserving audit evidence:
+
+- `sidecar_provider`
+- `sidecar_id`
+- `sidecar_schema`
+- `sidecar_version`
+- `sidecar_carrier`
+- `sidecar_visibility`
+
+Default frontend metadata is `frontend_visible=false`, `audit_visible=true`,
+and `trace_visible=true`. Normal chat timelines should show the human task,
+not the raw sidecar carrier. Debug and trace views can inspect the event.
+
+Protocol projection is backend-specific but Matrix-owned:
+
+- ACP receives model-visible fallback text for `llm_visible` capsules and
+  `_meta` correlation under `matrix.dev/sidecar` and `<provider>.dev/sidecar`.
+- A2A receives data parts, message/request metadata, the Matrix sidecar
+  extension URI, and model-visible fallback text for `llm_visible` capsules.
+
+See [matrix_sidecar_capsules.md](matrix_sidecar_capsules.md) for the API
+contract and projection rules.
+
+Live context attachment uses `run.context.attached` for request, delivery,
+late delivery, failure, or unsupported evidence. The event metadata includes
+`delivery_id`, `delivery_status`, `reason`, optional `source_event_id` /
+`source_sequence`, and frontend/audit visibility flags. Successful in-run live
+attachments also emit `sidecar.capsule.delivered` events with the same
+`delivery_id`. If a provider processes the injected context after the run has
+already completed, Matrix records `status=late` and does not claim in-run
+capsule delivery.
 
 ## Frontend Event Contract
 
@@ -237,7 +278,20 @@ Mandatory action:
 }
 ```
 
-Optional actions such as `annotate`, `attach_context`, or `set_mode` are only acceptable if they remain protocol-neutral operational controls. Matrix must not turn run actions into cognitive policy APIs.
+`attach_context` is accepted only for active runs with a known logical and
+remote session. Matrix returns a typed `unsupported` response when live context
+cannot be delivered safely. Matrix records `late` when delivery returns only
+after the original run has already reached a terminal status. Optional future
+actions such as `annotate` or
+`set_mode` are only acceptable if they remain protocol-neutral operational
+controls. Matrix must not turn run actions into cognitive policy APIs.
+
+`cancel` and `attach_context` are intentionally different. ACP standardizes
+`session/cancel` for interrupting/stopping an ongoing turn; it does not
+standardize injecting a second prompt into a running turn and requiring the LLM
+to consume it before final output. Matrix therefore records live context as a
+best-effort provider capability, not as a protocol guarantee. See
+[matrix_live_context_interrupt_policy.md](matrix_live_context_interrupt_policy.md).
 
 ## Event Sinks
 
@@ -272,7 +326,7 @@ Current surfaces:
 - `POST /v1/runs` can force isolated evaluation turns with `session_policy=new_ephemeral_delete_after_run` and `cleanup_policy=delete_remote_or_cancel_and_forget_local`.
 - `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`.
 - `GET /v1/runs/{run_id}/events` returns ordered run events.
-- `POST /v1/runs/{run_id}/actions` supports `cancel`.
+- `POST /v1/runs/{run_id}/actions` supports `cancel`, `attach_context`, and `append_context`.
 - `emergency_kill_seconds` is the only wall-clock kill path and is disabled by default.
 - `POST /v1/event-sinks` persists generic sink registration and queues HTTP delivery for matching run events through the persistent delivery outbox.
 - non-interactive `/v1/runs` never emits first-run wizard prompts as agent output; when `system.configured` is false or missing, sync callers receive HTTP `409` with `code=SETUP_REQUIRED`.

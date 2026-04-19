@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jose/matrix-v2/internal/logic/onboarding"
+	"github.com/jose/matrix-v2/internal/logic/sessionqueue"
 	"github.com/jose/matrix-v2/internal/logic/system_tools"
 	"github.com/jose/matrix-v2/internal/logic/workspace"
 	"github.com/jose/matrix-v2/internal/middleware"
@@ -63,7 +64,7 @@ type Manager struct {
 	// actionAgent is the agent used for /action (meta-agent) routing.
 	actionAgent string
 
-	queues   map[string]*OrderedMerge
+	queues   map[string]*sessionqueue.OrderedMerge
 	queuesMu sync.Mutex
 }
 
@@ -80,7 +81,7 @@ func NewManager(s middleware.Storage, router middleware.AgentRouter, w *onboardi
 		systemTools:  st,
 		defaultAgent: defaultAgentID,
 		actionAgent:  defaultActionAgentID,
-		queues:       make(map[string]*OrderedMerge),
+		queues:       make(map[string]*sessionqueue.OrderedMerge),
 	}
 }
 
@@ -106,12 +107,13 @@ func (m *Manager) HandleMessage(ctx context.Context, msg middleware.ChannelMessa
 		agentID = m.defaultAgent
 	}
 	output, err := m.RouteConversation(ctx, middleware.ConversationRequest{
-		ChannelID:     msg.ChannelID,
-		AgentID:       agentID,
-		WorkspaceID:   msg.WorkspaceID,
-		WorkspacePath: msg.WorkspacePath,
-		Input:         msg.Input,
-		Notifier:      msg.Notifier,
+		ChannelID:       msg.ChannelID,
+		AgentID:         agentID,
+		WorkspaceID:     msg.WorkspaceID,
+		WorkspacePath:   msg.WorkspacePath,
+		Input:           msg.Input,
+		SidecarCapsules: msg.SidecarCapsules,
+		Notifier:        msg.Notifier,
 	})
 	if err != nil {
 		return middleware.ChannelResponse{}, err
@@ -279,7 +281,7 @@ func (m *Manager) HandleIntentTyped(ctx context.Context, req middleware.IntentAc
 
 // getOrCreateQueue lazily creates an OrderedMerge per channelID.
 // The onFlush callback persists the agent session mapping in order.
-func (m *Manager) getOrCreateQueue(channelID string) *OrderedMerge {
+func (m *Manager) getOrCreateQueue(channelID string) *sessionqueue.OrderedMerge {
 	m.queuesMu.Lock()
 	defer m.queuesMu.Unlock()
 
@@ -287,7 +289,7 @@ func (m *Manager) getOrCreateQueue(channelID string) *OrderedMerge {
 		return q
 	}
 
-	q := NewOrderedMerge(func(_ int, result RouteResult) {
+	q := sessionqueue.New(func(_ int, result sessionqueue.RouteResult) {
 		if result.Err != nil && strings.TrimSpace(result.AgentSessionID) == "" {
 			return
 		}

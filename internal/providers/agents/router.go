@@ -501,6 +501,7 @@ func (r *Router) executePrompt(ctx context.Context, client middleware.Conversati
 		RemoteSessionID:  req.AgentSessionID,
 		WorkspacePath:    req.WorkspacePath,
 		Message:          req.Message,
+		SidecarCapsules:  req.SidecarCapsules,
 		Tools:            req.Tools,
 		ThoughtNotifier:  req.ThoughtNotifier,
 	}

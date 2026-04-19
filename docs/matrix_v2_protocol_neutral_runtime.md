@@ -168,6 +168,7 @@ Important distinction:
 
 - `channel_id`: physical ingress identity or routing key
 - `input`: latest user message
+- `sidecar_capsules`: optional protocol-neutral context capsules kept separate from the task body, projected into ACP/A2A, and traced as `sidecar.capsule.delivered`
 - `agent_id`: optional requested agent for new sessions
 - `workspace_id` or `workspace_path`: optional work context
 - `session_policy`: optional lifecycle policy. `new_ephemeral_delete_after_run` forces a fresh random logical session and schedules cleanup after the turn
@@ -217,11 +218,12 @@ Response model:
 - `/v1/runs` has no default absolute turn timeout; callers may opt into an emergency wall-clock fuse with `emergency_kill_seconds`
 - synchronous `/v1/runs` responses include `output` when the run completes inline
 - isolated `/v1/runs` success and error responses may include `cleanup`; traces record `session.policy.applied` and `session.cleanup`. A `session.cleanup` event with `status=failed` and `clean=false` is explicit evidence that provider/process cleanup was incomplete
+- sidecar capsule traces expose `sidecar_provider`, `sidecar_id`, `sidecar_schema`, `sidecar_version`, `sidecar_carrier`, and `sidecar_visibility` as top-level event fields so redaction can hide raw content without losing audit evidence
 - synchronous `/v1/runs` returns structured HTTP `409` `SETUP_REQUIRED` instead of wizard text when `system.configured=false`
 - `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`
 - `GET /v1/runs/{run_id}/events` returns ordered run events
 - tool and permission events expose provider-neutral frontend fields such as `sequence`, `tool_call_id`, `permission_id`, `tool_name`, `tool_kind`, `summary`, `inputs`, `outputs`, `artifact_refs`, and visibility metadata
-- `POST /v1/runs/{run_id}/actions` exposes operational run controls such as `cancel`
+- `POST /v1/runs/{run_id}/actions` exposes operational run controls such as `cancel` and live sidecar context attachment through `attach_context` / `append_context`
 - `POST /v1/event-sinks` registers generic run-event consumers
 - `/v1/session-actions` returns a synchronous typed JSON object describing the session action result
 - `/v1/workspace-state`, `/v1/workspace-timeline`, `/v1/workspace-decisions`, `/v1/workspace-memory`, and `/v1/workspace-snapshots` return synchronous typed read models

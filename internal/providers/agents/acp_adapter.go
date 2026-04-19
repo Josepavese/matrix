@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jose/matrix-v2/internal/logic/sidecar"
 	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/jose/matrix-v2/internal/providers/sidecarprojection"
 )
 
 type acpConversationFactory struct{}
@@ -137,11 +139,13 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 	}
 
 	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier}
+	promptText := sidecar.ProjectPrompt(turn.Message, turn.SidecarCapsules)
 	resp, err := c.client.Prompt(ctx, acpPromptRequest{
 		SessionID: remoteSessionID,
 		Prompt: []acpContent{
-			{Type: "text", Text: turn.Message},
+			{Type: "text", Text: promptText},
 		},
+		Meta: sidecarprojection.ACPMeta(turn.SidecarCapsules),
 	}, obs)
 	if err != nil && remoteSessionID != "" && isSessionNotFoundError(err) {
 		log.Warn("ACP session lost, recreating", "agent_session", remoteSessionID)
@@ -150,6 +154,7 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 			LogicalSessionID: turn.LogicalSessionID,
 			WorkspacePath:    turn.WorkspacePath,
 			Message:          turn.Message,
+			SidecarCapsules:  turn.SidecarCapsules,
 			Tools:            turn.Tools,
 			ThoughtNotifier:  turn.ThoughtNotifier,
 		})

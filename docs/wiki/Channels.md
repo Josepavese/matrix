@@ -117,6 +117,33 @@ Modes:
 - `async` -- return immediately, poll for results
 - `stream` -- stream results as they arrive
 
+### Attach sidecar context
+
+Programmatic callers can keep the human task body separate from machine-trackable context:
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/runs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "supervisor.noema",
+    "agent_id": "opencode",
+    "input": {
+      "text": "Update the parser without breaking existing config keys."
+    },
+    "sidecar_capsules": [
+      {
+        "provider": "noema",
+        "id": "caps_parser",
+        "visibility": "llm_visible",
+        "format": "noema_xml",
+        "content": "<noema id=\"caps_parser\">avoid: do not rename config keys</noema>"
+      }
+    ]
+  }'
+```
+
+Matrix projects the capsule into ACP/A2A and records `sidecar.capsule.delivered` in the run trace. Chat frontends should not render raw capsule content as normal user text.
+
 ### Check run status
 
 ```bash

@@ -74,6 +74,16 @@ Start a conversation on Telegram, continue it via the HTTP API, inspect the resu
 
 Read more: [Channels](Channels.md)
 
+## Sidecar Capsules
+
+A **sidecar capsule** is optional context sent alongside a task by an upstream system or supervisory agent. It is not normal chat text.
+
+Matrix keeps the task body separate from the sidecar, projects the capsule into ACP or A2A, and records a trace event proving delivery. Supervisors can also attach sidecar context to an active async run through run actions. Frontends should hide raw capsule internals from normal chat timelines while keeping trace/debug access.
+
+Use sidecar capsules when an upstream system needs to attach intent, evidence, constraints, success criteria, or read-only inspection hints without becoming tied to one backend protocol.
+
+Read more: [Sidecar Capsules](Sidecar-Capsules.md)
+
 ## How They Fit Together
 
 ```
@@ -114,6 +124,7 @@ This loop works the same whether you are on Telegram, HTTP, or CLI.
 | PAL Home | The directory where Matrix stores all its data |
 | Vault | The local encrypted database (BoltDB) that stores all Matrix state |
 | Run | One execution cycle: a prompt goes in, an agent processes it, a result comes back |
+| Sidecar Capsule | Machine-trackable context attached to a run and projected into ACP/A2A without becoming normal chat |
 | Handoff | Transferring active work from one agent to another with context preservation |
 | Intent | A high-level operation like `continue`, `review`, `explain`, `triage`, or `handoff` |
 | Mode | The current work mode: implementation, review, explanation, triage |

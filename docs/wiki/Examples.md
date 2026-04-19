@@ -233,6 +233,64 @@ The `-N` flag tells curl to stream the response. You will see partial results as
 
 ---
 
+## Example 8: Supervisor Sidecar Context
+
+Use sidecar capsules when a supervisor wants to attach evidence or constraints without making them ordinary chat history.
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/runs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "supervisor.noema",
+    "agent_id": "opencode",
+    "execution_mode": "sync",
+    "input": {
+      "text": "Add optional timeout support to the config parser."
+    },
+    "sidecar_capsules": [
+      {
+        "provider": "noema",
+        "id": "caps_timeout",
+        "schema": "sidecar.intent.v0",
+        "version": "0.1",
+        "visibility": "llm_visible",
+        "format": "noema_xml",
+        "content": "<noema id=\"caps_timeout\">success: existing tests pass; avoid: do not make timeout mandatory</noema>"
+      }
+    ]
+  }'
+```
+
+The agent receives the model-visible guidance. The trace records `sidecar.capsule.delivered`, and normal chat views can hide the capsule internals.
+
+---
+
+## Example 9: Live Sidecar Suggestion
+
+Attach supervisor context to an already active async run:
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/runs/run-abc123/actions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "attach_context",
+    "reason": "supervisor_suggestion",
+    "sidecar_capsules": [
+      {
+        "provider": "noema",
+        "id": "sug_loop_guard",
+        "schema": "noema.sidecar.suggestion.v0",
+        "visibility": "llm_visible",
+        "content": "<noema-suggestion>Stop retrying the same failing validation without changing inputs.</noema-suggestion>"
+      }
+    ]
+  }'
+```
+
+Matrix returns a `delivery_id`. Run events show `run.context.attached` and, when delivered, `sidecar.capsule.delivered`.
+
+---
+
 ## Next
 
 - [Handoff](Handoff.md) -- the key feature behind multi-agent workflows

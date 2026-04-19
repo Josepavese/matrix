@@ -55,13 +55,14 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `channel_id` | string | Yes | Stable caller/channel id, for example `docs.http` |
-| `input` | string | Yes | The prompt to send to the agent |
+| `input` | string or object | Yes | The task body to send to the agent. Structured form is `{ "text": "..." }` |
 | `execution_mode` | string | No | Execution mode: `sync` (default), `async`, `stream` |
 | `agent_id` | string | No | Target agent (defaults to the configured default agent) |
 | `workspace_id` | string | No | Target workspace |
 | `workspace_path` | string | No | Workspace root path |
 | `session_policy` | string | No | `new_ephemeral_delete_after_run` forces a fresh isolated session for the run |
 | `cleanup_policy` | string | No | Cleanup policy for `session_policy=new_ephemeral_delete_after_run`; ignored as a destructive cleanup trigger when `session_policy` is omitted |
+| `sidecar_capsules` | array | No | Protocol-neutral sidecar context projected into ACP/A2A and traced as `sidecar.capsule.delivered` |
 | `emergency_kill_seconds` | number | No | Explicit wall-clock emergency fuse. Omitted means no hard run timeout |
 
 **Response (sync mode):**
@@ -103,6 +104,57 @@ Cleanup proof includes:
 }
 ```
 
+**Sidecar capsules:**
+
+Use `sidecar_capsules` when an upstream system or supervisory agent needs to attach machine-trackable context without making that context normal chat history.
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/runs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "supervisor.noema",
+    "agent_id": "opencode",
+    "execution_mode": "sync",
+    "input": {
+      "text": "Update the config parser to support an optional timeout."
+    },
+    "sidecar_capsules": [
+      {
+        "provider": "noema",
+        "id": "caps_7f31",
+        "schema": "sidecar.intent.v0",
+        "version": "0.1",
+        "visibility": "llm_visible",
+        "format": "noema_xml",
+        "content": "<noema id=\"caps_7f31\">intent: evolve_config_parser</noema>",
+        "metadata": {
+          "intent": "evolve_config_parser"
+        }
+      }
+    ],
+    "trace_policy": {
+      "content_mode": "refs",
+      "redaction_profile": "frontend",
+      "include_protocol_meta": false
+    }
+  }'
+```
+
+Sidecar fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `provider` | Yes | Producer namespace, for example `noema` |
+| `id` | Yes | Stable capsule id for trace correlation |
+| `schema` | Recommended | Producer-owned schema id |
+| `version` | Recommended | Producer-owned version |
+| `visibility` | No | `llm_visible` or `trace_only`; empty defaults to `llm_visible`; unknown future values are accepted but not prompt-visible |
+| `format` | No | Carrier format; inferred as `noema_xml` for `<noema...>` content |
+| `content` | Required for `llm_visible` | Model-visible carrier text |
+| `metadata` | No | Producer-owned structured metadata |
+
+ACP routes append `llm_visible` content to the model prompt and attach `_meta` correlation. A2A routes send structured data parts plus metadata and also include a model-visible fallback for `llm_visible` capsules. Run traces include `sidecar.capsule.delivered`; normal frontend timelines should hide those internals by default.
+
 **Response (async mode):**
 
 Returns immediately with a `run_id`. Poll for results using the trace endpoint.
@@ -135,7 +187,7 @@ curl http://127.0.0.1:9091/v1/runs/run-abc123/events
 
 ### `POST /v1/runs/{run_id}/actions`
 
-Perform an action on a running or completed run.
+Perform an operational action on a run.
 
 ```bash
 curl -X POST http://127.0.0.1:9091/v1/runs/run-abc123/actions \
@@ -145,7 +197,47 @@ curl -X POST http://127.0.0.1:9091/v1/runs/run-abc123/actions \
   }'
 ```
 
-Actions: `cancel`
+Actions:
+
+| Action | Description |
+|--------|-------------|
+| `cancel` / `stop` | Cancel an active run |
+| `attach_context` / `append_context` | Attach live sidecar context to an active run session |
+
+Live context example:
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/runs/run-abc123/actions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "attach_context",
+    "reason": "supervisor_suggestion",
+    "source_event_id": "evt-source",
+    "sidecar_capsules": [
+      {
+        "provider": "noema",
+        "id": "sug_01",
+        "schema": "noema.sidecar.suggestion.v0",
+        "version": "0.1",
+        "visibility": "llm_visible",
+        "format": "noema_xml",
+        "content": "<noema-suggestion>avoid loop</noema-suggestion>"
+      }
+    ]
+  }'
+```
+
+`attach_context` returns `202` with a `delivery_id` when accepted. Delivery happens in the background and is visible in run events. `run.context.attached` uses `delivered` only when the context is delivered while the run is still active. If the provider processes it after the run becomes terminal, Matrix records `status=late` and does not emit `sidecar.capsule.delivered` for that run. Matrix returns `status=unsupported` when the run is not active, the session is not ready, or the runtime cannot attach live context.
+
+`attach_context` is not the same as ACP `session/cancel`. ACP-compatible agents
+are expected to support cancellation, but mid-turn live context consumption is
+provider-specific. Treat `accepted` as queue/delivery acceptance only; treat
+`delivered` before `run.completed` as in-run delivery proof; treat `late` as
+"provider did not consume this context before the run ended." Current real
+probes showed OpenCode consuming live context in-run, while Codex via
+`codex-acp` and Gemini CLI ACP accepted the request but completed with `late`.
+Use cancel-and-restart or next-turn context for providers without proven live
+interrupt support.
 
 ---
 

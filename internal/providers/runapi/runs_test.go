@@ -7,7 +7,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jose/matrix-v2/internal/logic/memstore"
 	"github.com/jose/matrix-v2/internal/logic/runtrace"
@@ -17,6 +19,8 @@ import (
 type runTestRouter struct {
 	lastConversation middleware.ConversationRequest
 	sessionActions   []middleware.SessionActionRequest
+	attachMu         sync.Mutex
+	attachRequests   []middleware.RunContextAttachmentRequest
 	routeErr         error
 }
 
@@ -116,6 +120,18 @@ func (r *runTestRouter) HandleIntent(context.Context, string, string, string) (s
 
 func (r *runTestRouter) HandleIntentTyped(context.Context, middleware.IntentActionRequest) (middleware.IntentActionResult, error) {
 	return middleware.IntentActionResult{}, nil
+}
+
+func (r *runTestRouter) AttachRunContext(_ context.Context, req middleware.RunContextAttachmentRequest) (middleware.RunContextAttachmentResult, error) {
+	r.attachMu.Lock()
+	defer r.attachMu.Unlock()
+	r.attachRequests = append(r.attachRequests, req)
+	return middleware.RunContextAttachmentResult{
+		Action:     "attach_context",
+		Status:     "delivered",
+		DeliveryID: req.DeliveryID,
+		Message:    "delivered",
+	}, nil
 }
 
 func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.T) {
@@ -227,6 +243,215 @@ func TestHandleRuns_CleanupPolicyAloneDoesNotCleanupActiveSession(t *testing.T) 
 	}
 }
 
+func TestHandleRuns_SidecarCapsulesAreNeutralAndTraced(t *testing.T) {
+	router := &runTestRouter{}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id": "noema.http",
+		"agent_id":   "opencode",
+		"input": map[string]interface{}{
+			"text": "update parser",
+		},
+		"sidecar_capsules": []map[string]interface{}{
+			{
+				"provider":   "noema",
+				"id":         "caps_7f31",
+				"schema":     "sidecar.intent.v0",
+				"version":    "0.1",
+				"visibility": "llm_visible",
+				"format":     "noema_xml",
+				"content":    "<noema id=\"caps_7f31\">intent: evolve_config_parser</noema>",
+				"metadata": map[string]interface{}{
+					"intent": "evolve_config_parser",
+				},
+			},
+		},
+		"trace_policy": map[string]interface{}{
+			"content_mode":          runtrace.ContentModeRefs,
+			"include_protocol_meta": false,
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if router.lastConversation.Input != "update parser" {
+		t.Fatalf("expected clean task body routed separately, got %q", router.lastConversation.Input)
+	}
+	if len(router.lastConversation.SidecarCapsules) != 1 || router.lastConversation.SidecarCapsules[0].ID != "caps_7f31" {
+		t.Fatalf("expected sidecar capsule on neutral conversation request, got %+v", router.lastConversation.SidecarCapsules)
+	}
+
+	var resp runResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	trace, found, err := server.Store().Trace(resp.RunID)
+	if err != nil || !found {
+		t.Fatalf("Trace found=%v err=%v", found, err)
+	}
+	var sidecar *runtrace.Event
+	for i := range trace.Events {
+		if trace.Events[i].Kind == "sidecar.capsule.delivered" {
+			sidecar = &trace.Events[i]
+			break
+		}
+	}
+	if sidecar == nil {
+		t.Fatalf("expected sidecar delivery event, got %+v", trace.Events)
+	}
+	if sidecar.SidecarProvider != "noema" || sidecar.SidecarID != "caps_7f31" || sidecar.SidecarVisibility != "llm_visible" {
+		t.Fatalf("unexpected sidecar identity: %+v", sidecar)
+	}
+	if sidecar.Message != "" {
+		t.Fatalf("sidecar content must not be inline in refs mode, got %q", sidecar.Message)
+	}
+	if sidecar.ProtocolMeta != nil {
+		t.Fatalf("protocol meta should be hidden by trace policy, got %+v", sidecar.ProtocolMeta)
+	}
+	if sidecar.Metadata["frontend_visible"] != false || sidecar.Metadata["audit_visible"] != true {
+		t.Fatalf("expected frontend-hidden audit-visible event metadata, got %+v", sidecar.Metadata)
+	}
+}
+
+func TestHandleRuns_SidecarValidationRejectsInvisibleContentWithoutID(t *testing.T) {
+	router := &runTestRouter{}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id": "bad-sidecar",
+		"input":      "task",
+		"sidecar_capsules": []map[string]interface{}{
+			{
+				"provider":   "noema",
+				"visibility": "llm_visible",
+				"content":    "<noema/>",
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleRunActions_AttachContextDeliversToActiveRunSession(t *testing.T) {
+	router := &runTestRouter{}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+	run, _, err := server.Store().Start(runtrace.Run{
+		AgentID:          "opencode",
+		Protocol:         "acp",
+		ChannelID:        "noema.http",
+		ExecutionMode:    runtrace.ExecutionModeAsync,
+		LogicalSessionID: "logical-live",
+		RemoteSessionID:  "remote-live",
+		TracePolicy:      runtrace.TracePolicy{ContentMode: runtrace.ContentModeInline},
+	})
+	if err != nil {
+		t.Fatalf("Start run: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"action":          "attach_context",
+		"reason":          "supervisor_suggestion",
+		"source_event_id": "evt-source",
+		"sidecar_capsules": []map[string]interface{}{
+			{
+				"provider":   "noema",
+				"id":         "sug_01",
+				"schema":     "noema.sidecar.suggestion.v0",
+				"version":    "0.1",
+				"visibility": "llm_visible",
+				"format":     "noema_xml",
+				"content":    "<noema-suggestion>avoid loop</noema-suggestion>",
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, RunResourcePrefixV1+run.ID+"/actions", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	deliveryID, _ := resp["delivery_id"].(string)
+	if deliveryID == "" || resp["accepted"] != true {
+		t.Fatalf("expected accepted delivery response, got %+v", resp)
+	}
+	attached := waitForEvent(t, server.Store(), run.ID, "run.context.attached", "delivered")
+	if attached.Metadata["delivery_id"] != deliveryID || attached.Metadata["source_event_id"] != "evt-source" {
+		t.Fatalf("unexpected attach metadata: %+v", attached.Metadata)
+	}
+	if attached.Message != "delivered" || attached.Summary != "Live context delivered to active session." {
+		t.Fatalf("expected inline delivery proof without summary leak, got message=%q summary=%q", attached.Message, attached.Summary)
+	}
+	delivered := waitForEvent(t, server.Store(), run.ID, "sidecar.capsule.delivered", runtrace.StatusCompleted)
+	if delivered.SidecarID != "sug_01" || delivered.Metadata["delivery_id"] != deliveryID {
+		t.Fatalf("unexpected sidecar delivery event: %+v", delivered)
+	}
+	router.attachMu.Lock()
+	defer router.attachMu.Unlock()
+	if len(router.attachRequests) != 1 || router.attachRequests[0].LogicalSessionID != "logical-live" || router.attachRequests[0].RemoteSessionID != "remote-live" {
+		t.Fatalf("expected exact active session attach, got %+v", router.attachRequests)
+	}
+	if router.attachRequests[0].Notifier == nil {
+		t.Fatalf("expected attach notifier for live delivery trace")
+	}
+}
+
+func TestHandleRunActions_AttachContextUnsupportedWhenSessionNotReady(t *testing.T) {
+	router := &runTestRouter{}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+	run, _, err := server.Store().Start(runtrace.Run{AgentID: "opencode", Protocol: "acp", ChannelID: "noema.http", ExecutionMode: runtrace.ExecutionModeAsync})
+	if err != nil {
+		t.Fatalf("Start run: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"action": "attach_context",
+		"sidecar_capsules": []map[string]interface{}{
+			{"provider": "noema", "id": "sug_unsupported", "visibility": "trace_only"},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, RunResourcePrefixV1+run.ID+"/actions", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 unsupported, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["status"] != "unsupported" || resp["accepted"] != false {
+		t.Fatalf("expected typed unsupported response, got %+v", resp)
+	}
+	event := waitForEvent(t, server.Store(), run.ID, "run.context.attached", "unsupported")
+	if event.Metadata["delivery_status"] != "unsupported" {
+		t.Fatalf("expected unsupported evidence, got %+v", event.Metadata)
+	}
+}
+
 func hasEventKind(events []runtrace.Event, kind string) bool {
 	for _, event := range events {
 		if event.Kind == kind {
@@ -234,6 +459,25 @@ func hasEventKind(events []runtrace.Event, kind string) bool {
 		}
 	}
 	return false
+}
+
+func waitForEvent(t *testing.T, store *runtrace.Store, runID, kind, status string) runtrace.Event {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		events, err := store.LoadEvents(runID, 100)
+		if err != nil {
+			t.Fatalf("LoadEvents: %v", err)
+		}
+		for _, event := range events {
+			if event.Kind == kind && event.Status == status {
+				return event
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("event %s/%s not found", kind, status)
+	return runtrace.Event{}
 }
 
 func hasSessionAction(actions []middleware.SessionActionRequest, action string) bool {

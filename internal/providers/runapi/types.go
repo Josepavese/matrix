@@ -9,6 +9,7 @@ import (
 	"github.com/jose/matrix-v2/internal/logic/rundelivery"
 	"github.com/jose/matrix-v2/internal/logic/runtrace"
 	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/jose/matrix-v2/internal/providers/runpayload"
 	"github.com/jose/matrix-v2/internal/providers/runsink"
 )
 
@@ -35,18 +36,19 @@ type Server struct {
 }
 
 type runRequest struct {
-	ChannelID            string                 `json:"channel_id"`
-	Input                string                 `json:"input"`
-	AgentID              string                 `json:"agent_id"`
-	WorkspaceID          string                 `json:"workspace_id,omitempty"`
-	WorkspacePath        string                 `json:"workspace_path,omitempty"`
-	ExecutionMode        string                 `json:"execution_mode,omitempty"`
-	SessionPolicy        string                 `json:"session_policy,omitempty"`
-	CleanupPolicy        string                 `json:"cleanup_policy,omitempty"`
-	EmergencyKillSeconds int                    `json:"emergency_kill_seconds,omitempty"`
-	Context              []runtrace.ContextRef  `json:"context,omitempty"`
-	ClientMeta           map[string]interface{} `json:"client_meta,omitempty"`
-	TracePolicy          runtrace.TracePolicy   `json:"trace_policy,omitempty"`
+	ChannelID            string                      `json:"channel_id"`
+	Input                runpayload.Input            `json:"input"`
+	AgentID              string                      `json:"agent_id"`
+	WorkspaceID          string                      `json:"workspace_id,omitempty"`
+	WorkspacePath        string                      `json:"workspace_path,omitempty"`
+	ExecutionMode        string                      `json:"execution_mode,omitempty"`
+	SessionPolicy        string                      `json:"session_policy,omitempty"`
+	CleanupPolicy        string                      `json:"cleanup_policy,omitempty"`
+	EmergencyKillSeconds int                         `json:"emergency_kill_seconds,omitempty"`
+	Context              []runtrace.ContextRef       `json:"context,omitempty"`
+	SidecarCapsules      []middleware.SidecarCapsule `json:"sidecar_capsules,omitempty"`
+	ClientMeta           map[string]interface{}      `json:"client_meta,omitempty"`
+	TracePolicy          runtrace.TracePolicy        `json:"trace_policy,omitempty"`
 }
 
 type runResponse struct {
@@ -67,11 +69,6 @@ type runErrorResponse struct {
 	EventsURL  string                           `json:"events_url"`
 	ActionsURL string                           `json:"actions_url"`
 	Cleanup    *middleware.SessionCleanupResult `json:"cleanup,omitempty"`
-}
-
-type runActionRequest struct {
-	Action string `json:"action"`
-	Reason string `json:"reason,omitempty"`
 }
 
 type eventSinkRequest struct {
