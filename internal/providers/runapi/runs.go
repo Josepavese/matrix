@@ -166,7 +166,9 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 	notifier := runnotifier.New(s.runStore, exec.runID, exec.agentID, s.resolveProtocol(exec.agentID))
 	res, err := s.route(ctx, exec.req, exec.agentID, notifier)
 	if err != nil {
-		after := s.enrichRunFromSession(ctx, sessionEnrichmentRequest{
+		postCtx, postCancel := postRunContext(ctx)
+		defer postCancel()
+		after := s.enrichRunFromSession(postCtx, sessionEnrichmentRequest{
 			runID:       exec.runID,
 			channelID:   exec.req.ChannelID,
 			workspaceID: exec.req.WorkspaceID,
@@ -176,9 +178,12 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 		if runRequiresCleanup(exec.req) {
 			cleanup, _ = s.cleanupRunSession(ctx, exec, after)
 		}
-		if isEmergencyTimeout(ctx, err, exec) {
+		switch {
+		case isEmergencyTimeout(ctx, err, exec):
 			_, _ = s.runStore.Cancel(exec.runID, "emergency_kill_timeout")
-		} else {
+		case isRunContextCancelled(ctx, err):
+			_, _ = s.runStore.Cancel(exec.runID, "cancelled")
+		default:
 			_, _ = s.runStore.Fail(exec.runID, err)
 		}
 		s.untrackRunCancel(exec.runID)
@@ -254,6 +259,10 @@ func executionContext(parent context.Context, emergencyTimeout time.Duration) (c
 	return context.WithTimeout(parent, emergencyTimeout)
 }
 
+func postRunContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(parent), runCleanupTimeout)
+}
+
 func emergencyTimeout(req runRequest) time.Duration {
 	if req.EmergencyKillSeconds <= 0 {
 		return 0
@@ -263,6 +272,10 @@ func emergencyTimeout(req runRequest) time.Duration {
 
 func isEmergencyTimeout(ctx context.Context, err error, exec runExecution) bool {
 	return exec.emergencyTimeout > 0 && (errors.Is(err, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded)
+}
+
+func isRunContextCancelled(ctx context.Context, err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled)
 }
 
 func isSetupRequired(err error) bool {

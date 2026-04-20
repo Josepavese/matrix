@@ -4,10 +4,13 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/jose/matrix-v2/internal/logic/runtrace"
 	"github.com/jose/matrix-v2/internal/middleware"
 )
+
+const runCleanupTimeout = 30 * time.Second
 
 type sessionSnapshot struct {
 	LogicalSessionID string
@@ -149,7 +152,9 @@ func (s *Server) cleanupRunSession(ctx context.Context, exec runExecution, after
 	if target == "" {
 		return nil, nil
 	}
-	result, err := s.router.HandleSessionActionTyped(ctx, middleware.SessionActionRequest{
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), runCleanupTimeout)
+	defer cancel()
+	result, err := s.router.HandleSessionActionTyped(cleanupCtx, middleware.SessionActionRequest{
 		ChannelID:        exec.req.ChannelID,
 		Action:           "cleanup",
 		Target:           target,
@@ -194,6 +199,7 @@ func (s *Server) appendCleanupEvent(runID, agentID string, cleanup middleware.Se
 			"process_retained":          cleanup.ProcessRetained,
 			"process_retention_reason":  cleanup.ProcessRetentionReason,
 			"local_forgotten":           cleanup.LocalForgotten,
+			"failure_code":              cleanup.FailureCode,
 			"error":                     cleanup.Error,
 		},
 	})

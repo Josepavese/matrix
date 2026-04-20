@@ -150,6 +150,7 @@ type SessionCleanupResult struct {
 	ProcessRetentionAllowed bool   `json:"process_retention_allowed,omitempty"`
 	ProcessRetentionReason  string `json:"process_retention_reason,omitempty"`
 	LocalForgotten          bool   `json:"local_forgotten"`
+	FailureCode             string `json:"failure_code,omitempty"`
 	Error                   string `json:"error,omitempty"`
 }
 

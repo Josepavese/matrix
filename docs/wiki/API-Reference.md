@@ -337,7 +337,12 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
   }'
 ```
 
-`delete` now returns a `cleanup` proof. If the provider does not support remote delete, Matrix attempts remote close when advertised by the protocol adapter, then remote cancel when policy allows it, then forgets the local mirror when requested by policy. After local deletion, Matrix closes the exact workspace-bound agent client when no other local session still references the same `agent_id + workspace_path`; otherwise it reports `process_retained=true` and `process_retention_allowed=true`.
+`delete` now returns a `cleanup` proof. If the provider does not support remote delete, Matrix attempts remote close when advertised by the protocol adapter, then remote cancel when policy allows it, then forgets the local mirror when requested by policy. After local deletion, Matrix closes the exact workspace-bound agent client when no other local session still references the same `agent_id + workspace_path`; otherwise it reports `process_retained=true` and `process_retention_allowed=true`. Cleanup proof can include `failure_code`; for example `agent_start_context_cancelled_during_cleanup` means a cleanup operation tried to start a provider while using an already-canceled context.
+
+For async `/v1/runs/{run_id}/actions` `cancel`, Matrix uses a cleanup-specific
+bounded context detached from the canceled run context. This allows
+interrupt/resume clients to wait for `session.cleanup clean=true` before
+starting the resume run.
 
 **Cleanup a session:**
 

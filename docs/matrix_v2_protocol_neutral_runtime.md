@@ -203,7 +203,7 @@ Behavior:
 - `/session cancel [target]` cancels the active or selected remote session/task while preserving the local mirror
 - `/cancel` and `/stop` are UX aliases for `/session cancel`
 - `/session delete [target]` removes the local mirror and calls the closest remote lifecycle operation available
-- `cleanup` produces explicit proof fields: `clean`, `remote_deleted`, `remote_canceled`, `process_reaped`, `process_retained`, `process_retention_allowed`, `local_forgotten`, and `remote_delete_unsupported`
+- `cleanup` produces explicit proof fields: `clean`, `remote_deleted`, `remote_canceled`, `process_reaped`, `process_retained`, `process_retention_allowed`, `local_forgotten`, `remote_delete_unsupported`, and optional `failure_code`
 - `/session new [agent]`, `/session name <alias>`, and `/session status` are exposed by the same typed session-action core used by HTTP and future channel adapters
 
 Defaulting:

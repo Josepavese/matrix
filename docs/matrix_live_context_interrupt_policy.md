@@ -83,6 +83,16 @@ If a provider records `late`, clients should choose one of:
 - cancel and restart the run with the new context;
 - queue the context as next-turn state.
 
+For cancel-and-restart / interrupt-resume flows, Matrix must expose cleanup
+proof before the resume run is trusted. The cancelled run should produce
+`session.cleanup clean=true` with at least one remote/process cleanup proof such
+as `remote_deleted`, `remote_closed`, `remote_canceled`, or `process_reaped`.
+Cleanup runs under a bounded context detached from the canceled run context.
+If cleanup cannot complete, `failure_code` gives the machine-readable class;
+`agent_start_context_cancelled_during_cleanup` identifies the historical bug
+where provider cleanup tried to start an agent under an already-canceled
+context.
+
 ## Engineering Rule
 
 Provider capability names should stay explicit:
