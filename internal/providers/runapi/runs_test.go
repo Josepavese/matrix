@@ -22,6 +22,10 @@ type runTestRouter struct {
 	attachMu         sync.Mutex
 	attachRequests   []middleware.RunContextAttachmentRequest
 	routeErr         error
+	routeWaitCancel  bool
+	routeStarted     chan struct{}
+	routeStartOnce   sync.Once
+	cleanupCtxErr    chan error
 }
 
 func (r *runTestRouter) Route(_ context.Context, channelID string, agentID string, input string, _ middleware.ThoughtNotifier) (string, error) {
@@ -32,8 +36,15 @@ func (r *runTestRouter) Route(_ context.Context, channelID string, agentID strin
 	return "ok", nil
 }
 
-func (r *runTestRouter) RouteConversation(_ context.Context, req middleware.ConversationRequest) (string, error) {
+func (r *runTestRouter) RouteConversation(ctx context.Context, req middleware.ConversationRequest) (string, error) {
 	r.lastConversation = req
+	if r.routeWaitCancel {
+		if r.routeStarted != nil {
+			r.routeStartOnce.Do(func() { close(r.routeStarted) })
+		}
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
 	if r.routeErr != nil {
 		return "", r.routeErr
 	}
@@ -44,7 +55,7 @@ func (r *runTestRouter) HandleSessionAction(_ context.Context, _, _, _ string) (
 	return "", nil
 }
 
-func (r *runTestRouter) HandleSessionActionTyped(_ context.Context, req middleware.SessionActionRequest) (middleware.SessionActionResult, error) {
+func (r *runTestRouter) HandleSessionActionTyped(ctx context.Context, req middleware.SessionActionRequest) (middleware.SessionActionResult, error) {
 	r.sessionActions = append(r.sessionActions, req)
 	switch req.Action {
 	case "new":
@@ -75,6 +86,9 @@ func (r *runTestRouter) HandleSessionActionTyped(_ context.Context, req middlewa
 			},
 		}, nil
 	case "cleanup":
+		if r.cleanupCtxErr != nil {
+			r.cleanupCtxErr <- ctx.Err()
+		}
 		return middleware.SessionActionResult{
 			Action: "cleanup",
 			Cleanup: &middleware.SessionCleanupResult{
@@ -240,6 +254,73 @@ func TestHandleRuns_CleanupPolicyAloneDoesNotCleanupActiveSession(t *testing.T) 
 	}
 	if hasSessionAction(router.sessionActions, "cleanup") {
 		t.Fatalf("cleanup_policy without ephemeral session_policy must not cleanup active session: %+v", router.sessionActions)
+	}
+}
+
+func TestHandleRunActionsCancelCleansEphemeralRunWithDetachedContext(t *testing.T) {
+	router := &runTestRouter{
+		routeWaitCancel: true,
+		routeStarted:    make(chan struct{}),
+		cleanupCtxErr:   make(chan error, 1),
+	}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "eval-cancel-cleanup",
+		"agent_id":       "opencode",
+		"execution_mode": "async",
+		"input":          "run until cancelled",
+		"workspace_path": "/tmp/eval-ws",
+		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
+		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 async run, got %d: %s", w.Code, w.Body.String())
+	}
+	var runResp runResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &runResp); err != nil {
+		t.Fatalf("decode run response: %v", err)
+	}
+	select {
+	case <-router.routeStarted:
+	case <-time.After(time.Second):
+		t.Fatalf("route did not start")
+	}
+
+	actionBody, _ := json.Marshal(map[string]interface{}{
+		"action": "cancel",
+		"reason": "test_interrupt_resume",
+	})
+	actionReq := httptest.NewRequest(http.MethodPost, RunResourcePrefixV1+runResp.RunID+"/actions", bytes.NewReader(actionBody))
+	actionW := httptest.NewRecorder()
+	mux.ServeHTTP(actionW, actionReq)
+	if actionW.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 cancel, got %d: %s", actionW.Code, actionW.Body.String())
+	}
+
+	cleanupEvent := waitForEvent(t, server.Store(), runResp.RunID, "session.cleanup", runtrace.StatusCompleted)
+	if cleanupEvent.Metadata["clean"] != true || cleanupEvent.Metadata["remote_canceled"] != true || cleanupEvent.Metadata["process_reaped"] != true {
+		t.Fatalf("expected clean cleanup proof, got %+v", cleanupEvent.Metadata)
+	}
+	select {
+	case err := <-router.cleanupCtxErr:
+		if err != nil {
+			t.Fatalf("cleanup context must survive run cancel, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("cleanup context was not observed")
+	}
+	run, found, err := server.Store().LoadRun(runResp.RunID)
+	if err != nil || !found {
+		t.Fatalf("LoadRun: found=%v err=%v", found, err)
+	}
+	if run.Status != runtrace.StatusCancelled {
+		t.Fatalf("expected cancelled run, got %+v", run)
 	}
 }
 

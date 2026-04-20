@@ -25,7 +25,7 @@ func (m *Manager) reapAgentClientAfterLocalCleanup(ctx context.Context, req sess
 	if err != nil {
 		result.ProcessRetained = true
 		result.ProcessRetentionReason = err.Error()
-		result.Error = sessioncleanup.AppendError(result.Error, "process_reap", err)
+		result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "process_reap", err)
 		return
 	}
 	if reaped {
@@ -43,7 +43,7 @@ func (m *Manager) allowProcessRetention(meta SessionMeta, result *middleware.Ses
 	if err != nil {
 		result.ProcessRetained = true
 		result.ProcessRetentionReason = err.Error()
-		result.Error = sessioncleanup.AppendError(result.Error, "process_reap_refs", err)
+		result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "process_reap_refs", err)
 		return true
 	}
 	if !hasReferences {

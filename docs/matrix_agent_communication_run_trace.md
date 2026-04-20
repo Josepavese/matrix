@@ -85,12 +85,13 @@ Every response includes:
     "process_reap_attempted": true,
     "process_reaped": true,
     "process_retention_allowed": false,
-    "local_forgotten": true
+    "local_forgotten": true,
+    "failure_code": "optional_machine_code"
   }
 }
 ```
 
-`cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, and process fields instead of inferring cleanup from HTTP status alone.
+`cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, process fields, and `failure_code` instead of inferring cleanup from HTTP status alone. Cleanup after `/v1/runs/{run_id}/actions` `cancel` uses a bounded context detached from the canceled run context, so remote cleanup and process reap are not run under an already-canceled context.
 
 ## Canonical State
 
@@ -346,7 +347,7 @@ Run enrichment:
 - selected protocol is resolved through the configured agent endpoint resolver when available;
 - remote session ids are captured from notifier headers when providers emit them;
 - logical session, remote session, protocol, workspace, mode, and status are copied from the channel-neutral session status surface when available;
-- cleanup evidence records logical session id, remote session id, remote delete attempt/result, remote cancel fallback, workspace-bound agent client/process reap or allowed retention, local mirror removal, `clean`, and cleanup errors;
+- cleanup evidence records logical session id, remote session id, remote delete attempt/result, remote cancel fallback, workspace-bound agent client/process reap or allowed retention, local mirror removal, `clean`, optional `failure_code`, and cleanup errors;
 - trace events keep protocol-specific details in `protocol_meta`, never as primary schema concepts.
 - ACP `session/update` payloads are preserved in `protocol_meta.acp` for lossless inspection when `include_protocol_meta=true`;
 - permission payloads can enrich the currently active tool event with path/operation, but permission events remain hidden from frontend timelines by default.

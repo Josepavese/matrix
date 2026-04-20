@@ -166,7 +166,7 @@ func (m *Manager) cleanupRemoteSession(ctx context.Context, meta SessionMeta, po
 	result.RemoteDeleteAttempted = true
 	if err := m.deleteRemoteSession(ctx, meta); err != nil {
 		result.RemoteDeleteUnsupported = sessioncleanup.IsRemoteDeleteUnsupported(err)
-		result.Error = sessioncleanup.AppendError(result.Error, "remote_delete", err)
+		result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "remote_delete", err)
 	} else {
 		result.RemoteDeleted = true
 	}
@@ -177,7 +177,7 @@ func (m *Manager) cleanupRemoteSession(ctx context.Context, meta SessionMeta, po
 		result.RemoteCloseAttempted = true
 		if err := m.closeRemoteSession(ctx, meta); err != nil {
 			result.RemoteCloseUnsupported = sessioncleanup.IsRemoteCloseUnsupported(err)
-			result.Error = sessioncleanup.AppendError(result.Error, "remote_close", err)
+			result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "remote_close", err)
 		} else {
 			result.RemoteClosed = true
 			return
@@ -185,7 +185,7 @@ func (m *Manager) cleanupRemoteSession(ctx context.Context, meta SessionMeta, po
 	}
 	result.RemoteCancelAttempted = true
 	if err := m.cancelRemoteSession(ctx, meta); err != nil {
-		result.Error = sessioncleanup.AppendError(result.Error, "remote_cancel", err)
+		result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "remote_cancel", err)
 		return
 	}
 	result.RemoteCanceled = true
@@ -194,7 +194,7 @@ func (m *Manager) cleanupRemoteSession(ctx context.Context, meta SessionMeta, po
 func (m *Manager) cleanupLocalMirror(req sessionCleanupExecution, remoteDeleted bool, result *middleware.SessionCleanupResult) {
 	if sessioncleanup.ShouldForgetLocalMirror(result.CleanupPolicy, req.ForceForgetLocal, remoteDeleted) || strings.TrimSpace(req.Meta.AgentSessionID) == "" {
 		if err := m.removeSessionMirror(req.ChannelID, req.Meta.ID); err != nil {
-			result.Error = sessioncleanup.AppendError(result.Error, "local_forget", err)
+			result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "local_forget", err)
 		} else {
 			result.LocalForgotten = true
 		}
@@ -205,7 +205,7 @@ func (m *Manager) cleanupLocalMirror(req sessionCleanupExecution, remoteDeleted 
 		meta.RemoteStatus = "canceled"
 		meta.LastSyncedAt = time.Now().UTC()
 		if err := m.saveSessionMeta(meta); err != nil {
-			result.Error = sessioncleanup.AppendError(result.Error, "local_status", err)
+			result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "local_status", err)
 		}
 	}
 }

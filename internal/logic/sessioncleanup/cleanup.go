@@ -8,6 +8,7 @@ import (
 
 const NoMatchingCachedAgentClient = "no matching cached agent client"
 const OtherLocalSessionsStillReferenceAgentClient = "other local sessions still reference agent client"
+const FailureAgentStartContextCancelledDuringCleanup = "agent_start_context_cancelled_during_cleanup"
 
 type CleanInput struct {
 	Ephemeral               bool
@@ -82,6 +83,29 @@ func AppendError(existing, phase string, err error) string {
 	return existing + "; " + msg
 }
 
+func AppendErrorWithCode(existing, code, phase string, err error) (string, string) {
+	if err == nil {
+		return existing, code
+	}
+	existing = AppendError(existing, phase, err)
+	if code == "" {
+		code = FailureCode(err)
+	}
+	return existing, code
+}
+
+func FailureCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.ToLower(err.Error())
+	contextCancelled := strings.Contains(msg, "context canceled") || strings.Contains(msg, "context cancelled")
+	if strings.Contains(msg, "failed to start agent") && contextCancelled {
+		return FailureAgentStartContextCancelledDuringCleanup
+	}
+	return ""
+}
+
 func IsClean(input CleanInput) bool {
 	remoteClean := strings.TrimSpace(input.RemoteSessionID) == "" ||
 		input.RemoteDeleted ||
@@ -129,6 +153,7 @@ func Metadata(cleanup middleware.SessionCleanupResult) map[string]interface{} {
 		"process_retention_allowed": cleanup.ProcessRetentionAllowed,
 		"process_retention_reason":  cleanup.ProcessRetentionReason,
 		"local_forgotten":           cleanup.LocalForgotten,
+		"failure_code":              cleanup.FailureCode,
 		"error":                     cleanup.Error,
 	}
 }
