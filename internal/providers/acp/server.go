@@ -210,6 +210,10 @@ func sessionActionHTTPStatus(result middleware.SessionActionResult) int {
 	switch result.Error.Code {
 	case "agent_not_found":
 		return http.StatusNotFound
+	case "missing_remote_session_id":
+		return http.StatusConflict
+	case "remote_session_materialize_failed":
+		return http.StatusBadGateway
 	default:
 		return http.StatusBadRequest
 	}

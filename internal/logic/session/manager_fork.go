@@ -72,13 +72,20 @@ func (m *Manager) prepareFork(ctx context.Context, req middleware.SessionActionR
 	if err != nil {
 		return forkPlan{}, nil, err
 	}
-	if strings.TrimSpace(meta.AgentSessionID) == "" {
-		return forkPlan{}, nil, fmt.Errorf("session %s has no remote session id to fork", meta.ID)
-	}
 	forker, ok := m.router.(middleware.AgentSessionForker)
 	if !ok {
 		result := unsupportedForkResult(meta, "router does not expose session fork")
 		return forkPlan{}, &result, nil
+	}
+	if strings.TrimSpace(meta.AgentSessionID) == "" {
+		if result := m.forkUnsupportedByCapabilities(ctx, meta); result != nil {
+			return forkPlan{}, result, nil
+		}
+		materialized, result, err := m.materializeForkParent(ctx, req, meta)
+		if result != nil || err != nil {
+			return forkPlan{}, result, err
+		}
+		meta = materialized
 	}
 	child, err := forker.ForkAgentSession(ctx, meta.AgentID, middleware.SessionForkRequest{
 		RemoteSessionID: meta.AgentSessionID,

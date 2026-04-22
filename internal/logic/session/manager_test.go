@@ -48,26 +48,30 @@ func (m *mockStorage) List(prefix string) ([]string, error) {
 
 // mockRouter records the last message received
 type mockRouter struct {
-	lastSession string
-	lastMsg     string
-	remote      []middleware.RemoteSessionInfo
-	deleted     []string
-	canceled    []string
-	closed      []string
-	deletedWS   []string
-	canceledWS  []string
-	closedWS    []string
-	deleteErr   error
-	cancelErr   error
-	closeErr    error
-	closeOK     bool
-	reaped      []string
-	reapErr     error
-	capErr      error
-	forkErr     error
-	forked      []middleware.SessionForkRequest
-	forkChild   middleware.RemoteSessionInfo
-	metadata    middleware.ConversationMetadata
+	lastSession    string
+	lastMsg        string
+	remote         []middleware.RemoteSessionInfo
+	deleted        []string
+	canceled       []string
+	closed         []string
+	deletedWS      []string
+	canceledWS     []string
+	closedWS       []string
+	deleteErr      error
+	cancelErr      error
+	closeErr       error
+	closeOK        bool
+	reaped         []string
+	reapErr        error
+	capErr         error
+	capFork        *bool
+	forkErr        error
+	forked         []middleware.SessionForkRequest
+	forkChild      middleware.RemoteSessionInfo
+	materialErr    error
+	materialized   []middleware.SessionMaterializeRequest
+	materialRemote middleware.RemoteSessionInfo
+	metadata       middleware.ConversationMetadata
 }
 
 func (m *mockRouter) Route(_ context.Context, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
@@ -137,13 +141,33 @@ func (m *mockRouter) AgentCapabilities(_ context.Context, agentID string) (middl
 	if m.capErr != nil {
 		return middleware.ProviderCapabilityReport{}, m.capErr
 	}
+	forkSupported := true
+	if m.capFork != nil {
+		forkSupported = *m.capFork
+	}
 	return middleware.ProviderCapabilityReport{
 		AgentID:      agentID,
 		ProtocolKind: middleware.ProtocolKindACP,
 		Session: map[string]middleware.CapabilityDescriptor{
-			"fork": {Name: "fork", Supported: true, Status: "supported", Stability: "draft", Source: "test"},
+			"fork": {Name: "fork", Supported: forkSupported, Status: "supported", Stability: "draft", Source: "test"},
 		},
 	}, nil
+}
+
+func (m *mockRouter) MaterializeAgentSession(_ context.Context, _ string, req middleware.SessionMaterializeRequest) (middleware.RemoteSessionInfo, middleware.ConversationMetadata, error) {
+	m.materialized = append(m.materialized, req)
+	if m.materialErr != nil {
+		return middleware.RemoteSessionInfo{}, middleware.ConversationMetadata{}, m.materialErr
+	}
+	if strings.TrimSpace(m.materialRemote.RemoteSessionID) != "" {
+		return m.materialRemote, m.metadata, nil
+	}
+	return middleware.RemoteSessionInfo{
+		RemoteSessionID: "materialized-parent-remote",
+		DisplayID:       "materialized-parent-remote",
+		ProtocolKind:    middleware.ProtocolKindACP,
+		CanResume:       true,
+	}, m.metadata, nil
 }
 
 func (m *mockRouter) ForkAgentSession(_ context.Context, _ string, req middleware.SessionForkRequest) (middleware.RemoteSessionInfo, error) {
@@ -1364,6 +1388,110 @@ func TestSessionManager_ForkCanPreserveActiveParent(t *testing.T) {
 	}
 	if state.ActiveSessionID != parentMeta.ID {
 		t.Fatalf("expected channel active parent, got %+v", state)
+	}
+}
+
+func TestSessionManager_ForkMaterializesMissingParentRemote(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "fork-materialize-ch",
+		Action:        "new",
+		Target:        "opencode",
+		WorkspacePath: "/tmp/fork-materialize-ws",
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("new parent: %v", err)
+	}
+	parentMeta, found, err := mgr.loadSessionMeta(parent.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("load parent: err=%v found=%v", err, found)
+	}
+	if parentMeta.AgentSessionID != "" {
+		t.Fatalf("new session should start without remote id, got %q", parentMeta.AgentSessionID)
+	}
+	makeActive := false
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "fork-materialize-ch",
+		Action:        "fork",
+		Target:        parentMeta.ID,
+		Input:         "return smoke artifact",
+		MakeActive:    &makeActive,
+		RestoreParent: true,
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("fork: %v", err)
+	}
+	if result.Error != nil || result.Unsupported {
+		t.Fatalf("expected materialized fork, got %+v", result)
+	}
+	if len(router.materialized) != 1 {
+		t.Fatalf("expected one parent materialization, got %+v", router.materialized)
+	}
+	if router.materialized[0].LogicalSessionID != parentMeta.ID || router.materialized[0].WorkspacePath != "/tmp/fork-materialize-ws" {
+		t.Fatalf("unexpected materialize request: %+v", router.materialized[0])
+	}
+	if len(router.forked) != 1 || router.forked[0].RemoteSessionID != "materialized-parent-remote" {
+		t.Fatalf("expected fork from materialized parent, got %+v", router.forked)
+	}
+	updatedParent, found, err := mgr.loadSessionMeta(parentMeta.ID)
+	if err != nil || !found {
+		t.Fatalf("load updated parent: err=%v found=%v", err, found)
+	}
+	if updatedParent.AgentSessionID != "materialized-parent-remote" || updatedParent.MirrorStatus != "mirrored" {
+		t.Fatalf("expected parent remote persisted, got %+v", updatedParent)
+	}
+	if result.Fork == nil || result.Fork.ParentRemoteSessionID != "materialized-parent-remote" {
+		t.Fatalf("expected materialized parent in fork result, got %+v", result.Fork)
+	}
+	if result.Fork.Artifact == nil || result.Fork.Artifact.Content != "Ok" {
+		t.Fatalf("expected child artifact, got %+v", result.Fork)
+	}
+	if result.ActiveSessionID != parentMeta.ID || !result.Fork.ParentRestored {
+		t.Fatalf("expected parent restored, got active=%q fork=%+v", result.ActiveSessionID, result.Fork)
+	}
+}
+
+func TestSessionManager_ForkMissingParentRemoteReturnsTypedError(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{materialErr: fmt.Errorf("provider refused materialization")}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "fork-missing-remote-ch",
+		Action:        "new",
+		Target:        "opencode",
+		WorkspacePath: "/tmp/fork-missing-remote-ws",
+	})
+	if err != nil {
+		t.Fatalf("new parent: %v", err)
+	}
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID: "fork-missing-remote-ch",
+		Action:    "fork",
+		Target:    parent.ActiveSessionID,
+	})
+	if err != nil {
+		t.Fatalf("fork should return typed result, got err=%v", err)
+	}
+	if !result.Unsupported || result.Error == nil {
+		t.Fatalf("expected typed unsupported result, got %+v", result)
+	}
+	if result.Error.Code != "remote_session_materialize_failed" || result.Error.Target != parent.ActiveSessionID {
+		t.Fatalf("unexpected error: %+v", result.Error)
+	}
+	if result.Fork == nil || !result.Fork.Unsupported || !strings.Contains(result.Fork.Reason, "provider refused") {
+		t.Fatalf("expected fork unsupported reason, got %+v", result.Fork)
 	}
 }
 

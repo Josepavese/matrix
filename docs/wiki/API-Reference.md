@@ -409,11 +409,15 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 
 For automation, `fork` also accepts `make_active=false`, `restore_parent=true`,
 and optional `input`. With `make_active=false`, Matrix mirrors the child without
-switching the user's active channel session. With `input`, Matrix runs exactly
-one turn on the fork child and returns `fork.artifact.content`; when `ephemeral`
-or `cleanup_policy` is supplied, Matrix cleans the child and returns
+switching the user's active channel session. If the logical parent has no remote
+provider id yet, Matrix first creates a real remote parent session through the
+provider session API, then forks that remote session. With `input`, Matrix runs
+exactly one turn on the fork child and returns `fork.artifact.content`; when
+`ephemeral` or `cleanup_policy` is supplied, Matrix cleans the child and returns
 `fork.cleanup` proof. Matrix does not synthesize fork by prompt replay and does
-not interpret the artifact content.
+not interpret the artifact content. If remote parent materialization is blocked,
+Matrix returns typed evidence such as `error.code=missing_remote_session_id` or
+`error.code=remote_session_materialize_failed` instead of HTTP `500`.
 
 **Reconcile cached provider clients:**
 
