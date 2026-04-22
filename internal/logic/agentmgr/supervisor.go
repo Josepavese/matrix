@@ -2,6 +2,7 @@ package agentmgr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -101,7 +102,7 @@ func (s *Supervisor) StartAll(ctx context.Context) error {
 func (s *Supervisor) GetAgentEndpoint(agentID string) (middleware.ProtocolEndpoint, error) {
 	cfg, err := s.registry.Get(agentID)
 	if err != nil {
-		return middleware.ProtocolEndpoint{}, fmt.Errorf("agent %s configuration not found in registry: %w", agentID, err)
+		return middleware.ProtocolEndpoint{}, errors.Join(middleware.ErrAgentNotFound, fmt.Errorf("agent %s configuration not found in registry: %w", agentID, err))
 	}
 	endpoint := agentcfg.NormalizeEndpoint(agentcfg.Config{
 		Command:         cfg.Command,

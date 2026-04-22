@@ -22,14 +22,15 @@ type ChannelResponse struct {
 // workspace-aware callers. It keeps channel identity as ingress metadata while
 // letting the runtime resolve work context from workspace hints.
 type ConversationRequest struct {
-	ChannelID       string
-	AgentID         string
-	WorkspaceID     string
-	WorkspacePath   string
-	Input           string
-	SidecarCapsules []SidecarCapsule
-	Notifier        ThoughtNotifier
-	NonInteractive  bool
+	ChannelID        string
+	AgentID          string
+	LogicalSessionID string
+	WorkspaceID      string
+	WorkspacePath    string
+	Input            string
+	SidecarCapsules  []SidecarCapsule
+	Notifier         ThoughtNotifier
+	NonInteractive   bool
 }
 
 // RunContextAttachmentRequest asks a runtime to inject provider-neutral sidecar
@@ -79,6 +80,9 @@ type SessionActionRequest struct {
 	Ephemeral        bool
 	CleanupPolicy    string
 	ForceForgetLocal bool
+	MakeActive       *bool
+	RestoreParent    bool
+	Input            string
 	// Target carries the action operand when needed.
 	// Examples:
 	// - switch/delete/cancel/cleanup: local or remote session selector
@@ -124,6 +128,8 @@ type SessionEntry struct {
 	Meta             map[string]interface{} `json:"meta,omitempty"`
 	PendingHandoff   *HandoffPacket         `json:"pending_handoff,omitempty"`
 	LastHandoff      *HandoffPacket         `json:"last_handoff,omitempty"`
+	ParentSessionID  string                 `json:"parent_session_id,omitempty"`
+	ParentRemoteID   string                 `json:"parent_remote_id,omitempty"`
 }
 
 // SessionCleanupResult is the audit record for Matrix session cleanup.
@@ -157,11 +163,18 @@ type SessionCleanupResult struct {
 	Error                   string `json:"error,omitempty"`
 }
 
+type SessionActionError struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+	Target  string `json:"target,omitempty"`
+}
+
 // SessionActionResult is the typed, reusable result for session lifecycle operations.
 type SessionActionResult struct {
 	Action          string                      `json:"action"`
 	Message         string                      `json:"message,omitempty"`
 	Unsupported     bool                        `json:"unsupported,omitempty"`
+	Error           *SessionActionError         `json:"error,omitempty"`
 	ActiveSessionID string                      `json:"active_session_id,omitempty"`
 	Session         *SessionEntry               `json:"session,omitempty"`
 	Sessions        []SessionEntry              `json:"sessions,omitempty"`

@@ -166,12 +166,25 @@ type SessionForkRequest struct {
 	WorkspacePath   string
 }
 
+type SessionForkArtifact struct {
+	Kind    string `json:"kind,omitempty"`
+	Content string `json:"content,omitempty"`
+}
+
 // SessionForkResult records the provider-neutral outcome of a fork attempt.
 type SessionForkResult struct {
-	ParentRemoteSessionID string             `json:"parent_remote_session_id,omitempty"`
-	Child                 *RemoteSessionInfo `json:"child,omitempty"`
-	Unsupported           bool               `json:"unsupported,omitempty"`
-	Reason                string             `json:"reason,omitempty"`
+	ParentLogicalSessionID string                `json:"parent_logical_session_id,omitempty"`
+	ParentRemoteSessionID  string                `json:"parent_remote_session_id,omitempty"`
+	ChildLogicalSessionID  string                `json:"child_logical_session_id,omitempty"`
+	Child                  *RemoteSessionInfo    `json:"child,omitempty"`
+	MakeActive             bool                  `json:"make_active"`
+	Ephemeral              bool                  `json:"ephemeral,omitempty"`
+	CleanupPolicy          string                `json:"cleanup_policy,omitempty"`
+	Artifact               *SessionForkArtifact  `json:"artifact,omitempty"`
+	Cleanup                *SessionCleanupResult `json:"cleanup,omitempty"`
+	ParentRestored         bool                  `json:"parent_restored,omitempty"`
+	Unsupported            bool                  `json:"unsupported,omitempty"`
+	Reason                 string                `json:"reason,omitempty"`
 }
 
 // ConversationSessionForker is optionally implemented by providers that expose

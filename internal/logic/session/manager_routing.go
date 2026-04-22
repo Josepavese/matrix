@@ -162,10 +162,11 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 	responseTxt = m.applyToolCalls(responseTxt, toolCalls)
 	meta.AgentID = effectiveAgentID
 	queue.Submit(seq, sessionqueue.RouteResult{
-		Content:        responseTxt,
-		AgentSessionID: newAgentSessionID,
-		Metadata:       metadata,
-		Err:            routeErr,
+		LogicalSessionID: sessionID,
+		Content:          responseTxt,
+		AgentSessionID:   newAgentSessionID,
+		Metadata:         metadata,
+		Err:              routeErr,
 	})
 	if routeErr == nil {
 		if strings.TrimSpace(responseTxt) != "" {

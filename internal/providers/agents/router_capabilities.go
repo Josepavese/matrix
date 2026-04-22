@@ -8,15 +8,15 @@ import (
 )
 
 func (r *Router) AgentCapabilities(ctx context.Context, agentID string) (middleware.ProviderCapabilityReport, error) {
-	client, err := r.getOrCreateSessionControlClient(ctx, agentID)
-	if err != nil {
-		return middleware.ProviderCapabilityReport{}, err
-	}
 	endpoint, err := r.resolver.GetAgentEndpoint(agentID)
 	if err != nil {
 		return middleware.ProviderCapabilityReport{}, err
 	}
 	report := middleware.ProviderCapabilityReport{AgentID: agentID, ProtocolKind: endpoint.Kind}
+	client, err := r.getOrCreateSessionControlClient(ctx, agentID)
+	if err != nil {
+		return middleware.ProviderCapabilityReport{}, err
+	}
 	controller, ok := client.(middleware.ConversationSessionControl)
 	if !ok {
 		report.Session = unsupportedSessionCapabilityDetails()

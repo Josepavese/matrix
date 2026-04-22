@@ -388,6 +388,11 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 
 The response contains `capabilities.session`, keyed by lifecycle feature. Each entry includes `supported`, `status`, `stability`, and `source`. ACP reports `list` and `info_update` as stable, `resume` and `close` as preview, and `fork` / `delete` as draft when the provider advertises them.
 
+Unknown agent ids return a typed client error such as
+`error.code=agent_not_found` instead of a generic server failure. Supervisory
+clients should treat that as configuration failure, not as provider capability
+absence.
+
 **Fork a session:**
 
 ```bash
@@ -401,6 +406,14 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 ```
 
 `fork` is a capability-gated experimental operation. Matrix calls a true provider fork only when the active protocol adapter advertises it; otherwise the response is typed with `unsupported=true` and `fork.unsupported=true`.
+
+For automation, `fork` also accepts `make_active=false`, `restore_parent=true`,
+and optional `input`. With `make_active=false`, Matrix mirrors the child without
+switching the user's active channel session. With `input`, Matrix runs exactly
+one turn on the fork child and returns `fork.artifact.content`; when `ephemeral`
+or `cleanup_policy` is supplied, Matrix cleans the child and returns
+`fork.cleanup` proof. Matrix does not synthesize fork by prompt replay and does
+not interpret the artifact content.
 
 **Reconcile cached provider clients:**
 
@@ -427,6 +440,9 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 | `ephemeral` | boolean | No | Marks a new session as temporary/evaluation-only |
 | `cleanup_policy` | string | No | Cleanup behavior for `delete`, `cleanup`, or ephemeral runs |
 | `force_forget_local` | boolean | No | Removes the Matrix local mirror even when remote delete is unsupported |
+| `make_active` | boolean | No | Fork only: whether the child becomes active. Defaults to `true` unless `input` is supplied |
+| `restore_parent` | boolean | No | Fork only: restore/preserve the parent as active after child work |
+| `input` | string | No | Fork only: one child turn to run for artifact-producing workflows |
 
 Cleanup proof fields distinguish provider state from Matrix mirror state: `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `remote_deleted`, `remote_closed`, `remote_canceled`, `remote_*_attempted`, `remote_*_unsupported`, process reaping fields, and `local_forgotten`.
 

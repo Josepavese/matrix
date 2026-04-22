@@ -2,11 +2,10 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
@@ -25,68 +24,15 @@ func (m *Manager) handleSessionCapabilitiesTyped(ctx context.Context, req middle
 	}
 	report, err := reporter.AgentCapabilities(ctx, agentID)
 	if err != nil {
+		if isAgentNotFound(err) {
+			return agentNotFoundCapabilitiesResult(agentID), nil
+		}
 		return middleware.SessionActionResult{}, err
 	}
 	return middleware.SessionActionResult{
 		Action:       "capabilities",
 		Message:      "Provider capabilities loaded.",
 		Capabilities: &report,
-	}, nil
-}
-
-func (m *Manager) handleSessionForkTyped(ctx context.Context, req middleware.SessionActionRequest) (middleware.SessionActionResult, error) {
-	meta, err := m.resolveActionSession(req)
-	if err != nil {
-		return middleware.SessionActionResult{}, err
-	}
-	if strings.TrimSpace(meta.AgentSessionID) == "" {
-		return middleware.SessionActionResult{}, fmt.Errorf("session %s has no remote session id to fork", meta.ID)
-	}
-	forker, ok := m.router.(middleware.AgentSessionForker)
-	if !ok {
-		return unsupportedForkResult(meta, "router does not expose session fork"), nil
-	}
-	child, err := forker.ForkAgentSession(ctx, meta.AgentID, middleware.SessionForkRequest{
-		RemoteSessionID: meta.AgentSessionID,
-		WorkspacePath:   firstNonEmpty(req.WorkspacePath, meta.WorkspacePath),
-	})
-	if err != nil {
-		return unsupportedForkResult(meta, err.Error()), nil
-	}
-	childMeta := meta
-	childMeta.ID = uuid.New().String()
-	childMeta.AgentSessionID = child.RemoteSessionID
-	childMeta.CreatedAt = time.Now().UTC()
-	childMeta.Alias = ""
-	childMeta.RemoteTitle = child.Title
-	childMeta.RemoteStatus = child.Status
-	childMeta.LastSyncedAt = time.Now().UTC()
-	childMeta.RemoteUpdatedAt = time.Time{}
-	childMeta.PendingHandoff = nil
-	childMeta.LastHandoff = nil
-	if child.UpdatedAt != "" {
-		if parsed, err := time.Parse(time.RFC3339, child.UpdatedAt); err == nil {
-			childMeta.RemoteUpdatedAt = parsed
-		}
-	}
-	if err := m.saveSessionMeta(childMeta); err != nil {
-		return middleware.SessionActionResult{}, err
-	}
-	if err := m.updateChannelState(req.ChannelID, childMeta.ID); err != nil {
-		return middleware.SessionActionResult{}, err
-	}
-	if err := m.indexSessionWorkspace(childMeta); err != nil {
-		return middleware.SessionActionResult{}, err
-	}
-	return middleware.SessionActionResult{
-		Action:          "fork",
-		Message:         fmt.Sprintf("Forked session: %s", childMeta.ID),
-		ActiveSessionID: childMeta.ID,
-		Session:         m.toSessionEntry(childMeta, true),
-		Fork: &middleware.SessionForkResult{
-			ParentRemoteSessionID: meta.AgentSessionID,
-			Child:                 &child,
-		},
 	}, nil
 }
 
@@ -193,15 +139,31 @@ func (m *Manager) activeAgentClientRefs() ([]middleware.AgentClientRef, error) {
 	return out, nil
 }
 
-func unsupportedForkResult(meta SessionMeta, reason string) middleware.SessionActionResult {
+func isAgentNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, middleware.ErrAgentNotFound) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found in registry") ||
+		strings.Contains(msg, "configuration not found in registry") ||
+		strings.Contains(msg, "agent not found")
+}
+
+func agentNotFoundCapabilitiesResult(agentID string) middleware.SessionActionResult {
 	return middleware.SessionActionResult{
-		Action:      "fork",
-		Message:     "Session fork is unsupported by this provider.",
+		Action:      "capabilities",
+		Message:     "Agent id is not registered.",
 		Unsupported: true,
-		Fork: &middleware.SessionForkResult{
-			ParentRemoteSessionID: meta.AgentSessionID,
-			Unsupported:           true,
-			Reason:                reason,
+		Error: &middleware.SessionActionError{
+			Code:    "agent_not_found",
+			Message: "agent id is not registered",
+			Target:  agentID,
+		},
+		Capabilities: &middleware.ProviderCapabilityReport{
+			AgentID: agentID,
 		},
 	}
 }

@@ -36,7 +36,7 @@ func (m *Manager) reapAgentClientAfterLocalCleanup(ctx context.Context, req sess
 }
 
 func (m *Manager) allowProcessRetention(meta SessionMeta, result *middleware.SessionCleanupResult) bool {
-	if meta.Ephemeral {
+	if meta.Ephemeral && strings.TrimSpace(meta.ParentSessionID) == "" {
 		return false
 	}
 	hasReferences, err := m.hasOtherAgentClientReferences(meta)
