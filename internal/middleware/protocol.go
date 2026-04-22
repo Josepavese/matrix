@@ -116,6 +116,20 @@ type ConversationSessionControl interface {
 	DeleteRemoteSession(ctx context.Context, remoteSessionID string) error
 }
 
+// SessionMaterializeRequest asks a provider client to allocate a real remote
+// session without running an LLM turn.
+type SessionMaterializeRequest struct {
+	LogicalSessionID string
+	WorkspacePath    string
+	Tools            []Tool
+}
+
+// ConversationSessionMaterializer is implemented by protocol clients that can
+// create a remote session handle without prompt replay.
+type ConversationSessionMaterializer interface {
+	MaterializeRemoteSession(ctx context.Context, req SessionMaterializeRequest) (RemoteSessionInfo, ConversationMetadata, error)
+}
+
 // ConversationHealth is an optional interface for cached clients that can report liveness.
 type ConversationHealth interface {
 	Alive() bool
@@ -150,6 +164,12 @@ type AgentWorkspaceSessionController interface {
 	CancelAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error
 	CloseAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error
 	DeleteAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error
+}
+
+// AgentSessionMaterializer is a router-level facade for creating remote session
+// handles without running prompt content through the provider.
+type AgentSessionMaterializer interface {
+	MaterializeAgentSession(ctx context.Context, agentID string, req SessionMaterializeRequest) (RemoteSessionInfo, ConversationMetadata, error)
 }
 
 // AgentCapabilityReporter reports protocol lifecycle support without forcing

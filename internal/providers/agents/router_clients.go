@@ -127,6 +127,18 @@ func (r *Router) DeleteAgentSessionForWorkspace(ctx context.Context, agentID str
 	return controller.DeleteRemoteSession(ctx, remoteSessionID)
 }
 
+func (r *Router) MaterializeAgentSession(ctx context.Context, agentID string, req middleware.SessionMaterializeRequest) (middleware.RemoteSessionInfo, middleware.ConversationMetadata, error) {
+	client, err := r.getOrCreateClient(ctx, agentID, r.effectiveCwd(req.WorkspacePath))
+	if err != nil {
+		return middleware.RemoteSessionInfo{}, middleware.ConversationMetadata{}, err
+	}
+	materializer, ok := client.(middleware.ConversationSessionMaterializer)
+	if !ok {
+		return middleware.RemoteSessionInfo{}, middleware.ConversationMetadata{}, fmt.Errorf("agent %s does not expose remote session materialization", agentID)
+	}
+	return materializer.MaterializeRemoteSession(ctx, req)
+}
+
 func (r *Router) getOrCreateClient(ctx context.Context, agentID string, cwd string) (middleware.ConversationClient, error) {
 	key := clientCacheKey(agentID, cwd)
 	log := slog.With("component", "agent_router", "agent", agentID, "cwd", cwd)

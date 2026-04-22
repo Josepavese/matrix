@@ -1134,3 +1134,36 @@ func TestHandleSessionActions_TypedAgentNotFoundUses404(t *testing.T) {
 		t.Fatalf("unexpected typed error response: %+v", resp)
 	}
 }
+
+func TestHandleSessionActions_TypedMissingRemoteSessionUses409(t *testing.T) {
+	router := &mockSessionRouter{typedResult: middleware.SessionActionResult{
+		Action:      "fork",
+		Unsupported: true,
+		Error: &middleware.SessionActionError{
+			Code:    "missing_remote_session_id",
+			Message: "session has no remote session id to fork",
+			Target:  "logical-parent",
+		},
+		Fork: &middleware.SessionForkResult{
+			ParentLogicalSessionID: "logical-parent",
+			Unsupported:            true,
+			Reason:                 "router does not expose remote session materialization",
+		},
+	}}
+	_, mux := setupServer(router, "", "")
+	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "fork", "target": "logical-parent"})
+	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp middleware.SessionActionResult
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response parse error: %v", err)
+	}
+	if resp.Error == nil || resp.Error.Code != "missing_remote_session_id" || resp.Fork == nil || !resp.Fork.Unsupported {
+		t.Fatalf("unexpected typed missing remote response: %+v", resp)
+	}
+}

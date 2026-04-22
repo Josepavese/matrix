@@ -288,10 +288,17 @@ Channels and HTTP can request `action=capabilities`, `action=fork`, and `action=
 Fork is safe for automation when callers set `make_active=false`. Matrix mirrors
 the child, keeps or restores the parent as active, and returns
 `fork.parent_restored=true` when the channel active session is preserved. If the
-request includes `input`, Matrix routes exactly one child turn and returns the
-raw child response as `fork.artifact.content`; when `ephemeral=true` or
-`cleanup_policy` is supplied, Matrix then cleans the child and returns
-`fork.cleanup`. Matrix still does not evaluate or interpret the artifact.
+logical parent exists but has not yet opened a provider session, Matrix first
+materializes a real remote parent session through the provider session API. It
+does not fake fork by replaying prompt history. If the request includes `input`,
+Matrix routes exactly one child turn and returns the raw child response as
+`fork.artifact.content`; when `ephemeral=true` or `cleanup_policy` is supplied,
+Matrix then cleans the child and returns `fork.cleanup`. Matrix still does not
+evaluate or interpret the artifact.
+
+If parent materialization is impossible, Matrix returns typed blocked evidence
+instead of a generic server failure. Current codes include
+`missing_remote_session_id` and `remote_session_materialize_failed`.
 
 The A2A ingress is implemented with the official Go SDK:
 
