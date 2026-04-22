@@ -61,27 +61,22 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		}
 	}
 
+	caps := acpSessionCapabilities(initResp)
 	return &acpConversationClient{
-		client:               client,
-		handler:              handler,
-		cwd:                  deps.Cwd,
-		listSessionSupport:   supportsSessionCapability(initResp, "list"),
-		loadSessionSupport:   supportsLoadSession(initResp),
-		closeSessionSupport:  supportsSessionCapability(initResp, "close"),
-		deleteSessionSupport: supportsSessionCapability(initResp, "delete"),
-		loadedSessions:       map[string]bool{},
+		client:              client,
+		handler:             handler,
+		cwd:                 deps.Cwd,
+		sessionCapabilities: caps,
+		loadedSessions:      map[string]bool{},
 	}, nil
 }
 
 type acpConversationClient struct {
-	client               ACPClient
-	handler              *defaultRequestHandler
-	cwd                  string
-	listSessionSupport   bool
-	loadSessionSupport   bool
-	closeSessionSupport  bool
-	deleteSessionSupport bool
-	loadedSessions       map[string]bool
+	client              ACPClient
+	handler             *defaultRequestHandler
+	cwd                 string
+	sessionCapabilities middleware.ConversationSessionCapabilities
+	loadedSessions      map[string]bool
 }
 
 func (c *acpConversationClient) Alive() bool {
@@ -117,7 +112,7 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 				log.Warn("failed to set ACP mode", "mode", modeID, "error", err)
 			}
 		}
-	} else if c.loadSessionSupport && !c.loadedSessions[remoteSessionID] {
+	} else if c.sessionCapabilities.Load && !c.loadedSessions[remoteSessionID] {
 		obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier}
 		if err := c.client.LoadSession(ctx, acpLoadSessionRequest{
 			SessionID:  remoteSessionID,
@@ -184,11 +179,11 @@ func (c *acpConversationClient) turnCwd(turn middleware.ConversationTurn) string
 }
 
 func (c *acpConversationClient) SessionCapabilities() middleware.ConversationSessionCapabilities {
-	return middleware.ConversationSessionCapabilities{List: c.listSessionSupport, Load: c.loadSessionSupport, Cancel: true, Close: c.closeSessionSupport, Delete: c.deleteSessionSupport}
+	return c.sessionCapabilities
 }
 
 func (c *acpConversationClient) ListRemoteSessions(ctx context.Context) ([]middleware.RemoteSessionInfo, error) {
-	if !c.listSessionSupport {
+	if !c.sessionCapabilities.List {
 		return nil, fmt.Errorf("ACP agent does not advertise session/list")
 	}
 	resp, err := c.client.ListSessions(ctx)
@@ -203,8 +198,8 @@ func (c *acpConversationClient) ListRemoteSessions(ctx context.Context) ([]middl
 			Title:           session.Title,
 			UpdatedAt:       session.UpdatedAt,
 			ProtocolKind:    middleware.ProtocolKindACP,
-			CanResume:       c.loadSessionSupport,
-			CanDelete:       c.deleteSessionSupport,
+			CanResume:       c.sessionCapabilities.Load || c.sessionCapabilities.Resume,
+			CanDelete:       c.sessionCapabilities.Delete,
 		})
 	}
 	return out, nil
@@ -220,7 +215,7 @@ func (c *acpConversationClient) GetRemoteSession(ctx context.Context, remoteSess
 			return session, nil
 		}
 	}
-	if c.loadSessionSupport {
+	if c.sessionCapabilities.Load {
 		if err := c.client.LoadSession(ctx, acpLoadSessionRequest{
 			SessionID:  remoteSessionID,
 			Cwd:        c.cwd,
@@ -231,8 +226,8 @@ func (c *acpConversationClient) GetRemoteSession(ctx context.Context, remoteSess
 				RemoteSessionID: remoteSessionID,
 				DisplayID:       remoteSessionID,
 				ProtocolKind:    middleware.ProtocolKindACP,
-				CanResume:       c.loadSessionSupport,
-				CanDelete:       c.deleteSessionSupport,
+				CanResume:       c.sessionCapabilities.Load || c.sessionCapabilities.Resume,
+				CanDelete:       c.sessionCapabilities.Delete,
 			}, nil
 		}
 	}
@@ -240,7 +235,7 @@ func (c *acpConversationClient) GetRemoteSession(ctx context.Context, remoteSess
 }
 
 func (c *acpConversationClient) DeleteRemoteSession(ctx context.Context, remoteSessionID string) error {
-	if !c.deleteSessionSupport {
+	if !c.sessionCapabilities.Delete {
 		return fmt.Errorf("ACP agent does not advertise session/delete")
 	}
 	if err := c.client.DeleteSession(ctx, remoteSessionID); err != nil {
@@ -258,7 +253,7 @@ func (c *acpConversationClient) CancelRemoteSession(ctx context.Context, remoteS
 }
 
 func (c *acpConversationClient) CloseRemoteSession(ctx context.Context, remoteSessionID string) error {
-	if !c.closeSessionSupport {
+	if !c.sessionCapabilities.Close {
 		return fmt.Errorf("ACP agent does not advertise session/close")
 	}
 	if strings.TrimSpace(remoteSessionID) == "" {

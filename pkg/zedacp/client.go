@@ -349,6 +349,18 @@ func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
 	return err
 }
 
+func (c *Client) ForkSession(ctx context.Context, req ForkSessionRequest) (*ForkSessionResponse, error) {
+	resp, err := c.doCall(ctx, "session/fork", req)
+	if err != nil {
+		return nil, err
+	}
+	var res ForkSessionResponse
+	if err := json.Unmarshal(resp.Result, &res); err != nil {
+		return nil, fmt.Errorf("failed to decode session/fork response: %w", err)
+	}
+	return &res, nil
+}
+
 func (c *Client) logInbound(raw map[string]interface{}, msgBytes []byte) {
 	log := slog.With("component", "zedacp_client")
 	if method, ok := raw["method"].(string); ok {

@@ -136,6 +136,9 @@ type SessionCleanupResult struct {
 	ProtocolKind            string `json:"protocol_kind,omitempty"`
 	CleanupPolicy           string `json:"cleanup_policy,omitempty"`
 	Clean                   bool   `json:"clean"`
+	StrongCleanup           bool   `json:"strong_cleanup"`
+	CleanupStrength         string `json:"cleanup_strength,omitempty"`
+	WeakCleanupReason       string `json:"weak_cleanup_reason,omitempty"`
 	RemoteDeleteAttempted   bool   `json:"remote_delete_attempted"`
 	RemoteDeleted           bool   `json:"remote_deleted"`
 	RemoteDeleteUnsupported bool   `json:"remote_delete_unsupported,omitempty"`
@@ -156,13 +159,17 @@ type SessionCleanupResult struct {
 
 // SessionActionResult is the typed, reusable result for session lifecycle operations.
 type SessionActionResult struct {
-	Action          string                `json:"action"`
-	Message         string                `json:"message,omitempty"`
-	ActiveSessionID string                `json:"active_session_id,omitempty"`
-	Session         *SessionEntry         `json:"session,omitempty"`
-	Sessions        []SessionEntry        `json:"sessions,omitempty"`
-	RemoteSessions  []RemoteSessionInfo   `json:"remote_sessions,omitempty"`
-	Cleanup         *SessionCleanupResult `json:"cleanup,omitempty"`
+	Action          string                      `json:"action"`
+	Message         string                      `json:"message,omitempty"`
+	Unsupported     bool                        `json:"unsupported,omitempty"`
+	ActiveSessionID string                      `json:"active_session_id,omitempty"`
+	Session         *SessionEntry               `json:"session,omitempty"`
+	Sessions        []SessionEntry              `json:"sessions,omitempty"`
+	RemoteSessions  []RemoteSessionInfo         `json:"remote_sessions,omitempty"`
+	Cleanup         *SessionCleanupResult       `json:"cleanup,omitempty"`
+	Capabilities    *ProviderCapabilityReport   `json:"capabilities,omitempty"`
+	Fork            *SessionForkResult          `json:"fork,omitempty"`
+	Reconcile       *AgentClientReconcileResult `json:"reconcile,omitempty"`
 }
 
 // WorkspaceActionRequest is the typed, channel-neutral request envelope for workspace control.

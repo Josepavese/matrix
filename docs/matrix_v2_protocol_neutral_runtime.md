@@ -268,10 +268,16 @@ Current behavior:
 - ACP remote sessions are enumerated through `session/list`, resumed through `session/load`, and can be deleted when the provider advertises draft `sessionCapabilities.delete`
 - ACP remote sessions can be closed when the provider advertises preview `sessionCapabilities.close`; Matrix uses this before `session/cancel` when `session/delete` is unavailable
 - ACP remote sessions can also be interrupted through `session/cancel`, which Matrix sends as a JSON-RPC notification
+- ACP lifecycle support is reported through a protocol-neutral capability model with `supported`, `status`, `stability`, and `source` for `list`, `info_update`, `load`, `cancel`, `close`, `delete`, `resume`, and `fork`
+- ACP `session/fork` is wired only as a Draft capability-gated operation; Matrix returns typed unsupported results unless the provider advertises it
 - A2A remote tasks are enumerated through `ListTasks`, imported through `GetTask`, and deleted through `CancelTask`
 - channel users do not select ACP or A2A explicitly; Matrix resolves the provider from SSOT and the active session
 
-As of 2026-04-18, Zed ACP exposes `session/list` in the stable schema, `session/close` as Preview RFD, and `session/delete` as Draft RFD. Matrix therefore treats delete and close as capability-gated provider features, not assumptions.
+As of 2026-04-22, Zed ACP exposes `session/list` and `session_info_update` as stable, `session/resume` and `session/close` as Preview RFDs, and `session/fork` plus `session/delete` as Draft RFD capability-gated provider features. Matrix records this lifecycle state instead of collapsing it into booleans.
+
+Cleanup is also capability-aware. For ephemeral interrupt/resume flows, `clean=true` requires at least one strong provider or process proof: `remote_deleted`, `remote_closed`, `remote_canceled`, or `process_reaped`. Local-only forgetting is reported as failed or weak evidence, not as strong cleanup. Non-ephemeral retained clients can still be operationally clean, but carry `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`.
+
+Channels and HTTP can request `action=capabilities`, `action=fork`, and `action=reconcile` through the same `/v1/session-actions` contract. `reconcile` closes cached provider clients that no longer have a Matrix vault session reference.
 
 The A2A ingress is implemented with the official Go SDK:
 
@@ -325,6 +331,25 @@ Until then:
 
 - use ACP by default
 - keep A2A available without making it the primary recommended path
+
+### Real Provider Lifecycle Probe
+
+The 2026-04-22 lifecycle probe was executed through the installed Matrix binary
+against real ACP agents, not mocks:
+
+- `opencode`: advertised ACP lifecycle capabilities for list, load,
+  `session_info_update`, resume, fork, and cancel; Matrix executed a real
+  `session/fork`, received the child remote session id, reconciled cached
+  clients, and cleaned ephemeral runs with strong proof.
+- `codex` through `codex-acp`: advertised list, load, `session_info_update`,
+  close, and cancel; Matrix reported fork/delete as unsupported instead of
+  simulating them, and cleanup completed with remote/process proof.
+- `gemini` through Gemini CLI ACP: advertised load and cancel only; Matrix
+  reported list/info-update/resume/close/fork/delete as unsupported and cleaned
+  runs through cancel plus process proof.
+
+This is the intended contract: Matrix exposes one channel-neutral lifecycle
+surface, but every provider action remains capability-gated and evidence-based.
 
 ## Design Rules
 

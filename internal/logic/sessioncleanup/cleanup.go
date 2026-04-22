@@ -9,6 +9,15 @@ import (
 const NoMatchingCachedAgentClient = "no matching cached agent client"
 const OtherLocalSessionsStillReferenceAgentClient = "other local sessions still reference agent client"
 const FailureAgentStartContextCancelledDuringCleanup = "agent_start_context_cancelled_during_cleanup"
+const WeakCleanupNoRemoteOrProcessProof = "cleanup_clean_without_remote_or_process_proof"
+const WeakCleanupProcessRetained = "process_retained"
+
+const (
+	StrengthStrong   = "strong"
+	StrengthWeak     = "weak"
+	StrengthRetained = "retained"
+	StrengthFailed   = "failed"
+)
 
 type CleanInput struct {
 	Ephemeral               bool
@@ -116,7 +125,40 @@ func IsClean(input CleanInput) bool {
 		input.ProcessReaped ||
 		(input.ProcessRetained && input.ProcessRetentionAllowed) ||
 		(!input.ProcessRetained && input.ProcessRetentionReason == NoMatchingCachedAgentClient)
-	return input.LocalForgotten && remoteClean && processClean
+	if !input.LocalForgotten || !remoteClean || !processClean {
+		return false
+	}
+	if input.Ephemeral && !HasStrongProof(input) {
+		return false
+	}
+	return true
+}
+
+func HasStrongProof(input CleanInput) bool {
+	return input.RemoteDeleted || input.RemoteClosed || input.RemoteCanceled || input.ProcessReaped
+}
+
+func Strength(input CleanInput) string {
+	if !IsClean(input) {
+		return StrengthFailed
+	}
+	if HasStrongProof(input) {
+		return StrengthStrong
+	}
+	if input.ProcessRetained && input.ProcessRetentionAllowed {
+		return StrengthRetained
+	}
+	return StrengthWeak
+}
+
+func WeakReason(input CleanInput) string {
+	if HasStrongProof(input) {
+		return ""
+	}
+	if input.ProcessRetained {
+		return WeakCleanupProcessRetained
+	}
+	return WeakCleanupNoRemoteOrProcessProof
 }
 
 func Message(action string, cleanup middleware.SessionCleanupResult) string {
@@ -139,6 +181,9 @@ func Metadata(cleanup middleware.SessionCleanupResult) map[string]interface{} {
 		"protocol_kind":             cleanup.ProtocolKind,
 		"cleanup_policy":            cleanup.CleanupPolicy,
 		"clean":                     cleanup.Clean,
+		"strong_cleanup":            cleanup.StrongCleanup,
+		"cleanup_strength":          cleanup.CleanupStrength,
+		"weak_cleanup_reason":       cleanup.WeakCleanupReason,
 		"remote_delete_attempted":   cleanup.RemoteDeleteAttempted,
 		"remote_deleted":            cleanup.RemoteDeleted,
 		"remote_delete_unsupported": cleanup.RemoteDeleteUnsupported,

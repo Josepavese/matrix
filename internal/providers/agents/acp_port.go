@@ -21,6 +21,8 @@ type (
 	acpNewSessionRequest    = zedacp.NewSessionRequest
 	acpNewSessionResponse   = zedacp.NewSessionResponse
 	acpLoadSessionRequest   = zedacp.LoadSessionRequest
+	acpForkSessionRequest   = zedacp.ForkSessionRequest
+	acpForkSessionResponse  = zedacp.ForkSessionResponse
 	acpListSessionsResponse = zedacp.ListSessionsResponse
 	acpMcpServerConfig      = zedacp.McpServerConfig
 	acpTool                 = zedacp.Tool
@@ -42,6 +44,7 @@ type acpClient interface {
 	CancelSession(ctx context.Context, sessionID string) error
 	CloseSession(ctx context.Context, sessionID string) error
 	DeleteSession(ctx context.Context, sessionID string) error
+	ForkSession(ctx context.Context, req acpForkSessionRequest) (*acpForkSessionResponse, error)
 	Prompt(ctx context.Context, req acpPromptRequest, observer acpSessionObserver) (*acpPromptResponse, error)
 	SetMode(ctx context.Context, sessionID, modeID string) error
 }

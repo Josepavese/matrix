@@ -108,6 +108,33 @@ func TestRouter_ReapAgentClientClosesExactWorkspaceClient(t *testing.T) {
 	}
 }
 
+func TestRouter_ReconcileAgentClientsReapsUnreferencedClients(t *testing.T) {
+	router := NewRouter(nil)
+	kept := &closableClient{}
+	reaped := &closableClient{}
+	router.clients[clientCacheKey("opencode", "/tmp/active")] = kept
+	router.clients[clientCacheKey("codex", "/tmp/stale")] = reaped
+
+	result, err := router.ReconcileAgentClients(context.Background(), []middleware.AgentClientRef{
+		{AgentID: "opencode", WorkspacePath: "/tmp/active"},
+	})
+	if err != nil {
+		t.Fatalf("ReconcileAgentClients: %v", err)
+	}
+	if kept.closed {
+		t.Fatalf("active client must be retained")
+	}
+	if !reaped.closed {
+		t.Fatalf("stale client must be closed")
+	}
+	if len(result.Reaped) != 1 || result.Reaped[0].AgentID != "codex" {
+		t.Fatalf("unexpected reaped refs: %+v", result.Reaped)
+	}
+	if len(result.Retained) != 1 || result.Retained[0].AgentID != "opencode" {
+		t.Fatalf("unexpected retained refs: %+v", result.Retained)
+	}
+}
+
 type controlClient struct {
 	deleted []string
 }

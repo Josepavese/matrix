@@ -141,7 +141,7 @@ func (m *Manager) cleanupSessionMirrorAndRemote(ctx context.Context, req session
 	m.cleanupRemoteSession(ctx, req.Meta, policy, &result)
 	m.cleanupLocalMirror(req, result.RemoteDeleted, &result)
 	m.reapAgentClientAfterLocalCleanup(ctx, req, &result)
-	result.Clean = sessioncleanup.IsClean(sessioncleanup.CleanInput{
+	cleanInput := sessioncleanup.CleanInput{
 		Ephemeral:               req.Meta.Ephemeral,
 		RemoteSessionID:         result.RemoteSessionID,
 		CleanupPolicy:           result.CleanupPolicy,
@@ -154,7 +154,19 @@ func (m *Manager) cleanupSessionMirrorAndRemote(ctx context.Context, req session
 		ProcessRetentionAllowed: result.ProcessRetentionAllowed,
 		ProcessRetentionReason:  result.ProcessRetentionReason,
 		LocalForgotten:          result.LocalForgotten,
-	})
+	}
+	result.Clean = sessioncleanup.IsClean(cleanInput)
+	result.StrongCleanup = result.Clean && sessioncleanup.HasStrongProof(cleanInput)
+	result.CleanupStrength = sessioncleanup.Strength(cleanInput)
+	if result.Clean && !result.StrongCleanup {
+		result.WeakCleanupReason = sessioncleanup.WeakReason(cleanInput)
+	}
+	if !result.Clean && result.FailureCode == "" && !sessioncleanup.HasStrongProof(cleanInput) {
+		result.FailureCode = sessioncleanup.WeakReason(cleanInput)
+	}
+	if result.Clean && result.FailureCode == "" {
+		result.Error = ""
+	}
 	m.recordWorkspaceEvent(req.Meta, "session.cleanup", req.ChannelID, "Cleaned up session", "session-cleanup", sessioncleanup.Metadata(result))
 	return result
 }

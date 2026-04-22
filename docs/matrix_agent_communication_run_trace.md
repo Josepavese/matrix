@@ -78,6 +78,8 @@ Every response includes:
     "logical_session_id": "optional",
     "remote_session_id": "optional",
     "clean": true,
+    "strong_cleanup": true,
+    "cleanup_strength": "strong",
     "remote_deleted": false,
     "remote_closed": false,
     "remote_canceled": true,
@@ -91,7 +93,9 @@ Every response includes:
 }
 ```
 
-`cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, process fields, and `failure_code` instead of inferring cleanup from HTTP status alone. Cleanup after `/v1/runs/{run_id}/actions` `cancel` uses a bounded context detached from the canceled run context, so remote cleanup and process reap are not run under an already-canceled context.
+`cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, process fields, and `failure_code` instead of inferring cleanup from HTTP status alone. Cleanup after `/v1/runs/{run_id}/actions` `cancel` uses a bounded context detached from the canceled run context, so remote cleanup and process reap are not run under an already-canceled context.
+
+`clean=true` means Matrix reached an operational cleanup state for that lifecycle. `strong_cleanup=true` means Matrix has hard evidence from the provider or OS process layer. For ephemeral interrupt/resume flows, Matrix requires strong proof; local-only forgetting fails with `failure_code=cleanup_clean_without_remote_or_process_proof`. For non-ephemeral shared sessions, retained clients are allowed but explicitly marked with `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`.
 
 ## Canonical State
 
@@ -204,11 +208,18 @@ Tool events use stable correlation fields:
 
 - `tool_call_id`: stable id shared by `tool.call.requested` and related `tool.result.received` updates;
 - `tool_name`: normalized tool name such as `write_file`, `read_file`, `edit_file`, `search`, `list_files`, or `shell`;
-- `tool_kind`: frontend category such as `read`, `edit`, `delete`, `move`, `search`, `execute`, `fetch`, or `other`;
+- `tool_kind`: ACP-aligned primary category: `read`, `edit`, `delete`, `move`, `search`, `execute`, `think`, `fetch`, `switch_mode`, or `other`;
+- `tool_semantic_kind`: optional provider-neutral semantic class such as `validate`, `vcs`, `network`, or `agent` when the provider or upstream event supplies it;
+- `tool_effect`: structural effect class such as `read_only`, `write`, `execute`, `control`, or `unknown`;
+- `tool_subject_kind`: target subject such as `workspace`, `filesystem`, `process`, `network`, `agent_session`, `agent_reasoning`, or `unknown`;
+- `tool_classification_source`: `protocol_metadata`, `heuristic_fallback`, or `unknown`;
+- `tool_classification_confidence`: `high` for protocol metadata, `low` for heuristic fallback;
 - `summary`: short safe UI text;
 - `inputs`: structured safe input fields;
 - `outputs`: structured safe output fields;
 - `artifact_refs`: externally addressable artifacts when known.
+
+Downstream consumers should trust `tool_kind` and the structural fields first. Name/content heuristics are only a fallback and are marked low confidence so external systems do not need provider-specific string parsing.
 
 Permission events use stable correlation fields:
 

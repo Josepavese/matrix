@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jose/matrix-v2/internal/logic/onboarding"
+	"github.com/jose/matrix-v2/internal/logic/sessioncleanup"
 	"github.com/jose/matrix-v2/internal/logic/workspace"
 	"github.com/jose/matrix-v2/internal/middleware"
 )
@@ -1345,6 +1346,9 @@ func TestSessionManager_CleanupFallsBackToCancelAndForgetsLocalMirror(t *testing
 	if !proof.Clean {
 		t.Fatalf("expected clean cleanup proof: %+v", proof)
 	}
+	if !proof.StrongCleanup || proof.CleanupStrength != sessioncleanup.StrengthStrong || proof.Error != "" {
+		t.Fatalf("expected strong clean fallback without terminal error: %+v", proof)
+	}
 	if len(router.deleted) != 1 || router.deleted[0] != "ses_eval_remote" {
 		t.Fatalf("expected delete attempt, got %+v", router.deleted)
 	}
@@ -1435,6 +1439,9 @@ func TestSessionManager_CleanupPrefersCloseBeforeCancelWhenDeleteUnsupported(t *
 	}
 	if !proof.LocalForgotten || !proof.ProcessReapAttempted || !proof.ProcessReaped || !proof.Clean {
 		t.Fatalf("expected clean local/process cleanup proof: %+v", proof)
+	}
+	if !proof.StrongCleanup || proof.CleanupStrength != sessioncleanup.StrengthStrong || proof.Error != "" {
+		t.Fatalf("expected strong clean close fallback without terminal error: %+v", proof)
 	}
 	if len(router.closed) != 1 || router.closed[0] != "ses_eval_remote_close" {
 		t.Fatalf("expected close fallback, got %+v", router.closed)

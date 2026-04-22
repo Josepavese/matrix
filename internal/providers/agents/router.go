@@ -350,6 +350,11 @@ func toolUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
 	meta["acp"] = map[string]interface{}{
 		"session_id":     notif.SessionID,
 		"session_update": notif.Update.SessionUpdate,
+		"tool_call_id":   notif.Update.ToolCallID,
+		"tool_kind":      notif.Update.Kind,
+		"status":         notif.Update.Status,
+		"raw_input":      notif.Update.RawInput,
+		"locations":      notif.Update.Locations,
 		"content": map[string]interface{}{
 			"type": notif.Update.Content.Type,
 			"text": notif.Update.Content.Text,
@@ -363,6 +368,22 @@ func toolUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
 	}
 	if strings.TrimSpace(notif.SessionID) != "" {
 		meta["remote_session_id"] = notif.SessionID
+	}
+	if strings.TrimSpace(notif.Update.ToolCallID) != "" {
+		meta["tool_call_id"] = notif.Update.ToolCallID
+	}
+	if strings.TrimSpace(notif.Update.Kind) != "" {
+		meta["tool_kind"] = notif.Update.Kind
+		meta["acp_tool_kind"] = notif.Update.Kind
+	}
+	if strings.TrimSpace(notif.Update.Status) != "" {
+		meta["status"] = notif.Update.Status
+	}
+	if len(notif.Update.RawInput) > 0 {
+		meta["raw_input"] = notif.Update.RawInput
+	}
+	if len(notif.Update.Locations) > 0 {
+		meta["locations"] = notif.Update.Locations
 	}
 	for k, v := range notif.Update.Meta {
 		meta[k] = v
