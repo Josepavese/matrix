@@ -62,24 +62,47 @@ type ConversationClient interface {
 // RemoteSessionID is the opaque identifier Matrix must persist and reuse.
 // DisplayID is the human-facing stable token shown in channels for switch/delete flows.
 type RemoteSessionInfo struct {
-	RemoteSessionID string
-	DisplayID       string
-	Title           string
-	Status          string
-	UpdatedAt       string
-	ProtocolKind    ProtocolKind
-	CanResume       bool
-	CanDelete       bool
+	RemoteSessionID string       `json:"remote_session_id,omitempty"`
+	DisplayID       string       `json:"display_id,omitempty"`
+	Title           string       `json:"title,omitempty"`
+	Status          string       `json:"status,omitempty"`
+	UpdatedAt       string       `json:"updated_at,omitempty"`
+	ProtocolKind    ProtocolKind `json:"protocol_kind,omitempty"`
+	CanResume       bool         `json:"can_resume,omitempty"`
+	CanDelete       bool         `json:"can_delete,omitempty"`
+}
+
+// CapabilityDescriptor is the protocol-neutral SSOT for a provider capability.
+// Boolean fields on ConversationSessionCapabilities remain convenience shortcuts;
+// this descriptor carries the stability/source required for safe orchestration.
+type CapabilityDescriptor struct {
+	Name      string `json:"name,omitempty"`
+	Supported bool   `json:"supported"`
+	Status    string `json:"status,omitempty"`
+	Stability string `json:"stability,omitempty"`
+	Source    string `json:"source,omitempty"`
+	Detail    string `json:"detail,omitempty"`
+}
+
+// ProviderCapabilityReport is a channel-safe provider capability snapshot.
+type ProviderCapabilityReport struct {
+	AgentID      string                          `json:"agent_id,omitempty"`
+	ProtocolKind ProtocolKind                    `json:"protocol_kind,omitempty"`
+	Session      map[string]CapabilityDescriptor `json:"session,omitempty"`
 }
 
 // ConversationSessionCapabilities declares which session lifecycle features
 // a protocol adapter can provide for a live client.
 type ConversationSessionCapabilities struct {
-	List   bool
-	Load   bool
-	Cancel bool
-	Close  bool
-	Delete bool
+	List       bool
+	Load       bool
+	Cancel     bool
+	Close      bool
+	Delete     bool
+	InfoUpdate bool
+	Resume     bool
+	Fork       bool
+	Details    map[string]CapabilityDescriptor
 }
 
 // ConversationSessionControl is an optional interface implemented by protocol clients
@@ -129,8 +152,60 @@ type AgentWorkspaceSessionController interface {
 	DeleteAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error
 }
 
+// AgentCapabilityReporter reports protocol lifecycle support without forcing
+// callers to infer provider behavior from failed lifecycle calls.
+type AgentCapabilityReporter interface {
+	AgentCapabilities(ctx context.Context, agentID string) (ProviderCapabilityReport, error)
+}
+
+// SessionForkRequest asks a provider to create a temporary child session from an
+// existing remote session. It is capability-gated because ACP session/fork is a
+// Draft RFD and not a production baseline.
+type SessionForkRequest struct {
+	RemoteSessionID string
+	WorkspacePath   string
+}
+
+// SessionForkResult records the provider-neutral outcome of a fork attempt.
+type SessionForkResult struct {
+	ParentRemoteSessionID string             `json:"parent_remote_session_id,omitempty"`
+	Child                 *RemoteSessionInfo `json:"child,omitempty"`
+	Unsupported           bool               `json:"unsupported,omitempty"`
+	Reason                string             `json:"reason,omitempty"`
+}
+
+// ConversationSessionForker is optionally implemented by providers that expose
+// true protocol-level temporary child sessions.
+type ConversationSessionForker interface {
+	ForkRemoteSession(ctx context.Context, req SessionForkRequest) (RemoteSessionInfo, error)
+}
+
+// AgentSessionForker is the router-level fork facade used by channels and HTTP.
+type AgentSessionForker interface {
+	ForkAgentSession(ctx context.Context, agentID string, req SessionForkRequest) (RemoteSessionInfo, error)
+}
+
 // AgentClientReaper is an optional router capability used by strict ephemeral
 // cleanup flows to close the cached protocol client bound to an agent/workspace.
 type AgentClientReaper interface {
 	ReapAgentClient(ctx context.Context, agentID string, workspacePath string) (bool, error)
+}
+
+// AgentClientRef identifies one cached provider client binding.
+type AgentClientRef struct {
+	AgentID       string `json:"agent_id,omitempty"`
+	WorkspacePath string `json:"workspace_path,omitempty"`
+}
+
+// AgentClientReconcileResult is the audit record for a cache reconciliation pass.
+type AgentClientReconcileResult struct {
+	Reaped   []AgentClientRef `json:"reaped,omitempty"`
+	Retained []AgentClientRef `json:"retained,omitempty"`
+}
+
+// AgentClientReconciler closes cached provider clients that have no remaining
+// Matrix vault references. It is used after batch/ephemeral work to prevent
+// process retention from being silently treated as strong cleanup proof.
+type AgentClientReconciler interface {
+	ReconcileAgentClients(ctx context.Context, active []AgentClientRef) (AgentClientReconcileResult, error)
 }

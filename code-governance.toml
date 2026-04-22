@@ -18,13 +18,17 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "cmd/matrix" = 3000
 "internal/logic/agentmgr" = 900
 "internal/logic/onboarding" = 1400
-"internal/logic/session" = 3600
+"internal/logic/runtrace" = 830
+# 2026-04-22: protocol-neutral lifecycle, fork, reconcile, and capability SSOT.
+"internal/logic/session" = 3850
 "internal/logic/workspace" = 850
-"internal/providers/agents" = 1700
-"internal/providers/runapi" = 900
+"internal/providers/agents" = 1950
+"internal/providers/runapi" = 930
+"pkg/zedacp" = 850
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390
+"internal/middleware/link.go" = 310
 "internal/logic/agentcatalog/service.go" = 330
 "internal/logic/agentdiscovery/discovery.go" = 430
 "internal/logic/onboarding/wizard.go" = 330

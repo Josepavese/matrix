@@ -20,12 +20,17 @@ type Notifier struct {
 }
 
 type toolContext struct {
-	EventID   string
-	ToolID    string
-	Name      string
-	Kind      string
-	Path      string
-	Operation string
+	EventID                  string
+	ToolID                   string
+	Name                     string
+	Kind                     string
+	SemanticKind             string
+	Effect                   string
+	SubjectKind              string
+	ClassificationSource     string
+	ClassificationConfidence string
+	Path                     string
+	Operation                string
 }
 
 func New(store *runtrace.Store, runID, agentID, protocol string) *Notifier {
@@ -124,6 +129,11 @@ func (n *Notifier) appendToolRequested(update middleware.ThoughtUpdate) {
 	event.ToolCallID = toolID
 	event.ToolName = tool.Name
 	event.ToolKind = tool.Kind
+	event.ToolSemanticKind = tool.SemanticKind
+	event.ToolEffect = tool.Effect
+	event.ToolSubjectKind = tool.SubjectKind
+	event.ToolClassificationSource = tool.ClassificationSource
+	event.ToolClassificationConfidence = tool.ClassificationConfidence
 	event.Summary = tool.Summary
 	event.Inputs = tool.Inputs
 	event.Metadata = frontendevents.Merge(event.Metadata, map[string]interface{}{
@@ -133,12 +143,17 @@ func (n *Notifier) appendToolRequested(update middleware.ThoughtUpdate) {
 	event.ProtocolMeta = frontendevents.ProtocolMeta(update.Metadata)
 	stored, _ := n.store.AppendEvent(event)
 	n.activeTool = toolContext{
-		EventID:   stored.ID,
-		ToolID:    toolID,
-		Name:      tool.Name,
-		Kind:      tool.Kind,
-		Path:      stringFromMap(tool.Inputs, "path"),
-		Operation: stringFromMap(tool.Inputs, "operation"),
+		EventID:                  stored.ID,
+		ToolID:                   toolID,
+		Name:                     tool.Name,
+		Kind:                     tool.Kind,
+		SemanticKind:             tool.SemanticKind,
+		Effect:                   tool.Effect,
+		SubjectKind:              tool.SubjectKind,
+		ClassificationSource:     tool.ClassificationSource,
+		ClassificationConfidence: tool.ClassificationConfidence,
+		Path:                     stringFromMap(tool.Inputs, "path"),
+		Operation:                stringFromMap(tool.Inputs, "operation"),
 	}
 }
 
@@ -154,6 +169,11 @@ func (n *Notifier) appendToolResult(update middleware.ThoughtUpdate) {
 	event.ToolCallID = toolID
 	event.ToolName = tool.Name
 	event.ToolKind = tool.Kind
+	event.ToolSemanticKind = tool.SemanticKind
+	event.ToolEffect = tool.Effect
+	event.ToolSubjectKind = tool.SubjectKind
+	event.ToolClassificationSource = tool.ClassificationSource
+	event.ToolClassificationConfidence = tool.ClassificationConfidence
 	event.Summary = tool.Summary
 	event.Inputs = tool.Inputs
 	event.Outputs = tool.Outputs

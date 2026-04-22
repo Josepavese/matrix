@@ -32,6 +32,7 @@ type ClientAPI interface {
 	CancelSession(ctx context.Context, sessionID string) error
 	CloseSession(ctx context.Context, sessionID string) error
 	DeleteSession(ctx context.Context, sessionID string) error
+	ForkSession(ctx context.Context, req ForkSessionRequest) (*ForkSessionResponse, error)
 	Prompt(ctx context.Context, req PromptRequest, observer SessionObserver) (*PromptResponse, error)
 	SetRequestHandler(handler RequestHandler)
 	SetMode(ctx context.Context, sessionID, modeID string) error
@@ -137,6 +138,16 @@ type LoadSessionRequest struct {
 	McpServers []McpServerConfig `json:"mcpServers"`
 }
 
+type ForkSessionRequest struct {
+	SessionID  string            `json:"sessionId"`
+	Cwd        string            `json:"cwd"`
+	McpServers []McpServerConfig `json:"mcpServers"`
+}
+
+type ForkSessionResponse struct {
+	SessionID string `json:"sessionId"`
+}
+
 type ListSessionsResponse struct {
 	Sessions []SessionInfo `json:"sessions"`
 }
@@ -199,6 +210,11 @@ type SessionUpdate struct {
 	Content       Content                `json:"content"`
 	Title         string                 `json:"title,omitempty"`
 	UpdatedAt     string                 `json:"updatedAt,omitempty"`
+	ToolCallID    string                 `json:"toolCallId,omitempty"`
+	Kind          string                 `json:"kind,omitempty"`
+	Status        string                 `json:"status,omitempty"`
+	RawInput      map[string]interface{} `json:"rawInput,omitempty"`
+	Locations     []interface{}          `json:"locations,omitempty"`
 	Meta          map[string]interface{} `json:"_meta,omitempty"`
 }
 

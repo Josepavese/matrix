@@ -7,13 +7,18 @@ import (
 )
 
 type ToolEvent struct {
-	Name         string
-	Kind         string
-	Status       string
-	Summary      string
-	Inputs       map[string]interface{}
-	Outputs      map[string]interface{}
-	ArtifactRefs []string
+	Name                     string
+	Kind                     string
+	SemanticKind             string
+	Effect                   string
+	SubjectKind              string
+	ClassificationSource     string
+	ClassificationConfidence string
+	Status                   string
+	Summary                  string
+	Inputs                   map[string]interface{}
+	Outputs                  map[string]interface{}
+	ArtifactRefs             []string
 }
 
 func NormalizeTool(content string, metadata map[string]interface{}, fallbackName string) ToolEvent {
@@ -23,18 +28,26 @@ func NormalizeTool(content string, metadata map[string]interface{}, fallbackName
 		StringValue(metadata, "title"),
 		fallbackName,
 	))
-	kind := NormalizeToolKind(name, content)
+	kind, classificationSource, confidence := NormalizeToolKindFromMetadata(metadata, name, content)
 	path := FirstPath(content, metadata)
+	semanticKind := FirstNonEmpty(StringValue(metadata, "tool_semantic_kind"), StringValue(metadata, "semantic_kind"))
+	effect := FirstNonEmpty(StringValue(metadata, "tool_effect"), effectForKind(kind))
+	subjectKind := FirstNonEmpty(StringValue(metadata, "tool_subject_kind"), subjectForKind(kind, metadata, path))
 	operation := ToolOperation(content, metadata)
 	status := NormalizeToolStatus(FirstNonEmpty(StringValue(metadata, "status"), statusFromSourceUpdate(metadata)))
 	return ToolEvent{
-		Name:         name,
-		Kind:         kind,
-		Status:       status,
-		Summary:      toolSummary(toolSummaryContext{Status: status, Name: name, Kind: kind, Path: path, Operation: operation, Content: content}),
-		Inputs:       toolInputs(path, operation),
-		Outputs:      toolOutputs(path, operation, status),
-		ArtifactRefs: toolArtifactRefs(path, kind, status),
+		Name:                     name,
+		Kind:                     kind,
+		SemanticKind:             semanticKind,
+		Effect:                   effect,
+		SubjectKind:              subjectKind,
+		ClassificationSource:     classificationSource,
+		ClassificationConfidence: confidence,
+		Status:                   status,
+		Summary:                  toolSummary(toolSummaryContext{Status: status, Name: name, Kind: kind, Path: path, Operation: operation, Content: content}),
+		Inputs:                   toolInputs(path, operation),
+		Outputs:                  toolOutputs(path, operation, status),
+		ArtifactRefs:             toolArtifactRefs(path, kind, status),
 	}
 }
 
@@ -46,6 +59,7 @@ func EnrichToolWithContext(tool ToolEvent, path, operation string) ToolEvent {
 	}
 	if path != "" {
 		tool.Inputs = mergeToolMap(tool.Inputs, map[string]interface{}{"path": path})
+		tool.SubjectKind = "filesystem"
 		if tool.Status == runtrace.StatusCompleted {
 			tool.Outputs = mergeToolMap(tool.Outputs, map[string]interface{}{"path": path})
 			if len(tool.ArtifactRefs) == 0 {
@@ -85,13 +99,43 @@ func NormalizeToolName(raw string) string {
 }
 
 func NormalizeToolKind(name, content string) string {
+	kind, _, _ := fallbackToolKind(name, content)
+	return kind
+}
+
+func NormalizeToolKindFromMetadata(metadata map[string]interface{}, name, content string) (string, string, string) {
+	for _, key := range []string{"tool_kind", "acp_tool_kind", "kind"} {
+		if kind := NormalizeOfficialToolKind(StringValue(metadata, key)); kind != "" {
+			return kind, "protocol_metadata", "high"
+		}
+	}
+	if kind := nestedACPToolKind(metadata); kind != "" {
+		return kind, "protocol_metadata", "high"
+	}
+	return fallbackToolKind(name, content)
+}
+
+func NormalizeOfficialToolKind(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "read", "edit", "delete", "move", "search", "execute", "think", "fetch", "switch_mode", "other":
+		return strings.ToLower(strings.TrimSpace(raw))
+	case "write", "create", "patch":
+		return "edit"
+	case "exec", "shell", "terminal":
+		return "execute"
+	default:
+		return ""
+	}
+}
+
+func fallbackToolKind(name, content string) (string, string, string) {
 	value := strings.ToLower(name + " " + content)
 	for _, rule := range toolKindRules {
 		if containsAny(value, rule.matches) {
-			return rule.kind
+			return rule.kind, "heuristic_fallback", "low"
 		}
 	}
-	return "other"
+	return "other", "unknown", "low"
 }
 
 func NormalizeToolStatus(raw string) string {
@@ -177,6 +221,56 @@ func isArtifactKind(kind string) bool {
 	return kind == "edit" || kind == "delete" || kind == "move"
 }
 
+func nestedACPToolKind(metadata map[string]interface{}) string {
+	rawACP, ok := metadata["acp"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	for _, key := range []string{"tool_kind", "kind"} {
+		if value, ok := rawACP[key].(string); ok {
+			if kind := NormalizeOfficialToolKind(value); kind != "" {
+				return kind
+			}
+		}
+	}
+	return ""
+}
+
+func effectForKind(kind string) string {
+	switch kind {
+	case "read", "search", "fetch", "think":
+		return "read_only"
+	case "edit", "delete", "move":
+		return "write"
+	case "execute":
+		return "execute"
+	case "switch_mode":
+		return "control"
+	default:
+		return "unknown"
+	}
+}
+
+func subjectForKind(kind string, metadata map[string]interface{}, path string) string {
+	if strings.TrimSpace(path) != "" || StringValue(metadata, "path") != "" {
+		return "filesystem"
+	}
+	switch kind {
+	case "read", "edit", "delete", "move", "search":
+		return "workspace"
+	case "execute":
+		return "process"
+	case "fetch":
+		return "network"
+	case "switch_mode":
+		return "agent_session"
+	case "think":
+		return "agent_reasoning"
+	default:
+		return "unknown"
+	}
+}
+
 type toolNameRule struct {
 	name    string
 	matches []string
@@ -204,4 +298,6 @@ var toolKindRules = []toolKindRule{
 	{kind: "read", matches: []string{"read", "list"}},
 	{kind: "execute", matches: []string{"shell", "terminal", "exec", "bash"}},
 	{kind: "fetch", matches: []string{"fetch", "http"}},
+	{kind: "think", matches: []string{"think", "reason"}},
+	{kind: "switch_mode", matches: []string{"switch_mode", "set_mode"}},
 }

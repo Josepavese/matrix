@@ -33,7 +33,7 @@ func ProfileV1() Profile {
 		Capabilities: []Capability{
 			{ID: "conversation.route", Category: "conversation", Description: "Route one human, channel, or agent turn into the active workspace/session context.", Surfaces: []string{"http:/v1/runs"}},
 			{ID: "run.observability", Category: "run", Description: "Expose protocol-neutral communication run traces, ordered events, and operational controls for humans and supervisory agents.", Surfaces: []string{"http:/v1/runs/{id}/trace", "http:/v1/runs/{id}/events", "http:/v1/runs/{id}/actions", "http:/v1/event-sinks"}},
-			{ID: "session.lifecycle", Category: "session", Description: "Create, inspect, switch, cancel, and delete logical sessions.", Surfaces: []string{"http:/v1/session-actions", "chat:/session", "chat:/cancel", "chat:/stop"}},
+			{ID: "session.lifecycle", Category: "session", Description: "Create, inspect, switch, cancel, delete, fork, reconcile, and capability-check logical/provider sessions.", Surfaces: []string{"http:/v1/session-actions", "chat:/session", "chat:/cancel", "chat:/stop"}},
 			{ID: "workspace.control", Category: "workspace", Description: "List, switch, bind, and snapshot workspace contexts.", Surfaces: []string{"http:/v1/workspace-actions", "chat:/workspace", "chat:/use", "chat:/snapshot"}},
 			{ID: "workspace.state", Category: "workspace", Description: "Read the current materialized state of a workspace.", Surfaces: []string{"http:/v1/workspace-state", "chat:/now", "cli:workspace state"}},
 			{ID: "workspace.timeline", Category: "workspace", Description: "Read recent semantic events for a workspace.", Surfaces: []string{"http:/v1/workspace-timeline", "chat:/timeline", "cli:workspace timeline"}},
@@ -48,7 +48,7 @@ func ProfileV1() Profile {
 			{ID: "http:/v1/runs/{id}/events", Description: "Ordered run event read surface for live supervision and replayable observation.", Actions: []string{"read"}},
 			{ID: "http:/v1/runs/{id}/actions", Description: "Operational run control and live context surface.", Actions: []string{"cancel", "attach_context", "append_context"}},
 			{ID: "http:/v1/event-sinks", Description: "Generic external consumer registration for Matrix run events.", Actions: []string{"register"}},
-			{ID: "http:/v1/session-actions", Description: "Typed session lifecycle API.", Actions: []string{"status", "new", "name", "list", "switch", "cancel", "delete"}},
+			{ID: "http:/v1/session-actions", Description: "Typed session lifecycle API.", Actions: []string{"status", "new", "name", "list", "switch", "cancel", "delete", "cleanup", "capabilities", "fork", "reconcile"}},
 			{ID: "http:/v1/workspace-actions", Description: "Typed workspace control API.", Actions: []string{"list", "status", "switch", "bind", "snapshot"}},
 			{ID: "http:/v1/workspace-state", Description: "Typed workspace current-state read API.", Actions: []string{"state"}},
 			{ID: "http:/v1/workspace-timeline", Description: "Typed workspace timeline read API.", Actions: []string{"timeline"}},

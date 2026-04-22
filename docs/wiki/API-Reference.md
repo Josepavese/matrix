@@ -92,6 +92,8 @@ Cleanup proof includes:
 ```json
 {
   "clean": true,
+  "strong_cleanup": true,
+  "cleanup_strength": "strong",
   "remote_delete_attempted": true,
   "remote_deleted": false,
   "remote_delete_unsupported": true,
@@ -337,12 +339,14 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
   }'
 ```
 
-`delete` now returns a `cleanup` proof. If the provider does not support remote delete, Matrix attempts remote close when advertised by the protocol adapter, then remote cancel when policy allows it, then forgets the local mirror when requested by policy. After local deletion, Matrix closes the exact workspace-bound agent client when no other local session still references the same `agent_id + workspace_path`; otherwise it reports `process_retained=true` and `process_retention_allowed=true`. Cleanup proof can include `failure_code`; for example `agent_start_context_cancelled_during_cleanup` means a cleanup operation tried to start a provider while using an already-canceled context.
+`delete` now returns a `cleanup` proof. If the provider does not support remote delete, Matrix attempts remote close when advertised by the protocol adapter, then remote cancel when policy allows it, then forgets the local mirror when requested by policy. After local deletion, Matrix closes the exact workspace-bound agent client when no other local session still references the same `agent_id + workspace_path`; otherwise it reports `process_retained=true`, `process_retention_allowed=true`, `cleanup_strength=retained`, and `weak_cleanup_reason=process_retained`. Cleanup proof can include `failure_code`; for example `agent_start_context_cancelled_during_cleanup` means a cleanup operation tried to start a provider while using an already-canceled context.
 
 For async `/v1/runs/{run_id}/actions` `cancel`, Matrix uses a cleanup-specific
 bounded context detached from the canceled run context. This allows
 interrupt/resume clients to wait for `session.cleanup clean=true` before
-starting the resume run.
+starting the resume run. For ephemeral interrupt/resume flows, Matrix also
+requires `strong_cleanup=true`; local-only forgetting fails with
+`failure_code=cleanup_clean_without_remote_or_process_proof`.
 
 **Cleanup a session:**
 
@@ -370,12 +374,53 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
   }'
 ```
 
+**Provider capabilities:**
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/session-actions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "docs.http",
+    "action": "capabilities",
+    "target": "opencode"
+  }'
+```
+
+The response contains `capabilities.session`, keyed by lifecycle feature. Each entry includes `supported`, `status`, `stability`, and `source`. ACP reports `list` and `info_update` as stable, `resume` and `close` as preview, and `fork` / `delete` as draft when the provider advertises them.
+
+**Fork a session:**
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/session-actions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "docs.http",
+    "action": "fork",
+    "target": "sess-123"
+  }'
+```
+
+`fork` is a capability-gated experimental operation. Matrix calls a true provider fork only when the active protocol adapter advertises it; otherwise the response is typed with `unsupported=true` and `fork.unsupported=true`.
+
+**Reconcile cached provider clients:**
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/session-actions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "docs.http",
+    "action": "reconcile"
+  }'
+```
+
+`reconcile` closes cached agent clients that no longer have vault session references. It returns `reconcile.reaped` and `reconcile.retained`.
+
 **Parameters:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `channel_id` | string | Yes | Stable caller/channel id |
-| `action` | string | Yes | `new`, `list`, `switch`, `cancel`, `delete`, `cleanup`, `name` |
+| `action` | string | Yes | `new`, `list`, `switch`, `cancel`, `delete`, `cleanup`, `name`, `capabilities`, `fork`, `reconcile` |
 | `target` | string | No | Action operand: agent id, session selector, or alias |
 | `workspace_id` | string | No | Workspace to bind the session to |
 | `workspace_path` | string | No | Workspace root path for sessions that do not need persistent workspace metadata |
@@ -383,7 +428,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 | `cleanup_policy` | string | No | Cleanup behavior for `delete`, `cleanup`, or ephemeral runs |
 | `force_forget_local` | boolean | No | Removes the Matrix local mirror even when remote delete is unsupported |
 
-Cleanup proof fields distinguish provider state from Matrix mirror state: `remote_deleted`, `remote_closed`, `remote_canceled`, `remote_*_attempted`, `remote_*_unsupported`, process reaping fields, and `local_forgotten`.
+Cleanup proof fields distinguish provider state from Matrix mirror state: `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `remote_deleted`, `remote_closed`, `remote_canceled`, `remote_*_attempted`, `remote_*_unsupported`, process reaping fields, and `local_forgotten`.
 
 ---
 

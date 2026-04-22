@@ -82,6 +82,8 @@ func (m *mockTransport) Send(_ context.Context, message []byte) error {
 			resp.Result = []byte(`{}`)
 		case "session/delete":
 			resp.Result = []byte(`null`)
+		case "session/fork":
+			resp.Result = []byte(`{"sessionId": "fork-session-456"}`)
 		case "session/prompt":
 			resp.Result = []byte(`{"stopReason": "end_turn"}`)
 			// Also queue a notification right before the response
@@ -251,6 +253,16 @@ func TestACPClient_FullLifecycle(t *testing.T) {
 	t.Run("DeleteSession", func(t *testing.T) {
 		if err := client.DeleteSession(ctx, "test-session-123"); err != nil {
 			t.Fatalf("DeleteSession failed: %v", err)
+		}
+	})
+
+	t.Run("ForkSession", func(t *testing.T) {
+		res, err := client.ForkSession(ctx, zedacp.ForkSessionRequest{SessionID: "test-session-123", Cwd: "/tmp"})
+		if err != nil {
+			t.Fatalf("ForkSession failed: %v", err)
+		}
+		if res.SessionID != "fork-session-456" {
+			t.Fatalf("unexpected fork response: %+v", res)
 		}
 	})
 

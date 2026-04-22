@@ -201,6 +201,12 @@ func (m *Manager) HandleSessionActionTyped(ctx context.Context, req middleware.S
 		return m.handleSessionSwitchTyped(ctx, req.ChannelID, lang, req.Target)
 	case "list":
 		return m.handleSessionListTyped(ctx, req.ChannelID, lang, req.WorkspaceID)
+	case "capabilities", "capability", "providers":
+		return m.handleSessionCapabilitiesTyped(ctx, req)
+	case "fork":
+		return m.handleSessionForkTyped(ctx, req)
+	case "reconcile":
+		return m.handleSessionReconcileTyped(ctx, req)
 	case "status":
 		return m.handleSessionStatusTyped(req.ChannelID, lang, req.WorkspaceID)
 	case "new":

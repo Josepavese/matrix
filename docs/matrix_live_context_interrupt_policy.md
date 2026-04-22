@@ -84,14 +84,24 @@ If a provider records `late`, clients should choose one of:
 - queue the context as next-turn state.
 
 For cancel-and-restart / interrupt-resume flows, Matrix must expose cleanup
-proof before the resume run is trusted. The cancelled run should produce
-`session.cleanup clean=true` with at least one remote/process cleanup proof such
-as `remote_deleted`, `remote_closed`, `remote_canceled`, or `process_reaped`.
-Cleanup runs under a bounded context detached from the canceled run context.
-If cleanup cannot complete, `failure_code` gives the machine-readable class;
-`agent_start_context_cancelled_during_cleanup` identifies the historical bug
-where provider cleanup tried to start an agent under an already-canceled
-context.
+proof before the resume run is trusted. The cancelled run must produce
+`session.cleanup clean=true strong_cleanup=true` with at least one remote/process
+cleanup proof such as `remote_deleted`, `remote_closed`, `remote_canceled`, or
+`process_reaped`. Cleanup runs under a bounded context detached from the
+canceled run context. If cleanup cannot complete, `failure_code` gives the
+machine-readable class; `cleanup_clean_without_remote_or_process_proof` means
+Matrix only forgot local state and therefore refused to claim strong cleanup for
+an ephemeral flow. `agent_start_context_cancelled_during_cleanup` identifies the
+historical bug where provider cleanup tried to start an agent under an
+already-canceled context.
+
+For shared non-ephemeral sessions, Matrix may retain a provider client when
+other local sessions still reference the same `agent_id + workspace_path`. That
+case is not strong cleanup proof; it is reported as
+`cleanup_strength=retained`, `process_retained=true`, and
+`weak_cleanup_reason=process_retained`. Supervisors can call `/v1/session-actions`
+with `action=reconcile` to close cached clients that no longer have vault
+references.
 
 ## Engineering Rule
 

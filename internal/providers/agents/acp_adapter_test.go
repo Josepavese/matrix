@@ -48,3 +48,29 @@ func TestSupportsSessionCapabilityAcceptsLegacyBooleanTrueOnly(t *testing.T) {
 		t.Fatalf("did not expect absent fork capability")
 	}
 }
+
+func TestACPSessionCapabilitiesExposeLifecycleStability(t *testing.T) {
+	resp := &acpInitializeResponse{
+		Capabilities: map[string]interface{}{
+			"loadSession": true,
+			"sessionCapabilities": map[string]interface{}{
+				"list":   map[string]interface{}{},
+				"resume": map[string]interface{}{},
+				"fork":   map[string]interface{}{},
+			},
+		},
+	}
+	caps := acpSessionCapabilities(resp)
+	if !caps.List || !caps.Load || !caps.Cancel || !caps.Resume || !caps.Fork {
+		t.Fatalf("expected advertised lifecycle support: %#v", caps)
+	}
+	if caps.Details["list"].Stability != "stable" {
+		t.Fatalf("list should be stable: %#v", caps.Details["list"])
+	}
+	if caps.Details["resume"].Stability != "preview" {
+		t.Fatalf("resume should be preview: %#v", caps.Details["resume"])
+	}
+	if caps.Details["fork"].Stability != "draft" {
+		t.Fatalf("fork should be draft: %#v", caps.Details["fork"])
+	}
+}
