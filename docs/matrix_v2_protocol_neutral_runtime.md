@@ -177,18 +177,24 @@ Important distinction:
 `POST /v1/session-actions` accepts a typed action envelope:
 
 - `channel_id`: physical ingress identity or routing key
-- `action`: currently `cancel`, `delete`, `cleanup`, `switch`, `list`, `status`, `new`, or `name`
+- `action`: currently `cancel`, `delete`, `cleanup`, `switch`, `list`, `status`, `new`, `name`, `capabilities`, `fork`, or `reconcile`
 - `target`: optional action operand
 - `workspace_id` or `workspace_path`: optional binding for new sessions
 - `ephemeral`: optional flag for temporary sessions
 - `cleanup_policy`: optional lifecycle cleanup policy
 - `force_forget_local`: optional local mirror removal override for cleanup
+- `make_active`: optional fork flag; defaults to `true` for plain fork handles and `false` when `input` is supplied
+- `restore_parent`: optional fork flag to restore the previous/parent active session after child work
+- `input`: optional one-turn prompt for fork-child artifact workflows
 
 Current target semantics:
 
 - `cancel`, `delete`, `cleanup`, `switch`: local or remote session selector
 - `new`: requested agent id
 - `name`: alias for the active logical session
+- `capabilities`: optional agent id; unknown agents return typed `agent_not_found`
+- `fork`: parent local or remote session selector; true provider fork only, never prompt replay
+- `reconcile`: no target required
 
 Behavior:
 
@@ -278,6 +284,14 @@ As of 2026-04-22, Zed ACP exposes `session/list` and `session_info_update` as st
 Cleanup is also capability-aware. For ephemeral interrupt/resume flows, `clean=true` requires at least one strong provider or process proof: `remote_deleted`, `remote_closed`, `remote_canceled`, or `process_reaped`. Local-only forgetting is reported as failed or weak evidence, not as strong cleanup. Non-ephemeral retained clients can still be operationally clean, but carry `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`.
 
 Channels and HTTP can request `action=capabilities`, `action=fork`, and `action=reconcile` through the same `/v1/session-actions` contract. `reconcile` closes cached provider clients that no longer have a Matrix vault session reference.
+
+Fork is safe for automation when callers set `make_active=false`. Matrix mirrors
+the child, keeps or restores the parent as active, and returns
+`fork.parent_restored=true` when the channel active session is preserved. If the
+request includes `input`, Matrix routes exactly one child turn and returns the
+raw child response as `fork.artifact.content`; when `ephemeral=true` or
+`cleanup_policy` is supplied, Matrix then cleans the child and returns
+`fork.cleanup`. Matrix still does not evaluate or interpret the artifact.
 
 The A2A ingress is implemented with the official Go SDK:
 

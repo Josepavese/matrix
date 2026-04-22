@@ -161,7 +161,13 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
   }'
 ```
 
-Actions: `new`, `list`, `switch`, `cancel`, `delete`, `name`
+Actions: `new`, `list`, `status`, `switch`, `cancel`, `delete`, `cleanup`,
+`name`, `capabilities`, `fork`, `reconcile`
+
+`capabilities`, `fork`, and `reconcile` use the same channel-neutral contract as
+Telegram and future ingress adapters. `fork` is provider-gated: Matrix calls a
+real provider fork when available and otherwise returns a typed
+`unsupported=true` response.
 
 ### Workspace management
 

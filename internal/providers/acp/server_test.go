@@ -27,6 +27,9 @@ type mockSessionRouter struct {
 	lastEphemeral        bool
 	lastCleanupPolicy    string
 	lastForceForgetLocal bool
+	lastMakeActive       *bool
+	lastRestoreParent    bool
+	lastSessionInput     string
 	lastIntentAgentID    string
 	lastIntentNote       string
 	response             string
@@ -82,6 +85,9 @@ func (m *mockSessionRouter) HandleSessionActionTyped(_ context.Context, req midd
 	m.lastEphemeral = req.Ephemeral
 	m.lastCleanupPolicy = req.CleanupPolicy
 	m.lastForceForgetLocal = req.ForceForgetLocal
+	m.lastMakeActive = req.MakeActive
+	m.lastRestoreParent = req.RestoreParent
+	m.lastSessionInput = req.Input
 	if m.typedResult.Action == "" {
 		m.typedResult = middleware.SessionActionResult{Action: req.Action, Message: m.response}
 	}
@@ -1060,5 +1066,71 @@ func TestHandleSessionActions_CleanupPassesForceForget(t *testing.T) {
 	}
 	if resp.Cleanup == nil || !resp.Cleanup.LocalForgotten {
 		t.Fatalf("expected cleanup proof, got %+v", resp)
+	}
+}
+
+func TestHandleSessionActions_ForkPassesSafetyFlags(t *testing.T) {
+	router := &mockSessionRouter{typedResult: middleware.SessionActionResult{
+		Action:          "fork",
+		ActiveSessionID: "parent",
+		Fork: &middleware.SessionForkResult{
+			ParentLogicalSessionID: "parent",
+			ChildLogicalSessionID:  "child",
+			MakeActive:             false,
+			ParentRestored:         true,
+		},
+	}}
+	_, mux := setupServer(router, "", "")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "ch1",
+		"action":         "fork",
+		"target":         "parent",
+		"make_active":    false,
+		"restore_parent": true,
+		"input":          "child interpreter prompt",
+		"ephemeral":      true,
+		"cleanup_policy": "delete_remote_or_cancel_and_forget_local",
+	})
+	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if router.lastMakeActive == nil || *router.lastMakeActive {
+		t.Fatalf("expected make_active=false passthrough, got %+v", router.lastMakeActive)
+	}
+	if !router.lastRestoreParent || router.lastSessionInput != "child interpreter prompt" {
+		t.Fatalf("expected fork safety fields, restore=%t input=%q", router.lastRestoreParent, router.lastSessionInput)
+	}
+}
+
+func TestHandleSessionActions_TypedAgentNotFoundUses404(t *testing.T) {
+	router := &mockSessionRouter{typedResult: middleware.SessionActionResult{
+		Action:      "capabilities",
+		Unsupported: true,
+		Error: &middleware.SessionActionError{
+			Code:    "agent_not_found",
+			Message: "agent id is not registered",
+			Target:  "codex-acp",
+		},
+	}}
+	_, mux := setupServer(router, "", "")
+	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "capabilities", "target": "codex-acp"})
+	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp middleware.SessionActionResult
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response parse error: %v", err)
+	}
+	if resp.Error == nil || resp.Error.Code != "agent_not_found" || resp.Error.Target != "codex-acp" {
+		t.Fatalf("unexpected typed error response: %+v", resp)
 	}
 }

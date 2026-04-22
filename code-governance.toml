@@ -19,8 +19,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/logic/agentmgr" = 900
 "internal/logic/onboarding" = 1400
 "internal/logic/runtrace" = 830
-# 2026-04-22: protocol-neutral lifecycle, fork, reconcile, and capability SSOT.
-"internal/logic/session" = 3850
+# 2026-04-22: protocol-neutral lifecycle, safe fork orchestration, reconcile, and capability SSOT.
+"internal/logic/session" = 4100
+"internal/middleware" = 850
 "internal/logic/workspace" = 850
 "internal/providers/agents" = 1950
 "internal/providers/runapi" = 930

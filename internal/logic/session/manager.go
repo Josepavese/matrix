@@ -38,6 +38,8 @@ type SessionMeta struct {
 	Mode             string                    `json:"mode,omitempty"`
 	Ephemeral        bool                      `json:"ephemeral,omitempty"`
 	CleanupPolicy    string                    `json:"cleanup_policy,omitempty"`
+	ParentSessionID  string                    `json:"parent_session_id,omitempty"`
+	ParentRemoteID   string                    `json:"parent_remote_id,omitempty"`
 	PendingHandoff   *middleware.HandoffPacket `json:"pending_handoff,omitempty"`
 	LastHandoff      *middleware.HandoffPacket `json:"last_handoff,omitempty"`
 }
@@ -299,11 +301,15 @@ func (m *Manager) getOrCreateQueue(channelID string) *sessionqueue.OrderedMerge 
 		if result.Err != nil && strings.TrimSpace(result.AgentSessionID) == "" {
 			return
 		}
-		state, err := m.getChannelState(channelID)
-		if err != nil {
-			return
+		sessionID := strings.TrimSpace(result.LogicalSessionID)
+		if sessionID == "" {
+			state, err := m.getChannelState(channelID)
+			if err != nil {
+				return
+			}
+			sessionID = state.ActiveSessionID
 		}
-		meta, found, err := m.loadSessionMeta(state.ActiveSessionID)
+		meta, found, err := m.loadSessionMeta(sessionID)
 		if err != nil || !found {
 			return
 		}

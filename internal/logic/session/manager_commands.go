@@ -608,6 +608,8 @@ func (m *Manager) toSessionEntry(meta SessionMeta, active bool) *middleware.Sess
 		Meta:             meta.RemoteMeta,
 		PendingHandoff:   meta.PendingHandoff,
 		LastHandoff:      meta.LastHandoff,
+		ParentSessionID:  meta.ParentSessionID,
+		ParentRemoteID:   meta.ParentRemoteID,
 	}
 }
 

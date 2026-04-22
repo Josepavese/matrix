@@ -8,10 +8,11 @@ import (
 )
 
 type RouteResult struct {
-	Content        string
-	AgentSessionID string
-	Metadata       middleware.ConversationMetadata
-	Err            error
+	LogicalSessionID string
+	Content          string
+	AgentSessionID   string
+	Metadata         middleware.ConversationMetadata
+	Err              error
 }
 
 type OrderedMerge struct {

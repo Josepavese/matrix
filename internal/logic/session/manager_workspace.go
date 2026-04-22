@@ -26,6 +26,16 @@ func (m *Manager) RouteConversation(ctx context.Context, req middleware.Conversa
 }
 
 func (m *Manager) routeAgentTurnWithWorkspace(ctx context.Context, req middleware.ConversationRequest) (string, error) {
+	if sessionID := strings.TrimSpace(req.LogicalSessionID); sessionID != "" {
+		meta, found, err := m.loadSessionMeta(sessionID)
+		if err != nil {
+			return "", err
+		}
+		if !found {
+			return "", fmt.Errorf("session %s not found", sessionID)
+		}
+		return m.routeResolvedSession(ctx, req, sessionID, meta.AgentID)
+	}
 	workspaceID, workspacePath, err := m.resolveWorkspaceHint(req.WorkspaceID, req.WorkspacePath)
 	if err != nil {
 		return "", err

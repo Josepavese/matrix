@@ -102,6 +102,9 @@ type sessionActionRequest struct {
 	Ephemeral        bool   `json:"ephemeral,omitempty"`
 	CleanupPolicy    string `json:"cleanup_policy,omitempty"`
 	ForceForgetLocal bool   `json:"force_forget_local,omitempty"`
+	MakeActive       *bool  `json:"make_active,omitempty"`
+	RestoreParent    bool   `json:"restore_parent,omitempty"`
+	Input            string `json:"input,omitempty"`
 }
 
 type workspaceActionRequest struct {
@@ -183,6 +186,9 @@ func (s *Server) HandleSessionActions(w http.ResponseWriter, r *http.Request) {
 		Ephemeral:        req.Ephemeral,
 		CleanupPolicy:    req.CleanupPolicy,
 		ForceForgetLocal: req.ForceForgetLocal,
+		MakeActive:       req.MakeActive,
+		RestoreParent:    req.RestoreParent,
+		Input:            req.Input,
 	})
 	if err != nil {
 		slog.Error("matrix session action failed", "error", err, "action", req.Action)
@@ -191,9 +197,21 @@ func (s *Server) HandleSessionActions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(sessionActionHTTPStatus(result))
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		slog.Error("matrix session action failed to encode response", "error", err)
+	}
+}
+
+func sessionActionHTTPStatus(result middleware.SessionActionResult) int {
+	if result.Error == nil {
+		return http.StatusCreated
+	}
+	switch result.Error.Code {
+	case "agent_not_found":
+		return http.StatusNotFound
+	default:
+		return http.StatusBadRequest
 	}
 }
 
