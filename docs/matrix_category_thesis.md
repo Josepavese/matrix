@@ -256,7 +256,7 @@ That would make the communication matrix visibly unlike generic agent runtimes.
 
 The first concrete step in that direction is a workspace-first operational
 timeline, specified in
-[matrix_workspace_timeline_spec.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_workspace_timeline_spec.md).
+[matrix_workspace_timeline_spec.md](matrix_workspace_timeline_spec.md).
 
 ## Product Proposal
 

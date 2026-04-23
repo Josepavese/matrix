@@ -3,7 +3,7 @@ package agents
 import (
 	"testing"
 
-	"github.com/jose/matrix-v2/pkg/zedacp"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 func TestToolUpdateMetadataPreservesNativeACPPayload(t *testing.T) {

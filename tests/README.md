@@ -1,6 +1,6 @@
-# Matrix V2 - Testing Strategy
+# Matrix - Testing Strategy
 
-Matrix V2 strictly enforces a hybrid two-tiered testing methodology to ensure OS-level stability while maintaining cross-layer (PAL) validation.
+Matrix strictly enforces a hybrid two-tiered testing methodology to ensure OS-level stability while maintaining cross-layer (PAL) validation.
 
 ## Directory Structure
 

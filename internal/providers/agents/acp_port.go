@@ -3,8 +3,8 @@ package agents
 import (
 	"context"
 
-	"github.com/jose/matrix-v2/internal/middleware"
-	"github.com/jose/matrix-v2/pkg/zedacp"
+	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 // Local ACP aliases isolate the Matrix runtime from a concrete Go ACP SDK.

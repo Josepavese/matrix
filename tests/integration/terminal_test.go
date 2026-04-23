@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/middleware"
-	"github.com/jose/matrix-v2/internal/providers/agents"
-	exepprov "github.com/jose/matrix-v2/internal/providers/exec"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/agents"
+	exepprov "github.com/Josepavese/matrix/internal/providers/exec"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 )
 
 // mockResolver resolves the mock-agent binary as a stdio endpoint.
@@ -32,7 +32,7 @@ func buildMockAgent(t *testing.T) string {
 	tmpDir := t.TempDir()
 	mockBin := filepath.Join(tmpDir, "mock-agent")
 
-	buildCmd := goexec.Command("go", "build", "-o", mockBin, "github.com/jose/matrix-v2/cmd/mock-agent")
+	buildCmd := goexec.Command("go", "build", "-o", mockBin, "github.com/Josepavese/matrix/cmd/mock-agent")
 	if output, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build mock-agent: %v\n%s", err, output)
 	}

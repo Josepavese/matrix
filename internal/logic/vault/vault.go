@@ -4,7 +4,7 @@ package vault
 import (
 	"encoding/json"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // Vault handles SSOT parameters mapping onto a middleware.Storage provider.

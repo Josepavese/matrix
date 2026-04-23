@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/google/uuid"
-	"github.com/jose/matrix-v2/internal/logic/runtrace"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 const deliveryKeyPrefix = "runtrace.delivery."

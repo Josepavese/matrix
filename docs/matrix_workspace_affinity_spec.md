@@ -93,7 +93,7 @@ Suggested shape:
   "id": "billing-api",
   "name": "billing-api",
   "kind": "repository",
-  "root_path": "/home/jose/src/billing-api",
+  "root_path": "/workspace/billing-api",
   "repo_url": "git@github.com:org/billing-api.git",
   "default_branch": "main",
   "labels": ["backend", "payments"],
@@ -128,7 +128,7 @@ Extend `session.meta.<session_id>` with:
 ```json
 {
   "workspace_id": "billing-api",
-  "workspace_path": "/home/jose/src/billing-api",
+  "workspace_path": "/workspace/billing-api",
   "workspace_branch": "feature/invoice-fix",
   "workspace_role": "primary",
   "workspace_bound_at": "2026-04-15T12:30:00Z"

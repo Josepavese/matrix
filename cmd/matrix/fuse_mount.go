@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jose/matrix-v2/internal/logic/filesystem"
-	"github.com/jose/matrix-v2/internal/providers/fusefs"
-	signalprovider "github.com/jose/matrix-v2/internal/providers/signal"
+	"github.com/Josepavese/matrix/internal/logic/filesystem"
+	"github.com/Josepavese/matrix/internal/providers/fusefs"
+	signalprovider "github.com/Josepavese/matrix/internal/providers/signal"
 	"github.com/spf13/cobra"
 )
 

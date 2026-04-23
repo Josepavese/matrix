@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Josepavese/matrix/internal/middleware"
 	a2asdk "github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 type echoA2AExecutor struct{}
@@ -161,6 +161,20 @@ func TestA2AConversationClient_ProjectsSidecarCapsules(t *testing.T) {
 	}
 	if executor.metadata["matrix.sidecar"] == nil {
 		t.Fatalf("expected Matrix sidecar message metadata, got %#v", executor.metadata)
+	}
+}
+
+func TestA2AConversationClientCapabilitiesDoNotAdvertiseDelete(t *testing.T) {
+	client := &a2aConversationClient{}
+	caps := client.SessionCapabilities()
+	if caps.Delete {
+		t.Fatal("A2A must not advertise delete when the protocol adapter only supports cancel")
+	}
+	if caps.Details["delete"].Supported {
+		t.Fatalf("delete descriptor should be unsupported: %+v", caps.Details["delete"])
+	}
+	if err := client.DeleteRemoteSession(context.Background(), "task-1"); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("expected unsupported delete error, got %v", err)
 	}
 }
 

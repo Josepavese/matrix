@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/jose/matrix-v2/internal/logic/channelcfg"
-	"github.com/jose/matrix-v2/internal/logic/vault"
-	"github.com/jose/matrix-v2/internal/providers/bolt"
+	"github.com/Josepavese/matrix/internal/logic/channelcfg"
+	"github.com/Josepavese/matrix/internal/logic/vault"
+	"github.com/Josepavese/matrix/internal/providers/bolt"
 	"github.com/spf13/cobra"
 )
 

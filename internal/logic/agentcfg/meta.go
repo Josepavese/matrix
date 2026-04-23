@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // MetaKeyPrefix is the vault key prefix for agent metadata entries.

@@ -9,8 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 const (
@@ -29,6 +28,14 @@ type supervisedRun struct {
 	AgentID   string
 	Handle    middleware.ProcessHandle
 	StartedAt time.Time
+}
+
+type supervisedStartRequest struct {
+	agentID  string
+	port     int
+	protocol string
+	mode     string
+	spec     middleware.CommandSpec
 }
 
 // Supervisor manages the lifecycle, routing ports, and SSOT persistence of agent CLIs.
@@ -64,34 +71,24 @@ func (s *Supervisor) StartAll(ctx context.Context) error {
 			continue
 		}
 
-		// 1. Is it installed? (Graceful Degradation)
-		if !s.proc.HasExecutable(cfg.Command) {
-			s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: cfg.Protocol, Mode: runtimeMode(cfg.Protocol), Status: "missing_executable", Error: "executable not found in PATH"})
-			log.Warn("agent not found in path, skipping supervision", "event", "agent_missing", "agent", agentID, "command", cfg.Command)
-			continue
-		}
-
-		endpoint := agentcfg.NormalizeEndpoint(agentcfg.Config{
-			Command:         cfg.Command,
-			Args:            cfg.Args,
-			Env:             cfg.Env,
-			Protocol:        cfg.Protocol,
-			Kind:            cfg.Kind,
-			Transport:       cfg.Transport,
-			Address:         cfg.Address,
-			CardURL:         cfg.CardURL,
-			ProtocolVersion: cfg.ProtocolVersion,
-			HealthcheckPath: cfg.HealthcheckPath,
-			EnvIsolation:    cfg.EnvIsolation,
-			Active:          cfg.Active,
-		})
+		endpoint := protocolEndpointFromAgentConfig(cfg)
 
 		// 2. Start supervision loop ONLY for networked ACP agents.
 		// stdio agents are handled on-demand by the Router.
 		if endpoint.Kind == middleware.ProtocolKindACP && (endpoint.Transport == "ws" || endpoint.Transport == "http") {
+			if !s.proc.HasExecutable(cfg.Command) {
+				s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "missing_executable", Error: "executable not found in PATH"})
+				log.Warn("agent not found in path, skipping supervision", "event", "agent_missing", "agent", agentID, "command", cfg.Command)
+				continue
+			}
 			go s.watchdog(ctx, agentID, cfg)
 		} else {
-			s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: endpoint.Transport, Mode: runtimeMode(endpoint.Transport), Status: "ready_on_demand"})
+			if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && !s.proc.HasExecutable(cfg.Command) {
+				s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "missing_executable", Error: "executable not found in PATH"})
+				log.Warn("agent not found in path, skipping supervision", "event", "agent_missing", "agent", agentID, "command", cfg.Command)
+				continue
+			}
+			s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "ready_on_demand"})
 			log.Info("agent is on-demand, skipping background supervision", "event", "agent_on_demand", "agent", agentID, "protocol_kind", endpoint.Kind, "transport", endpoint.Transport)
 		}
 	}
@@ -104,20 +101,7 @@ func (s *Supervisor) GetAgentEndpoint(agentID string) (middleware.ProtocolEndpoi
 	if err != nil {
 		return middleware.ProtocolEndpoint{}, errors.Join(middleware.ErrAgentNotFound, fmt.Errorf("agent %s configuration not found in registry: %w", agentID, err))
 	}
-	endpoint := agentcfg.NormalizeEndpoint(agentcfg.Config{
-		Command:         cfg.Command,
-		Args:            cfg.Args,
-		Env:             cfg.Env,
-		Protocol:        cfg.Protocol,
-		Kind:            cfg.Kind,
-		Transport:       cfg.Transport,
-		Address:         cfg.Address,
-		CardURL:         cfg.CardURL,
-		ProtocolVersion: cfg.ProtocolVersion,
-		HealthcheckPath: cfg.HealthcheckPath,
-		EnvIsolation:    cfg.EnvIsolation,
-		Active:          cfg.Active,
-	})
+	endpoint := protocolEndpointFromAgentConfig(cfg)
 
 	// On-demand ACP stdio agents are spawned by the router.
 	if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" {
@@ -163,7 +147,7 @@ func (s *Supervisor) watchdog(ctx context.Context, agentID string, cfg AgentConf
 		default:
 		}
 
-		port, ok := s.allocatePort(log)
+		port, ok := s.allocatePort(ctx, log)
 		if !ok {
 			continue
 		}
@@ -171,23 +155,30 @@ func (s *Supervisor) watchdog(ctx context.Context, agentID string, cfg AgentConf
 		args := injectPortArgs(cfg.Args, port)
 		log.Info("starting supervised agent", "event", "agent_starting", "port", port, "command", cfg.Command, "args", args)
 		spec := middleware.CommandSpec{Runner: cfg.Command, Args: args, Env: cfg.Env, EnvIsolation: cfg.EnvIsolation}
-		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: cfg.Protocol, Mode: runtimeMode(cfg.Protocol), Status: "starting", Port: port, Address: fmt.Sprintf("127.0.0.1:%d", port)})
+		endpoint := protocolEndpointFromAgentConfig(cfg)
+		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "starting", Port: port, Address: fmt.Sprintf("127.0.0.1:%d", port)})
 
-		run, ok := s.startAgent(log, agentID, port, spec)
+		run, ok := s.startAgent(ctx, log, supervisedStartRequest{
+			agentID:  agentID,
+			port:     port,
+			protocol: string(endpoint.Kind),
+			mode:     runtimeMode(endpoint.Transport),
+			spec:     spec,
+		})
 		if !ok {
 			continue
 		}
-		if !s.handleExit(log, run, &consecutiveFastCrashes) {
+		if !s.handleExit(ctx, log, run, &consecutiveFastCrashes) {
 			return
 		}
 	}
 }
 
-func (s *Supervisor) allocatePort(log *slog.Logger) (int, bool) {
+func (s *Supervisor) allocatePort(ctx context.Context, log *slog.Logger) (int, bool) {
 	port, err := s.net.GetFreePort()
 	if err != nil {
 		log.Warn("failed to get free port for agent, retrying", "event", "port_allocation_failed", "error", err, "retry_in", "5s")
-		time.Sleep(5 * time.Second)
+		delayOrDone(ctx, 5*time.Second)
 		return 0, false
 	}
 	return port, true
@@ -201,24 +192,24 @@ func injectPortArgs(args []string, port int) []string {
 	return out
 }
 
-func (s *Supervisor) startAgent(log *slog.Logger, agentID string, port int, spec middleware.CommandSpec) (supervisedRun, bool) {
+func (s *Supervisor) startAgent(ctx context.Context, log *slog.Logger, req supervisedStartRequest) (supervisedRun, bool) {
 	startedAt := time.Now()
-	handle, err := s.proc.Start(spec)
+	handle, err := s.proc.Start(req.spec)
 	if err != nil {
-		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: "unknown", Mode: "supervised", Status: "start_failed", Error: err.Error()})
+		s.persistRuntimeState(log, RuntimeState{AgentID: req.agentID, Protocol: "unknown", Mode: "supervised", Status: "start_failed", Error: err.Error()})
 		log.Warn("failed to start supervised agent, retrying", "event", "agent_start_failed", "error", err, "retry_in", "5s")
-		time.Sleep(5 * time.Second)
+		delayOrDone(ctx, 5*time.Second)
 		return supervisedRun{}, false
 	}
 
 	s.mu.Lock()
-	s.running[agentID] = &AgentProcess{AgentID: agentID, Port: port, Handle: handle}
+	s.running[req.agentID] = &AgentProcess{AgentID: req.agentID, Port: req.port, Handle: handle}
 	s.mu.Unlock()
-	s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: "ws", Mode: "supervised", Status: "running", Port: port, Address: fmt.Sprintf("127.0.0.1:%d", port), PID: handle.GetPID()})
-	return supervisedRun{AgentID: agentID, Handle: handle, StartedAt: startedAt}, true
+	s.persistRuntimeState(log, RuntimeState{AgentID: req.agentID, Protocol: req.protocol, Mode: req.mode, Status: "running", Port: req.port, Address: fmt.Sprintf("127.0.0.1:%d", req.port), PID: handle.GetPID()})
+	return supervisedRun{AgentID: req.agentID, Handle: handle, StartedAt: startedAt}, true
 }
 
-func (s *Supervisor) handleExit(log *slog.Logger, run supervisedRun, consecutiveFastCrashes *int) bool {
+func (s *Supervisor) handleExit(ctx context.Context, log *slog.Logger, run supervisedRun, consecutiveFastCrashes *int) bool {
 	err := run.Handle.Wait()
 	elapsed := time.Since(run.StartedAt)
 	log.Warn("supervised agent exited", "event", "agent_exited", "elapsed", elapsed.Round(time.Millisecond), "error", err)
@@ -228,8 +219,7 @@ func (s *Supervisor) handleExit(log *slog.Logger, run supervisedRun, consecutive
 	if elapsed >= fastCrashWindow {
 		s.persistRuntimeState(log, RuntimeState{AgentID: run.AgentID, Mode: "supervised", Status: "stopped", Error: errorString(err)})
 		*consecutiveFastCrashes = 0
-		time.Sleep(2 * time.Second)
-		return true
+		return delayOrDone(ctx, 2*time.Second)
 	}
 
 	*consecutiveFastCrashes++
@@ -241,8 +231,18 @@ func (s *Supervisor) handleExit(log *slog.Logger, run supervisedRun, consecutive
 
 	s.persistRuntimeState(log, RuntimeState{AgentID: run.AgentID, Mode: "supervised", Status: "fast_crash", Error: errorString(err)})
 	log.Warn("agent fast-crash detected, delaying restart", "event", "agent_fast_crash", "count", *consecutiveFastCrashes, "max", maxFastCrashes, "retry_in", "3s")
-	time.Sleep(3 * time.Second)
-	return true
+	return delayOrDone(ctx, 3*time.Second)
+}
+
+func delayOrDone(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func (s *Supervisor) unregisterRunning(agentID string) {

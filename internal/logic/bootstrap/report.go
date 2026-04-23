@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/agentmgr"
-	"github.com/jose/matrix-v2/internal/logic/channelcfg"
-	"github.com/jose/matrix-v2/internal/logic/config"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/logic/channelcfg"
+	"github.com/Josepavese/matrix/internal/logic/config"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // BuildReport generates a bootstrap readiness report.

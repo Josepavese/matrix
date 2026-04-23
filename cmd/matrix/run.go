@@ -10,27 +10,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcatalog"
-	"github.com/jose/matrix-v2/internal/logic/agentdiscovery"
-	"github.com/jose/matrix-v2/internal/logic/channelcfg"
-	"github.com/jose/matrix-v2/internal/logic/channelruntime"
-	"github.com/jose/matrix-v2/internal/logic/daemon"
-	"github.com/jose/matrix-v2/internal/logic/logging"
-	"github.com/jose/matrix-v2/internal/logic/onboarding"
-	"github.com/jose/matrix-v2/internal/logic/runtimecheck"
-	"github.com/jose/matrix-v2/internal/logic/session"
-	"github.com/jose/matrix-v2/internal/logic/system_tools"
-	matrixa2a "github.com/jose/matrix-v2/internal/providers/a2a"
-	"github.com/jose/matrix-v2/internal/providers/acp"
-	"github.com/jose/matrix-v2/internal/providers/agents"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
-	"github.com/jose/matrix-v2/internal/providers/oslog"
+	"github.com/Josepavese/matrix/internal/logic/agentcatalog"
+	"github.com/Josepavese/matrix/internal/logic/agentdiscovery"
+	"github.com/Josepavese/matrix/internal/logic/channelcfg"
+	"github.com/Josepavese/matrix/internal/logic/channelruntime"
+	"github.com/Josepavese/matrix/internal/logic/daemon"
+	"github.com/Josepavese/matrix/internal/logic/logging"
+	"github.com/Josepavese/matrix/internal/logic/onboarding"
+	"github.com/Josepavese/matrix/internal/logic/runtimecheck"
+	"github.com/Josepavese/matrix/internal/logic/session"
+	"github.com/Josepavese/matrix/internal/logic/system_tools"
+	matrixa2a "github.com/Josepavese/matrix/internal/providers/a2a"
+	"github.com/Josepavese/matrix/internal/providers/agents"
+	"github.com/Josepavese/matrix/internal/providers/matrixapi"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/providers/oslog"
 	"github.com/spf13/cobra"
 )
 
 var runCmd = &cobra.Command{
 	Use:   "run",
-	Short: "Start the Matrix V2 background daemon",
+	Short: "Start the Matrix background daemon",
 	Run: func(_ *cobra.Command, _ []string) {
 		ctx, cancel := signalContext()
 		defer cancel()
@@ -105,33 +105,33 @@ var runCmd = &cobra.Command{
 
 		// Configurable addresses with defaults
 		jsonrpcAddr := d.App.Config.GetWithDefault("jsonrpc_addr", DefaultJSONRPCAddr)
-		acpHTTPAddr := d.App.Config.GetWithDefault("acp_http_addr", DefaultACPHTTPAddr)
+		matrixHTTPAddr := d.App.Config.GetWithDefault("matrix_http_addr", DefaultMatrixHTTPAddr)
 
-		// ACP REST Server
-		acpServer := acp.NewServer(sessionMgr)
-		acpServer.WithTraceStorage(d.App.Store)
-		acpServer.WithEndpointResolver(d.Supervisor)
-		acpServer.WithDefaultAgent(d.App.Config.GetWithDefault("default_agent", DefaultAgent))
-		if apiKey := d.App.Config.GetWithDefault("acp_api_key", ""); apiKey != "" {
-			acpServer.WithAPIKey(apiKey)
-			log.Info("acp api key configured", "event", "acp_apikey_set")
+		// Matrix HTTP API
+		matrixAPIServer := matrixapi.NewServer(sessionMgr)
+		matrixAPIServer.WithTraceStorage(d.App.Store)
+		matrixAPIServer.WithEndpointResolver(d.Supervisor)
+		matrixAPIServer.WithDefaultAgent(d.App.Config.GetWithDefault("default_agent", DefaultAgent))
+		if apiKey := d.App.Config.GetWithDefault("matrix_api_key", ""); apiKey != "" {
+			matrixAPIServer.WithAPIKey(apiKey)
+			log.Info("matrix api key configured", "event", "matrix_apikey_set")
 		}
 		mux := http.NewServeMux()
-		acpServer.RegisterRoutes(mux)
-		go acpServer.StartRunSinkDeliveryWorker(ctx)
-		a2aServer := matrixa2a.NewServer(sessionMgr, "http://"+acpHTTPAddr, d.App.Config.GetWithDefault("default_agent", DefaultAgent))
+		matrixAPIServer.RegisterRoutes(mux)
+		go matrixAPIServer.StartRunSinkDeliveryWorker(ctx)
+		a2aServer := matrixa2a.NewServer(sessionMgr, "http://"+matrixHTTPAddr, d.App.Config.GetWithDefault("default_agent", DefaultAgent))
 		a2aServer.RegisterRoutes(mux)
 		mux.HandleFunc("/_matrix/runtime", func(w http.ResponseWriter, _ *http.Request) {
 			report, err := runtimecheck.BuildReport(runtimecheck.BuildInput{
-				Store:         d.App.Store,
-				Registry:      d.Registry,
-				Process:       d.ExecProv,
-				ConfigManager: d.App.Config,
-				ConfigReader:  d.ConfigMgr,
-				Net:           d.NetProv,
-				JSONRPCAddr:   jsonrpcAddr,
-				ACPHTTPAddr:   acpHTTPAddr,
-				A2AHTTPAddr:   acpHTTPAddr,
+				Store:          d.App.Store,
+				Registry:       d.Registry,
+				Process:        d.ExecProv,
+				ConfigManager:  d.App.Config,
+				ConfigReader:   d.ConfigMgr,
+				Net:            d.NetProv,
+				JSONRPCAddr:    jsonrpcAddr,
+				MatrixHTTPAddr: matrixHTTPAddr,
+				A2AHTTPAddr:    matrixHTTPAddr,
 			})
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -159,12 +159,12 @@ var runCmd = &cobra.Command{
 			log.Error("channel runtime failed to start", "event", "channel_runtime_failed", "error", err)
 		}
 
-		// Start ACP HTTP Server
-		httpServer := &http.Server{Addr: acpHTTPAddr, Handler: mux}
+		// Start Matrix HTTP API server
+		httpServer := &http.Server{Addr: matrixHTTPAddr, Handler: mux}
 		go func() {
-			log.Info("starting acp http server", "event", "acp_http_starting", "addr", acpHTTPAddr)
+			log.Info("starting matrix http server", "event", "matrix_http_starting", "addr", matrixHTTPAddr)
 			if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
-				log.Error("acp http server stopped with error", "event", "acp_http_stopped", "error", err, "addr", acpHTTPAddr)
+				log.Error("matrix http server stopped with error", "event", "matrix_http_stopped", "error", err, "addr", matrixHTTPAddr)
 			}
 		}()
 

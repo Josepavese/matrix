@@ -1,4 +1,4 @@
-package acp
+package matrixapi
 
 import (
 	"bytes"
@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/orchestration"
-	"github.com/jose/matrix-v2/internal/logic/runtrace"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/orchestration"
+	"github.com/Josepavese/matrix/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 type mockSessionRouter struct {

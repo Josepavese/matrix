@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/memstore"
-	"github.com/jose/matrix-v2/internal/logic/runtrace"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/memstore"
+	"github.com/Josepavese/matrix/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 type fakeAttacher struct {

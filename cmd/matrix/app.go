@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jose/matrix-v2/internal/logic/agentmgr"
-	"github.com/jose/matrix-v2/internal/logic/config"
-	"github.com/jose/matrix-v2/internal/logic/schema"
-	"github.com/jose/matrix-v2/internal/logic/vault"
-	"github.com/jose/matrix-v2/internal/middleware"
-	"github.com/jose/matrix-v2/internal/providers/bolt"
-	execprovider "github.com/jose/matrix-v2/internal/providers/exec"
-	networkprovider "github.com/jose/matrix-v2/internal/providers/network"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/logic/config"
+	"github.com/Josepavese/matrix/internal/logic/schema"
+	"github.com/Josepavese/matrix/internal/logic/vault"
+	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/bolt"
+	execprovider "github.com/Josepavese/matrix/internal/providers/exec"
+	networkprovider "github.com/Josepavese/matrix/internal/providers/network"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 )
 
 // AppContext holds shared dependencies for CLI commands that need vault access.
@@ -90,9 +90,14 @@ func NewAgentContext(vaultPath string) (*AgentContext, func(), error) {
 		return nil, nil, fmt.Errorf("vault error: %w", err)
 	}
 	closeFn := func() { _ = provider.Close() }
-	if _, err := schema.EnsureCurrent(provider); err != nil {
+	report, err := schema.LoadReport(provider)
+	if err != nil {
 		closeFn()
 		return nil, nil, fmt.Errorf("schema error: %w", err)
+	}
+	if report.Status != "current" {
+		closeFn()
+		return nil, nil, fmt.Errorf("schema error: vault schema is %s", report.Status)
 	}
 	configRdr := osfs.NewConfigProvider()
 	registry, err := agentmgr.NewRegistry(configRdr, provider)

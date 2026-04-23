@@ -9,8 +9,8 @@ import (
 
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/providers/exec"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/providers/exec"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 )
 
 func TestHandleTerminalCreate_Echo(t *testing.T) {

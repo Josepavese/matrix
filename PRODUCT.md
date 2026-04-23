@@ -30,7 +30,7 @@ That means:
 
 Matrix is the layer that keeps communication, work, and state continuous while agents, channels, and protocols change.
 
-Deeper strategy is documented in [docs/matrix_category_thesis.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_category_thesis.md).
+Deeper strategy is documented in [docs/matrix_category_thesis.md](docs/matrix_category_thesis.md).
 
 ## The Wedge
 
@@ -175,8 +175,8 @@ Matrix is “on profile” when it is:
 ## Next Reading
 
 - [README.md](README.md)
-- [docs/matrix_product_roadmap_2026_2027.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_product_roadmap_2026_2027.md)
-- [docs/matrix_workspace_affinity_spec.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_workspace_affinity_spec.md)
-- [docs/matrix_workspace_timeline_spec.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_workspace_timeline_spec.md)
-- [docs/matrix_orchestration_surface_spec.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_orchestration_surface_spec.md)
-- [docs/matrix_agent_communication_run_trace.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_agent_communication_run_trace.md)
+- [docs/matrix_product_roadmap_2026_2027.md](docs/matrix_product_roadmap_2026_2027.md)
+- [docs/matrix_workspace_affinity_spec.md](docs/matrix_workspace_affinity_spec.md)
+- [docs/matrix_workspace_timeline_spec.md](docs/matrix_workspace_timeline_spec.md)
+- [docs/matrix_orchestration_surface_spec.md](docs/matrix_orchestration_surface_spec.md)
+- [docs/matrix_agent_communication_run_trace.md](docs/matrix_agent_communication_run_trace.md)

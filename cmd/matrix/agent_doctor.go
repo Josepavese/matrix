@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/logic/agentdoctor"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentdoctor"
+	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +46,6 @@ var agentDoctorCmd = &cobra.Command{
 				Command:         cfg.Command,
 				Args:            cfg.Args,
 				Env:             cfg.Env,
-				Protocol:        cfg.Protocol,
 				Kind:            cfg.Kind,
 				Transport:       cfg.Transport,
 				Address:         cfg.Address,
@@ -63,7 +62,6 @@ var agentDoctorCmd = &cobra.Command{
 
 			item := map[string]any{
 				"agent_id":                      id,
-				"protocol":                      cfg.Protocol,
 				"kind":                          endpoint.Kind,
 				"transport":                     endpoint.Transport,
 				"address":                       address,

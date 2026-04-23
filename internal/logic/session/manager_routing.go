@@ -9,13 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/sessionqueue"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/sessionqueue"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // Route handles an incoming message from a channel. It uses the SSOT Vault to
 // lookup the correct SessionID and delegates to the AgentRouter.
-// It also intercepts "/session" commands.
 func (m *Manager) Route(ctx context.Context, channelID string, agentID string, input string, notifier middleware.ThoughtNotifier) (string, error) {
 	return m.RouteConversation(ctx, middleware.ConversationRequest{
 		ChannelID: channelID,
@@ -23,90 +22,6 @@ func (m *Manager) Route(ctx context.Context, channelID string, agentID string, i
 		Input:     input,
 		Notifier:  notifier,
 	})
-}
-
-func (m *Manager) tryHandleCommand(ctx context.Context, channelID, input string) (bool, string, error) {
-	trimmed := strings.TrimSpace(input)
-	switch {
-	case strings.HasPrefix(trimmed, "/workspaces"):
-		response, err := m.HandleWorkspaceAction(ctx, channelID, "list", "")
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/now"):
-		response, err := m.HandleWorkspaceRead(ctx, channelID, "state", "", 0)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/timeline"):
-		args := strings.TrimSpace(strings.TrimPrefix(trimmed, "/timeline"))
-		response, err := m.HandleWorkspaceRead(ctx, channelID, "timeline", args, 10)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/decisions"):
-		args := strings.TrimSpace(strings.TrimPrefix(trimmed, "/decisions"))
-		response, err := m.HandleWorkspaceRead(ctx, channelID, "decisions", args, 10)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/why"):
-		response, err := m.HandleWorkspaceRead(ctx, channelID, "decisions", "", 1)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/memory"):
-		response, err := m.HandleWorkspaceRead(ctx, channelID, "memory", "", 12)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/snapshots"):
-		response, err := m.HandleWorkspaceRead(ctx, channelID, "snapshots", "", 10)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/snapshot"):
-		args := strings.TrimSpace(strings.TrimPrefix(trimmed, "/snapshot"))
-		response, err := m.HandleWorkspaceAction(ctx, channelID, "snapshot", args)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/status"):
-		response, err := m.handleStatusCommand(channelID)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/review"):
-		args := strings.TrimSpace(strings.TrimPrefix(trimmed, "/review"))
-		response, err := m.handleModeAction(ctx, channelID, modeReview, args)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/continue"):
-		response, err := m.HandleIntent(ctx, channelID, "continue", "")
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/resume"):
-		args := strings.TrimSpace(strings.TrimPrefix(trimmed, "/resume"))
-		response, err := m.HandleIntent(ctx, channelID, "resume", args)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/explain"):
-		args := strings.TrimSpace(strings.TrimPrefix(trimmed, "/explain"))
-		response, err := m.handleModeAction(ctx, channelID, modeExplain, args)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/triage"):
-		args := strings.TrimSpace(strings.TrimPrefix(trimmed, "/triage"))
-		response, err := m.handleModeAction(ctx, channelID, modeTriage, args)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/handoff"):
-		args := strings.TrimSpace(strings.TrimPrefix(trimmed, "/handoff"))
-		response, err := m.HandleIntent(ctx, channelID, "handoff", args)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/session"):
-		response, err := m.handleSessionCommand(ctx, channelID, input)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/workspace"):
-		response, err := m.handleWorkspaceCommand(ctx, channelID, input)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/use"):
-		args := strings.TrimSpace(strings.TrimPrefix(trimmed, "/use"))
-		response, err := m.HandleWorkspaceAction(ctx, channelID, "switch", args)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/cancel"), strings.HasPrefix(trimmed, "/stop"):
-		args := strings.TrimSpace(strings.TrimPrefix(trimmed, strings.Fields(trimmed)[0]))
-		response, err := m.handleSessionCancel(ctx, channelID, m.wizard.GetLanguage(channelID), args)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/action"):
-		response, err := m.handleActionCommand(ctx, channelID, input)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/help"):
-		response, err := m.handleHelpCommand(channelID)
-		return true, response, err
-	case strings.HasPrefix(trimmed, "/wizard"):
-		response, err := m.handleWizardCommand(channelID)
-		return true, response, err
-	default:
-		return false, "", nil
-	}
 }
 
 func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.ConversationRequest, preResolvedSessionID string, fallbackAgentID string) (string, error) {

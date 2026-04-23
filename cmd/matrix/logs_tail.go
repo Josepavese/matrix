@@ -1,8 +1,8 @@
 package main
 
 import (
-	logiclogging "github.com/jose/matrix-v2/internal/logic/logging"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	logiclogging "github.com/Josepavese/matrix/internal/logic/logging"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 	"github.com/spf13/cobra"
 )
 

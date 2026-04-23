@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 type mockStorage struct {
@@ -58,6 +58,36 @@ func TestSaveAndResolveByPath(t *testing.T) {
 	}
 	if meta.ID != "billing-api" {
 		t.Fatalf("expected workspace id billing-api, got %q", meta.ID)
+	}
+}
+
+func TestSaveMetaRemovesStalePathIndex(t *testing.T) {
+	store := &mockStorage{data: make(map[string][]byte)}
+	if err := SaveMeta(store, Meta{
+		ID:       "billing-api",
+		Name:     "billing-api",
+		RootPath: "/tmp/billing-api",
+	}); err != nil {
+		t.Fatalf("SaveMeta initial: %v", err)
+	}
+	if err := SaveMeta(store, Meta{
+		ID:       "billing-api",
+		Name:     "billing-api",
+		RootPath: "/tmp/billing-renamed",
+	}); err != nil {
+		t.Fatalf("SaveMeta renamed: %v", err)
+	}
+	if _, found, err := ResolveByPath(store, "/tmp/billing-api"); err != nil {
+		t.Fatalf("ResolveByPath old path: %v", err)
+	} else if found {
+		t.Fatal("expected old workspace path index to be removed")
+	}
+	meta, found, err := ResolveByPath(store, "/tmp/billing-renamed")
+	if err != nil {
+		t.Fatalf("ResolveByPath new path: %v", err)
+	}
+	if !found || meta.ID != "billing-api" {
+		t.Fatalf("expected new workspace path to resolve, found=%v meta=%+v", found, meta)
 	}
 }
 
@@ -225,5 +255,71 @@ func TestRecordTurnAndSnapshotLifecycle(t *testing.T) {
 	}
 	if len(snapshots) != 1 || snapshots[0].ID != snapshot.ID {
 		t.Fatalf("unexpected snapshots: %+v", snapshots)
+	}
+}
+
+func TestWorkspaceIndexesDeleteEvictedObjects(t *testing.T) {
+	store := &mockStorage{data: make(map[string][]byte)}
+
+	var firstEvent Event
+	for i := 0; i < maxTimelineEventRefs+1; i++ {
+		event, err := RecordEvent(store, Event{
+			WorkspaceID: "billing-api",
+			Type:        "session.created",
+			Message:     "event",
+			CreatedAt:   time.Now().UTC().Add(time.Duration(i) * time.Second),
+		})
+		if err != nil {
+			t.Fatalf("RecordEvent(%d): %v", i, err)
+		}
+		if i == 0 {
+			firstEvent = event
+		}
+	}
+	if raw, err := store.Get(EventKey("billing-api", firstEvent.ID)); err != nil {
+		t.Fatalf("Get evicted event: %v", err)
+	} else if len(raw) != 0 {
+		t.Fatal("expected evicted event payload to be deleted")
+	}
+
+	var firstTurn Turn
+	for i := 0; i < maxTurnRefs+1; i++ {
+		turn, err := RecordTurn(store, Turn{
+			WorkspaceID: "billing-api",
+			Role:        "user",
+			Content:     "turn",
+			CreatedAt:   time.Now().UTC().Add(time.Duration(i) * time.Second),
+		})
+		if err != nil {
+			t.Fatalf("RecordTurn(%d): %v", i, err)
+		}
+		if i == 0 {
+			firstTurn = turn
+		}
+	}
+	if raw, err := store.Get(TurnKey("billing-api", firstTurn.ID)); err != nil {
+		t.Fatalf("Get evicted turn: %v", err)
+	} else if len(raw) != 0 {
+		t.Fatal("expected evicted turn payload to be deleted")
+	}
+
+	var firstSnapshot Snapshot
+	for i := 0; i < maxSnapshotRefs+1; i++ {
+		snapshot, err := SaveSnapshot(store, Snapshot{
+			WorkspaceID: "billing-api",
+			Title:       "snapshot",
+			CreatedAt:   time.Now().UTC().Add(time.Duration(i) * time.Second),
+		})
+		if err != nil {
+			t.Fatalf("SaveSnapshot(%d): %v", i, err)
+		}
+		if i == 0 {
+			firstSnapshot = snapshot
+		}
+	}
+	if raw, err := store.Get(SnapshotKey("billing-api", firstSnapshot.ID)); err != nil {
+		t.Fatalf("Get evicted snapshot: %v", err)
+	} else if len(raw) != 0 {
+		t.Fatal("expected evicted snapshot payload to be deleted")
 	}
 }

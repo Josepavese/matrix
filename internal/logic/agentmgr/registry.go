@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // AgentConfig represents how to launch and communicate with a specific agent.
@@ -14,7 +14,7 @@ type AgentConfig struct {
 	Command         string   `json:"command"`
 	Args            []string `json:"args"`
 	Env             []string `json:"env,omitempty"`
-	Protocol        string   `json:"protocol"`
+	Protocol        string   `json:"protocol,omitempty"`
 	Kind            string   `json:"kind,omitempty"`
 	Transport       string   `json:"transport,omitempty"`
 	Address         string   `json:"address,omitempty"`
@@ -50,12 +50,12 @@ func NewRegistry(_ middleware.ConfigReader, store middleware.Storage) (*Registry
 			return nil, err
 		}
 
-		// Map Entry (storable) to AgentConfig (runtime)
-		configs[id] = AgentConfig{
+		// Map Entry (storable) to AgentConfig (runtime).
+		cfg := AgentConfig{
 			Command:         entry.Config.Command,
 			Args:            entry.Config.Args,
 			Env:             entry.Config.Env,
-			Protocol:        entry.Config.Protocol,
+			Protocol:        entry.Config.Kind,
 			Kind:            entry.Config.Kind,
 			Transport:       entry.Config.Transport,
 			Address:         entry.Config.Address,
@@ -65,6 +65,9 @@ func NewRegistry(_ middleware.ConfigReader, store middleware.Storage) (*Registry
 			EnvIsolation:    entry.Config.EnvIsolation,
 			Active:          entry.Config.Active,
 		}
+		endpoint := protocolEndpointFromAgentConfig(cfg)
+		cfg.Protocol = string(endpoint.Kind)
+		configs[id] = cfg
 
 		// Apply user overrides
 		if entry.Override.Active != nil {
@@ -147,7 +150,6 @@ func SeedFromConfigFile(store middleware.Storage, configReader middleware.Config
 				Command:         cfg.Command,
 				Args:            cfg.Args,
 				Env:             cfg.Env,
-				Protocol:        cfg.Protocol,
 				Kind:            cfg.Kind,
 				Transport:       cfg.Transport,
 				Address:         cfg.Address,
@@ -163,4 +165,20 @@ func SeedFromConfigFile(store middleware.Storage, configReader middleware.Config
 		}
 	}
 	return nil
+}
+
+func protocolEndpointFromAgentConfig(cfg AgentConfig) middleware.ProtocolEndpoint {
+	return agentcfg.NormalizeEndpoint(agentcfg.Config{
+		Command:         cfg.Command,
+		Args:            cfg.Args,
+		Env:             cfg.Env,
+		Kind:            cfg.Kind,
+		Transport:       cfg.Transport,
+		Address:         cfg.Address,
+		CardURL:         cfg.CardURL,
+		ProtocolVersion: cfg.ProtocolVersion,
+		HealthcheckPath: cfg.HealthcheckPath,
+		EnvIsolation:    cfg.EnvIsolation,
+		Active:          cfg.Active,
+	})
 }

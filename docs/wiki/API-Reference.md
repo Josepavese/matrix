@@ -13,7 +13,7 @@ curl -H "X-Matrix-Key: your-key" http://127.0.0.1:9091/_matrix/runtime
 Configure the API key:
 
 ```bash
-matrix config set acp_api_key your-key
+matrix config set matrix_api_key your-key
 ```
 
 ## Health

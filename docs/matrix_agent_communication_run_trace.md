@@ -62,7 +62,7 @@ Optional emergency fuse:
 
 Omitted or `0` means no absolute turn timeout. Matrix intentionally does not define a default hard timeout for communication runs because long-running autonomous agents are valid workloads. Production control is based on run events, stream/async observation, explicit `cancel`/`stop`, and channel or supervisor policy. Wall-clock termination is only allowed when the caller explicitly sends `emergency_kill_seconds`.
 
-Timeout and recovery rules are tracked in [matrix_timeout_recovery_policy.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_timeout_recovery_policy.md).
+Timeout and recovery rules are tracked in [matrix_timeout_recovery_policy.md](matrix_timeout_recovery_policy.md).
 
 Every response includes:
 

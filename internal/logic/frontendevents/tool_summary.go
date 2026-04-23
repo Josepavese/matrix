@@ -3,7 +3,7 @@ package frontendevents
 import (
 	"fmt"
 
-	"github.com/jose/matrix-v2/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/logic/runtrace"
 )
 
 type toolSummaryContext struct {

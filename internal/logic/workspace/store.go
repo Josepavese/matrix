@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 const (
@@ -54,7 +54,7 @@ func pathIndexKey(path string) string {
 	return PathIndexKeyPrefix + filepath.Clean(path)
 }
 
-// SaveMeta persists workspace metadata and updates the optional path index.
+// SaveMeta persists workspace metadata and keeps the optional path index in sync.
 func SaveMeta(storage middleware.Storage, meta Meta) error {
 	if storage == nil {
 		return fmt.Errorf("storage not available")
@@ -62,9 +62,17 @@ func SaveMeta(storage middleware.Storage, meta Meta) error {
 	if strings.TrimSpace(meta.ID) == "" {
 		return fmt.Errorf("workspace id is required")
 	}
+	previous, previousFound, err := LoadMeta(storage, meta.ID)
+	if err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	if meta.CreatedAt.IsZero() {
-		meta.CreatedAt = now
+		if previousFound && !previous.CreatedAt.IsZero() {
+			meta.CreatedAt = previous.CreatedAt
+		} else {
+			meta.CreatedAt = now
+		}
 	}
 	meta.UpdatedAt = now
 	if meta.Name == "" {
@@ -80,6 +88,11 @@ func SaveMeta(storage middleware.Storage, meta Meta) error {
 	if strings.TrimSpace(meta.RootPath) != "" {
 		if err := storage.Set(pathIndexKey(meta.RootPath), []byte(meta.ID)); err != nil {
 			return fmt.Errorf("failed to store workspace path index for %s: %w", meta.ID, err)
+		}
+	}
+	if previousFound && strings.TrimSpace(previous.RootPath) != "" && filepath.Clean(previous.RootPath) != filepath.Clean(meta.RootPath) {
+		if err := storage.Delete(pathIndexKey(previous.RootPath)); err != nil {
+			return fmt.Errorf("failed to remove stale workspace path index for %s: %w", meta.ID, err)
 		}
 	}
 	return nil

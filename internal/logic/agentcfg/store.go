@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // KeyPrefix is the vault key prefix for agent configuration entries.
@@ -23,7 +23,6 @@ type Config struct {
 	Command         string   `json:"command"`
 	Args            []string `json:"args"`
 	Env             []string `json:"env,omitempty"`
-	Protocol        string   `json:"protocol"`
 	Kind            string   `json:"kind,omitempty"`
 	Transport       string   `json:"transport,omitempty"`
 	Address         string   `json:"address,omitempty"`

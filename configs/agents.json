@@ -5,7 +5,8 @@
     ],
     "command": "claude",
     "healthcheck_path": "",
-    "protocol": "stdio",
+    "kind": "acp",
+    "transport": "stdio",
     "env_isolation": true,
     "active": false
   },
@@ -15,7 +16,8 @@
     ],
     "command": "gemini",
     "healthcheck_path": "",
-    "protocol": "stdio",
+    "kind": "acp",
+    "transport": "stdio",
     "env_isolation": true,
     "active": true
   },
@@ -25,7 +27,8 @@
     ],
     "command": "kimi",
     "healthcheck_path": "",
-    "protocol": "stdio",
+    "kind": "acp",
+    "transport": "stdio",
     "active": false
   },
   "opencode": {
@@ -35,7 +38,8 @@
     ],
     "command": "opencode",
     "healthcheck_path": "",
-    "protocol": "stdio",
+    "kind": "acp",
+    "transport": "stdio",
     "env_isolation": true
   }
 }

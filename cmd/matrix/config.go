@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/cmdutil"
-	"github.com/jose/matrix-v2/internal/logic/config"
-	"github.com/jose/matrix-v2/internal/providers/bolt"
+	"github.com/Josepavese/matrix/internal/logic/cmdutil"
+	"github.com/Josepavese/matrix/internal/logic/config"
+	"github.com/Josepavese/matrix/internal/providers/bolt"
 	"github.com/spf13/cobra"
 )
 
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Manage Matrix V2 SSOT configuration",
-	Long: `Manage Matrix V2 configuration stored in the SSOT Vault.
+	Short: "Manage Matrix SSOT configuration",
+	Long: `Manage Matrix configuration stored in the SSOT Vault.
 	All values are stored with dot-notation keys (e.g. provider.openai.key).`,
 	Run: func(_ *cobra.Command, _ []string) {
 		fmt.Println("Use: matrix config [set|get|delete|list]")

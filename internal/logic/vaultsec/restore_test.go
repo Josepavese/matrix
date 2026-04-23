@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 )
 
 func TestRestoreBackup(t *testing.T) {

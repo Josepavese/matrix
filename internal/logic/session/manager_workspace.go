@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/workspace"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/workspace"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 func (m *Manager) RouteConversation(ctx context.Context, req middleware.ConversationRequest) (string, error) {
@@ -19,8 +19,10 @@ func (m *Manager) RouteConversation(ctx context.Context, req middleware.Conversa
 		}
 		return m.wizard.Process(req.ChannelID, req.Input)
 	}
-	if handled, response, err := m.tryHandleCommand(ctx, req.ChannelID, req.Input); handled {
-		return response, err
+	if !req.NonInteractive {
+		if handled, response, err := m.tryHandleCommand(ctx, req.ChannelID, req.Input); handled {
+			return response, err
+		}
 	}
 	return m.routeAgentTurnWithWorkspace(ctx, req)
 }

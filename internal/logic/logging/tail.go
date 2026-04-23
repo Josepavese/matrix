@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // TailFile reads the last N lines from a file.

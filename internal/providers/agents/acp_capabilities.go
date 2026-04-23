@@ -1,6 +1,6 @@
 package agents
 
-import "github.com/jose/matrix-v2/internal/middleware"
+import "github.com/Josepavese/matrix/internal/middleware"
 
 func supportsLoadSession(resp *acpInitializeResponse) bool {
 	if resp == nil || resp.Capabilities == nil {

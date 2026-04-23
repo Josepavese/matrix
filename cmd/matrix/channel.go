@@ -4,9 +4,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/channelcfg"
-	"github.com/jose/matrix-v2/internal/logic/cmdutil"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/logic/channelcfg"
+	"github.com/Josepavese/matrix/internal/logic/cmdutil"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 	"github.com/spf13/cobra"
 )
 

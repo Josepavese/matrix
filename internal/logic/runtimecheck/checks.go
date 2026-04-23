@@ -4,7 +4,7 @@ package runtimecheck
 import (
 	"fmt"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // CanDial checks if an address is reachable.
@@ -20,8 +20,8 @@ func AppendRuntimeWarnings(report map[string]any, warnings *[]string) {
 	if !ReportBool(report, "jsonrpc_daemon_up") {
 		*warnings = append(*warnings, "jsonrpc daemon is not reachable on 127.0.0.1:9090")
 	}
-	if !ReportBool(report, "acp_http_up") {
-		*warnings = append(*warnings, "acp http server is not reachable on 127.0.0.1:9091")
+	if !ReportBool(report, "matrix_http_up") {
+		*warnings = append(*warnings, "matrix http ingress is not reachable on 127.0.0.1:9091")
 	}
 	if !ReportBool(report, "a2a_http_up") {
 		*warnings = append(*warnings, "a2a http server is not reachable on 127.0.0.1:9091")
@@ -30,7 +30,7 @@ func AppendRuntimeWarnings(report map[string]any, warnings *[]string) {
 
 // ValidateRuntimeReport checks that a runtime report has expected boolean fields.
 func ValidateRuntimeReport(report map[string]any) error {
-	for _, key := range []string{"vault_exists", "jsonrpc_daemon_up", "acp_http_up", "a2a_http_up"} {
+	for _, key := range []string{"vault_exists", "jsonrpc_daemon_up", "matrix_http_up", "a2a_http_up"} {
 		if _, ok := report[key].(bool); !ok {
 			return fmt.Errorf("invalid runtime doctor report: %s is not a bool", key)
 		}

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/logic/agentdiscovery"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentdiscovery"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 type testStorage struct {
@@ -79,7 +79,7 @@ func TestServiceListMergesLocalAndA2ACatalog(t *testing.T) {
 	if err := agentcfg.SaveMeta(store, "codex", agentcfg.Meta{ID: "codex", Name: "Codex", DistTypes: []string{"npx"}}); err != nil {
 		t.Fatalf("SaveMeta codex: %v", err)
 	}
-	if err := agentcfg.SaveEntry(store, "codex", agentcfg.Entry{Config: agentcfg.Config{Protocol: "acp", Kind: "acp", Transport: "stdio", Command: "codex-acp"}}); err != nil {
+	if err := agentcfg.SaveEntry(store, "codex", agentcfg.Entry{Config: agentcfg.Config{Kind: "acp", Transport: "stdio", Command: "codex-acp"}}); err != nil {
 		t.Fatalf("SaveEntry codex: %v", err)
 	}
 
@@ -149,7 +149,7 @@ func TestRegisterRemotePersistsA2AEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadEntry: %v", err)
 	}
-	if entry.Config.Protocol != "a2a" || entry.Config.Address != "http://127.0.0.1:8088/a2a" {
+	if entry.Config.Kind != "a2a" || entry.Config.Address != "http://127.0.0.1:8088/a2a" {
 		t.Fatalf("unexpected entry config: %+v", entry.Config)
 	}
 	meta, err := agentcfg.LoadMeta(store, "remote-planner")

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/logic/agentmgr"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 type memStorage struct {
@@ -99,7 +99,6 @@ func TestLocalProviderSearch(t *testing.T) {
 	if err := agentcfg.SaveEntry(store, "planner", agentcfg.Entry{
 		Config: agentcfg.Config{
 			Kind:      "a2a",
-			Protocol:  "a2a",
 			Transport: "JSONRPC",
 			Address:   "https://planner.example.com/a2a",
 		},

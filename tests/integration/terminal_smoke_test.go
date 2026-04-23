@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/middleware"
-	"github.com/jose/matrix-v2/internal/providers/agents"
-	exepprov "github.com/jose/matrix-v2/internal/providers/exec"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/agents"
+	exepprov "github.com/Josepavese/matrix/internal/providers/exec"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 )
 
 // realAgentResolver resolves a real agent binary via a configurable protocol.

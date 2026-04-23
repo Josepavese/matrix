@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/runtimecheck"
+	"github.com/Josepavese/matrix/internal/logic/runtimecheck"
 )
 
 // Input groups the reports needed to evaluate local Matrix readiness.
@@ -35,7 +35,7 @@ func collectBlockers(input Input, vaultLockedByRuntime bool) []string {
 		if up, ok := input.RuntimeReport["jsonrpc_daemon_up"].(bool); !ok || !up {
 			blockers = append(blockers, "jsonrpc daemon is not reachable")
 		}
-		if up, ok := input.RuntimeReport["acp_http_up"].(bool); !ok || !up {
+		if up, ok := input.RuntimeReport["matrix_http_up"].(bool); !ok || !up {
 			blockers = append(blockers, "matrix http ingress is not reachable")
 		}
 	}
@@ -110,7 +110,7 @@ func appendWorkspaceWarnings(warnings *[]string, raw any) {
 
 func localRuntimeEndpointsUp(runtimeReport map[string]any) bool {
 	jsonrpcUp, _ := runtimeReport["jsonrpc_daemon_up"].(bool)
-	httpUp, _ := runtimeReport["acp_http_up"].(bool)
+	httpUp, _ := runtimeReport["matrix_http_up"].(bool)
 	return jsonrpcUp && httpUp
 }
 

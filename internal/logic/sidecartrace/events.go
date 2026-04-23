@@ -3,9 +3,9 @@ package sidecartrace
 import (
 	"fmt"
 
-	"github.com/jose/matrix-v2/internal/logic/runtrace"
-	"github.com/jose/matrix-v2/internal/logic/sidecar"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/logic/sidecar"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 func Events(run runtrace.Run, capsules []middleware.SidecarCapsule) []runtrace.Event {

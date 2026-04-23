@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/sessioncleanup"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/sessioncleanup"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 type sessionCleanupRequest struct {

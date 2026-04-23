@@ -26,7 +26,7 @@ Matrix now records an explicit vault schema state:
 
 Current schema support is implemented in:
 
-- [schema.go](/home/jose/hpdev/Libraries/matrix/internal/logic/schema/schema.go)
+- [schema.go](internal/logic/schema/schema.go)
 
 Operational commands:
 
@@ -46,7 +46,7 @@ Workspace growth is now bounded by a configurable retention policy:
 
 The policy is implemented in:
 
-- [retention.go](/home/jose/hpdev/Libraries/matrix/internal/logic/workspace/retention.go)
+- [retention.go](internal/logic/workspace/retention.go)
 
 Operational commands:
 

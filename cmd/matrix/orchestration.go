@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/jose/matrix-v2/internal/logic/cmdutil"
-	"github.com/jose/matrix-v2/internal/logic/orchestration"
+	"github.com/Josepavese/matrix/internal/logic/cmdutil"
+	"github.com/Josepavese/matrix/internal/logic/orchestration"
 	"github.com/spf13/cobra"
 )
 

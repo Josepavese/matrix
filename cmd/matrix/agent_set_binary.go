@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/providers/bolt"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/providers/bolt"
 	"github.com/spf13/cobra"
 )
 
 var (
-	setBinaryProtocol        string
+	setBinaryKind            string
 	setBinaryTransport       string
 	setBinaryProtocolVersion string
 	setBinaryArgs            []string
@@ -48,13 +48,9 @@ var agentSetBinaryCmd = &cobra.Command{
 		// Update path
 		entry.Config.Command = binaryPath
 
-		// Apply --protocol flag if provided
-		if setBinaryProtocol != "" {
-			entry.Config.Protocol = setBinaryProtocol
-			entry.Config.Kind = setBinaryProtocol
-		} else if entry.Config.Protocol == "" {
-			entry.Config.Protocol = "acp"
-			entry.Config.Kind = "acp"
+		// Apply --kind flag if provided.
+		if setBinaryKind != "" {
+			entry.Config.Kind = setBinaryKind
 		}
 		if entry.Config.Kind == "" {
 			entry.Config.Kind = "acp"
@@ -94,7 +90,7 @@ var agentSetBinaryCmd = &cobra.Command{
 }
 
 func init() {
-	agentSetBinaryCmd.Flags().StringVar(&setBinaryProtocol, "protocol", "", "Protocol family (acp or a2a). Defaults to acp for local binaries")
+	agentSetBinaryCmd.Flags().StringVar(&setBinaryKind, "kind", "", "Protocol family (acp or a2a). Defaults to acp for local binaries")
 	agentSetBinaryCmd.Flags().StringVar(&setBinaryTransport, "transport", "stdio", "Transport used by the binary endpoint")
 	agentSetBinaryCmd.Flags().StringVar(&setBinaryProtocolVersion, "protocol-version", "", "Optional protocol version exposed by the agent")
 	agentSetBinaryCmd.Flags().StringArrayVar(&setBinaryArgs, "args", nil, "Arguments for the agent binary")

@@ -1,7 +1,6 @@
-// Package acp exposes Matrix's inbound HTTP bridge for channel/session routing.
-// This is not the Zed ACP wire protocol server surface; Matrix speaks Zed ACP
-// outbound to agents over JSON-RPC transports and exposes /v1/runs as a Matrix API.
-package acp
+// Package matrixapi exposes Matrix's inbound HTTP bridge for channel/session routing.
+// Protocol adapters such as Zed ACP and A2A remain behind the agent/router layer.
+package matrixapi
 
 import (
 	"context"
@@ -11,9 +10,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/jose/matrix-v2/internal/logic/orchestration"
-	"github.com/jose/matrix-v2/internal/middleware"
-	"github.com/jose/matrix-v2/internal/providers/runapi"
+	"github.com/Josepavese/matrix/internal/logic/orchestration"
+	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/runapi"
 )
 
 // SessionRouter abstracts the logic/session routing capability.
@@ -30,7 +29,7 @@ type Server struct {
 	runs         *runapi.Server
 }
 
-// NewServer creates a new ACP Server provider.
+// NewServer creates a new Matrix HTTP API provider.
 func NewServer(router SessionRouter) *Server {
 	return &Server{
 		router:       router,

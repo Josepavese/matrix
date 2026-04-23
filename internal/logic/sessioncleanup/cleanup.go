@@ -3,7 +3,7 @@ package sessioncleanup
 import (
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 const NoMatchingCachedAgentClient = "no matching cached agent client"

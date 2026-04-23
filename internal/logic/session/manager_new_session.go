@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/sessioncleanup"
+	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/google/uuid"
-	"github.com/jose/matrix-v2/internal/logic/sessioncleanup"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 type newSessionRequest struct {

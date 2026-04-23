@@ -6,9 +6,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 // syntheticRoot is a simple root node for the Matrix Virtual FS.
@@ -18,7 +18,7 @@ type syntheticRoot struct {
 
 // OnAdd is called when the inode is added to the system.
 func (r *syntheticRoot) OnAdd(ctx context.Context) {
-	content := []byte("Welcome to the Matrix V2 Virtual Filesystem! Wake up, Neo...\n")
+	content := []byte("Welcome to the Matrix Virtual Filesystem! Wake up, Neo...\n")
 	file := &fs.MemRegularFile{
 		Data: content,
 		Attr: fuse.Attr{Mode: 0o444},

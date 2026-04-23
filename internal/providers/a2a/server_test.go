@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Josepavese/matrix/internal/middleware"
 	a2asdk "github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 type stubSessionRouter struct {

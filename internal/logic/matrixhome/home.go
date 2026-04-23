@@ -49,8 +49,12 @@ func Resolve() (string, error) {
 	}
 }
 
+func AgentsDir(home string) string {
+	return filepath.Join(home, "agents")
+}
+
 func Ensure(home string) error {
-	for _, dir := range []string{"", "bin", "configs", "data", "logs", "artifacts", "backups", "tmp"} {
+	for _, dir := range []string{"", "bin", "configs", "data", "logs", "artifacts", "agents", "backups", "tmp"} {
 		path := home
 		if dir != "" {
 			path = filepath.Join(home, dir)

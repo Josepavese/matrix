@@ -1,4 +1,4 @@
-# Matrix V2 Configs
+# Matrix Configs
 
 This directory contains versioned defaults and templates.
 

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/config"
+	"github.com/Josepavese/matrix/internal/logic/config"
 )
 
 // ProviderKey builds a full config key for a channel provider setting.

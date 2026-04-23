@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/config"
+	"github.com/Josepavese/matrix/internal/logic/config"
 )
 
 type intSettingSpec struct {

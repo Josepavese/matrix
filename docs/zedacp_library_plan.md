@@ -53,7 +53,7 @@ This remains Matrix-specific on purpose.
 
 ### Matrix ingress
 
-`internal/providers/acp/server.go`
+`internal/providers/matrixapi/server.go`
 
 Contains:
 

@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/logic/agentdiscovery"
-	"github.com/jose/matrix-v2/internal/logic/agentmgr"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentdiscovery"
+	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 type Entry struct {
@@ -153,7 +153,6 @@ func RegisterRemote(storage middleware.Storage, entry Entry) error {
 		return err
 	}
 	current.Config.Kind = string(entry.Kind)
-	current.Config.Protocol = string(entry.Kind)
 	current.Config.Transport = transport
 	current.Config.Address = strings.TrimSpace(entry.Address)
 	current.Config.CardURL = strings.TrimSpace(entry.CardURL)

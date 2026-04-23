@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jose/matrix-v2/internal/logic/vault"
+	"github.com/Josepavese/matrix/internal/logic/vault"
 )
 
 // mockStorage is a simple in-memory storage for testing config.Manager

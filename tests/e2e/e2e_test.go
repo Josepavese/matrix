@@ -20,7 +20,7 @@ func TestMain(m *testing.M) {
 	cleanup := func() { _ = os.RemoveAll(tmpDir) }
 
 	binPath = filepath.Join(tmpDir, "matrix")
-	cmd := exec.Command("go", "build", "-o", binPath, "github.com/jose/matrix-v2/cmd/matrix")
+	cmd := exec.Command("go", "build", "-o", binPath, "github.com/Josepavese/matrix/cmd/matrix")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		_, _ = os.Stderr.Write(out)
 		cleanup()

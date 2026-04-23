@@ -1,23 +1,23 @@
 package runtimecheck
 
 import (
-	"github.com/jose/matrix-v2/internal/logic/agentmgr"
-	"github.com/jose/matrix-v2/internal/logic/channelcfg"
-	"github.com/jose/matrix-v2/internal/logic/config"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/logic/channelcfg"
+	"github.com/Josepavese/matrix/internal/logic/config"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // BuildInput holds the full set of dependencies for building a runtime report.
 type BuildInput struct {
-	Store         middleware.Storage
-	Registry      *agentmgr.Registry
-	Process       middleware.Process
-	ConfigManager *config.Manager
-	ConfigReader  middleware.ConfigReader
-	Net           middleware.Network
-	JSONRPCAddr   string
-	ACPHTTPAddr   string
-	A2AHTTPAddr   string
+	Store          middleware.Storage
+	Registry       *agentmgr.Registry
+	Process        middleware.Process
+	ConfigManager  *config.Manager
+	ConfigReader   middleware.ConfigReader
+	Net            middleware.Network
+	JSONRPCAddr    string
+	MatrixHTTPAddr string
+	A2AHTTPAddr    string
 }
 
 // BuildReport generates a comprehensive runtime report.
@@ -38,8 +38,8 @@ func BuildReport(input BuildInput) (map[string]any, error) {
 		"vault_exists":        true,
 		"jsonrpc_daemon_addr": input.JSONRPCAddr,
 		"jsonrpc_daemon_up":   CanDial(input.Net, input.JSONRPCAddr),
-		"acp_http_addr":       input.ACPHTTPAddr,
-		"acp_http_up":         CanDial(input.Net, input.ACPHTTPAddr),
+		"matrix_http_addr":    input.MatrixHTTPAddr,
+		"matrix_http_up":      CanDial(input.Net, input.MatrixHTTPAddr),
 		"a2a_http_addr":       input.A2AHTTPAddr,
 		"a2a_http_up":         CanDial(input.Net, input.A2AHTTPAddr),
 		"telegram_enabled":    tgCfg.Enabled,

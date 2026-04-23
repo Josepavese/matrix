@@ -3,10 +3,10 @@ package main
 import (
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/runtimecheck"
-	"github.com/jose/matrix-v2/internal/logic/vaultsec"
-	"github.com/jose/matrix-v2/internal/providers/network"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/logic/runtimecheck"
+	"github.com/Josepavese/matrix/internal/logic/vaultsec"
+	"github.com/Josepavese/matrix/internal/providers/network"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 	"github.com/spf13/cobra"
 )
 

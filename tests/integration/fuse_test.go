@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/filesystem"
-	"github.com/jose/matrix-v2/internal/providers/fusefs"
+	"github.com/Josepavese/matrix/internal/logic/filesystem"
+	"github.com/Josepavese/matrix/internal/providers/fusefs"
 )
 
 func TestFUSE_MountAndRead(t *testing.T) {
@@ -38,7 +38,7 @@ func TestFUSE_MountAndRead(t *testing.T) {
 		t.Fatalf("Failed to read virtual file after mount: %v", err)
 	}
 
-	expected := "Welcome to the Matrix V2 Virtual Filesystem"
+	expected := "Welcome to the Matrix Virtual Filesystem"
 	if !strings.Contains(string(content), expected) {
 		t.Errorf("Unexpected virtual file content. Got: %s", string(content))
 	}

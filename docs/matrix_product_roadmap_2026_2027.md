@@ -6,7 +6,7 @@ This roadmap translates the Matrix category thesis into a product plan.
 
 The target is not "more features." The target is to make **Agent Communication Matrix** feel like a real category with a clear product shape, a visible wedge, and a credible expansion path.
 
-The supporting thesis is documented in [matrix_category_thesis.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_category_thesis.md).
+The supporting thesis is documented in [matrix_category_thesis.md](matrix_category_thesis.md).
 
 ## Product North Star
 
@@ -236,7 +236,7 @@ This is the first feature that genuinely moves Matrix out of "yet another runtim
 Most agent systems treat history as chat. Matrix should treat history as an operational timeline.
 
 The implementation spec for the first productized version is documented in
-[matrix_workspace_timeline_spec.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_workspace_timeline_spec.md).
+[matrix_workspace_timeline_spec.md](matrix_workspace_timeline_spec.md).
 
 ## Phase 5: Agent Handoff And Review Flows
 

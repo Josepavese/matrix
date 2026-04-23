@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/gorilla/websocket"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 type mockResolver struct {
@@ -33,7 +33,7 @@ func buildRouterMockAgent(t *testing.T) string {
 	tmpDir := t.TempDir()
 	mockBin := tmpDir + "/mock-agent"
 
-	buildCmd := goexec.Command("go", "build", "-o", mockBin, "github.com/jose/matrix-v2/cmd/mock-agent")
+	buildCmd := goexec.Command("go", "build", "-o", mockBin, "github.com/Josepavese/matrix/cmd/mock-agent")
 	if output, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build mock-agent: %v\n%s", err, output)
 	}

@@ -1,8 +1,8 @@
 package sidecarprojection
 
 import (
-	"github.com/jose/matrix-v2/internal/logic/sidecar"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/sidecar"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 func ACPMeta(capsules []middleware.SidecarCapsule) map[string]interface{} {

@@ -3,7 +3,7 @@ package agents
 import (
 	"encoding/json"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 type permissionAudit struct {

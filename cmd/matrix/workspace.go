@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/cmdutil"
-	"github.com/jose/matrix-v2/internal/logic/session"
-	"github.com/jose/matrix-v2/internal/logic/workspace"
+	"github.com/Josepavese/matrix/internal/logic/cmdutil"
+	"github.com/Josepavese/matrix/internal/logic/session"
+	"github.com/Josepavese/matrix/internal/logic/workspace"
 	"github.com/spf13/cobra"
 )
 

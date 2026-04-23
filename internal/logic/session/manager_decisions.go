@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/workspace"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/workspace"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 type routeDecision struct {
