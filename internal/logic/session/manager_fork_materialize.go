@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 func (m *Manager) forkUnsupportedByCapabilities(ctx context.Context, meta SessionMeta) *middleware.SessionActionResult {

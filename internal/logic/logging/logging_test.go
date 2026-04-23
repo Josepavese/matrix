@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jose/matrix-v2/internal/middleware"
-	"github.com/jose/matrix-v2/internal/providers/oslog"
+	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/oslog"
 )
 
 func TestParseLevel(t *testing.T) {

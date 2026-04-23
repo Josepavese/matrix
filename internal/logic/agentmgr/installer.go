@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/matrixhome"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // Installer orchestrates the process of installing an agent from the ACP Registry.
@@ -35,11 +36,11 @@ type InstallerConfig struct {
 // NewInstaller creates a new agent Installer from the given config.
 func NewInstaller(cfg InstallerConfig) (*Installer, error) {
 	if cfg.BaseDir == "" {
-		home, err := cfg.FS.UserHomeDir()
+		home, err := matrixhome.Resolve()
 		if err != nil {
-			return nil, fmt.Errorf("cannot determine home directory for agent install path: %w", err)
+			return nil, fmt.Errorf("cannot determine matrix home for agent install path: %w", err)
 		}
-		cfg.BaseDir = filepath.Join(home, ".matrix", "agents")
+		cfg.BaseDir = matrixhome.AgentsDir(home)
 	}
 	return &Installer{
 		net:      cfg.Net,
@@ -82,7 +83,6 @@ func (inst *Installer) Install(ctx context.Context, agentID string) error {
 		}
 		cfg = agentcfg.Config{
 			Command:   binaryPath,
-			Protocol:  "acp",
 			Kind:      "acp",
 			Transport: "stdio",
 		}
@@ -92,7 +92,6 @@ func (inst *Installer) Install(ctx context.Context, agentID string) error {
 			Command:   resolved.Command,
 			Args:      resolved.Args,
 			Env:       resolved.Env,
-			Protocol:  "acp",
 			Kind:      "acp",
 			Transport: "stdio",
 		}

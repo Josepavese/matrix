@@ -3,51 +3,24 @@ package agentcfg
 import (
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
-// NormalizeEndpoint maps legacy agent configuration fields to the protocol-neutral endpoint model.
+// NormalizeEndpoint maps stored agent configuration to the protocol-neutral endpoint model.
 func NormalizeEndpoint(cfg Config) middleware.ProtocolEndpoint {
 	kind := strings.ToLower(strings.TrimSpace(cfg.Kind))
 	transport := strings.TrimSpace(cfg.Transport)
 
-	legacyProtocol := strings.ToLower(strings.TrimSpace(cfg.Protocol))
-	switch {
-	case kind == "":
-		switch legacyProtocol {
-		case "", "acp":
-			kind = string(middleware.ProtocolKindACP)
-			if transport == "" {
-				transport = "stdio"
-			}
-		case "stdio", "ws", "unix", "http":
-			kind = string(middleware.ProtocolKindACP)
-			if transport == "" {
-				transport = legacyProtocol
-			}
-		case "a2a":
-			kind = string(middleware.ProtocolKindA2A)
-		default:
-			kind = string(middleware.ProtocolKindACP)
-			if transport == "" {
-				transport = legacyProtocol
-			}
-		}
-	case transport == "":
-		switch legacyProtocol {
-		case "stdio", "ws", "unix", "http":
-			transport = legacyProtocol
-		case "acp":
-			transport = "stdio"
-		case "a2a":
-			transport = "JSONRPC"
-		}
+	if kind == "" {
+		kind = string(middleware.ProtocolKindACP)
 	}
 
 	if strings.EqualFold(kind, string(middleware.ProtocolKindA2A)) {
 		if transport == "" {
 			transport = "JSONRPC"
 		}
+	} else if transport == "" {
+		transport = "stdio"
 	}
 
 	return middleware.ProtocolEndpoint{

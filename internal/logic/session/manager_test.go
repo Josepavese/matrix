@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jose/matrix-v2/internal/logic/onboarding"
-	"github.com/jose/matrix-v2/internal/logic/sessioncleanup"
-	"github.com/jose/matrix-v2/internal/logic/workspace"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/onboarding"
+	"github.com/Josepavese/matrix/internal/logic/sessioncleanup"
+	"github.com/Josepavese/matrix/internal/logic/workspace"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // mockStorage is a simple in-memory storage for testing Session routing
@@ -281,6 +281,51 @@ func TestSessionManager_Route(t *testing.T) {
 	}
 	if router.lastMsg != "Hello" {
 		t.Errorf("AgentRouter received unexpected input: %+v", router.lastMsg)
+	}
+}
+
+func TestSessionManager_DoesNotParseCommandsForNonInteractiveRuns(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	res, err := mgr.RouteConversation(context.Background(), middleware.ConversationRequest{
+		ChannelID:      "run_1",
+		AgentID:        "codex",
+		Input:          "/status",
+		NonInteractive: true,
+	})
+	if err != nil {
+		t.Fatalf("RouteConversation failed: %v", err)
+	}
+	if res != "Ok" {
+		t.Fatalf("expected agent response, got %q", res)
+	}
+	if router.lastMsg != "/status" {
+		t.Fatalf("expected /status to reach agent, got %q", router.lastMsg)
+	}
+}
+
+func TestSessionManager_SlashCommandsRequireExactToken(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	res, err := mgr.Route(context.Background(), "chat_1", "codex", "/statusfoo", nil)
+	if err != nil {
+		t.Fatalf("Route failed: %v", err)
+	}
+	if res != "Ok" {
+		t.Fatalf("expected agent response, got %q", res)
+	}
+	if router.lastMsg != "/statusfoo" {
+		t.Fatalf("expected /statusfoo to reach agent, got %q", router.lastMsg)
 	}
 }
 

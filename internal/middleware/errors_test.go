@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // Verify middleware.Error satisfies the error interface

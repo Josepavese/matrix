@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/jose/matrix-v2/internal/logic/config"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/config"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // ProviderState describes the configuration state of a channel provider.

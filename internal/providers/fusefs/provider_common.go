@@ -4,7 +4,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // Provider implements middleware.FS.

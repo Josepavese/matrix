@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jose/matrix-v2/internal/logic/config"
-	"github.com/jose/matrix-v2/internal/logic/vault"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/config"
+	"github.com/Josepavese/matrix/internal/logic/vault"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 type fakeGateway struct {

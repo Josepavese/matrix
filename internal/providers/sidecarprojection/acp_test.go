@@ -3,7 +3,7 @@ package sidecarprojection
 import (
 	"testing"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 func TestACPMetaProjectsProviderCorrelation(t *testing.T) {

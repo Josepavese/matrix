@@ -5,7 +5,7 @@ package fusefs
 import (
 	"fmt"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // Mount reports that the synthetic FUSE filesystem is unavailable on this OS.

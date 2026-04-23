@@ -44,6 +44,10 @@ Matrix routes it to your default agent and replies with the result.
 
 ### Commands
 
+Chat commands are parsed by exact first token. For example, `/session list` is a
+command, while `/session-list` is treated as an unknown command and will not
+accidentally trigger `/session`.
+
 | Command | What It Does |
 |---------|-------------|
 | `/status` | Current workspace summary |
@@ -62,7 +66,7 @@ Matrix routes it to your default agent and replies with the result.
 | `/explain` | Enter explain mode |
 | `/triage` | Enter triage mode |
 | `/handoff <agent>` | Hand off to another agent |
-| `/new` | Create a new session |
+| `/session new [agent]` | Create a new session |
 | `/stop` | Cancel current session |
 | `/action <instruction>` | Delegate to meta-agent |
 | `/help` | Show help |
@@ -91,7 +95,7 @@ The HTTP API is the primary programmatic interface. Matrix listens on `127.0.0.1
 Optional API key via the `X-Matrix-Key` header:
 
 ```bash
-matrix config set acp_api_key my-secret-key
+matrix config set matrix_api_key my-secret-key
 ```
 
 Then include it in requests:

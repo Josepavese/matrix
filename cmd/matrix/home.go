@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/jose/matrix-v2/internal/logic/matrixhome"
+	"github.com/Josepavese/matrix/internal/logic/matrixhome"
 	"github.com/spf13/cobra"
 )
 

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/google/uuid"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 const (
@@ -89,8 +89,14 @@ func RecordEvent(storage middleware.Storage, event Event) (Event, error) {
 	if err := storage.Set(EventKey(event.WorkspaceID, event.ID), payload); err != nil {
 		return Event{}, fmt.Errorf("failed to store workspace event: %w", err)
 	}
-	if err := updateStringIndexWithLimit(storage, TimelineKey(event.WorkspaceID), event.ID, maxTimelineEventRefs); err != nil {
+	evicted, err := updateStringIndexWithLimitEvicted(storage, TimelineKey(event.WorkspaceID), event.ID, maxTimelineEventRefs)
+	if err != nil {
 		return Event{}, err
+	}
+	for _, eventID := range evicted {
+		if err := storage.Delete(EventKey(event.WorkspaceID, eventID)); err != nil {
+			return Event{}, fmt.Errorf("failed to prune evicted workspace event %s: %w", eventID, err)
+		}
 	}
 
 	state, _, err := LoadState(storage, event.WorkspaceID)
@@ -279,15 +285,20 @@ func extractDecisionMetadata(event Event) map[string]interface{} {
 }
 
 func updateStringIndexWithLimit(storage middleware.Storage, key, value string, maxLen int) error {
+	_, err := updateStringIndexWithLimitEvicted(storage, key, value, maxLen)
+	return err
+}
+
+func updateStringIndexWithLimitEvicted(storage middleware.Storage, key, value string, maxLen int) ([]string, error) {
 	if storage == nil {
-		return fmt.Errorf("storage not available")
+		return nil, fmt.Errorf("storage not available")
 	}
 	if strings.TrimSpace(value) == "" {
-		return nil
+		return nil, nil
 	}
 	existing, err := loadStringIndex(storage, key)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	filtered := make([]string, 0, len(existing))
 	for _, item := range existing {
@@ -296,12 +307,17 @@ func updateStringIndexWithLimit(storage middleware.Storage, key, value string, m
 		}
 	}
 	next := append([]string{value}, filtered...)
+	var evicted []string
 	if maxLen > 0 && len(next) > maxLen {
+		evicted = append(evicted, next[maxLen:]...)
 		next = next[:maxLen]
 	}
 	data, err := json.Marshal(next)
 	if err != nil {
-		return fmt.Errorf("failed to encode workspace index %s: %w", key, err)
+		return nil, fmt.Errorf("failed to encode workspace index %s: %w", key, err)
 	}
-	return storage.Set(key, data)
+	if err := storage.Set(key, data); err != nil {
+		return nil, err
+	}
+	return evicted, nil
 }

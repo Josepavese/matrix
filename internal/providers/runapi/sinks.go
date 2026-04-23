@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/jose/matrix-v2/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/logic/runtrace"
 )
 
 func (s *Server) HandleEventSinks(w http.ResponseWriter, r *http.Request) {

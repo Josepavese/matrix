@@ -187,7 +187,8 @@ Agent definitions are stored in `configs/agents.json` (and optionally `configs/a
   "claude": {
     "command": "claude",
     "args": ["acp"],
-    "protocol": "stdio",
+    "kind": "acp",
+    "transport": "stdio",
     "env_isolation": true,
     "active": false
   }

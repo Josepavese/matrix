@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcatalog"
-	"github.com/jose/matrix-v2/internal/logic/agentdiscovery"
-	"github.com/jose/matrix-v2/internal/logic/agentmgr"
-	"github.com/jose/matrix-v2/internal/middleware"
-	"github.com/jose/matrix-v2/internal/providers/bolt"
-	networkprovider "github.com/jose/matrix-v2/internal/providers/network"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/logic/agentcatalog"
+	"github.com/Josepavese/matrix/internal/logic/agentdiscovery"
+	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/bolt"
+	networkprovider "github.com/Josepavese/matrix/internal/providers/network"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 	"github.com/spf13/cobra"
 )
 

@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // RegistryIndex represents the top-level structure of the ACP Registry CDN.

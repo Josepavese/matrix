@@ -1,4 +1,4 @@
-module github.com/jose/matrix-v2
+module github.com/Josepavese/matrix
 
 go 1.24.4
 

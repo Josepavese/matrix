@@ -9,9 +9,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/middleware"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
+
+const telegramSafeMessageLimit = 3900
 
 // Bot implements middleware.MessagingGateway for Telegram.
 type Bot struct {
@@ -48,7 +50,7 @@ func newThoughtMessenger(api *tgbotapi.BotAPI, chatID int64, replyToID int) *tho
 
 // Send creates the initial "thinking" placeholder message as reply to the user.
 func (t *thoughtMessenger) Send() error {
-	msg := tgbotapi.NewMessage(t.chatID, "💭 Sto pensando...")
+	msg := tgbotapi.NewMessage(t.chatID, "Matrix is routing...")
 	msg.ReplyToMessageID = t.replyToID
 	sent, err := t.api.Send(msg)
 	if err != nil {
@@ -222,7 +224,11 @@ func (b *Bot) Start(ctx context.Context) error {
 		case <-b.stopCh:
 			log.Info("shutting down telegram gateway", "event", "gateway_stopped", "reason", "stop_requested")
 			return nil
-		case update := <-updates:
+		case update, ok := <-updates:
+			if !ok {
+				log.Warn("telegram updates channel closed", "event", "updates_closed")
+				return nil
+			}
 			b.handleUpdate(ctx, log, update)
 		}
 	}
@@ -273,16 +279,56 @@ func (b *Bot) processMessage(ctx context.Context, log *slog.Logger, update tgbot
 		response = header + "\n" + response
 	}
 
-	msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
-	msg.ReplyToMessageID = update.Message.MessageID
-
 	log.Info("sending telegram response", "event", "response_sending", "channel", channelID, "chat_id", update.Message.Chat.ID, "reply_to", update.Message.MessageID, "response_len", len(response))
 
-	if _, err := b.api.Send(msg); err != nil {
+	if err := b.sendResponse(update.Message.Chat.ID, update.Message.MessageID, response); err != nil {
 		log.Error("failed to reply to telegram message", "event", "response_failed", "channel", channelID, "error", err, "chat_id", update.Message.Chat.ID)
 		return
 	}
 	log.Info("telegram response sent successfully", "event", "response_sent", "channel", channelID, "chat_id", update.Message.Chat.ID)
+}
+
+func (b *Bot) sendResponse(chatID int64, replyTo int, response string) error {
+	chunks := splitTelegramMessage(response, telegramSafeMessageLimit)
+	for i, chunk := range chunks {
+		msg := tgbotapi.NewMessage(chatID, chunk)
+		if i == 0 {
+			msg.ReplyToMessageID = replyTo
+		}
+		if _, err := b.api.Send(msg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func splitTelegramMessage(text string, limit int) []string {
+	if limit <= 0 {
+		limit = telegramSafeMessageLimit
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return []string{text}
+	}
+	chunks := make([]string, 0, len(runes)/limit+1)
+	for len(runes) > limit {
+		splitAt := limit
+		for i := limit - 1; i > limit/2; i-- {
+			if runes[i] == '\n' {
+				splitAt = i + 1
+				break
+			}
+		}
+		chunk := strings.TrimSpace(string(runes[:splitAt]))
+		if chunk != "" {
+			chunks = append(chunks, chunk)
+		}
+		runes = runes[splitAt:]
+	}
+	if tail := strings.TrimSpace(string(runes)); tail != "" {
+		chunks = append(chunks, tail)
+	}
+	return chunks
 }
 
 // Stop cleanly terminates the gateway. Safe to call multiple times.

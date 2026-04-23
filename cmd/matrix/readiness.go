@@ -3,10 +3,10 @@ package main
 import (
 	"os"
 
-	"github.com/jose/matrix-v2/internal/logic/cmdutil"
-	readinesslogic "github.com/jose/matrix-v2/internal/logic/readiness"
-	"github.com/jose/matrix-v2/internal/logic/vaultsec"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/logic/cmdutil"
+	readinesslogic "github.com/Josepavese/matrix/internal/logic/readiness"
+	"github.com/Josepavese/matrix/internal/logic/vaultsec"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 	"github.com/spf13/cobra"
 )
 

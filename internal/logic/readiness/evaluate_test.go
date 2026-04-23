@@ -40,7 +40,7 @@ func TestEvaluateStatus(t *testing.T) {
 					"vault_exists": true,
 					"warnings": []any{
 						"jsonrpc daemon is not reachable on 127.0.0.1:9090",
-						"acp http server is not reachable on 127.0.0.1:9091",
+						"matrix http ingress is not reachable on 127.0.0.1:9091",
 						"a2a http server is not reachable on 127.0.0.1:9091",
 					},
 				},
@@ -69,7 +69,7 @@ func TestEvaluateStatus(t *testing.T) {
 				RuntimeReport: map[string]any{
 					"vault_exists":      true,
 					"jsonrpc_daemon_up": true,
-					"acp_http_up":       true,
+					"matrix_http_up":    true,
 				},
 				LoggingReport: map[string]any{"warnings": []string{
 					"logging config unavailable, using fallback defaults: vault error: [ERR_VAULT_OPEN] Failed to open bbolt database: timeout (op: bolt.NewProvider)",
@@ -89,7 +89,7 @@ func TestEvaluateStatus(t *testing.T) {
 				RuntimeReport: map[string]any{
 					"vault_exists":      true,
 					"jsonrpc_daemon_up": false,
-					"acp_http_up":       false,
+					"matrix_http_up":    false,
 				},
 				StorageReport: map[string]any{"schema": map[string]any{
 					"status": "unavailable",

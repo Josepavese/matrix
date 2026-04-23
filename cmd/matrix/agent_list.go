@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +28,6 @@ var agentListCmd = &cobra.Command{
 				Command:         cfg.Command,
 				Args:            cfg.Args,
 				Env:             cfg.Env,
-				Protocol:        cfg.Protocol,
 				Kind:            cfg.Kind,
 				Transport:       cfg.Transport,
 				Address:         cfg.Address,

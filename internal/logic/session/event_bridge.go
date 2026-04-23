@@ -4,7 +4,7 @@ package session
 import (
 	"sync"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // EventBridge converts SessionObserver updates into SessionEvent channel sends.

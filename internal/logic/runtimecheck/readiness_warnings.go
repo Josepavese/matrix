@@ -27,6 +27,6 @@ func AppendReadinessWarnings(warnings *[]string, raw any, expectRuntimeUp bool) 
 
 func isOptionalRuntimeDownWarning(text string) bool {
 	return strings.HasPrefix(text, "jsonrpc daemon is not reachable") ||
-		strings.HasPrefix(text, "acp http server is not reachable") ||
+		strings.HasPrefix(text, "matrix http ingress is not reachable") ||
 		strings.HasPrefix(text, "a2a http server is not reachable")
 }

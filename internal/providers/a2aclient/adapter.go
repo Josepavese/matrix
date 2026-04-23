@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/a2astate"
+	"github.com/Josepavese/matrix/internal/providers/sidecarprojection"
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	a2ago "github.com/a2aproject/a2a-go/v2/a2aclient"
-	"github.com/jose/matrix-v2/internal/middleware"
-	"github.com/jose/matrix-v2/internal/providers/a2astate"
-	"github.com/jose/matrix-v2/internal/providers/sidecarprojection"
 )
 
 type Factory struct{}
@@ -129,7 +129,7 @@ func (c *a2aConversationClient) ListRemoteSessions(ctx context.Context) ([]middl
 			UpdatedAt:       a2aTaskUpdatedAt(task),
 			ProtocolKind:    middleware.ProtocolKindA2A,
 			CanResume:       true,
-			CanDelete:       true,
+			CanDelete:       false,
 		})
 	}
 	return out, nil
@@ -153,12 +153,12 @@ func (c *a2aConversationClient) GetRemoteSession(ctx context.Context, remoteSess
 		UpdatedAt:       a2aTaskUpdatedAt(task),
 		ProtocolKind:    middleware.ProtocolKindA2A,
 		CanResume:       true,
-		CanDelete:       true,
+		CanDelete:       false,
 	}, nil
 }
 
-func (c *a2aConversationClient) DeleteRemoteSession(ctx context.Context, remoteSessionID string) error {
-	return c.CancelRemoteSession(ctx, remoteSessionID)
+func (c *a2aConversationClient) DeleteRemoteSession(_ context.Context, _ string) error {
+	return fmt.Errorf("A2A delete is unsupported; use cancel for task lifecycle cleanup")
 }
 
 func (c *a2aConversationClient) CancelRemoteSession(ctx context.Context, remoteSessionID string) error {

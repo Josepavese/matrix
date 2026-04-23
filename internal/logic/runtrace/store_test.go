@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/jose/matrix-v2/internal/logic/memstore"
+	"github.com/Josepavese/matrix/internal/logic/memstore"
 )
 
 func TestStoreProjectsTrace(t *testing.T) {

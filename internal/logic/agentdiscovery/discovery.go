@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/middleware"
 	a2asdk "github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/logic/agentmgr"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 type Source string
@@ -120,7 +120,6 @@ func (p *localProvider) Get(_ context.Context, ref string) (*Record, error) {
 		Command:         cfg.Command,
 		Args:            cfg.Args,
 		Env:             cfg.Env,
-		Protocol:        cfg.Protocol,
 		Kind:            cfg.Kind,
 		Transport:       cfg.Transport,
 		Address:         cfg.Address,

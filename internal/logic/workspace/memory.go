@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/google/uuid"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 const (
@@ -95,8 +95,14 @@ func RecordTurn(storage middleware.Storage, turn Turn) (Turn, error) {
 	if err := storage.Set(TurnKey(turn.WorkspaceID, turn.ID), data); err != nil {
 		return Turn{}, fmt.Errorf("failed to store workspace turn: %w", err)
 	}
-	if err := updateStringIndexWithLimit(storage, TurnIndexKey(turn.WorkspaceID), turn.ID, maxTurnRefs); err != nil {
+	evicted, err := updateStringIndexWithLimitEvicted(storage, TurnIndexKey(turn.WorkspaceID), turn.ID, maxTurnRefs)
+	if err != nil {
 		return Turn{}, err
+	}
+	for _, turnID := range evicted {
+		if err := storage.Delete(TurnKey(turn.WorkspaceID, turnID)); err != nil {
+			return Turn{}, fmt.Errorf("failed to prune evicted workspace turn %s: %w", turnID, err)
+		}
 	}
 	return turn, nil
 }
@@ -164,8 +170,14 @@ func SaveSnapshot(storage middleware.Storage, snapshot Snapshot) (Snapshot, erro
 	if err := storage.Set(SnapshotKey(snapshot.WorkspaceID, snapshot.ID), data); err != nil {
 		return Snapshot{}, fmt.Errorf("failed to store workspace snapshot: %w", err)
 	}
-	if err := updateStringIndexWithLimit(storage, SnapshotIndexKey(snapshot.WorkspaceID), snapshot.ID, maxSnapshotRefs); err != nil {
+	evicted, err := updateStringIndexWithLimitEvicted(storage, SnapshotIndexKey(snapshot.WorkspaceID), snapshot.ID, maxSnapshotRefs)
+	if err != nil {
 		return Snapshot{}, err
+	}
+	for _, snapshotID := range evicted {
+		if err := storage.Delete(SnapshotKey(snapshot.WorkspaceID, snapshotID)); err != nil {
+			return Snapshot{}, fmt.Errorf("failed to prune evicted workspace snapshot %s: %w", snapshotID, err)
+		}
 	}
 	return snapshot, nil
 }

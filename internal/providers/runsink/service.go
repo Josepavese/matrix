@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/rundelivery"
-	"github.com/jose/matrix-v2/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/logic/rundelivery"
+	"github.com/Josepavese/matrix/internal/logic/runtrace"
 )
 
 const (

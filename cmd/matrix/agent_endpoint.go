@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/spf13/cobra"
 )
 
@@ -53,7 +53,6 @@ var agentSetEndpointCmd = &cobra.Command{
 		entry.Config.Address = address
 		entry.Config.ProtocolVersion = agentSetEndpointProtocolVersion
 		entry.Config.CardURL = agentSetEndpointCardURL
-		entry.Config.Protocol = kind
 
 		// Remote endpoints are not local binaries.
 		entry.Config.Command = ""

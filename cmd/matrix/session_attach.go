@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jose/matrix-v2/internal/logic/session"
-	"github.com/jose/matrix-v2/internal/providers/bolt"
+	"github.com/Josepavese/matrix/internal/logic/session"
+	"github.com/Josepavese/matrix/internal/providers/bolt"
 	"github.com/spf13/cobra"
 )
 

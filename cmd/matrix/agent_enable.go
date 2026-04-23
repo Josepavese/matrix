@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/spf13/cobra"
 )
 

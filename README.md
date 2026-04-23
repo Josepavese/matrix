@@ -168,7 +168,7 @@ For contributors and those interested in the product direction:
 - [Chat UX spec](docs/matrix_chat_ux_spec.md)
 - [Workspace affinity spec](docs/matrix_workspace_affinity_spec.md)
 - [Workspace timeline spec](docs/matrix_workspace_timeline_spec.md)
-- [Protocol-neutral runtime](docs/matrix_v2_protocol_neutral_runtime.md)
+- [Protocol-neutral runtime](docs/matrix_protocol_neutral_runtime.md)
 - [Orchestration surface](docs/matrix_orchestration_surface_spec.md)
 - [Decision trace spec](docs/matrix_decision_trace_spec.md)
 - [Run trace spec](docs/matrix_agent_communication_run_trace.md)

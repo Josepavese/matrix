@@ -46,7 +46,7 @@ matrix orchestration capabilities
 
 The profile is currently versioned as `v1` in code via:
 
-- [surface.go](/home/jose/hpdev/Libraries/matrix/internal/logic/orchestration/surface.go)
+- [surface.go](internal/logic/orchestration/surface.go)
 
 ## Capability Model
 
@@ -171,4 +171,4 @@ Communication run trace is now part of the product surface through:
 
 Communication runs do not have a default absolute timeout. Supervisors should use stream/async observation and explicit `cancel`/`stop`; `emergency_kill_seconds` is available only as an opt-in safety fuse.
 
-The detailed contract is documented in [matrix_agent_communication_run_trace.md](/home/jose/hpdev/Libraries/matrix/docs/matrix_agent_communication_run_trace.md).
+The detailed contract is documented in [matrix_agent_communication_run_trace.md](matrix_agent_communication_run_trace.md).

@@ -258,7 +258,7 @@ Set a configuration value.
 
 ```bash
 matrix config set default_agent claude
-matrix config set acp_http_addr 127.0.0.1:9092
+matrix config set matrix_http_addr 127.0.0.1:9092
 ```
 
 Common configuration keys:
@@ -267,8 +267,8 @@ Common configuration keys:
 |-----|-------------|
 | `default_agent` | Agent for new sessions (default: `opencode`) |
 | `action_agent` | Meta-agent for `/action` (default: `gemini`) |
-| `acp_http_addr` | HTTP API address |
-| `acp_api_key` | HTTP API authentication key |
+| `matrix_http_addr` | HTTP API address |
+| `matrix_api_key` | HTTP API authentication key |
 | `jsonrpc_addr` | JSON-RPC daemon address |
 | `daemon_api_key` | JSON-RPC daemon authentication |
 | `agent.trust_mode` | Auto-approve tool requests (`auto` or `manual`) |
@@ -278,7 +278,7 @@ Common configuration keys:
 Delete a configuration value.
 
 ```bash
-matrix config delete acp_api_key
+matrix config delete matrix_api_key
 ```
 
 ---

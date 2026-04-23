@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcatalog"
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/logic/agentmgr"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentcatalog"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // WizardState holds the persisted state of an in-progress wizard session.
@@ -276,8 +276,7 @@ func (w *Wizard) promptForStep(state WizardState) string {
 }
 
 // configureAgent writes the agent configuration to the SSOT vault using context
-// collected during the wizard flow. For agents with AuthResult.Env, those take
-// precedence over the legacy context-based env mapping.
+// collected during the wizard flow. AuthResult.Env is preferred when available.
 func (w *Wizard) configureAgent(agentName string, context map[string]string) error {
 	var envs []string
 
@@ -291,7 +290,7 @@ func (w *Wizard) configureAgent(agentName string, context map[string]string) err
 		}
 	}
 
-	// Fallback: legacy context-based env mapping
+	// Fallback: wizard context-based env mapping.
 	if len(envs) == 0 {
 		if apiKey := context["api_key"]; apiKey != "" {
 			envKey := "API_KEY"

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 func (c *acpConversationClient) MaterializeRemoteSession(ctx context.Context, req middleware.SessionMaterializeRequest) (middleware.RemoteSessionInfo, middleware.ConversationMetadata, error) {

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/sidecar"
-	"github.com/jose/matrix-v2/internal/middleware"
-	"github.com/jose/matrix-v2/internal/providers/sidecarprojection"
+	"github.com/Josepavese/matrix/internal/logic/sidecar"
+	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/sidecarprojection"
 )
 
 type acpConversationFactory struct{}

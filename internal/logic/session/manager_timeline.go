@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/workspace"
+	"github.com/Josepavese/matrix/internal/logic/workspace"
 )
 
 func (m *Manager) recordWorkspaceEvent(meta SessionMeta, eventType, channelID, message, reason string, extra map[string]interface{}) {

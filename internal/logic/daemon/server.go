@@ -8,8 +8,8 @@ import (
 	"net/rpc/jsonrpc"
 	"sync"
 
-	"github.com/jose/matrix-v2/internal/logic/vault"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/vault"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // Server represents the JSON-RPC Daemon server
@@ -101,4 +101,14 @@ func (s *Server) Stop() error {
 		return s.listener.Close()
 	}
 	return nil
+}
+
+// Addr returns the bound listener address when the daemon is running.
+func (s *Server) Addr() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listener == nil {
+		return ""
+	}
+	return s.listener.Addr().String()
 }

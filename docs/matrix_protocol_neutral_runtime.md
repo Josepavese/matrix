@@ -1,8 +1,8 @@
-# Matrix V2 Protocol-Neutral Runtime
+# Matrix Protocol-Neutral Runtime
 
 ## Goal
 
-Matrix V2 now separates:
+Matrix now separates:
 
 - the **conversation core** from any specific agent protocol
 - the **agent protocol adapters** from the daemon/session logic
@@ -46,7 +46,7 @@ It should **not** reason directly in terms of:
 Current adapters:
 
 - `internal/providers/agents/acp_adapter.go`
-- `internal/providers/agents/a2a_adapter.go`
+- `internal/providers/a2aclient/adapter.go`
 
 Responsibilities of adapters:
 
@@ -115,12 +115,11 @@ Agent configuration now distinguishes:
 
 - `kind`: protocol family, currently `acp` or `a2a`
 - `transport`: protocol binding or process transport
-- legacy `protocol`: retained for backward compatibility and normalized at load time
 
 Protocol selection is therefore **SSOT-driven**:
 
 1. an agent entry is loaded from `agent.config.<agent_id>` in the vault
-2. `internal/logic/agentcfg/normalize.go` maps legacy and new fields into `ProtocolEndpoint`
+2. `internal/logic/agentcfg/normalize.go` maps stored fields into `ProtocolEndpoint`
 3. the router selects the adapter from `ProtocolEndpoint.Kind`
 
 In other words, Matrix does not guess ACP vs A2A from traffic. It resolves the protocol from SSOT.
@@ -128,7 +127,7 @@ In other words, Matrix does not guess ACP vs A2A from traffic. It resolves the p
 ### Operational commands
 
 - `matrix agent show <id>`: inspect effective config and normalized endpoint
-- `matrix agent set-binary <id> <path> --protocol acp --transport stdio`
+- `matrix agent set-binary <id> <path> --kind acp --transport stdio`
 - `matrix agent set-endpoint <id> <url> --kind a2a --transport JSONRPC`
 - `matrix install <id>`: ACP Registry install flow
 - `matrix install <id> --a2a-url <url>`: register a remote A2A endpoint in SSOT
@@ -137,8 +136,6 @@ In other words, Matrix does not guess ACP vs A2A from traffic. It resolves the p
 - `matrix agent info <ref> --source acp_registry|local|a2a_card|a2a_catalog`
 
 Normalization logic lives in `internal/logic/agentcfg/normalize.go`.
-
-This lets existing ACP definitions continue working while making A2A first-class.
 
 ## Inbound Surface
 
@@ -204,6 +201,7 @@ Behavior:
 - the session manager resolves or creates the logical session for `channel_id`
 - the active session agent wins over `agent_id` after the session exists
 - slash commands such as `/session`, `/help`, `/wizard`, and `/action` are handled before agent routing
+- chat slash commands are parsed by exact first token, so `/session-list` cannot accidentally trigger `/session`
 - `/session list` shows the local vault mirror and, when supported by the current provider, the remote session/task inventory
 - `/session switch <target>` can reattach to local history or import a remote ACP/A2A session/task into the local mirror
 - `/session cancel [target]` cancels the active or selected remote session/task while preserving the local mirror

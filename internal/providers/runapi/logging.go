@@ -1,6 +1,6 @@
 package runapi
 
-import "github.com/jose/matrix-v2/internal/middleware"
+import "github.com/Josepavese/matrix/internal/middleware"
 
 func cleanupLogArgs(cleanup *middleware.SessionCleanupResult) []any {
 	if cleanup == nil {

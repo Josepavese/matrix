@@ -3,7 +3,7 @@ package agents
 import (
 	"context"
 
-	"github.com/jose/matrix-v2/pkg/zedacp"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 type UnixTransport = zedacp.UnixTransport

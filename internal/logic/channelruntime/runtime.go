@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/jose/matrix-v2/internal/logic/channelcfg"
-	"github.com/jose/matrix-v2/internal/logic/config"
-	"github.com/jose/matrix-v2/internal/middleware"
-	"github.com/jose/matrix-v2/internal/providers/telegram"
+	"github.com/Josepavese/matrix/internal/logic/channelcfg"
+	"github.com/Josepavese/matrix/internal/logic/config"
+	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/telegram"
 )
 
 // Factory creates messaging gateways from the neutral runtime registry.

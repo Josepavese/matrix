@@ -3,10 +3,10 @@ package main
 import (
 	"encoding/json"
 
-	"github.com/jose/matrix-v2/internal/logic/schema"
-	"github.com/jose/matrix-v2/internal/logic/vaultsec"
-	"github.com/jose/matrix-v2/internal/providers/bolt"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/logic/schema"
+	"github.com/Josepavese/matrix/internal/logic/vaultsec"
+	"github.com/Josepavese/matrix/internal/providers/bolt"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 	"github.com/spf13/cobra"
 )
 

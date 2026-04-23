@@ -1,9 +1,9 @@
 package sidecarprojection
 
 import (
+	"github.com/Josepavese/matrix/internal/logic/sidecar"
+	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/jose/matrix-v2/internal/logic/sidecar"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 func A2AMessageParts(turn middleware.ConversationTurn) []*a2a.Part {

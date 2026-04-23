@@ -1,11 +1,11 @@
 package main
 
 import (
-	"github.com/jose/matrix-v2/internal/logic/bootstrap"
-	"github.com/jose/matrix-v2/internal/logic/cmdutil"
-	"github.com/jose/matrix-v2/internal/logic/config"
-	"github.com/jose/matrix-v2/internal/logic/vault"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/logic/bootstrap"
+	"github.com/Josepavese/matrix/internal/logic/cmdutil"
+	"github.com/Josepavese/matrix/internal/logic/config"
+	"github.com/Josepavese/matrix/internal/logic/vault"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 	"github.com/spf13/cobra"
 )
 

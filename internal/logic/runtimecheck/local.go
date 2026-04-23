@@ -3,17 +3,17 @@ package runtimecheck
 import (
 	"context"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // LocalInput holds parameters for building a local runtime report.
 type LocalInput struct {
-	VaultPath   string
-	JSONRPCAddr string
-	ACPHTTPAddr string
-	A2AHTTPAddr string
-	Net         middleware.Network
-	FS          middleware.FS
+	VaultPath      string
+	JSONRPCAddr    string
+	MatrixHTTPAddr string
+	A2AHTTPAddr    string
+	Net            middleware.Network
+	FS             middleware.FS
 	// BuildInput is the fully wired input for BuildReport.
 	// The cmd layer is responsible for creating Storage, Registry, Process, etc.
 	BuildInput *BuildInput
@@ -22,8 +22,8 @@ type LocalInput struct {
 // BuildLocalReport builds a runtime report by probing local endpoints.
 func BuildLocalReport(input LocalInput) (map[string]any, error) {
 	ctx := context.Background()
-	if CanDial(input.Net, input.ACPHTTPAddr) {
-		if report, err := FetchRuntimeReport(ctx, input.Net, "http://"+input.ACPHTTPAddr+"/_matrix/runtime"); err == nil {
+	if CanDial(input.Net, input.MatrixHTTPAddr) {
+		if report, err := FetchRuntimeReport(ctx, input.Net, "http://"+input.MatrixHTTPAddr+"/_matrix/runtime"); err == nil {
 			return report, ValidateRuntimeReport(report)
 		}
 	}
@@ -34,8 +34,8 @@ func BuildLocalReport(input LocalInput) (map[string]any, error) {
 		"vault_exists":        false,
 		"jsonrpc_daemon_addr": input.JSONRPCAddr,
 		"jsonrpc_daemon_up":   CanDial(input.Net, input.JSONRPCAddr),
-		"acp_http_addr":       input.ACPHTTPAddr,
-		"acp_http_up":         CanDial(input.Net, input.ACPHTTPAddr),
+		"matrix_http_addr":    input.MatrixHTTPAddr,
+		"matrix_http_up":      CanDial(input.Net, input.MatrixHTTPAddr),
 		"a2a_http_addr":       input.A2AHTTPAddr,
 		"a2a_http_up":         CanDial(input.Net, input.A2AHTTPAddr),
 		"telegram_enabled":    false,

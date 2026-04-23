@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/middleware"
-	execprovider "github.com/jose/matrix-v2/internal/providers/exec"
+	"github.com/Josepavese/matrix/internal/middleware"
+	execprovider "github.com/Josepavese/matrix/internal/providers/exec"
 )
 
 type CommandProbe struct {

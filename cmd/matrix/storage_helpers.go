@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/jose/matrix-v2/internal/logic/schema"
-	"github.com/jose/matrix-v2/internal/logic/workspace"
-	"github.com/jose/matrix-v2/internal/providers/bolt"
+	"github.com/Josepavese/matrix/internal/logic/schema"
+	"github.com/Josepavese/matrix/internal/logic/workspace"
+	"github.com/Josepavese/matrix/internal/providers/bolt"
 )
 
 func buildStorageDoctorReport() (map[string]any, error) {

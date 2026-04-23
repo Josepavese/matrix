@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 func (m *Manager) handleSessionCapabilitiesTyped(ctx context.Context, req middleware.SessionActionRequest) (middleware.SessionActionResult, error) {

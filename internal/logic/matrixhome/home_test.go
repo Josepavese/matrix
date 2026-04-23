@@ -65,9 +65,16 @@ func TestEnsureCreatesPALHomeLayout(t *testing.T) {
 	if err := Ensure(home); err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
-	for _, dir := range []string{"bin", "configs", "data", "logs", "artifacts", "backups", "tmp"} {
+	for _, dir := range []string{"bin", "configs", "data", "logs", "artifacts", "agents", "backups", "tmp"} {
 		if st, err := os.Stat(filepath.Join(home, dir)); err != nil || !st.IsDir() {
 			t.Fatalf("expected directory %s, stat=%v err=%v", dir, st, err)
 		}
+	}
+}
+
+func TestAgentsDirUsesPALHome(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "matrix-home")
+	if got, want := AgentsDir(home), filepath.Join(home, "agents"); got != want {
+		t.Fatalf("expected %q, got %q", want, got)
 	}
 }

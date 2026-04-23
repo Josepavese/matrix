@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/agentdiscovery"
-	networkprovider "github.com/jose/matrix-v2/internal/providers/network"
+	"github.com/Josepavese/matrix/internal/logic/agentdiscovery"
+	networkprovider "github.com/Josepavese/matrix/internal/providers/network"
 	"github.com/spf13/cobra"
 )
 

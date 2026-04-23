@@ -1,9 +1,9 @@
 package runapi
 
 import (
-	"github.com/jose/matrix-v2/internal/logic/runtrace"
-	"github.com/jose/matrix-v2/internal/logic/sidecartrace"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/logic/sidecartrace"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 func (s *Server) appendSidecarEvents(run runtrace.Run, capsules []middleware.SidecarCapsule) {

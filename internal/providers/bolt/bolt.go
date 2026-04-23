@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/vaultsec"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/vaultsec"
+	"github.com/Josepavese/matrix/internal/middleware"
 	bbolt "go.etcd.io/bbolt"
 )
 

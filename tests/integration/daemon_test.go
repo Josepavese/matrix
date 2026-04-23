@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/daemon"
-	"github.com/jose/matrix-v2/internal/logic/vault"
-	"github.com/jose/matrix-v2/internal/providers/bolt"
-	networkprovider "github.com/jose/matrix-v2/internal/providers/network"
+	"github.com/Josepavese/matrix/internal/logic/daemon"
+	"github.com/Josepavese/matrix/internal/logic/vault"
+	"github.com/Josepavese/matrix/internal/providers/bolt"
+	networkprovider "github.com/Josepavese/matrix/internal/providers/network"
 )
 
 func TestDaemon_VaultRPC(t *testing.T) {
@@ -30,23 +30,19 @@ func TestDaemon_VaultRPC(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start server on a specific local port
-	addr := "127.0.0.1:9091"
 	go func() {
-		if err := srv.Start(ctx, addr); err != nil {
+		if err := srv.Start(ctx, "127.0.0.1:0"); err != nil {
 			t.Logf("Server error: %v", err)
 		}
 	}()
 
-	// Wait briefly for the server to start accepting connections
-	time.Sleep(100 * time.Millisecond)
 	defer func() {
 		if err := srv.Stop(); err != nil {
 			t.Fatalf("Stop failed: %v", err)
 		}
 	}()
 
-	// Dial the JSON-RPC TCP server
+	addr := waitForDaemonAddr(t, srv)
 	client, err := jsonrpc.Dial("tcp", addr)
 	if err != nil {
 		t.Fatalf("Failed to dial TCP JSON-RPC server: %v", err)
@@ -75,4 +71,17 @@ func TestDaemon_VaultRPC(t *testing.T) {
 	if getReply.Value != expectedVal {
 		t.Errorf("RPC Vault.Get returned %s, expected %s", getReply.Value, expectedVal)
 	}
+}
+
+func waitForDaemonAddr(t *testing.T, srv *daemon.Server) string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if addr := srv.Addr(); addr != "" {
+			return addr
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("daemon did not expose a listener address")
+	return ""
 }

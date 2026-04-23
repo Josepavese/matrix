@@ -1,7 +1,7 @@
 package daemon
 
 import (
-	"github.com/jose/matrix-v2/internal/logic/vault"
+	"github.com/Josepavese/matrix/internal/logic/vault"
 )
 
 // VaultService is the RPC wrapper around the Vault SSOT logic

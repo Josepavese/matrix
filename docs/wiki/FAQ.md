@@ -178,7 +178,7 @@ matrix vault restore
 Change the HTTP address:
 
 ```bash
-matrix config set acp_http_addr 127.0.0.1:9092
+matrix config set matrix_http_addr 127.0.0.1:9092
 ```
 
 ### How do I see logs?

@@ -22,7 +22,8 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-04-23: active-parent fork safety, typed fork failure evidence, and cleanup retention proof.
 "internal/logic/session" = 4400
 "internal/middleware" = 850
-"internal/logic/workspace" = 850
+# 2026-04-24: workspace retention now deletes evicted objects and stale path indexes.
+"internal/logic/workspace" = 900
 # 2026-04-22: ACP session materialization for true fork parents without prompt replay.
 "internal/providers/agents" = 2000
 "internal/providers/runapi" = 930
@@ -40,7 +41,8 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/logic/session/manager_intents.go" = 300
 "internal/logic/session/manager_workspace_commands.go" = 320
 "internal/logic/session/manager_workspace_reads.go" = 520
-"internal/providers/acp/server.go" = 530
+"internal/logic/workspace/timeline.go" = 310
+"internal/providers/matrixapi/server.go" = 530
 "internal/providers/agents/a2a_adapter.go" = 320
 "internal/providers/agents/acp_adapter.go" = 360
 "internal/providers/agents/default_handler.go" = 360
@@ -58,7 +60,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/logic/session/manager_workspace.go::Manager.getOrCreateSessionForWorkspace" = 125
 "internal/logic/session/manager_workspace_commands.go::Manager.handleWorkspaceSnapshotTyped" = 65
 "internal/logic/session/manager_workspace_reads.go::describeTimelineEvent" = 75
-"internal/providers/acp/server.go::Server.HandleRuns" = 60
+"internal/providers/matrixapi/server.go::Server.HandleRuns" = 60
 "internal/providers/agents/acp_adapter.go::acpConversationClient.ExecuteTurn" = 80
 "internal/providers/agents/router.go::simpleObserver.OnUpdate" = 70
 

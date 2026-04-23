@@ -1,18 +1,18 @@
 package a2aclient
 
-import "github.com/jose/matrix-v2/internal/middleware"
+import "github.com/Josepavese/matrix/internal/middleware"
 
 func (c *a2aConversationClient) SessionCapabilities() middleware.ConversationSessionCapabilities {
 	return middleware.ConversationSessionCapabilities{
 		List:   true,
 		Load:   true,
 		Cancel: true,
-		Delete: true,
+		Delete: false,
 		Details: map[string]middleware.CapabilityDescriptor{
 			"list":   a2aCapability("list", true, "stable", "a2a_tasks/list"),
 			"load":   a2aCapability("load", true, "stable", "a2a_task_get"),
 			"cancel": a2aCapability("cancel", true, "stable", "a2a_tasks/cancel"),
-			"delete": a2aCapability("delete", true, "stable", "a2a_task_delete"),
+			"delete": a2aCapability("delete", false, "unsupported", "a2a_no_delete_mapping"),
 			"close":  a2aCapability("close", false, "unsupported", "a2a_no_close_mapping"),
 			"resume": a2aCapability("resume", false, "unsupported", "a2a_task_state_mapping"),
 			"fork":   a2aCapability("fork", false, "unsupported", "a2a_no_fork_mapping"),

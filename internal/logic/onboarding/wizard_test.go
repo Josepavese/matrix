@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jose/matrix-v2/internal/logic/agentcatalog"
-	"github.com/jose/matrix-v2/internal/logic/agentcfg"
-	"github.com/jose/matrix-v2/internal/logic/agentdiscovery"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentcatalog"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentdiscovery"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // --- Test mocks ---

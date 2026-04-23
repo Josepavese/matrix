@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/onboarding"
-	"github.com/jose/matrix-v2/internal/logic/sessionqueue"
-	"github.com/jose/matrix-v2/internal/logic/system_tools"
-	"github.com/jose/matrix-v2/internal/logic/workspace"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/onboarding"
+	"github.com/Josepavese/matrix/internal/logic/sessionqueue"
+	"github.com/Josepavese/matrix/internal/logic/system_tools"
+	"github.com/Josepavese/matrix/internal/logic/workspace"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // SessionMeta stores metadata for an active agent session in the SSOT vault.
@@ -60,6 +60,7 @@ type Manager struct {
 	wizard      *onboarding.Wizard
 	systemTools *system_tools.Handler
 	resolver    middleware.AgentEndpointResolver
+	commands    *commandInterpreter
 
 	// defaultAgent is the agent used for new sessions when none specified.
 	defaultAgent string
@@ -76,7 +77,7 @@ const defaultActionAgentID = "gemini"
 // NewManager creates a new Session Router logic instance.
 // defaultAgent and actionAgent default to "opencode" and "gemini" respectively.
 func NewManager(s middleware.Storage, router middleware.AgentRouter, w *onboarding.Wizard, st *system_tools.Handler) *Manager {
-	return &Manager{
+	manager := &Manager{
 		storage:      s,
 		router:       router,
 		wizard:       w,
@@ -85,6 +86,8 @@ func NewManager(s middleware.Storage, router middleware.AgentRouter, w *onboardi
 		actionAgent:  defaultActionAgentID,
 		queues:       make(map[string]*sessionqueue.OrderedMerge),
 	}
+	manager.commands = newCommandInterpreter(manager)
+	return manager
 }
 
 // SetDefaultAgent overrides the default agent for new sessions.
@@ -415,105 +418,9 @@ func (m *Manager) AttachChannel(channelID, sessionID string) error {
 	return nil
 }
 
-// handleSessionCommand parses and executes chat-based session lifecycle commands.
-func (m *Manager) handleSessionCommand(ctx context.Context, channelID, input string) (string, error) {
-	lang := m.wizard.GetLanguage(channelID)
-
-	parts := strings.Fields(input)
-	if len(parts) < 2 {
-		return m.wizard.GetString(lang, "usage_session"), nil
-	}
-
-	command := parts[1]
-	args := strings.TrimSpace(strings.TrimPrefix(input, parts[0]+" "+parts[1]))
-
-	switch command {
-	case "status":
-		return m.handleSessionStatus(channelID, lang)
-
-	case "name":
-		return m.handleSessionName(channelID, lang, args)
-
-	case "new":
-		return m.handleSessionNew(channelID, lang, parts)
-
-	case "list":
-		return m.handleSessionList(ctx, channelID, lang)
-
-	case "switch":
-		return m.handleSessionSwitch(ctx, channelID, lang, args)
-
-	case "delete":
-		return m.handleSessionDelete(ctx, channelID, lang, args)
-
-	case "cancel":
-		return m.handleSessionCancel(ctx, channelID, lang, args)
-
-	default:
-		return m.wizard.GetString(lang, "session_command_unknown"), nil
-	}
-}
-
 // InspectSession returns the stored session metadata for operator surfaces such as the CLI.
 func (m *Manager) InspectSession(sessionID string) (SessionMeta, bool, error) {
 	return m.loadSessionMeta(sessionID)
-}
-
-// handleActionCommand delegates a system-level administrative command to the Matrix Meta-Agent
-// attaching the OS tools so it can mutate configuration or perform APM installs.
-func (m *Manager) handleActionCommand(ctx context.Context, channelID string, input string) (string, error) {
-	lang := m.wizard.GetLanguage(channelID)
-	instruction := strings.TrimSpace(strings.TrimPrefix(input, "/action"))
-	if instruction == "" {
-		return m.wizard.GetString(lang, "action_usage"), nil
-	}
-
-	systemActionSessionID := "system_action_session"
-
-	tools := system_tools.GetSystemTools()
-
-	prompt := fmt.Sprintf("SYSTEM: You are the autonomous Matrix OS Meta-Agent. Your objective is to manage the system using the tools provided. Evaluate the user request and call the appropriate tools. If no tool matches, provide a helpful explanation.\n\nUSER REQUEST: %s", instruction)
-
-	responseTxt, _, toolCalls, _, err := m.router.Route(ctx, middleware.RouteRequest{
-		AgentID:          m.actionAgent,
-		LogicalSessionID: "MatrixOS",
-		AgentSessionID:   systemActionSessionID,
-		Message:          prompt,
-		Tools:            tools,
-	})
-	if err != nil {
-		return "", fmt.Errorf(m.wizard.GetString(lang, "action_meta_failed"), err)
-	}
-
-	resultMsg := responseTxt
-	if len(toolCalls) > 0 {
-		resultMsg += "\n\n" + m.wizard.GetString(lang, "action_executing_header") + "\n"
-		for _, tc := range toolCalls {
-			if m.systemTools != nil {
-				execRes := m.systemTools.ExecuteTool(tc)
-				resultMsg += fmt.Sprintf("- %s: %s\n", tc.Function.Name, execRes)
-			}
-		}
-	}
-
-	return resultMsg, nil
-}
-
-// handleHelpCommand returns a localized help message.
-func (m *Manager) handleHelpCommand(channelID string) (string, error) {
-	lang := m.wizard.GetLanguage(channelID)
-	return m.wizard.GetString(lang, "help_text"), nil
-}
-
-// handleWizardCommand restarts the onboarding flow for the current channel.
-func (m *Manager) handleWizardCommand(channelID string) (string, error) {
-	lang := m.wizard.GetLanguage(channelID)
-	prefix := m.wizard.GetString(lang, "wizard_start")
-	prompt, err := m.wizard.ForceStart(channelID)
-	if err != nil {
-		return "", err
-	}
-	return prefix + "\n\n" + prompt, nil
 }
 
 // HandleAuthCallback processes an OAuth callback from an external auth provider.

@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jose/matrix-v2/internal/logic/matrixhome"
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/matrixhome"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 const encryptedPrefix = "ENCV1:"

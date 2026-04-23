@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 const runtimeStatePrefix = "runtime.agent."
@@ -97,10 +97,11 @@ func BuildRuntimeReports(store middleware.Storage, reg *Registry, proc middlewar
 		if err != nil {
 			return nil, nil, err
 		}
+		endpoint := protocolEndpointFromAgentConfig(cfg)
 		report := buildRuntimeReport(inspectInput{
 			AgentID:   agentID,
 			Config:    cfg,
-			Installed: cfg.Command != "" && proc.HasExecutable(cfg.Command),
+			Installed: isInstalledEndpoint(cfg, endpoint, proc),
 			State:     states[agentID],
 		}, canDial)
 		reports = append(reports, report)
@@ -112,10 +113,11 @@ func BuildRuntimeReports(store middleware.Storage, reg *Registry, proc middlewar
 }
 
 func buildRuntimeReport(input inspectInput, canDial func(string) bool) AgentRuntimeReport {
+	endpoint := protocolEndpointFromAgentConfig(input.Config)
 	report := AgentRuntimeReport{
 		AgentID:   input.AgentID,
-		Protocol:  input.Config.Protocol,
-		Mode:      runtimeMode(input.Config.Protocol),
+		Protocol:  string(endpoint.Kind),
+		Mode:      runtimeMode(endpoint.Transport),
 		Active:    input.Config.IsActive(),
 		Installed: input.Installed,
 		Status:    "unknown",
@@ -145,6 +147,16 @@ func runtimeMode(protocol string) string {
 		return "supervised"
 	}
 	return "on_demand"
+}
+
+func isInstalledEndpoint(cfg AgentConfig, endpoint middleware.ProtocolEndpoint, proc middleware.Process) bool {
+	if endpoint.Kind == middleware.ProtocolKindA2A && (endpoint.Address != "" || endpoint.CardURL != "") {
+		return true
+	}
+	if cfg.Command == "" {
+		return false
+	}
+	return proc.HasExecutable(cfg.Command)
 }
 
 func applyRuntimeState(report AgentRuntimeReport, state RuntimeState, canDial func(string) bool) AgentRuntimeReport {

@@ -227,7 +227,7 @@ Verification:
 - `go test ./internal/providers/agents`
 - `go test ./internal/providers/runapi`
 - `go test ./internal/logic/session`
-- `go test ./internal/providers/acp`
+- `go test ./internal/providers/matrixapi`
 - `go test ./cmd/matrix`
 - `go test ./...`
 

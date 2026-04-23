@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jose/matrix-v2/internal/logic/vaultsec"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/logic/vaultsec"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 )
 
 func TestVaultBackupRestoreRoundTrip(t *testing.T) {

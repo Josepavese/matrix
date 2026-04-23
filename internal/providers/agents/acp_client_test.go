@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jose/matrix-v2/pkg/zedacp"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 // mockTransport simulates an AgentTransport sending raw JSON back and forth.

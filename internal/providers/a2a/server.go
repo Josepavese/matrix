@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Josepavese/matrix/internal/middleware"
 	a2asdk "github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
-	"github.com/jose/matrix-v2/internal/middleware"
 )
 
 // Server exposes Matrix as an A2A-compatible JSON-RPC endpoint.

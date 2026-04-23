@@ -216,7 +216,7 @@ type SessionMode struct {
 	Description string `json:"description,omitempty"`
 }
 
-// ConfigOption describes a session-level configuration option (preferred over legacy modes).
+// ConfigOption describes a session-level configuration option.
 type ConfigOption struct {
 	ID       string              `json:"id"`
 	Name     string              `json:"name"`

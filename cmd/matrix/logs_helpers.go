@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/jose/matrix-v2/internal/logic/agentmgr"
-	"github.com/jose/matrix-v2/internal/logic/config"
-	logiclogging "github.com/jose/matrix-v2/internal/logic/logging"
-	"github.com/jose/matrix-v2/internal/logic/runtimecheck"
-	"github.com/jose/matrix-v2/internal/logic/vault"
-	"github.com/jose/matrix-v2/internal/providers/bolt"
-	execprovider "github.com/jose/matrix-v2/internal/providers/exec"
-	"github.com/jose/matrix-v2/internal/providers/network"
-	"github.com/jose/matrix-v2/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/logic/config"
+	logiclogging "github.com/Josepavese/matrix/internal/logic/logging"
+	"github.com/Josepavese/matrix/internal/logic/runtimecheck"
+	"github.com/Josepavese/matrix/internal/logic/vault"
+	"github.com/Josepavese/matrix/internal/providers/bolt"
+	execprovider "github.com/Josepavese/matrix/internal/providers/exec"
+	"github.com/Josepavese/matrix/internal/providers/network"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 )
 
 func openLogConfig() (logiclogging.Config, func(), error) {
@@ -56,74 +56,74 @@ func buildRuntimeDoctorReport() (map[string]any, error) {
 	netProv := network.NewProvider()
 	fsProv := osfs.NewFSProvider()
 	proc := execprovider.NewProvider()
-	jsonrpcAddr, acpHTTPAddr, a2aHTTPAddr := discoverRuntimeAddrs()
+	jsonrpcAddr, matrixHTTPAddr, a2aHTTPAddr := discoverRuntimeAddrs()
 
 	provider, err := bolt.NewReadOnlyProvider(DefaultVaultPath)
 	if err != nil {
 		return runtimecheck.BuildLocalReport(runtimecheck.LocalInput{
-			VaultPath:   DefaultVaultPath,
-			JSONRPCAddr: jsonrpcAddr,
-			ACPHTTPAddr: acpHTTPAddr,
-			A2AHTTPAddr: a2aHTTPAddr,
-			Net:         netProv,
-			FS:          fsProv,
+			VaultPath:      DefaultVaultPath,
+			JSONRPCAddr:    jsonrpcAddr,
+			MatrixHTTPAddr: matrixHTTPAddr,
+			A2AHTTPAddr:    a2aHTTPAddr,
+			Net:            netProv,
+			FS:             fsProv,
 		})
 	}
 	defer func() { _ = provider.Close() }()
 
 	cfgMgr := config.NewManager(vault.NewVault(provider))
 	jsonrpcAddr = cfgMgr.GetWithDefault("jsonrpc_addr", jsonrpcAddr)
-	acpHTTPAddr = cfgMgr.GetWithDefault("acp_http_addr", acpHTTPAddr)
-	a2aHTTPAddr = acpHTTPAddr
+	matrixHTTPAddr = cfgMgr.GetWithDefault("matrix_http_addr", matrixHTTPAddr)
+	a2aHTTPAddr = matrixHTTPAddr
 
 	cfgRdr := osfs.NewConfigProvider()
 	registry, err := agentmgr.NewRegistry(cfgRdr, provider)
 	if err != nil {
 		return runtimecheck.BuildLocalReport(runtimecheck.LocalInput{
-			VaultPath:   DefaultVaultPath,
-			JSONRPCAddr: jsonrpcAddr,
-			ACPHTTPAddr: acpHTTPAddr,
-			A2AHTTPAddr: a2aHTTPAddr,
-			Net:         netProv,
-			FS:          fsProv,
+			VaultPath:      DefaultVaultPath,
+			JSONRPCAddr:    jsonrpcAddr,
+			MatrixHTTPAddr: matrixHTTPAddr,
+			A2AHTTPAddr:    a2aHTTPAddr,
+			Net:            netProv,
+			FS:             fsProv,
 		})
 	}
 
 	return runtimecheck.BuildLocalReport(runtimecheck.LocalInput{
-		VaultPath:   DefaultVaultPath,
-		JSONRPCAddr: jsonrpcAddr,
-		ACPHTTPAddr: acpHTTPAddr,
-		A2AHTTPAddr: a2aHTTPAddr,
-		Net:         netProv,
-		FS:          fsProv,
+		VaultPath:      DefaultVaultPath,
+		JSONRPCAddr:    jsonrpcAddr,
+		MatrixHTTPAddr: matrixHTTPAddr,
+		A2AHTTPAddr:    a2aHTTPAddr,
+		Net:            netProv,
+		FS:             fsProv,
 		BuildInput: &runtimecheck.BuildInput{
-			Store:         provider,
-			Registry:      registry,
-			Process:       proc,
-			ConfigManager: cfgMgr,
-			ConfigReader:  cfgRdr,
-			Net:           netProv,
-			JSONRPCAddr:   jsonrpcAddr,
-			ACPHTTPAddr:   acpHTTPAddr,
-			A2AHTTPAddr:   a2aHTTPAddr,
+			Store:          provider,
+			Registry:       registry,
+			Process:        proc,
+			ConfigManager:  cfgMgr,
+			ConfigReader:   cfgRdr,
+			Net:            netProv,
+			JSONRPCAddr:    jsonrpcAddr,
+			MatrixHTTPAddr: matrixHTTPAddr,
+			A2AHTTPAddr:    a2aHTTPAddr,
 		},
 	})
 }
 
 func discoverRuntimeAddrs() (string, string, string) {
 	jsonrpcAddr := DefaultJSONRPCAddr
-	acpHTTPAddr := DefaultACPHTTPAddr
-	a2aHTTPAddr := DefaultACPHTTPAddr
+	matrixHTTPAddr := DefaultMatrixHTTPAddr
+	a2aHTTPAddr := DefaultMatrixHTTPAddr
 
 	cfg, cleanup, _ := openLogConfigFallback()
 	defer cleanup()
 	if cfg.FilePath == "" {
-		return jsonrpcAddr, acpHTTPAddr, a2aHTTPAddr
+		return jsonrpcAddr, matrixHTTPAddr, a2aHTTPAddr
 	}
 
 	file, err := os.Open(cfg.FilePath)
 	if err != nil {
-		return jsonrpcAddr, acpHTTPAddr, a2aHTTPAddr
+		return jsonrpcAddr, matrixHTTPAddr, a2aHTTPAddr
 	}
 	defer func() { _ = file.Close() }()
 
@@ -142,13 +142,13 @@ func discoverRuntimeAddrs() (string, string, string) {
 			if entry.Addr != "" {
 				jsonrpcAddr = entry.Addr
 			}
-		case "acp_http_starting":
+		case "matrix_http_starting":
 			if entry.Addr != "" {
-				acpHTTPAddr = entry.Addr
+				matrixHTTPAddr = entry.Addr
 				a2aHTTPAddr = entry.Addr
 			}
 		}
 	}
 
-	return jsonrpcAddr, acpHTTPAddr, a2aHTTPAddr
+	return jsonrpcAddr, matrixHTTPAddr, a2aHTTPAddr
 }
