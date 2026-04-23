@@ -83,6 +83,15 @@ If a provider records `late`, clients should choose one of:
 - cancel and restart the run with the new context;
 - queue the context as next-turn state.
 
+`accepted` followed by a terminal delivery state for the same `delivery_id` is
+expected. `accepted` means Matrix accepted the action and queued the delivery
+attempt; `delivered`, `late`, `failed`, or `unsupported` is the final evidence.
+For active runs, Matrix treats the run trace's `logical_session_id` and
+`remote_session_id` as the delivery SSOT. A channel/session mirror may lag until
+the active turn finishes, especially after provider recovery or forked artifact
+workflows, so live attach must not reject solely because the mirror still shows
+an older remote id.
+
 For cancel-and-restart / interrupt-resume flows, Matrix must expose cleanup
 proof before the resume run is trusted. The cancelled run must produce
 `session.cleanup clean=true strong_cleanup=true` with at least one remote/process

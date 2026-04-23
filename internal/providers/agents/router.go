@@ -527,7 +527,7 @@ func (r *Router) executePrompt(ctx context.Context, client middleware.Conversati
 		ThoughtNotifier:  req.ThoughtNotifier,
 	}
 	result, err := client.ExecuteTurn(ctx, turn)
-	if err != nil && turn.RemoteSessionID != "" && isSessionNotFoundError(err) {
+	if err != nil && turn.RemoteSessionID != "" && isSessionNotFoundError(err) && !req.StrictSession {
 		turn.RemoteSessionID = ""
 		result, err = client.ExecuteTurn(ctx, turn)
 	}

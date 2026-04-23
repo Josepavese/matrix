@@ -119,6 +119,7 @@ Matrix returns a `delivery_id`, delivers the context to the same logical/remote 
 
 If the run is already terminal or the session is not ready, Matrix returns `status=unsupported` instead of pretending the context reached the agent.
 If a provider accepts the additional turn but only processes it after the original run has completed, Matrix records `status=late` instead of treating that as in-run delivery.
+`accepted` is not final delivery proof; it is followed by final evidence for the same `delivery_id`. During active runs, Matrix routes live attach to the run-bound logical/remote session because the channel mirror can lag until the active provider turn finishes.
 
 Provider note: ACP standardizes `session/cancel` for interrupting/stopping an
 active turn, not guaranteed mid-turn live context injection. Matrix therefore

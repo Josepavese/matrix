@@ -21,12 +21,13 @@ func (m *Manager) AttachRunContext(ctx context.Context, req middleware.RunContex
 	if !found {
 		return unsupportedAttach(base, "logical session not found"), nil
 	}
-	remoteID := firstNonEmpty(meta.AgentSessionID, strings.TrimSpace(req.RemoteSessionID))
+	runRemoteID := strings.TrimSpace(req.RemoteSessionID)
+	metaRemoteID := strings.TrimSpace(meta.AgentSessionID)
+	// For live attach, the run trace is the active execution contract. The
+	// vault mirror can lag until the active turn finishes and persists metadata.
+	remoteID := firstNonEmpty(runRemoteID, metaRemoteID)
 	if remoteID == "" {
 		return unsupportedAttach(base, "remote session is not ready"), nil
-	}
-	if req.RemoteSessionID != "" && meta.AgentSessionID != "" && req.RemoteSessionID != meta.AgentSessionID {
-		return unsupportedAttach(base, "run remote session does not match active session"), nil
 	}
 	agentID := firstNonEmpty(meta.AgentID, req.AgentID)
 	output, newRemoteID, _, metadata, routeErr := m.router.Route(ctx, middleware.RouteRequest{
@@ -37,12 +38,16 @@ func (m *Manager) AttachRunContext(ctx context.Context, req middleware.RunContex
 		Message:          "Matrix live context update for run " + strings.TrimSpace(req.RunID) + ". Reason: " + firstNonEmpty(req.Reason, "live_context") + ". Apply attached sidecar context conservatively.",
 		SidecarCapsules:  req.SidecarCapsules,
 		ThoughtNotifier:  req.Notifier,
+		StrictSession:    runRemoteID != "",
 	})
 	if routeErr != nil {
 		return base, fmt.Errorf("live context delivery failed: %w", routeErr)
 	}
+	if runRemoteID != "" && newRemoteID != "" && newRemoteID != runRemoteID {
+		return unsupportedAttach(base, "live context delivery changed remote session"), nil
+	}
 	meta.AgentID = agentID
-	m.persistAgentSession(meta, newRemoteID, metadata, nil)
+	m.persistAgentSession(meta, firstNonEmpty(newRemoteID, remoteID), metadata, nil)
 	base.Status = "delivered"
 	base.Message = firstNonEmpty(output, "Live context delivered to active session.")
 	return base, nil

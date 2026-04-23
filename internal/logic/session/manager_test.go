@@ -49,7 +49,9 @@ func (m *mockStorage) List(prefix string) ([]string, error) {
 // mockRouter records the last message received
 type mockRouter struct {
 	lastSession    string
+	lastRemote     string
 	lastMsg        string
+	lastStrict     bool
 	remote         []middleware.RemoteSessionInfo
 	deleted        []string
 	canceled       []string
@@ -77,7 +79,9 @@ type mockRouter struct {
 
 func (m *mockRouter) Route(_ context.Context, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
 	m.lastSession = req.LogicalSessionID
+	m.lastRemote = req.AgentSessionID
 	m.lastMsg = req.Message
+	m.lastStrict = req.StrictSession
 	return "Ok", req.AgentSessionID, nil, m.metadata, m.routeErr
 }
 
@@ -1707,6 +1711,56 @@ func TestSessionManager_NewEphemeralSessionAcceptsWorkspacePathWithoutRegistered
 	}
 	if meta.CleanupPolicy != middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal {
 		t.Fatalf("expected normalized cleanup policy, got %q", meta.CleanupPolicy)
+	}
+}
+
+func TestSessionManager_AttachRunContextUsesRunRemoteWhenMirrorLags(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	meta := SessionMeta{
+		ID:             "logical-live",
+		AgentID:        "opencode",
+		AgentSessionID: "stale-mirror-remote",
+		WorkspacePath:  "/tmp/live-ws",
+		MirrorStatus:   "mirrored",
+	}
+	if err := mgr.saveSessionMeta(meta); err != nil {
+		t.Fatalf("saveSessionMeta: %v", err)
+	}
+
+	result, err := mgr.AttachRunContext(context.Background(), middleware.RunContextAttachmentRequest{
+		RunID:            "run-live",
+		DeliveryID:       "ctx-live",
+		AgentID:          "opencode",
+		LogicalSessionID: "logical-live",
+		RemoteSessionID:  "run-active-remote",
+		Reason:           "noema_active_sidecar_suggestion",
+		SidecarCapsules: []middleware.SidecarCapsule{
+			{Provider: "noema", ID: "sug-1", Visibility: middleware.SidecarVisibilityLLMVisible, Content: "guidance"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("AttachRunContext: %v", err)
+	}
+	if result.Unsupported || result.Status != "delivered" {
+		t.Fatalf("expected delivered attach despite stale mirror, got %+v", result)
+	}
+	if router.lastSession != "logical-live" || router.lastRemote != "run-active-remote" {
+		t.Fatalf("expected run-bound session routing, session=%q remote=%q", router.lastSession, router.lastRemote)
+	}
+	if !router.lastStrict {
+		t.Fatalf("live attach must require the run-bound remote session")
+	}
+	updated, found, err := mgr.loadSessionMeta("logical-live")
+	if err != nil || !found {
+		t.Fatalf("load updated meta: err=%v found=%v", err, found)
+	}
+	if updated.AgentSessionID != "run-active-remote" {
+		t.Fatalf("expected mirror repaired from live run remote, got %q", updated.AgentSessionID)
 	}
 }
 
