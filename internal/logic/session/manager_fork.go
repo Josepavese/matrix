@@ -30,6 +30,7 @@ type forkResultData struct {
 	Cleanup        *middleware.SessionCleanupResult
 }
 
+//nolint:nilerr // Fork failures are protocol-visible typed results, not Go transport errors.
 func (m *Manager) handleSessionForkTyped(ctx context.Context, req middleware.SessionActionRequest) (middleware.SessionActionResult, error) {
 	plan, unsupported, err := m.prepareFork(ctx, req)
 	if unsupported != nil || err != nil {
@@ -44,11 +45,29 @@ func (m *Manager) handleSessionForkTyped(ctx context.Context, req middleware.Ses
 	}
 	artifact, cleanup, err := m.runForkChildWorkflow(ctx, req, childMeta, plan.CleanupPolicy)
 	if err != nil {
-		return middleware.SessionActionResult{}, err
+		return m.forkWorkflowFailedResult(forkWorkflowFailureData{
+			ChannelID: req.ChannelID,
+			Plan:      plan,
+			ChildMeta: childMeta,
+			Artifact:  artifact,
+			Cleanup:   cleanup,
+			Err:       err,
+		}), nil
 	}
 	activeID, parentRestored, err := m.restoreForkParent(req.ChannelID, plan, childMeta.ID)
 	if err != nil {
-		return middleware.SessionActionResult{}, err
+		return m.forkWorkflowFailedResult(forkWorkflowFailureData{
+			ChannelID: req.ChannelID,
+			Plan:      plan,
+			ChildMeta: childMeta,
+			Artifact:  artifact,
+			Cleanup:   cleanup,
+			Err: forkWorkflowError{
+				code:    "fork_parent_restore_failed",
+				message: "failed to restore parent session after fork",
+				err:     err,
+			},
+		}), nil
 	}
 	childActive := activeID == childMeta.ID
 	session := m.forkSessionEntry(childMeta, childActive, cleanup)
@@ -147,50 +166,6 @@ func (m *Manager) persistForkChild(channelID string, childMeta SessionMeta, make
 		return err
 	}
 	return m.indexSessionWorkspace(childMeta)
-}
-
-func (m *Manager) runForkChildWorkflow(ctx context.Context, req middleware.SessionActionRequest, childMeta SessionMeta, cleanupPolicy string) (*middleware.SessionForkArtifact, *middleware.SessionCleanupResult, error) {
-	artifact, err := m.runForkChildTurn(ctx, req, childMeta)
-	if err != nil || artifact == nil || (!req.Ephemeral && strings.TrimSpace(req.CleanupPolicy) == "") {
-		return artifact, nil, err
-	}
-	cleanup, err := m.cleanupForkChild(ctx, req, childMeta.ID, cleanupPolicy)
-	return artifact, cleanup, err
-}
-
-func (m *Manager) runForkChildTurn(ctx context.Context, req middleware.SessionActionRequest, childMeta SessionMeta) (*middleware.SessionForkArtifact, error) {
-	input := strings.TrimSpace(req.Input)
-	if input == "" {
-		return nil, nil
-	}
-	output, err := m.routeResolvedSession(ctx, middleware.ConversationRequest{
-		ChannelID:        req.ChannelID,
-		AgentID:          childMeta.AgentID,
-		LogicalSessionID: childMeta.ID,
-		WorkspaceID:      childMeta.WorkspaceID,
-		WorkspacePath:    childMeta.WorkspacePath,
-		Input:            input,
-		NonInteractive:   true,
-	}, childMeta.ID, childMeta.AgentID)
-	if err != nil {
-		return nil, err
-	}
-	return &middleware.SessionForkArtifact{Kind: "child_turn_response", Content: output}, nil
-}
-
-func (m *Manager) cleanupForkChild(ctx context.Context, req middleware.SessionActionRequest, childID string, cleanupPolicy string) (*middleware.SessionCleanupResult, error) {
-	result, err := m.cleanupSessionTyped(ctx, sessionCleanupRequest{
-		ChannelID:        req.ChannelID,
-		Lang:             m.wizard.GetLanguage(req.ChannelID),
-		Target:           childID,
-		Action:           "cleanup",
-		CleanupPolicy:    cleanupPolicy,
-		ForceForgetLocal: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.Cleanup, nil
 }
 
 func (m *Manager) restoreForkParent(channelID string, plan forkPlan, childID string) (string, bool, error) {

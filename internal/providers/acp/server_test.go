@@ -1167,3 +1167,35 @@ func TestHandleSessionActions_TypedMissingRemoteSessionUses409(t *testing.T) {
 		t.Fatalf("unexpected typed missing remote response: %+v", resp)
 	}
 }
+
+func TestHandleSessionActions_TypedForkChildTurnFailureUses502(t *testing.T) {
+	router := &mockSessionRouter{typedResult: middleware.SessionActionResult{
+		Action: "fork",
+		Error: &middleware.SessionActionError{
+			Code:    "fork_child_turn_failed",
+			Message: "fork child artifact turn failed",
+			Target:  "child",
+		},
+		Fork: &middleware.SessionForkResult{
+			ParentLogicalSessionID: "parent",
+			ChildLogicalSessionID:  "child",
+			Reason:                 "ACP prompt failed: client context cancelled",
+		},
+	}}
+	_, mux := setupServer(router, "", "")
+	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "fork", "target": "parent"})
+	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp middleware.SessionActionResult
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response parse error: %v", err)
+	}
+	if resp.Error == nil || resp.Error.Code != "fork_child_turn_failed" || resp.Fork == nil {
+		t.Fatalf("unexpected typed fork failure response: %+v", resp)
+	}
+}

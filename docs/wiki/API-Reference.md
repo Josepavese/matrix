@@ -386,7 +386,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
   }'
 ```
 
-The response contains `capabilities.session`, keyed by lifecycle feature. Each entry includes `supported`, `status`, `stability`, and `source`. ACP reports `list` and `info_update` as stable, `resume` and `close` as preview, and `fork` / `delete` as draft when the provider advertises them.
+The response contains `capabilities.session`, keyed by lifecycle feature. Each entry includes `supported`, `status`, `stability`, and `source`. ACP reports `list` and `info_update` as stable, `resume` and `close` as preview, and `fork` / `delete` as draft when the provider advertises them. Fork descriptors also expose `active_parent_safe`, `requires_idle_parent`, and `artifact_turn` so supervisors can decide whether a live parent run can be forked for one-turn artifact generation.
 
 Unknown agent ids return a typed client error such as
 `error.code=agent_not_found` instead of a generic server failure. Supervisory
@@ -418,6 +418,16 @@ exactly one turn on the fork child and returns `fork.artifact.content`; when
 not interpret the artifact content. If remote parent materialization is blocked,
 Matrix returns typed evidence such as `error.code=missing_remote_session_id` or
 `error.code=remote_session_materialize_failed` instead of HTTP `500`.
+
+When `capabilities.session.fork.active_parent_safe=true`, Matrix supports
+forking while the parent run is still active. Parent cleanup preserves the shared
+provider process while a mirrored fork child still references the same
+`agent_id + workspace_path`; cleanup proof then marks process retention
+explicitly. If a child artifact turn or child cleanup fails after the provider
+child exists, Matrix returns typed evidence such as
+`error.code=fork_child_turn_failed` or `error.code=fork_child_cleanup_failed`
+and includes any available `fork.cleanup` proof instead of returning a generic
+server failure.
 
 **Reconcile cached provider clients:**
 

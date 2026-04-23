@@ -37,7 +37,20 @@ func (m *Manager) reapAgentClientAfterLocalCleanup(ctx context.Context, req sess
 
 func (m *Manager) allowProcessRetention(meta SessionMeta, result *middleware.SessionCleanupResult) bool {
 	if meta.Ephemeral && strings.TrimSpace(meta.ParentSessionID) == "" {
-		return false
+		hasReferences, err := m.hasForkChildAgentClientReferences(meta)
+		if err != nil {
+			result.ProcessRetained = true
+			result.ProcessRetentionReason = err.Error()
+			result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "process_reap_refs", err)
+			return true
+		}
+		if !hasReferences {
+			return false
+		}
+		result.ProcessRetained = true
+		result.ProcessRetentionAllowed = true
+		result.ProcessRetentionReason = sessioncleanup.OtherLocalSessionsStillReferenceAgentClient
+		return true
 	}
 	hasReferences, err := m.hasOtherAgentClientReferences(meta)
 	if err != nil {
@@ -56,6 +69,23 @@ func (m *Manager) allowProcessRetention(meta SessionMeta, result *middleware.Ses
 }
 
 func (m *Manager) hasOtherAgentClientReferences(meta SessionMeta) (bool, error) {
+	return m.hasAgentClientReferences(meta, func(_ SessionMeta) bool {
+		return true
+	})
+}
+
+func (m *Manager) hasForkChildAgentClientReferences(meta SessionMeta) (bool, error) {
+	parentID := strings.TrimSpace(meta.ID)
+	parentRemoteID := strings.TrimSpace(meta.AgentSessionID)
+	return m.hasAgentClientReferences(meta, func(other SessionMeta) bool {
+		if strings.TrimSpace(other.ParentSessionID) == parentID {
+			return true
+		}
+		return parentRemoteID != "" && strings.TrimSpace(other.ParentRemoteID) == parentRemoteID
+	})
+}
+
+func (m *Manager) hasAgentClientReferences(meta SessionMeta, include func(SessionMeta) bool) (bool, error) {
 	keys, err := m.storage.List("session.meta.")
 	if err != nil {
 		return false, err
@@ -69,6 +99,9 @@ func (m *Manager) hasOtherAgentClientReferences(meta SessionMeta) (bool, error) 
 		}
 		var other SessionMeta
 		if err := json.Unmarshal(raw, &other); err != nil || other.ID == meta.ID {
+			continue
+		}
+		if include != nil && !include(other) {
 			continue
 		}
 		if strings.TrimSpace(other.AgentID) == targetAgent && cleanSessionWorkspacePath(other.WorkspacePath) == targetPath {

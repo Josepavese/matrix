@@ -56,7 +56,7 @@ func acpSessionCapabilities(resp *acpInitializeResponse) middleware.Conversation
 			"close":       acpCapability("close", closeSession, "preview", "zed_acp_rfd_session_close"),
 			"delete":      acpCapability("delete", deleteSession, "draft", "zed_acp_rfd_session_delete"),
 			"resume":      acpCapability("resume", resume, "preview", "zed_acp_rfd_session_resume"),
-			"fork":        acpCapability("fork", fork, "draft", "zed_acp_rfd_session_fork"),
+			"fork":        acpForkCapability(fork),
 		},
 	}
 }
@@ -73,4 +73,18 @@ func acpCapability(name string, supported bool, stability, source string) middle
 		Stability: stability,
 		Source:    source,
 	}
+}
+
+func acpForkCapability(supported bool) middleware.CapabilityDescriptor {
+	desc := acpCapability("fork", supported, "draft", "zed_acp_rfd_session_fork")
+	if supported {
+		desc.ActiveParentSafe = boolPtr(true)
+		desc.RequiresIdleParent = boolPtr(false)
+		desc.ArtifactTurn = boolPtr(true)
+	}
+	return desc
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
