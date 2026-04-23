@@ -76,12 +76,15 @@ type RemoteSessionInfo struct {
 // Boolean fields on ConversationSessionCapabilities remain convenience shortcuts;
 // this descriptor carries the stability/source required for safe orchestration.
 type CapabilityDescriptor struct {
-	Name      string `json:"name,omitempty"`
-	Supported bool   `json:"supported"`
-	Status    string `json:"status,omitempty"`
-	Stability string `json:"stability,omitempty"`
-	Source    string `json:"source,omitempty"`
-	Detail    string `json:"detail,omitempty"`
+	Name               string `json:"name,omitempty"`
+	Supported          bool   `json:"supported"`
+	Status             string `json:"status,omitempty"`
+	Stability          string `json:"stability,omitempty"`
+	Source             string `json:"source,omitempty"`
+	Detail             string `json:"detail,omitempty"`
+	ActiveParentSafe   *bool  `json:"active_parent_safe,omitempty"`
+	RequiresIdleParent *bool  `json:"requires_idle_parent,omitempty"`
+	ArtifactTurn       *bool  `json:"artifact_turn,omitempty"`
 }
 
 // ProviderCapabilityReport is a channel-safe provider capability snapshot.

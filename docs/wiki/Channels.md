@@ -167,7 +167,10 @@ Actions: `new`, `list`, `status`, `switch`, `cancel`, `delete`, `cleanup`,
 `capabilities`, `fork`, and `reconcile` use the same channel-neutral contract as
 Telegram and future ingress adapters. `fork` is provider-gated: Matrix calls a
 real provider fork when available and otherwise returns a typed
-`unsupported=true` response.
+`unsupported=true` response. Fork capability descriptors include
+`active_parent_safe`, `requires_idle_parent`, and `artifact_turn`; when active
+parent fork is supported, cleanup retains the shared provider process while a
+fork child still references the same agent/workspace binding.
 
 ### Workspace management
 

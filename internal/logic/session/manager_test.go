@@ -72,12 +72,13 @@ type mockRouter struct {
 	materialized   []middleware.SessionMaterializeRequest
 	materialRemote middleware.RemoteSessionInfo
 	metadata       middleware.ConversationMetadata
+	routeErr       error
 }
 
 func (m *mockRouter) Route(_ context.Context, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
 	m.lastSession = req.LogicalSessionID
 	m.lastMsg = req.Message
-	return "Ok", req.AgentSessionID, nil, m.metadata, nil
+	return "Ok", req.AgentSessionID, nil, m.metadata, m.routeErr
 }
 
 func (m *mockRouter) ListAgentSessions(_ context.Context, _ string) ([]middleware.RemoteSessionInfo, middleware.ConversationSessionCapabilities, error) {
@@ -1548,6 +1549,125 @@ func TestSessionManager_ForkInputCanCleanupChildAndRestoreParent(t *testing.T) {
 	}
 	if len(router.reaped) != 0 {
 		t.Fatalf("fork child cleanup must not reap shared parent client, got %+v", router.reaped)
+	}
+}
+
+func TestSessionManager_ForkChildTurnFailureReturnsTypedCleanupProof(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{routeErr: fmt.Errorf("client context cancelled")}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "fork-fail-ch",
+		Action:        "new",
+		Target:        "opencode",
+		WorkspacePath: "/tmp/fork-fail-ws",
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("new parent: %v", err)
+	}
+	parentMeta, found, err := mgr.loadSessionMeta(parent.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("load parent: err=%v found=%v", err, found)
+	}
+	parentMeta.AgentSessionID = "parent-fail-remote"
+	if err := mgr.saveSessionMeta(parentMeta); err != nil {
+		t.Fatalf("save parent: %v", err)
+	}
+	makeActive := false
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "fork-fail-ch",
+		Action:        "fork",
+		Target:        parentMeta.ID,
+		Input:         "render diagnostic JSON",
+		MakeActive:    &makeActive,
+		RestoreParent: true,
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("fork failure must be typed, got err=%v", err)
+	}
+	if result.Error == nil || result.Error.Code != "fork_child_turn_failed" {
+		t.Fatalf("expected typed child turn failure, got %+v", result)
+	}
+	if result.Fork == nil || result.Fork.Cleanup == nil || !result.Fork.Cleanup.Clean {
+		t.Fatalf("expected cleanup proof on child failure, got %+v", result.Fork)
+	}
+	if result.ActiveSessionID != parentMeta.ID || !result.Fork.ParentRestored {
+		t.Fatalf("expected parent restored after child failure, got active=%q fork=%+v", result.ActiveSessionID, result.Fork)
+	}
+	raw, _ := storage.Get("session.meta." + result.Fork.ChildLogicalSessionID)
+	if len(raw) != 0 {
+		t.Fatalf("expected failed child meta removed, got %q", string(raw))
+	}
+	if len(router.reaped) != 0 {
+		t.Fatalf("child cleanup must not reap active parent client, got %+v", router.reaped)
+	}
+}
+
+func TestSessionManager_EphemeralParentCleanupRetainsProcessWhenForkChildExists(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent := SessionMeta{
+		ID:             "parent-active",
+		AgentID:        "opencode",
+		AgentSessionID: "parent-remote",
+		ProtocolKind:   "acp",
+		WorkspacePath:  "/tmp/active-parent-ws",
+		Ephemeral:      true,
+		CleanupPolicy:  middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	}
+	child := SessionMeta{
+		ID:              "child-active",
+		AgentID:         "opencode",
+		AgentSessionID:  "child-remote",
+		ProtocolKind:    "acp",
+		WorkspacePath:   "/tmp/active-parent-ws",
+		ParentSessionID: parent.ID,
+		ParentRemoteID:  parent.AgentSessionID,
+		Ephemeral:       true,
+		CleanupPolicy:   middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	}
+	if err := mgr.saveSessionMeta(parent); err != nil {
+		t.Fatalf("save parent: %v", err)
+	}
+	if err := mgr.saveSessionMeta(child); err != nil {
+		t.Fatalf("save child: %v", err)
+	}
+	if err := mgr.updateChannelState("active-parent-ch", parent.ID); err != nil {
+		t.Fatalf("channel state: %v", err)
+	}
+	if err := mgr.appendInactiveChannelSession("active-parent-ch", child.ID); err != nil {
+		t.Fatalf("append child: %v", err)
+	}
+
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "active-parent-ch",
+		Action:           "cleanup",
+		Target:           parent.ID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup parent: %v", err)
+	}
+	if result.Cleanup == nil || !result.Cleanup.Clean || !result.Cleanup.ProcessRetained || !result.Cleanup.ProcessRetentionAllowed {
+		t.Fatalf("expected retained clean parent cleanup, got %+v", result.Cleanup)
+	}
+	if len(router.reaped) != 0 {
+		t.Fatalf("parent cleanup must not reap while fork child exists, got %+v", router.reaped)
+	}
+	if _, found, err := mgr.loadSessionMeta(child.ID); err != nil || !found {
+		t.Fatalf("fork child should remain available: err=%v found=%v", err, found)
 	}
 }
 

@@ -275,6 +275,7 @@ Current behavior:
 - ACP remote sessions can be closed when the provider advertises preview `sessionCapabilities.close`; Matrix uses this before `session/cancel` when `session/delete` is unavailable
 - ACP remote sessions can also be interrupted through `session/cancel`, which Matrix sends as a JSON-RPC notification
 - ACP lifecycle support is reported through a protocol-neutral capability model with `supported`, `status`, `stability`, and `source` for `list`, `info_update`, `load`, `cancel`, `close`, `delete`, `resume`, and `fork`
+- Fork capability descriptors also expose Matrix orchestration truth: `active_parent_safe`, `requires_idle_parent`, and `artifact_turn`
 - ACP `session/fork` is wired only as a Draft capability-gated operation; Matrix returns typed unsupported results unless the provider advertises it
 - A2A remote tasks are enumerated through `ListTasks`, imported through `GetTask`, and deleted through `CancelTask`
 - channel users do not select ACP or A2A explicitly; Matrix resolves the provider from SSOT and the active session
@@ -296,9 +297,20 @@ Matrix routes exactly one child turn and returns the raw child response as
 Matrix then cleans the child and returns `fork.cleanup`. Matrix still does not
 evaluate or interpret the artifact.
 
+Active-parent fork is supported when `capabilities.session.fork.active_parent_safe=true`.
+Parent cleanup must not reap the shared provider process while a fork child that
+references the same `agent_id + workspace_path` is still mirrored. In that case
+Matrix retains the process, reports `process_retained=true` with
+`process_retention_allowed=true`, and still requires remote/process proof for
+ephemeral cleanup.
+
 If parent materialization is impossible, Matrix returns typed blocked evidence
 instead of a generic server failure. Current codes include
-`missing_remote_session_id` and `remote_session_materialize_failed`.
+`missing_remote_session_id` and `remote_session_materialize_failed`. If the fork
+child turn or child cleanup fails after a provider child has been created, Matrix
+returns typed evidence such as `fork_child_turn_failed` or
+`fork_child_cleanup_failed`, includes any available `fork.cleanup` proof, and
+does not collapse the path into HTTP `500`.
 
 The A2A ingress is implemented with the official Go SDK:
 

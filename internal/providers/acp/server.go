@@ -214,6 +214,10 @@ func sessionActionHTTPStatus(result middleware.SessionActionResult) int {
 		return http.StatusConflict
 	case "remote_session_materialize_failed":
 		return http.StatusBadGateway
+	case "fork_child_turn_failed", "fork_child_cleanup_failed":
+		return http.StatusBadGateway
+	case "fork_parent_restore_failed":
+		return http.StatusConflict
 	default:
 		return http.StatusBadRequest
 	}

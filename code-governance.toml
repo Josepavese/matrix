@@ -19,8 +19,8 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/logic/agentmgr" = 900
 "internal/logic/onboarding" = 1400
 "internal/logic/runtrace" = 830
-# 2026-04-22: protocol-neutral lifecycle, safe fork orchestration, reconcile, and capability SSOT.
-"internal/logic/session" = 4200
+# 2026-04-23: active-parent fork safety, typed fork failure evidence, and cleanup retention proof.
+"internal/logic/session" = 4400
 "internal/middleware" = 850
 "internal/logic/workspace" = 850
 # 2026-04-22: ACP session materialization for true fork parents without prompt replay.

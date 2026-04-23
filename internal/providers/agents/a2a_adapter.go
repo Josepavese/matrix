@@ -133,7 +133,13 @@ func a2aCapability(name string, supported bool, stability, source string) middle
 	if supported {
 		status = "supported"
 	}
-	return middleware.CapabilityDescriptor{Name: name, Supported: supported, Status: status, Stability: stability, Source: source}
+	desc := middleware.CapabilityDescriptor{Name: name, Supported: supported, Status: status, Stability: stability, Source: source}
+	if name == "fork" {
+		desc.ActiveParentSafe = boolPtr(false)
+		desc.RequiresIdleParent = boolPtr(false)
+		desc.ArtifactTurn = boolPtr(false)
+	}
+	return desc
 }
 
 func (c *a2aConversationClient) ListRemoteSessions(ctx context.Context) ([]middleware.RemoteSessionInfo, error) {
