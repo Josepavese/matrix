@@ -209,7 +209,7 @@ Behavior:
 - `/session cancel [target]` cancels the active or selected remote session/task while preserving the local mirror
 - `/cancel` and `/stop` are UX aliases for `/session cancel`
 - `/session delete [target]` removes the local mirror and calls the closest remote lifecycle operation available
-- `cleanup` produces explicit proof fields: `clean`, `remote_deleted`, `remote_canceled`, `process_reaped`, `process_retained`, `process_retention_allowed`, `local_forgotten`, `remote_delete_unsupported`, and optional `failure_code`
+- `cleanup` produces explicit proof fields: `clean`, `remote_deleted`, `remote_canceled`, `process_reaped`, `process_retained`, `process_retention_allowed`, `local_forgotten`, `remote_delete_unsupported`, optional `warnings`, and optional `failure_code`
 - `/session new [agent]`, `/session name <alias>`, and `/session status` are exposed by the same typed session-action core used by HTTP and future channel adapters
 
 Defaulting:
@@ -282,7 +282,7 @@ Current behavior:
 
 As of 2026-04-22, Zed ACP exposes `session/list` and `session_info_update` as stable, `session/resume` and `session/close` as Preview RFDs, and `session/fork` plus `session/delete` as Draft RFD capability-gated provider features. Matrix records this lifecycle state instead of collapsing it into booleans.
 
-Cleanup is also capability-aware. For ephemeral interrupt/resume flows, `clean=true` requires at least one strong provider or process proof: `remote_deleted`, `remote_closed`, `remote_canceled`, or `process_reaped`. Local-only forgetting is reported as failed or weak evidence, not as strong cleanup. Non-ephemeral retained clients can still be operationally clean, but carry `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`.
+Cleanup is also capability-aware. For ephemeral interrupt/resume flows, `clean=true` requires at least one strong provider or process proof: `remote_deleted`, `remote_closed`, `remote_canceled`, or `process_reaped`. Local-only forgetting is reported as failed or weak evidence, not as strong cleanup. Non-ephemeral retained clients can still be operationally clean, but carry `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`. For local stdio ACP providers, Matrix targets only the exact reusable workspace client for remote lifecycle cleanup; it does not start a fresh provider process just to cancel a session owned by a reaped process, and records typed cleanup `warnings` when process proof satisfies the lifecycle.
 
 Channels and HTTP can request `action=capabilities`, `action=fork`, and `action=reconcile` through the same `/v1/session-actions` contract. `reconcile` closes cached provider clients that no longer have a Matrix vault session reference.
 

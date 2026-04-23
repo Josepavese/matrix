@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -26,6 +28,23 @@ type runTestRouter struct {
 	routeStarted     chan struct{}
 	routeStartOnce   sync.Once
 	cleanupCtxErr    chan error
+}
+
+type safeLogBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func (r *runTestRouter) Route(_ context.Context, channelID string, agentID string, input string, _ middleware.ThoughtNotifier) (string, error) {
@@ -258,6 +277,11 @@ func TestHandleRuns_CleanupPolicyAloneDoesNotCleanupActiveSession(t *testing.T) 
 }
 
 func TestHandleRunActionsCancelCleansEphemeralRunWithDetachedContext(t *testing.T) {
+	var logs safeLogBuffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
 	router := &runTestRouter{
 		routeWaitCancel: true,
 		routeStarted:    make(chan struct{}),
@@ -321,6 +345,10 @@ func TestHandleRunActionsCancelCleansEphemeralRunWithDetachedContext(t *testing.
 	}
 	if run.Status != runtrace.StatusCancelled {
 		t.Fatalf("expected cancelled run, got %+v", run)
+	}
+	waitForLog(t, &logs, "matrix async run cancelled")
+	if strings.Contains(logs.String(), "matrix async run bridge failed") {
+		t.Fatalf("expected async cancel to avoid generic bridge failure log, got %s", logs.String())
 	}
 }
 
@@ -559,6 +587,18 @@ func waitForEvent(t *testing.T, store *runtrace.Store, runID, kind, status strin
 	}
 	t.Fatalf("event %s/%s not found", kind, status)
 	return runtrace.Event{}
+}
+
+func waitForLog(t *testing.T, logs interface{ String() string }, fragment string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(logs.String(), fragment) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("log fragment %q not found in %s", fragment, logs.String())
 }
 
 func hasSessionAction(actions []middleware.SessionActionRequest, action string) bool {

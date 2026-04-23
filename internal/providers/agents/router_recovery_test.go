@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/jose/matrix-v2/internal/middleware"
@@ -111,6 +112,12 @@ func (c *closableClient) Close() error {
 	return nil
 }
 
+type deadClosableClient struct {
+	closableClient
+}
+
+func (c *deadClosableClient) Alive() bool { return false }
+
 func TestRouter_ReapAgentClientClosesExactWorkspaceClient(t *testing.T) {
 	router := NewRouter(nil)
 	client := &closableClient{}
@@ -157,7 +164,9 @@ func TestRouter_ReconcileAgentClientsReapsUnreferencedClients(t *testing.T) {
 }
 
 type controlClient struct {
-	deleted []string
+	deleted      []string
+	cancelled    []string
+	closedRemote []string
 }
 
 func (c *controlClient) ExecuteTurn(context.Context, middleware.ConversationTurn) (middleware.ConversationResult, error) {
@@ -178,11 +187,13 @@ func (c *controlClient) GetRemoteSession(context.Context, string) (middleware.Re
 	return middleware.RemoteSessionInfo{}, nil
 }
 
-func (c *controlClient) CancelRemoteSession(context.Context, string) error {
+func (c *controlClient) CancelRemoteSession(_ context.Context, remoteSessionID string) error {
+	c.cancelled = append(c.cancelled, remoteSessionID)
 	return nil
 }
 
-func (c *controlClient) CloseRemoteSession(context.Context, string) error {
+func (c *controlClient) CloseRemoteSession(_ context.Context, remoteSessionID string) error {
+	c.closedRemote = append(c.closedRemote, remoteSessionID)
 	return nil
 }
 
@@ -206,5 +217,56 @@ func TestRouter_DeleteAgentSessionForWorkspaceUsesExactWorkspaceClient(t *testin
 	}
 	if len(defaultClient.deleted) != 0 {
 		t.Fatalf("default client must not receive workspace delete, got %+v", defaultClient.deleted)
+	}
+}
+
+func TestRouter_CancelAgentSessionForWorkspaceUsesExactWorkspaceClient(t *testing.T) {
+	router := NewRouter(nil)
+	defaultClient := &controlClient{}
+	workspaceClient := &controlClient{}
+	router.clients[clientCacheKey("opencode", ".")] = defaultClient
+	router.clients[clientCacheKey("opencode", "/tmp/ws")] = workspaceClient
+
+	if err := router.CancelAgentSessionForWorkspace(context.Background(), "opencode", "remote-1", "/tmp/ws"); err != nil {
+		t.Fatalf("CancelAgentSessionForWorkspace: %v", err)
+	}
+	if len(workspaceClient.cancelled) != 1 || workspaceClient.cancelled[0] != "remote-1" {
+		t.Fatalf("expected workspace client cancel, got %+v", workspaceClient.cancelled)
+	}
+	if len(defaultClient.cancelled) != 0 {
+		t.Fatalf("default client must not receive workspace cancel, got %+v", defaultClient.cancelled)
+	}
+}
+
+func TestRouter_CheckAndReconnectEvictsDeadLocalACPWithoutPrewarm(t *testing.T) {
+	router := NewRouter(&mockResolver{protocol: "stdio", address: "opencode"})
+	client := &deadClosableClient{}
+	key := clientCacheKey("opencode", "/tmp/ws")
+	router.clients[key] = client
+
+	router.checkAndReconnect()
+
+	if !client.closed {
+		t.Fatalf("expected dead local ACP client to be closed")
+	}
+	if _, ok := router.clients[key]; ok {
+		t.Fatalf("expected dead local ACP client to be evicted without replacement")
+	}
+}
+
+func TestRouter_CancelAgentSessionForWorkspaceDoesNotSpawnFreshLocalACPClient(t *testing.T) {
+	router := NewRouter(nil)
+	defaultClient := &controlClient{}
+	router.clients[clientCacheKey("opencode", ".")] = defaultClient
+
+	err := router.CancelAgentSessionForWorkspace(context.Background(), "opencode", "remote-1", "/tmp/ws")
+	if err == nil {
+		t.Fatalf("expected no reusable workspace client error")
+	}
+	if !strings.Contains(err.Error(), noReusableCachedAgentClient) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(defaultClient.cancelled) != 0 {
+		t.Fatalf("default client must not receive workspace cancel, got %+v", defaultClient.cancelled)
 	}
 }

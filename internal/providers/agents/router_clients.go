@@ -10,6 +10,8 @@ import (
 	"github.com/jose/matrix-v2/internal/middleware"
 )
 
+const noReusableCachedAgentClient = "no reusable cached agent client owns workspace session"
+
 // ReapAgentClient closes and evicts the cached client for the exact agent/workspace
 // binding used by an ephemeral run. For stdio ACP clients this terminates the
 // underlying child process through the transport Close path.
@@ -80,7 +82,7 @@ func (r *Router) CloseAgentSession(ctx context.Context, agentID string, remoteSe
 }
 
 func (r *Router) CancelAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error {
-	client, err := r.getOrCreateSessionControlClientForWorkspace(ctx, agentID, workspacePath)
+	client, err := r.getSessionLifecycleClientForWorkspace(ctx, agentID, workspacePath)
 	if err != nil {
 		return err
 	}
@@ -92,7 +94,7 @@ func (r *Router) CancelAgentSessionForWorkspace(ctx context.Context, agentID str
 }
 
 func (r *Router) CloseAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error {
-	client, err := r.getOrCreateSessionControlClientForWorkspace(ctx, agentID, workspacePath)
+	client, err := r.getSessionLifecycleClientForWorkspace(ctx, agentID, workspacePath)
 	if err != nil {
 		return err
 	}
@@ -116,7 +118,7 @@ func (r *Router) DeleteAgentSession(ctx context.Context, agentID string, remoteS
 }
 
 func (r *Router) DeleteAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error {
-	client, err := r.getOrCreateSessionControlClientForWorkspace(ctx, agentID, workspacePath)
+	client, err := r.getSessionLifecycleClientForWorkspace(ctx, agentID, workspacePath)
 	if err != nil {
 		return err
 	}
@@ -173,6 +175,36 @@ func (r *Router) getOrCreateSessionControlClientForWorkspace(ctx context.Context
 		return r.getOrCreateSessionControlClient(ctx, agentID)
 	}
 	return r.getOrCreateClient(ctx, agentID, r.effectiveCwd(workspacePath))
+}
+
+func (r *Router) getSessionLifecycleClientForWorkspace(ctx context.Context, agentID string, workspacePath string) (middleware.ConversationClient, error) {
+	if strings.TrimSpace(workspacePath) == "" {
+		return r.getOrCreateSessionControlClient(ctx, agentID)
+	}
+	cwd := r.effectiveCwd(workspacePath)
+	key := clientCacheKey(agentID, cwd)
+	if client, ok := r.lookupReusableClient(key); ok {
+		return client, nil
+	}
+	if r.canSpawnFreshLifecycleClient(agentID) {
+		return r.getOrCreateClient(ctx, agentID, cwd)
+	}
+	return nil, fmt.Errorf("%s: agent=%s workspace=%s", noReusableCachedAgentClient, agentID, cwd)
+}
+
+func (r *Router) canSpawnFreshLifecycleClient(agentID string) bool {
+	if r.resolver == nil {
+		return false
+	}
+	endpoint, err := r.resolver.GetAgentEndpoint(agentID)
+	if err != nil {
+		return true
+	}
+	if endpoint.Kind != middleware.ProtocolKindACP {
+		return true
+	}
+	transport := strings.ToLower(strings.TrimSpace(endpoint.Transport))
+	return transport != "stdio" && transport != "acp"
 }
 
 func (r *Router) lookupReusableClient(key string) (middleware.ConversationClient, bool) {

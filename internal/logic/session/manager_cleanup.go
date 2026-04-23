@@ -141,6 +141,9 @@ func (m *Manager) cleanupSessionMirrorAndRemote(ctx context.Context, req session
 	m.cleanupRemoteSession(ctx, req.Meta, policy, &result)
 	m.cleanupLocalMirror(req, result.RemoteDeleted, &result)
 	m.reapAgentClientAfterLocalCleanup(ctx, req, &result)
+	if result.ProcessReaped && sessioncleanup.HasWarning(result.Warnings, sessioncleanup.WarningRemoteLifecycleSkippedNoReusableClient) {
+		result.Warnings = sessioncleanup.AppendWarning(result.Warnings, sessioncleanup.WarningRemoteCancelSessionNotFoundAfterProcessReap)
+	}
 	cleanInput := sessioncleanup.CleanInput{
 		Ephemeral:               req.Meta.Ephemeral,
 		RemoteSessionID:         result.RemoteSessionID,
@@ -177,6 +180,10 @@ func (m *Manager) cleanupRemoteSession(ctx context.Context, meta SessionMeta, po
 	}
 	result.RemoteDeleteAttempted = true
 	if err := m.deleteRemoteSession(ctx, meta); err != nil {
+		if sessioncleanup.IsNoReusableCachedAgentClient(err) {
+			result.Warnings = sessioncleanup.AppendWarning(result.Warnings, sessioncleanup.WarningRemoteLifecycleSkippedNoReusableClient)
+			return
+		}
 		result.RemoteDeleteUnsupported = sessioncleanup.IsRemoteDeleteUnsupported(err)
 		result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "remote_delete", err)
 	} else {
@@ -188,6 +195,10 @@ func (m *Manager) cleanupRemoteSession(ctx context.Context, meta SessionMeta, po
 	if result.RemoteDeleteUnsupported {
 		result.RemoteCloseAttempted = true
 		if err := m.closeRemoteSession(ctx, meta); err != nil {
+			if sessioncleanup.IsNoReusableCachedAgentClient(err) {
+				result.Warnings = sessioncleanup.AppendWarning(result.Warnings, sessioncleanup.WarningRemoteLifecycleSkippedNoReusableClient)
+				return
+			}
 			result.RemoteCloseUnsupported = sessioncleanup.IsRemoteCloseUnsupported(err)
 			result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "remote_close", err)
 		} else {
@@ -197,6 +208,10 @@ func (m *Manager) cleanupRemoteSession(ctx context.Context, meta SessionMeta, po
 	}
 	result.RemoteCancelAttempted = true
 	if err := m.cancelRemoteSession(ctx, meta); err != nil {
+		if sessioncleanup.IsNoReusableCachedAgentClient(err) {
+			result.Warnings = sessioncleanup.AppendWarning(result.Warnings, sessioncleanup.WarningRemoteLifecycleSkippedNoReusableClient)
+			return
+		}
 		result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "remote_cancel", err)
 		return
 	}

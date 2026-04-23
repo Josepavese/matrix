@@ -203,6 +203,7 @@ func (s *Server) appendCleanupEvent(runID, agentID string, cleanup middleware.Se
 			"process_retention_allowed": cleanup.ProcessRetentionAllowed,
 			"process_retention_reason":  cleanup.ProcessRetentionReason,
 			"local_forgotten":           cleanup.LocalForgotten,
+			"warnings":                  cleanup.Warnings,
 			"failure_code":              cleanup.FailureCode,
 			"error":                     cleanup.Error,
 		},

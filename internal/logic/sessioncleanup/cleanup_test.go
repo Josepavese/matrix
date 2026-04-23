@@ -59,6 +59,26 @@ func TestRemoteCancelIsStrongCleanupProof(t *testing.T) {
 	}
 }
 
+func TestProcessReapIsStrongCleanupProofForEphemeralRemoteSession(t *testing.T) {
+	input := CleanInput{
+		Ephemeral:           true,
+		RemoteSessionID:     "remote-1",
+		CleanupPolicy:       middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ProcessReapRequired: true,
+		ProcessReaped:       true,
+		LocalForgotten:      true,
+	}
+	if !IsClean(input) {
+		t.Fatalf("process reap should satisfy ephemeral remote cleanup")
+	}
+	if !HasStrongProof(input) {
+		t.Fatalf("process reap should be strong proof")
+	}
+	if got := Strength(input); got != StrengthStrong {
+		t.Fatalf("unexpected strength: %q", got)
+	}
+}
+
 func TestRetainedProcessIsExplicitWeakCleanup(t *testing.T) {
 	input := CleanInput{
 		RemoteSessionID:         "remote-1",
