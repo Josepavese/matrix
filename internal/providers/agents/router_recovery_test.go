@@ -54,6 +54,27 @@ func TestRouter_ExecutePrompt_RecoversFromMissingSession(t *testing.T) {
 	}
 }
 
+func TestRouter_ExecutePrompt_StrictSessionDoesNotRecoverFromMissingSession(t *testing.T) {
+	router := NewRouter(nil)
+	client := &recoveryClient{}
+
+	_, sessionID, _, _, err := router.executePrompt(context.Background(), client, middleware.RouteRequest{
+		LogicalSessionID: "logical-session",
+		AgentSessionID:   "stale-session",
+		Message:          "hello",
+		StrictSession:    true,
+	})
+	if err == nil {
+		t.Fatalf("expected missing session error")
+	}
+	if sessionID != "" {
+		t.Fatalf("strict live routing must not create replacement session, got %q", sessionID)
+	}
+	if client.promptCalls != 1 || client.newSessionCalls != 0 {
+		t.Fatalf("expected one failed prompt and no recovery, prompt=%d new=%d", client.promptCalls, client.newSessionCalls)
+	}
+}
+
 type failingSessionClient struct{}
 
 func (c failingSessionClient) Close() error { return nil }

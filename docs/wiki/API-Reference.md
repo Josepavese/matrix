@@ -229,7 +229,7 @@ curl -X POST http://127.0.0.1:9091/v1/runs/run-abc123/actions \
   }'
 ```
 
-`attach_context` returns `202` with a `delivery_id` when accepted. Delivery happens in the background and is visible in run events. `run.context.attached` uses `delivered` only when the context is delivered while the run is still active. If the provider processes it after the run becomes terminal, Matrix records `status=late` and does not emit `sidecar.capsule.delivered` for that run. Matrix returns `status=unsupported` when the run is not active, the session is not ready, or the runtime cannot attach live context.
+`attach_context` returns `202` with a `delivery_id` when accepted. Delivery happens in the background and is visible in run events. `run.context.attached` first records `accepted`, then records final evidence for the same `delivery_id`: `delivered`, `late`, `failed`, or `unsupported`. `delivered` is used only when the context is delivered while the run is still active. If the provider processes it after the run becomes terminal, Matrix records `status=late` and does not emit `sidecar.capsule.delivered` for that run. Matrix returns `status=unsupported` when the run is not active, the session is not ready, or the runtime cannot attach live context. The run trace's `logical_session_id + remote_session_id` is the live-delivery SSOT; Matrix does not reject delivery just because the channel mirror has not yet persisted the active run remote id.
 
 `attach_context` is not the same as ACP `session/cancel`. ACP-compatible agents
 are expected to support cancellation, but mid-turn live context consumption is

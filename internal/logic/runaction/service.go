@@ -226,7 +226,7 @@ func (s Service) appendAttachEvent(run runtrace.Run, req Request, state delivery
 		Protocol:       run.Protocol,
 		ProtocolMethod: "matrix.run.context.attach",
 		Summary:        attachSummary(state),
-		Metadata:       attachMetadata(req, state.ID, state.Status, state.Message),
+		Metadata:       attachRunMetadata(run, attachMetadata(req, state.ID, state.Status, state.Message)),
 	}
 	if run.TracePolicy.ContentMode == runtrace.ContentModeInline {
 		event.Message = state.Message
@@ -259,6 +259,22 @@ func attachMetadata(req Request, deliveryID, status, message string) map[string]
 	}
 	if message != "" {
 		meta["message"] = message
+	}
+	return meta
+}
+
+func attachRunMetadata(run runtrace.Run, meta map[string]interface{}) map[string]interface{} {
+	if strings.TrimSpace(run.LogicalSessionID) != "" {
+		meta["logical_session_id"] = strings.TrimSpace(run.LogicalSessionID)
+	}
+	if strings.TrimSpace(run.RemoteSessionID) != "" {
+		meta["remote_session_id"] = strings.TrimSpace(run.RemoteSessionID)
+	}
+	if strings.TrimSpace(run.AgentID) != "" {
+		meta["agent_id"] = strings.TrimSpace(run.AgentID)
+	}
+	if strings.TrimSpace(run.WorkspaceID) != "" {
+		meta["workspace_id"] = strings.TrimSpace(run.WorkspaceID)
 	}
 	return meta
 }

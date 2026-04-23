@@ -298,6 +298,14 @@ actions such as `annotate` or
 `set_mode` are only acceptable if they remain protocol-neutral operational
 controls. Matrix must not turn run actions into cognitive policy APIs.
 
+For live delivery, the run's `logical_session_id + remote_session_id` is the
+operational SSOT. The vault mirror can lag while an active provider turn is
+still streaming and only persist the latest remote id at turn completion. Matrix
+therefore routes `attach_context` to the run-bound remote session, not to a
+possibly stale channel mirror. If the provider cannot use that exact remote
+session, Matrix reports typed unsupported/failed evidence instead of recovering
+silently into a replacement session.
+
 `cancel` and `attach_context` are intentionally different. ACP standardizes
 `session/cancel` for interrupting/stopping an ongoing turn; it does not
 standardize injecting a second prompt into a running turn and requiring the LLM

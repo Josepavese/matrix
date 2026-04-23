@@ -54,6 +54,7 @@ type RouteRequest struct {
 	SidecarCapsules  []SidecarCapsule
 	Tools            []Tool
 	ThoughtNotifier  ThoughtNotifier // optional: receives real-time thought/tool updates during prompt
+	StrictSession    bool            // do not recover by creating a replacement remote session
 }
 
 // ThoughtUpdateType classifies the kind of intermediate update from an agent.
