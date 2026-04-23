@@ -136,31 +136,32 @@ type SessionEntry struct {
 // It is protocol-neutral and intentionally distinguishes remote provider state
 // from the local Matrix mirror.
 type SessionCleanupResult struct {
-	LogicalSessionID        string `json:"logical_session_id,omitempty"`
-	RemoteSessionID         string `json:"remote_session_id,omitempty"`
-	AgentID                 string `json:"agent_id,omitempty"`
-	ProtocolKind            string `json:"protocol_kind,omitempty"`
-	CleanupPolicy           string `json:"cleanup_policy,omitempty"`
-	Clean                   bool   `json:"clean"`
-	StrongCleanup           bool   `json:"strong_cleanup"`
-	CleanupStrength         string `json:"cleanup_strength,omitempty"`
-	WeakCleanupReason       string `json:"weak_cleanup_reason,omitempty"`
-	RemoteDeleteAttempted   bool   `json:"remote_delete_attempted"`
-	RemoteDeleted           bool   `json:"remote_deleted"`
-	RemoteDeleteUnsupported bool   `json:"remote_delete_unsupported,omitempty"`
-	RemoteCloseAttempted    bool   `json:"remote_close_attempted"`
-	RemoteClosed            bool   `json:"remote_closed"`
-	RemoteCloseUnsupported  bool   `json:"remote_close_unsupported,omitempty"`
-	RemoteCancelAttempted   bool   `json:"remote_cancel_attempted"`
-	RemoteCanceled          bool   `json:"remote_canceled"`
-	ProcessReapAttempted    bool   `json:"process_reap_attempted"`
-	ProcessReaped           bool   `json:"process_reaped"`
-	ProcessRetained         bool   `json:"process_retained,omitempty"`
-	ProcessRetentionAllowed bool   `json:"process_retention_allowed,omitempty"`
-	ProcessRetentionReason  string `json:"process_retention_reason,omitempty"`
-	LocalForgotten          bool   `json:"local_forgotten"`
-	FailureCode             string `json:"failure_code,omitempty"`
-	Error                   string `json:"error,omitempty"`
+	LogicalSessionID        string   `json:"logical_session_id,omitempty"`
+	RemoteSessionID         string   `json:"remote_session_id,omitempty"`
+	AgentID                 string   `json:"agent_id,omitempty"`
+	ProtocolKind            string   `json:"protocol_kind,omitempty"`
+	CleanupPolicy           string   `json:"cleanup_policy,omitempty"`
+	Clean                   bool     `json:"clean"`
+	StrongCleanup           bool     `json:"strong_cleanup"`
+	CleanupStrength         string   `json:"cleanup_strength,omitempty"`
+	WeakCleanupReason       string   `json:"weak_cleanup_reason,omitempty"`
+	RemoteDeleteAttempted   bool     `json:"remote_delete_attempted"`
+	RemoteDeleted           bool     `json:"remote_deleted"`
+	RemoteDeleteUnsupported bool     `json:"remote_delete_unsupported,omitempty"`
+	RemoteCloseAttempted    bool     `json:"remote_close_attempted"`
+	RemoteClosed            bool     `json:"remote_closed"`
+	RemoteCloseUnsupported  bool     `json:"remote_close_unsupported,omitempty"`
+	RemoteCancelAttempted   bool     `json:"remote_cancel_attempted"`
+	RemoteCanceled          bool     `json:"remote_canceled"`
+	ProcessReapAttempted    bool     `json:"process_reap_attempted"`
+	ProcessReaped           bool     `json:"process_reaped"`
+	ProcessRetained         bool     `json:"process_retained,omitempty"`
+	ProcessRetentionAllowed bool     `json:"process_retention_allowed,omitempty"`
+	ProcessRetentionReason  string   `json:"process_retention_reason,omitempty"`
+	LocalForgotten          bool     `json:"local_forgotten"`
+	Warnings                []string `json:"warnings,omitempty"`
+	FailureCode             string   `json:"failure_code,omitempty"`
+	Error                   string   `json:"error,omitempty"`
 }
 
 type SessionActionError struct {

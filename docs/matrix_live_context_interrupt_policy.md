@@ -104,6 +104,15 @@ an ephemeral flow. `agent_start_context_cancelled_during_cleanup` identifies the
 historical bug where provider cleanup tried to start an agent under an
 already-canceled context.
 
+For local stdio ACP providers, Matrix treats the provider process as the owner
+of its workspace sessions. Cleanup must target the exact reusable workspace
+client; Matrix must not spawn a fresh ACP process just to send `session/cancel`
+for a session owned by a reaped process. If process reap already proves the old
+session unreachable, cleanup can remain `clean=true strong_cleanup=true` and
+carry typed warnings such as
+`remote_lifecycle_skipped_no_reusable_cached_agent_client` or
+`remote_cancel_session_not_found_after_process_reap`.
+
 For shared non-ephemeral sessions, Matrix may retain a provider client when
 other local sessions still reference the same `agent_id + workspace_path`. That
 case is not strong cleanup proof; it is reported as

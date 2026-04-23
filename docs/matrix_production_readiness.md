@@ -106,6 +106,13 @@ matrix workspace prune --all
 matrix run
 ```
 
+For batch or evaluator integrations, `matrix run` is expected to be a durable
+local service. If HTTP disappears, inspect runtime logs before attributing the
+failure to cleanup logic. A normal external stop records
+`runtime_signal_received` with the received signal, followed by
+`shutdown_started` and `daemon_exited`. Cleanup of ACP child processes must not
+be treated as daemon shutdown unless that signal/fatal evidence is present.
+
 Recommended periodic maintenance:
 
 ```bash

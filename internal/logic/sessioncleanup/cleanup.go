@@ -9,6 +9,9 @@ import (
 const NoMatchingCachedAgentClient = "no matching cached agent client"
 const OtherLocalSessionsStillReferenceAgentClient = "other local sessions still reference agent client"
 const FailureAgentStartContextCancelledDuringCleanup = "agent_start_context_cancelled_during_cleanup"
+const NoReusableCachedAgentClient = "no reusable cached agent client"
+const WarningRemoteLifecycleSkippedNoReusableClient = "remote_lifecycle_skipped_no_reusable_cached_agent_client"
+const WarningRemoteCancelSessionNotFoundAfterProcessReap = "remote_cancel_session_not_found_after_process_reap"
 const WeakCleanupNoRemoteOrProcessProof = "cleanup_clean_without_remote_or_process_proof"
 const WeakCleanupProcessRetained = "process_retained"
 
@@ -81,6 +84,10 @@ func IsRemoteCloseUnsupported(err error) bool {
 		strings.Contains(msg, "close") && strings.Contains(msg, "unsupported")
 }
 
+func IsNoReusableCachedAgentClient(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), NoReusableCachedAgentClient)
+}
+
 func AppendError(existing, phase string, err error) string {
 	if err == nil {
 		return existing
@@ -103,6 +110,23 @@ func AppendErrorWithCode(existing, code, phase string, err error) (string, strin
 	return existing, code
 }
 
+func AppendWarning(existing []string, warning string) []string {
+	warning = strings.TrimSpace(warning)
+	if warning == "" || HasWarning(existing, warning) {
+		return existing
+	}
+	return append(existing, warning)
+}
+
+func HasWarning(warnings []string, warning string) bool {
+	for _, existing := range warnings {
+		if existing == warning {
+			return true
+		}
+	}
+	return false
+}
+
 func FailureCode(err error) string {
 	if err == nil {
 		return ""
@@ -120,6 +144,7 @@ func IsClean(input CleanInput) bool {
 		input.RemoteDeleted ||
 		input.RemoteClosed ||
 		input.RemoteCanceled ||
+		input.ProcessReaped ||
 		input.CleanupPolicy == middleware.SessionCleanupPolicyForgetLocal
 	processClean := !input.ProcessReapRequired ||
 		input.ProcessReaped ||
@@ -198,6 +223,7 @@ func Metadata(cleanup middleware.SessionCleanupResult) map[string]interface{} {
 		"process_retention_allowed": cleanup.ProcessRetentionAllowed,
 		"process_retention_reason":  cleanup.ProcessRetentionReason,
 		"local_forgotten":           cleanup.LocalForgotten,
+		"warnings":                  cleanup.Warnings,
 		"failure_code":              cleanup.FailureCode,
 		"error":                     cleanup.Error,
 	}

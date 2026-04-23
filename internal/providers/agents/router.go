@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jose/matrix-v2/internal/middleware"
+	"github.com/jose/matrix-v2/internal/providers/a2aclient"
 )
 
 // ----------------------------------------------------------------------------
@@ -74,7 +75,7 @@ func NewRouter(resolver middleware.AgentEndpointResolver) *Router {
 		clients:  make(map[string]middleware.ConversationClient),
 		factory: map[middleware.ProtocolKind]middleware.ConversationFactory{
 			middleware.ProtocolKindACP: &acpConversationFactory{},
-			middleware.ProtocolKindA2A: &a2aConversationFactory{},
+			middleware.ProtocolKindA2A: a2aclient.Factory{},
 		},
 	}
 }
@@ -166,11 +167,30 @@ func (r *Router) checkAndReconnect() {
 	log := slog.With("component", "agent_router_keepalive")
 	for _, key := range agentIDs {
 		agentID, cwd := splitClientCacheKey(key)
+		if !r.canSpawnFreshLifecycleClient(agentID) {
+			if r.evictCachedClient(key) {
+				log.Info("detected dead local agent client, evicted without pre-warm", "event", "keepalive_evict_dead_local_client", "agent", agentID, "cwd", cwd)
+			}
+			continue
+		}
 		log.Info("detected dead agent client, pre-warming replacement", "event", "keepalive_reconnect", "agent", agentID, "cwd", cwd)
 		if err := r.preWarm(r.keepAliveCtx, agentID, cwd); err != nil {
 			log.Warn("keepalive pre-warm failed, will retry on next check", "event", "keepalive_prewarm_failed", "agent", agentID, "cwd", cwd, "error", err)
 		}
 	}
+}
+
+func (r *Router) evictCachedClient(key string) bool {
+	r.mu.Lock()
+	client, ok := r.clients[key]
+	if ok {
+		delete(r.clients, key)
+	}
+	r.mu.Unlock()
+	if ok {
+		_ = client.Close()
+	}
+	return ok
 }
 
 // preWarm evicts a dead client entry and creates a fresh one in its place.

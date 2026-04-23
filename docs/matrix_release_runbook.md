@@ -56,6 +56,19 @@ Without `--expect-runtime-up`, an inactive runtime is not a release warning.
 Use that mode for artifact and install validation. Use `--expect-runtime-up`
 only for environments where the daemon is expected to be serving traffic.
 
+Runtime shutdown evidence:
+
+```bash
+matrix logs tail | grep runtime_signal_received
+```
+
+`matrix run` should remain reachable across sequential runs unless the process
+receives an operator/system signal or the JSON-RPC daemon exits with an error.
+When a signal stops the runtime, Matrix logs `runtime_signal_received` with the
+exact signal before `shutdown_started` and `daemon_exited`. Treat
+`connection refused` during a batch as inconclusive until logs prove whether
+the process received `SIGINT`/`SIGTERM`, crashed, or was never started.
+
 ## Vault Key Runtime Context
 
 The normal runtime key location is:

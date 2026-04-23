@@ -339,14 +339,19 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
   }'
 ```
 
-`delete` now returns a `cleanup` proof. If the provider does not support remote delete, Matrix attempts remote close when advertised by the protocol adapter, then remote cancel when policy allows it, then forgets the local mirror when requested by policy. After local deletion, Matrix closes the exact workspace-bound agent client when no other local session still references the same `agent_id + workspace_path`; otherwise it reports `process_retained=true`, `process_retention_allowed=true`, `cleanup_strength=retained`, and `weak_cleanup_reason=process_retained`. Cleanup proof can include `failure_code`; for example `agent_start_context_cancelled_during_cleanup` means a cleanup operation tried to start a provider while using an already-canceled context.
+`delete` now returns a `cleanup` proof. If the provider does not support remote delete, Matrix attempts remote close when advertised by the protocol adapter, then remote cancel when policy allows it, then forgets the local mirror when requested by policy. After local deletion, Matrix closes the exact workspace-bound agent client when no other local session still references the same `agent_id + workspace_path`; otherwise it reports `process_retained=true`, `process_retention_allowed=true`, `cleanup_strength=retained`, and `weak_cleanup_reason=process_retained`. Cleanup proof can include `warnings` and `failure_code`; for example `agent_start_context_cancelled_during_cleanup` means a cleanup operation tried to start a provider while using an already-canceled context.
 
 For async `/v1/runs/{run_id}/actions` `cancel`, Matrix uses a cleanup-specific
 bounded context detached from the canceled run context. This allows
 interrupt/resume clients to wait for `session.cleanup clean=true` before
 starting the resume run. For ephemeral interrupt/resume flows, Matrix also
 requires `strong_cleanup=true`; local-only forgetting fails with
-`failure_code=cleanup_clean_without_remote_or_process_proof`.
+`failure_code=cleanup_clean_without_remote_or_process_proof`. For local stdio
+ACP agents, Matrix does not create a new ACP process just to cancel a session
+owned by the old workspace process. If process reap already proves cleanup,
+Matrix may record typed warnings such as
+`remote_lifecycle_skipped_no_reusable_cached_agent_client` and
+`remote_cancel_session_not_found_after_process_reap`.
 
 **Cleanup a session:**
 

@@ -88,14 +88,17 @@ Every response includes:
     "process_reaped": true,
     "process_retention_allowed": false,
     "local_forgotten": true,
+    "warnings": ["remote_cancel_session_not_found_after_process_reap"],
     "failure_code": "optional_machine_code"
   }
 }
 ```
 
-`cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, process fields, and `failure_code` instead of inferring cleanup from HTTP status alone. Cleanup after `/v1/runs/{run_id}/actions` `cancel` uses a bounded context detached from the canceled run context, so remote cleanup and process reap are not run under an already-canceled context.
+`cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, process fields, `warnings`, and `failure_code` instead of inferring cleanup from HTTP status alone. Cleanup after `/v1/runs/{run_id}/actions` `cancel` uses a bounded context detached from the canceled run context, so remote cleanup and process reap are not run under an already-canceled context.
 
 `clean=true` means Matrix reached an operational cleanup state for that lifecycle. `strong_cleanup=true` means Matrix has hard evidence from the provider or OS process layer. For ephemeral interrupt/resume flows, Matrix requires strong proof; local-only forgetting fails with `failure_code=cleanup_clean_without_remote_or_process_proof`. For non-ephemeral shared sessions, retained clients are allowed but explicitly marked with `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`.
+
+For local stdio ACP agents, Matrix does not spawn a fresh workspace client only to clean up a session owned by a now-dead process. If process reap proves the old agent is gone, cleanup remains strong and may include typed warnings such as `remote_lifecycle_skipped_no_reusable_cached_agent_client` and `remote_cancel_session_not_found_after_process_reap`. Expected async cancellation is logged as `run_cancelled`, not as a generic `matrix async run bridge failed` error.
 
 ## Canonical State
 
@@ -366,7 +369,7 @@ Run enrichment:
 - selected protocol is resolved through the configured agent endpoint resolver when available;
 - remote session ids are captured from notifier headers when providers emit them;
 - logical session, remote session, protocol, workspace, mode, and status are copied from the channel-neutral session status surface when available;
-- cleanup evidence records logical session id, remote session id, remote delete attempt/result, remote cancel fallback, workspace-bound agent client/process reap or allowed retention, local mirror removal, `clean`, optional `failure_code`, and cleanup errors;
+- cleanup evidence records logical session id, remote session id, remote delete attempt/result, remote cancel fallback, workspace-bound agent client/process reap or allowed retention, local mirror removal, `clean`, optional `warnings`, optional `failure_code`, and cleanup errors;
 - trace events keep protocol-specific details in `protocol_meta`, never as primary schema concepts.
 - ACP `session/update` payloads are preserved in `protocol_meta.acp` for lossless inspection when `include_protocol_meta=true`;
 - permission payloads can enrich the currently active tool event with path/operation, but permission events remain hidden from frontend timelines by default.

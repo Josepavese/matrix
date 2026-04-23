@@ -247,8 +247,17 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request, exec ru
 }
 
 func (s *Server) executeRunAsync(ctx context.Context, exec runExecution) {
-	if _, err := s.executeRun(ctx, exec); err != nil {
-		slog.Error("matrix async run bridge failed", "error", err, "run_id", exec.runID)
+	res, err := s.executeRun(ctx, exec)
+	if err == nil {
+		return
+	}
+	switch {
+	case isEmergencyTimeout(ctx, err, exec):
+		slog.Warn("matrix async run emergency timeout", append([]any{"event", "run_emergency_timeout", "error", err, "run_id", exec.runID}, cleanupLogArgs(res.cleanup)...)...)
+	case isRunContextCancelled(ctx, err):
+		slog.Info("matrix async run cancelled", append([]any{"event", "run_cancelled", "error", err, "run_id", exec.runID}, cleanupLogArgs(res.cleanup)...)...)
+	default:
+		slog.Error("matrix async run bridge failed", append([]any{"error", err, "run_id", exec.runID}, cleanupLogArgs(res.cleanup)...)...)
 	}
 }
 

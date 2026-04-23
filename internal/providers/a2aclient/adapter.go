@@ -1,4 +1,4 @@
-package agents
+package a2aclient
 
 import (
 	"context"
@@ -7,15 +7,15 @@ import (
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
-	"github.com/a2aproject/a2a-go/v2/a2aclient"
+	a2ago "github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/jose/matrix-v2/internal/middleware"
 	"github.com/jose/matrix-v2/internal/providers/a2astate"
 	"github.com/jose/matrix-v2/internal/providers/sidecarprojection"
 )
 
-type a2aConversationFactory struct{}
+type Factory struct{}
 
-func (f *a2aConversationFactory) NewClient(ctx context.Context, endpoint middleware.ProtocolEndpoint, _ middleware.ConversationFactoryDeps) (middleware.ConversationClient, error) {
+func (f Factory) NewClient(ctx context.Context, endpoint middleware.ProtocolEndpoint, _ middleware.ConversationFactoryDeps) (middleware.ConversationClient, error) {
 	var transport a2a.TransportProtocol
 	switch strings.ToUpper(strings.TrimSpace(endpoint.Transport)) {
 	case "", "JSONRPC":
@@ -35,7 +35,7 @@ func (f *a2aConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		iface.ProtocolVersion = a2a.ProtocolVersion(endpoint.ProtocolVersion)
 	}
 
-	client, err := a2aclient.NewFromEndpoints(ctx, []*a2a.AgentInterface{iface})
+	client, err := a2ago.NewFromEndpoints(ctx, []*a2a.AgentInterface{iface})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create A2A client: %w", err)
 	}
@@ -44,7 +44,7 @@ func (f *a2aConversationFactory) NewClient(ctx context.Context, endpoint middlew
 }
 
 type a2aConversationClient struct {
-	client *a2aclient.Client
+	client *a2ago.Client
 }
 
 func (c *a2aConversationClient) Alive() bool {
@@ -108,38 +108,6 @@ func (c *a2aConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 			Status: "active",
 		},
 	}, nil
-}
-
-func (c *a2aConversationClient) SessionCapabilities() middleware.ConversationSessionCapabilities {
-	return middleware.ConversationSessionCapabilities{
-		List:   true,
-		Load:   true,
-		Cancel: true,
-		Delete: true,
-		Details: map[string]middleware.CapabilityDescriptor{
-			"list":   a2aCapability("list", true, "stable", "a2a_tasks/list"),
-			"load":   a2aCapability("load", true, "stable", "a2a_task_get"),
-			"cancel": a2aCapability("cancel", true, "stable", "a2a_tasks/cancel"),
-			"delete": a2aCapability("delete", true, "stable", "a2a_task_delete"),
-			"close":  a2aCapability("close", false, "unsupported", "a2a_no_close_mapping"),
-			"resume": a2aCapability("resume", false, "unsupported", "a2a_task_state_mapping"),
-			"fork":   a2aCapability("fork", false, "unsupported", "a2a_no_fork_mapping"),
-		},
-	}
-}
-
-func a2aCapability(name string, supported bool, stability, source string) middleware.CapabilityDescriptor {
-	status := "unsupported"
-	if supported {
-		status = "supported"
-	}
-	desc := middleware.CapabilityDescriptor{Name: name, Supported: supported, Status: status, Stability: stability, Source: source}
-	if name == "fork" {
-		desc.ActiveParentSafe = boolPtr(false)
-		desc.RequiresIdleParent = boolPtr(false)
-		desc.ArtifactTurn = boolPtr(false)
-	}
-	return desc
 }
 
 func (c *a2aConversationClient) ListRemoteSessions(ctx context.Context) ([]middleware.RemoteSessionInfo, error) {

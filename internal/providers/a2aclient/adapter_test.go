@@ -1,4 +1,4 @@
-package agents
+package a2aclient
 
 import (
 	"context"
@@ -58,7 +58,7 @@ func TestA2AConversationClient_ExecuteTurn(t *testing.T) {
 	}))
 	defer server.Close()
 
-	factory := &a2aConversationFactory{}
+	factory := Factory{}
 	client, err := factory.NewClient(context.Background(), middleware.ProtocolEndpoint{
 		Kind:      middleware.ProtocolKindA2A,
 		Transport: "JSONRPC",
@@ -109,7 +109,7 @@ func TestA2AConversationClient_ProjectsSidecarCapsules(t *testing.T) {
 	}))
 	defer server.Close()
 
-	factory := &a2aConversationFactory{}
+	factory := Factory{}
 	client, err := factory.NewClient(context.Background(), middleware.ProtocolEndpoint{
 		Kind:      middleware.ProtocolKindA2A,
 		Transport: "JSONRPC",
