@@ -28,6 +28,10 @@ type config struct {
 		BranchPointsWarn   int
 		LongFunctionRatio  float64
 	}
+	WarningBudget struct {
+		MaxTotalWarnings int
+		MaxBranchPoints  int
+	}
 	Scope struct {
 		Roots       []string
 		ExcludeDirs []string
@@ -134,6 +138,13 @@ func loadConfig(path string) (config, error) {
 				cfg.Quality.BranchPointsWarn, err = atoi(val)
 			case "long_function_ratio_warn":
 				cfg.Quality.LongFunctionRatio, err = atof(val)
+			}
+		case "warning_budget":
+			switch key {
+			case "max_total_warnings":
+				cfg.WarningBudget.MaxTotalWarnings, err = atoi(val)
+			case "max_branch_points":
+				cfg.WarningBudget.MaxBranchPoints, err = atoi(val)
 			}
 		case "scope":
 			switch key {
@@ -319,9 +330,38 @@ func evaluate(cfg config, files []fileReport, funcs []funcReport, pkgs map[strin
 		}
 	}
 
+	failures = append(failures, evaluateWarningBudget(cfg, warnings, prodFuncs)...)
+
 	sort.Strings(failures)
 	sort.Strings(warnings)
 	return failures, warnings
+}
+
+func evaluateWarningBudget(cfg config, warnings []string, prodFuncs []funcReport) []string {
+	var failures []string
+	if cfg.WarningBudget.MaxTotalWarnings > 0 && len(warnings) > cfg.WarningBudget.MaxTotalWarnings {
+		failures = append(failures, fmt.Sprintf("warning budget exceeded: %d quality warnings (budget %d)", len(warnings), cfg.WarningBudget.MaxTotalWarnings))
+	}
+	if cfg.WarningBudget.MaxBranchPoints > 0 {
+		fn, maxBranchPoints := maxBranchPointFunction(prodFuncs)
+		if maxBranchPoints > cfg.WarningBudget.MaxBranchPoints {
+			failures = append(failures, fmt.Sprintf("branch severity budget exceeded: %s in %s has %d branch points (budget %d)", fn.Qualified, fn.Path, maxBranchPoints, cfg.WarningBudget.MaxBranchPoints))
+		}
+	}
+	return failures
+}
+
+func maxBranchPointFunction(funcs []funcReport) (funcReport, int) {
+	var maxFn funcReport
+	maxBranchPoints := 0
+	for _, fn := range funcs {
+		if fn.BranchPoints <= maxBranchPoints {
+			continue
+		}
+		maxFn = fn
+		maxBranchPoints = fn.BranchPoints
+	}
+	return maxFn, maxBranchPoints
 }
 
 func printReport(cfg config, files []fileReport, funcs []funcReport, pkgs map[string]*packageReport, failures, warnings []string) {
@@ -329,6 +369,9 @@ func printReport(cfg config, files []fileReport, funcs []funcReport, pkgs map[st
 	fmt.Println()
 	fmt.Printf("Budgets: package=%d file=%d function=%d params=%d\n", cfg.Budgets.PackageLOC, cfg.Budgets.FileLOC, cfg.Budgets.FunctionLOC, cfg.Budgets.FunctionParams)
 	fmt.Printf("Quality warnings: avg_func_loc<=%.2f p95_func_loc<=%.2f branch_points<=%d long_function_ratio<=%.2f\n", cfg.Quality.AvgFunctionLOCWarn, cfg.Quality.P95FunctionLOCWarn, cfg.Quality.BranchPointsWarn, cfg.Quality.LongFunctionRatio)
+	if cfg.WarningBudget.MaxTotalWarnings > 0 || cfg.WarningBudget.MaxBranchPoints > 0 {
+		fmt.Printf("Warning budget: total<=%d max_branch_points<=%d\n", cfg.WarningBudget.MaxTotalWarnings, cfg.WarningBudget.MaxBranchPoints)
+	}
 	fmt.Println()
 
 	fmt.Println("Top Packages:")

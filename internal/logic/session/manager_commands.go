@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/sessionview"
 	"github.com/Josepavese/matrix/internal/logic/workspace"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/google/uuid"
@@ -518,58 +519,14 @@ func (m *Manager) toSessionEntry(meta SessionMeta, active bool) *middleware.Sess
 }
 
 func (m *Manager) renderSessionAction(result middleware.SessionActionResult, lang string) string {
-	if result.Message != "" && result.Action != "list" {
-		return result.Message
+	lookup := func(key string) string {
+		return m.wizard.GetString(lang, key)
 	}
-	switch result.Action {
-	case "status":
-		if result.Session == nil {
-			return m.wizard.GetString(lang, "session_not_found_db")
-		}
-		aliasStr := ""
-		if result.Session.Alias != "" {
-			aliasStr = fmt.Sprintf("\nAlias: \"%s\"", result.Session.Alias)
-		}
-		if result.Session.WorkspaceID != "" {
-			aliasStr += fmt.Sprintf("\nWorkspace: %s", result.Session.WorkspaceID)
-			if result.Session.WorkspacePath != "" {
-				aliasStr += fmt.Sprintf(" (%s)", result.Session.WorkspacePath)
-			}
-		}
-		if result.Session.Mode != "" {
-			aliasStr += fmt.Sprintf("\nMode: %s", result.Session.Mode)
-		}
-		if result.Session.LastHandoff != nil && result.Session.LastHandoff.FromAgentID != "" {
-			aliasStr += fmt.Sprintf("\nHandoff: %s -> %s", result.Session.LastHandoff.FromAgentID, valueOrDash(result.Session.LastHandoff.ToAgentID))
-		}
-		return fmt.Sprintf(m.wizard.GetString(lang, "session_status"), result.Session.LogicalSessionID, aliasStr, result.Session.AgentID, result.Session.CreatedAt)
-	case "list":
-		if result.Message != "" && len(result.Sessions) == 0 && len(result.RemoteSessions) == 0 {
-			return result.Message
-		}
-		var sb strings.Builder
-		if len(result.Sessions) > 0 {
-			sb.WriteString(m.wizard.GetString(lang, "session_history_header") + "\n")
-			for i, session := range result.Sessions {
-				sb.WriteString(m.formatSessionEntry(i, lang, session))
-			}
-		}
-		if len(result.RemoteSessions) > 0 {
-			if sb.Len() > 0 {
-				sb.WriteString("\n")
-			}
-			sb.WriteString("Remote sessions:\n")
-			for i, session := range result.RemoteSessions {
-				sb.WriteString(m.formatRemoteHistoryEntry(i, session))
-			}
-		}
-		if sb.Len() == 0 {
-			return result.Message
-		}
-		return sb.String()
-	default:
-		return result.Message
-	}
+	return sessionview.RenderAction(result, lang, sessionview.RenderDeps{
+		Lookup: lookup,
+		Local:  m.formatSessionEntry,
+		Remote: m.formatRemoteHistoryEntry,
+	})
 }
 
 func (m *Manager) formatSessionEntry(index int, lang string, session middleware.SessionEntry) string {
@@ -601,48 +558,83 @@ func (m *Manager) removeSessionMirror(channelID, sessionID string) error {
 	if err != nil {
 		return err
 	}
-	channelKeys, err := m.storage.List("session.channel.")
+	channelKeys, err := m.channelKeysForSessionRemoval(channelID)
 	if err != nil {
 		return err
 	}
-	if len(channelKeys) == 0 {
-		channelKeys = []string{getChannelKey(channelID)}
-	}
 	for _, key := range channelKeys {
-		raw, err := m.storage.Get(key)
-		if err != nil || len(raw) == 0 {
-			continue
-		}
-		var state ChannelState
-		if err := json.Unmarshal(raw, &state); err != nil {
-			continue
-		}
-		nextHistory := make([]string, 0, len(state.History))
-		for _, id := range state.History {
-			if id != sessionID {
-				nextHistory = append(nextHistory, id)
-			}
-		}
-		state.History = nextHistory
-		if state.ActiveSessionID == sessionID {
-			if len(nextHistory) > 0 {
-				state.ActiveSessionID = nextHistory[0]
-			} else {
-				state.ActiveSessionID = ""
-			}
-		}
-		payload, err := json.Marshal(state)
-		if err != nil {
-			return err
-		}
-		if err := m.storage.Set(key, payload); err != nil {
+		if err := m.removeSessionFromChannelState(key, sessionID); err != nil {
 			return err
 		}
 	}
-	if found && strings.TrimSpace(meta.WorkspaceID) != "" {
-		if err := workspace.RemoveSessionIndex(m.storage, meta.WorkspaceID, sessionID); err != nil {
-			return err
-		}
+	if err := m.removeWorkspaceSessionIndex(meta, found, sessionID); err != nil {
+		return err
 	}
 	return m.storage.Delete(getSessionKey(sessionID))
+}
+
+func (m *Manager) channelKeysForSessionRemoval(channelID string) ([]string, error) {
+	channelKeys, err := m.storage.List("session.channel.")
+	if err != nil {
+		return nil, err
+	}
+	if len(channelKeys) == 0 {
+		return []string{getChannelKey(channelID)}, nil
+	}
+	return channelKeys, nil
+}
+
+func (m *Manager) removeSessionFromChannelState(key, sessionID string) error {
+	state, found := m.loadChannelStateByKey(key)
+	if !found {
+		return nil
+	}
+	state.History = removeSessionID(state.History, sessionID)
+	if state.ActiveSessionID == sessionID {
+		state.ActiveSessionID = firstSessionID(state.History)
+	}
+	payload, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	return m.storage.Set(key, payload)
+}
+
+func (m *Manager) loadChannelStateByKey(key string) (ChannelState, bool) {
+	raw, err := m.storage.Get(key)
+	if err != nil {
+		return ChannelState{}, false
+	}
+	if len(raw) == 0 {
+		return ChannelState{}, false
+	}
+	var state ChannelState
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return ChannelState{}, false
+	}
+	return state, true
+}
+
+func removeSessionID(history []string, sessionID string) []string {
+	nextHistory := make([]string, 0, len(history))
+	for _, id := range history {
+		if id != sessionID {
+			nextHistory = append(nextHistory, id)
+		}
+	}
+	return nextHistory
+}
+
+func firstSessionID(history []string) string {
+	if len(history) == 0 {
+		return ""
+	}
+	return history[0]
+}
+
+func (m *Manager) removeWorkspaceSessionIndex(meta SessionMeta, found bool, sessionID string) error {
+	if !found || strings.TrimSpace(meta.WorkspaceID) == "" {
+		return nil
+	}
+	return workspace.RemoveSessionIndex(m.storage, meta.WorkspaceID, sessionID)
 }
