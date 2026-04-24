@@ -15,6 +15,10 @@ command -v goreleaser >/dev/null
 goreleaser --version
 
 echo
+echo "== Governance manifest =="
+go run ./scripts/governance_check --manifest governance/manifest.toml
+
+echo
 echo "== Go formatting =="
 gofmt -w cmd internal pkg scripts tests
 

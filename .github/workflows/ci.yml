@@ -15,6 +15,8 @@ jobs:
       uses: actions/setup-go@v6
       with:
         go-version: '1.24.4'
+    - name: Governance manifest
+      run: go run ./scripts/governance_check --manifest governance/manifest.toml
     - name: Code governance
       run: go run ./scripts/code_governance.go --config code-governance.toml
 
