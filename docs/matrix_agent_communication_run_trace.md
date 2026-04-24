@@ -96,6 +96,12 @@ Every response includes:
 
 `cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, process fields, `warnings`, and `failure_code` instead of inferring cleanup from HTTP status alone. Cleanup after `/v1/runs/{run_id}/actions` `cancel` uses a bounded context detached from the canceled run context, so remote cleanup and process reap are not run under an already-canceled context.
 
+Provider readiness failures are also projected into the run response and event
+stream. Matrix emits `provider.preflight.failed` with `code`, `agent_id`,
+`protocol`, `phase`, and safe adapter diagnostics when an adapter/provider
+failure prevents task execution. Typical codes are `provider_model_unavailable`,
+`provider_auth_mismatch`, and `agent_preflight_failed`.
+
 `clean=true` means Matrix reached an operational cleanup state for that lifecycle. `strong_cleanup=true` means Matrix has hard evidence from the provider or OS process layer. For ephemeral interrupt/resume flows, Matrix requires strong proof; local-only forgetting fails with `failure_code=cleanup_clean_without_remote_or_process_proof`. For non-ephemeral shared sessions, retained clients are allowed but explicitly marked with `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`.
 
 For local stdio ACP agents, Matrix does not spawn a fresh workspace client only to clean up a session owned by a now-dead process. If process reap proves the old agent is gone, cleanup remains strong and may include typed warnings such as `remote_lifecycle_skipped_no_reusable_cached_agent_client` and `remote_cancel_session_not_found_after_process_reap`. Expected async cancellation is logged as `run_cancelled`, not as a generic `matrix async run bridge failed` error.
@@ -347,6 +353,9 @@ Current surfaces:
 
 - `POST /v1/runs` creates `run_id`, records start/routing/prompt/final/completion events, and returns trace/event/action URLs.
 - `POST /v1/runs` can force isolated evaluation turns with `session_policy=new_ephemeral_delete_after_run` and `cleanup_policy=delete_remote_or_cancel_and_forget_local`.
+- `POST /v1/runs` is also the canonical provider preflight surface: send a
+  minimal prompt through the target `agent_id` and inspect typed `code/details`
+  before launching a large external batch.
 - `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`.
 - `GET /v1/runs/{run_id}/events` returns ordered run events.
 - `POST /v1/runs/{run_id}/actions` supports `cancel`, `attach_context`, and `append_context`.

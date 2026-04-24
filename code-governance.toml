@@ -11,9 +11,10 @@ branch_points_warn = 10
 long_function_ratio_warn = 0.08
 
 [warning_budget]
-# 2026-04-24 ratchet after extracting session action rendering and mirror state helpers.
-max_total_warnings = 17
-max_branch_points = 16
+# 2026-04-24 ratchet after typed provider failures, remote-session import, wizard auth-flow,
+# and session cancel target-resolution refactors.
+max_total_warnings = 12
+max_branch_points = 13
 
 [scope]
 roots = ["cmd", "internal", "pkg"]

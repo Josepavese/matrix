@@ -48,7 +48,7 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 	initResp, err := client.Initialize(ctx, initReq)
 	if err != nil {
 		_ = transport.Close()
-		return nil, fmt.Errorf("ACP initialize failed: %w", err)
+		return nil, classifyProviderFailure("", endpoint, "initialize", fmt.Errorf("ACP initialize failed: %w", err))
 	}
 	for _, m := range initResp.AuthMethods {
 		if m.Type != "env_var" || m.EnvVar == "" {
@@ -66,6 +66,7 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		client:              client,
 		handler:             handler,
 		cwd:                 deps.Cwd,
+		endpoint:            endpoint,
 		sessionCapabilities: caps,
 		loadedSessions:      map[string]bool{},
 	}, nil
@@ -75,6 +76,7 @@ type acpConversationClient struct {
 	client              ACPClient
 	handler             *defaultRequestHandler
 	cwd                 string
+	endpoint            middleware.ProtocolEndpoint
 	sessionCapabilities middleware.ConversationSessionCapabilities
 	loadedSessions      map[string]bool
 }
@@ -95,7 +97,7 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 	cwd := c.turnCwd(turn)
 	remoteSessionID, err := c.ensureACPRemoteSession(ctx, turn, cwd, log)
 	if err != nil {
-		return middleware.ConversationResult{}, err
+		return middleware.ConversationResult{}, classifyProviderFailure(turn.AgentID, c.endpoint, "session/new", err)
 	}
 	c.prepareTurnCallbacks(turn, remoteSessionID)
 	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier}
@@ -109,7 +111,7 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 			Output:          obs.GetContent(),
 			RemoteSessionID: remoteSessionID,
 			Metadata:        obs.Metadata(),
-		}, fmt.Errorf("ACP prompt failed: %w", err)
+		}, classifyProviderFailure(turn.AgentID, c.endpoint, "session/prompt", fmt.Errorf("ACP prompt failed: %w", err))
 	}
 
 	obs.WaitIdle(ctx, 150*time.Millisecond)

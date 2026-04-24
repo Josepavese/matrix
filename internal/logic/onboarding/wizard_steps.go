@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 )
 
@@ -89,60 +88,27 @@ func (w *Wizard) step2Prompt(_ *Wizard, state *WizardState) string {
 }
 
 func (w *Wizard) step2Handle(_ *Wizard, state *WizardState, input string) (string, error) {
-	// Load cached agent list (re-fetch if not cached from prompt)
-	agentData := state.Context["_agent_list"]
-	var agents []AgentEntry
-	if agentData == "" {
-		var fetchErr error
-		agents, fetchErr = w.fetchAgentList()
-		if fetchErr != nil {
-			return w.invalidSelection(state, w.promptForStep(*state)), nil //nolint:nilerr // intentional: show user-friendly message
-		}
-		if len(agents) == 0 {
-			return w.invalidSelection(state, w.promptForStep(*state)), nil
-		}
-	} else if unmarshalErr := json.Unmarshal([]byte(agentData), &agents); unmarshalErr != nil {
-		return w.invalidSelection(state, w.promptForStep(*state)), nil //nolint:nilerr // intentional: show user-friendly message
-	} else if len(agents) == 0 {
+	agents, ok := w.cachedOrFetchedAgents(state)
+	if !ok {
 		return w.invalidSelection(state, w.promptForStep(*state)), nil
 	}
 
-	idx := parseSelectionIndex(input)
-	if idx < 1 || idx > len(agents) {
+	selected, ok := selectedAgentFromInput(input, agents)
+	if !ok {
 		return w.invalidSelection(state, w.promptForStep(*state)), nil
 	}
 
-	selected := agents[idx-1]
 	channelID := state.Context["channel_id"]
 	state.AgentName = selected.ID
 	state.Context = map[string]string{"channel_id": channelID}
 	state.Step = 3
 
-	// Activate the selected agent when it is discovered but not yet locally available.
 	if !selected.Installed && selected.Source != "" && w.activator != nil {
-		installMsg := fmt.Sprintf(w.localizer.GetString(state.Language, "agent_installing"), selected.Name)
-		slog.Info("activating agent from wizard", "agent", selected.ID, "source", selected.Source, "kind", selected.Kind)
-		if err := w.activator.Activate(context.Background(), selected); err != nil {
-			// Reset state so user can retry or pick another agent
-			state.AgentName = ""
-			state.Step = 2
-			state.Context = map[string]string{"channel_id": channelID}
-			return fmt.Sprintf(w.localizer.GetString(state.Language, "agent_install_failed"), selected.Name, err) + "\n\n" + w.promptForStep(*state), nil
-		}
-		installMsg += " ✅\n"
-		// If codex, check if already authenticated
-		if selected.ID == agentCodex {
-			msg, err := w.prepareCodexSelection(state)
-			return installMsg + msg, err
-		}
-		return installMsg + w.promptForStep(*state), nil
+		return w.activateSelectedAgent(state, selected, channelID)
 	}
-
-	// Special pre-setup for codex (already installed, check auth)
 	if selected.ID == agentCodex {
 		return w.prepareCodexSelection(state)
 	}
-
 	return w.promptForStep(*state), nil
 }
 
@@ -201,62 +167,21 @@ func (w *Wizard) step3Handle(_ *Wizard, state *WizardState, input string) (strin
 	ctx := context.Background()
 	methods, err := handler.Methods(ctx)
 	if err != nil || len(methods) == 0 {
-		// Fallback: treat input as API key
 		state.Context["api_key"] = input
 		return w.finishConfiguration(*state)
 	}
 
 	if len(methods) == 1 {
-		// Single method: input is the response to that method's prompt
 		return w.handleAuthInput(handler, methods[0], state, input)
 	}
 
-	idx := parseSelectionIndex(input)
-	if idx < 1 || idx > len(methods) {
+	method, ok := selectedMethodFromInput(input, methods)
+	if !ok {
 		return w.invalidSelection(state, w.promptForStep(*state)), nil
 	}
 
-	method := methods[idx-1]
 	state.Context["auth_method"] = method.ID
-
-	// Special handling for opencode+OpenRouter quick_login
-	if state.AgentName == agentOpencode && method.ID == "quick_login" {
-		return w.startOpenRouterOAuth(state)
-	}
-
-	// Special handling for codex chatgpt device auth
-	if state.AgentName == agentCodex && method.ID == "chatgpt" {
-		_, prompt, err := handler.Authenticate(ctx, method, "")
-		if err != nil {
-			state.Step = 3
-			return fmt.Sprintf("⚠️ Could not start Codex login: %v", err), nil
-		}
-		state.Step = 4
-		return prompt, nil
-	}
-
-	// For env_var methods, advance to step 4 (key entry)
-	if method.Type == "env_var" {
-		state.Step = 4
-		_, prompt, _ := handler.Authenticate(ctx, method, "") // error handled: empty prompt is used as fallback
-		if prompt != "" {
-			return prompt, nil
-		}
-		return w.promptForStep(*state), nil
-	}
-
-	// For other methods, generate prompt from handler
-	_, prompt, err := handler.Authenticate(ctx, method, "")
-	if err != nil {
-		return fmt.Sprintf("⚠️ Error: %v", err), nil
-	}
-	if prompt != "" {
-		state.Step = 4
-		return prompt, nil
-	}
-
-	// No prompt needed — method completed immediately
-	return w.finishConfiguration(*state)
+	return w.handleSelectedAuthMethod(ctx, handler, method, state)
 }
 
 // step4: Auth input / completion
@@ -274,34 +199,16 @@ func (w *Wizard) step4Prompt(_ *Wizard, state *WizardState) string {
 }
 
 func (w *Wizard) step4Handle(_ *Wizard, state *WizardState, input string) (string, error) {
-	// Special opencode provider+auth flow
-	if state.AgentName == agentOpencode && state.Context["provider"] == "OpenRouter" && state.Context["auth_method"] == "" {
-		return w.handleOpenRouterAuthSelection(state, input)
-	}
-	if state.AgentName == agentOpencode && state.Context["provider"] != "" && state.Context["auth_method"] == "" {
-		return w.handleOpencodeAPIKey(state, input)
+	if response, handled, err := w.handleOpencodeStep4(state, input); handled {
+		return response, err
 	}
 
-	// Generic AuthHandler-based flow
 	handler := w.handlers.get(state.AgentName)
 	ctx := context.Background()
-
-	methods, methodsErr := handler.Methods(ctx)
-	if methodsErr != nil {
-		return fmt.Sprintf("⚠️ Error loading auth methods: %v", methodsErr), nil
+	method, err := w.selectedAuthMethod(ctx, handler, state)
+	if err != nil {
+		return fmt.Sprintf("⚠️ Error loading auth methods: %v", err), nil
 	}
-	methodID := state.Context["auth_method"]
-	var method AuthMethod
-	for _, m := range methods {
-		if m.ID == methodID {
-			method = m
-			break
-		}
-	}
-	if method.ID == "" && len(methods) > 0 {
-		method = methods[0]
-	}
-
 	return w.handleAuthInput(handler, method, state, input)
 }
 

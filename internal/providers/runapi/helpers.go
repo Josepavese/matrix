@@ -8,35 +8,7 @@ import (
 	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
-	"github.com/Josepavese/matrix/internal/middleware"
 )
-
-func newRunResponse(runID, status, output string, cleanup ...*middleware.SessionCleanupResult) runResponse {
-	resp := runResponse{
-		RunID:      runID,
-		Status:     status,
-		Output:     output,
-		TraceURL:   RunResourcePrefixV1 + runID + "/trace",
-		EventsURL:  RunResourcePrefixV1 + runID + "/events",
-		ActionsURL: RunResourcePrefixV1 + runID + "/actions",
-	}
-	if len(cleanup) > 0 {
-		resp.Cleanup = cleanup[0]
-	}
-	return resp
-}
-
-func newRunErrorResponse(runID, status, errText string, cleanup *middleware.SessionCleanupResult) runErrorResponse {
-	return runErrorResponse{
-		RunID:      runID,
-		Status:     status,
-		Error:      errText,
-		TraceURL:   RunResourcePrefixV1 + runID + "/trace",
-		EventsURL:  RunResourcePrefixV1 + runID + "/events",
-		ActionsURL: RunResourcePrefixV1 + runID + "/actions",
-		Cleanup:    cleanup,
-	}
-}
 
 func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")

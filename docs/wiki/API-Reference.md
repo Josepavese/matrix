@@ -69,6 +69,31 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
 
 Returns the agent's response when the run completes.
 
+Provider boundary failures are machine-readable. If a provider adapter cannot
+use the selected model or auth context, Matrix returns a typed error such as:
+
+```json
+{
+  "run_id": "run-...",
+  "status": "failed",
+  "code": "provider_model_unavailable",
+  "error": "[provider_model_unavailable] configured provider model is unavailable through the selected adapter ...",
+  "details": {
+    "agent_id": "codex",
+    "protocol": "acp",
+    "phase": "session/prompt",
+    "requested_model": "gpt-5.5",
+    "adapter": "codex-acp",
+    "transport": "stdio"
+  }
+}
+```
+
+Use this for lane preflight before large batches: send a minimal prompt with
+`session_policy=new_ephemeral_delete_after_run`. Treat `provider_model_unavailable`,
+`provider_auth_mismatch`, and `agent_preflight_failed` as provider readiness
+failures, not task failures.
+
 For isolated evaluations, use:
 
 ```bash
