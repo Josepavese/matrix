@@ -14,6 +14,7 @@ Governance layers:
 
 - Product: Matrix must remain the crossroads for human-to-agent and agent-to-agent communication.
 - Architecture: protocol-neutral, channel-neutral, PAL-based, vault-backed, and local-first.
+- Guardrails: architecture drift is blocked by pattern budgets in `governance/manifest.toml`.
 - Code: budgets are enforced by `code-governance.toml`.
 - Deploy: releases must produce cross-platform artifacts and local install evidence.
 - Tests: protocol, channel, and session changes need real evidence, not only unit coverage.
@@ -21,3 +22,9 @@ Governance layers:
 - Security: secrets, vault material, and installer behavior are governed explicitly.
 
 If a change weakens one layer, it must strengthen another layer and document the tradeoff.
+
+Operational templates:
+
+- [Release evidence template](release_evidence_template.md)
+- [Issue triage template](issue_triage_template.md)
+- [Architecture guardrails](architecture_guardrails.md)

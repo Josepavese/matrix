@@ -8,6 +8,9 @@ This runbook defines the minimum repeatable release flow for Matrix in its curre
 
 The governing policy is [matrix_deployment_policy.md](matrix_deployment_policy.md).
 
+Record every production-oriented release with
+[governance/release_evidence_template.md](governance/release_evidence_template.md).
+
 ## Preflight
 
 Run:
@@ -103,6 +106,7 @@ Matrix will refuse restore while the local runtime appears active on the default
 
 Minimum criteria for a local release candidate:
 
+- governance manifest and architecture guardrails pass
 - CI is green on `main`
 - the `CI` workflow jobs `governance`, `lint`, `test`, `build`, and `release-dry-run` are green
 - tagged releases publish through the `Release` workflow `goreleaser` job

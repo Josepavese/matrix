@@ -11,9 +11,10 @@ import (
 )
 
 type manifest struct {
-	Documents    []string
-	RequiredText map[string][]string
-	FileChecks   []fileCheck
+	Documents      []string
+	RequiredText   map[string][]string
+	FileChecks     []fileCheck
+	PatternBudgets []patternBudget
 }
 
 type fileCheck struct {
@@ -26,7 +27,17 @@ type checkReport struct {
 	DocumentsChecked int
 	TextContracts    int
 	FileGates        int
+	PatternBudgets   int
 	Failures         []string
+}
+
+type patternBudget struct {
+	Name         string
+	Roots        []string
+	Patterns     []string
+	AllowedFiles []string
+	Max          int
+	Reason       string
 }
 
 func main() {
@@ -57,6 +68,7 @@ func loadManifest(path string) (manifest, error) {
 		RequiredText: make(map[string][]string),
 	}
 	checks := make(map[string]*fileCheck)
+	budgets := make(map[string]*patternBudget)
 	section := ""
 
 	lines := strings.Split(string(data), "\n")
@@ -99,6 +111,30 @@ func loadManifest(path string) (manifest, error) {
 			if section == "" || section == "metadata" {
 				continue
 			}
+			if strings.HasPrefix(section, "pattern_budget.") {
+				name := strings.TrimPrefix(section, "pattern_budget.")
+				budget := budgets[name]
+				if budget == nil {
+					budget = &patternBudget{Name: name}
+					budgets[name] = budget
+				}
+				switch key {
+				case "roots":
+					budget.Roots, err = parseStringList(value)
+				case "patterns":
+					budget.Patterns, err = parseStringList(value)
+				case "allowed_files":
+					budget.AllowedFiles, err = parseStringList(value)
+				case "max":
+					budget.Max, err = parseInt(value)
+				case "reason":
+					budget.Reason, err = parseString(value)
+				}
+				if err != nil {
+					return manifest{}, fmt.Errorf("%s:%d: %w", path, lineNo+1, err)
+				}
+				continue
+			}
 			check := checks[section]
 			if check == nil {
 				check = &fileCheck{Section: section}
@@ -123,6 +159,12 @@ func loadManifest(path string) (manifest, error) {
 	}
 	sort.Slice(m.FileChecks, func(i, j int) bool {
 		return m.FileChecks[i].Section < m.FileChecks[j].Section
+	})
+	for _, budget := range budgets {
+		m.PatternBudgets = append(m.PatternBudgets, *budget)
+	}
+	sort.Slice(m.PatternBudgets, func(i, j int) bool {
+		return m.PatternBudgets[i].Name < m.PatternBudgets[j].Name
 	})
 
 	return m, nil
@@ -172,7 +214,87 @@ func checkManifest(root string, m manifest) checkReport {
 		}
 	}
 
+	for _, budget := range m.PatternBudgets {
+		report.PatternBudgets++
+		report.Failures = append(report.Failures, checkPatternBudget(root, budget)...)
+	}
+
 	return report
+}
+
+func checkPatternBudget(root string, budget patternBudget) []string {
+	if len(budget.Roots) == 0 || len(budget.Patterns) == 0 {
+		return []string{fmt.Sprintf("[pattern_budget.%s] roots and patterns are required", budget.Name)}
+	}
+
+	allowed := make(map[string]struct{}, len(budget.AllowedFiles))
+	for _, path := range budget.AllowedFiles {
+		allowed[filepath.ToSlash(filepath.Clean(path))] = struct{}{}
+	}
+
+	var matches []string
+	count := 0
+	for _, rootPath := range budget.Roots {
+		fullRoot := filepath.Join(root, filepath.FromSlash(rootPath))
+		if _, err := os.Stat(fullRoot); err != nil {
+			return []string{fmt.Sprintf("[pattern_budget.%s] root missing: %s", budget.Name, rootPath)}
+		}
+		err := filepath.WalkDir(fullRoot, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				switch entry.Name() {
+				case ".git", "dist", "vendor", "node_modules":
+					return filepath.SkipDir
+				default:
+					return nil
+				}
+			}
+			if !isTextGovernanceTarget(path) {
+				return nil
+			}
+
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+			if _, ok := allowed[rel]; ok {
+				return nil
+			}
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			content := string(data)
+			for _, pattern := range budget.Patterns {
+				occurrences := strings.Count(content, pattern)
+				if occurrences == 0 {
+					continue
+				}
+				count += occurrences
+				matches = append(matches, fmt.Sprintf("%s contains %q %d time(s)", rel, pattern, occurrences))
+			}
+			return nil
+		})
+		if err != nil {
+			return []string{fmt.Sprintf("[pattern_budget.%s] scan failed: %v", budget.Name, err)}
+		}
+	}
+
+	if count <= budget.Max {
+		return nil
+	}
+	failure := fmt.Sprintf("[pattern_budget.%s] count %d exceeds max %d", budget.Name, count, budget.Max)
+	if budget.Reason != "" {
+		failure += ": " + budget.Reason
+	}
+	for _, match := range matches {
+		failure += "\n  - " + match
+	}
+	return []string{failure}
 }
 
 func printReport(report checkReport) {
@@ -180,6 +302,7 @@ func printReport(report checkReport) {
 	fmt.Printf("documents: %d\n", report.DocumentsChecked)
 	fmt.Printf("text contracts: %d\n", report.TextContracts)
 	fmt.Printf("file gates: %d\n", report.FileGates)
+	fmt.Printf("pattern budgets: %d\n", report.PatternBudgets)
 	if len(report.Failures) == 0 {
 		fmt.Println("failures: 0")
 		fmt.Println("GOVERNANCE_CHECK_OK")
@@ -198,6 +321,10 @@ func parseString(value string) (string, error) {
 		return strconv.Unquote(value)
 	}
 	return value, nil
+}
+
+func parseInt(value string) (int, error) {
+	return strconv.Atoi(strings.TrimSpace(value))
 }
 
 func parseStringList(value string) ([]string, error) {
@@ -281,4 +408,13 @@ func sortedKeys(values map[string][]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func isTextGovernanceTarget(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".go", ".sh", ".ps1", ".md", ".yml", ".yaml", ".toml", ".json", ".mod", ".sum":
+		return true
+	default:
+		return false
+	}
 }

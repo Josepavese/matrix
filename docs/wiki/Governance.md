@@ -16,6 +16,7 @@ What it protects:
 - Deploy discipline: CI, GoReleaser, cross-platform artifacts, local install, and release evidence.
 - Test evidence: protocol, provider, channel, session, and runtime changes need evidence appropriate to their risk.
 - Issue handling: accepted, rejected, and closed issues must leave a maintainable trail.
+- Architecture guardrails: pattern budgets block protocol, channel, and PAL home drift.
 
 Primary docs:
 
@@ -24,3 +25,4 @@ Primary docs:
 - [Architecture governance](../governance/architecture_governance.md)
 - [Protocol and channel governance](../governance/protocol_channel_governance.md)
 - [Deploy governance](../governance/deploy_governance.md)
+- [Architecture guardrails](../governance/architecture_guardrails.md)

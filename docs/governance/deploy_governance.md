@@ -17,6 +17,8 @@ Required release evidence:
 - A local install is performed from the generated release.
 - Runtime readiness and at least one real smoke are recorded when the change touches runtime behavior.
 
+Use [release_evidence_template.md](release_evidence_template.md) to record the result.
+
 Normal operator UX must be `matrix`, without manual environment variables. Development and test workflows may override `MATRIX_HOME` only to isolate versions or avoid touching the user PAL home.
 
 Do not kill or restart a shared Matrix daemon during governance-only work. Runtime smoke that may affect shared users requires explicit coordination.

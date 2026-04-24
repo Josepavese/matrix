@@ -10,9 +10,12 @@ required = [
   "docs/governance/architecture_governance.md",
   "docs/governance/protocol_channel_governance.md",
   "docs/governance/code_governance.md",
+  "docs/governance/architecture_guardrails.md",
   "docs/governance/deploy_governance.md",
   "docs/governance/test_evidence_governance.md",
   "docs/governance/issue_governance.md",
+  "docs/governance/issue_triage_template.md",
+  "docs/governance/release_evidence_template.md",
   "docs/governance/security_governance.md",
   "docs/wiki/Governance.md",
   "code-governance.toml",
@@ -28,9 +31,12 @@ required = [
 "docs/governance/architecture_governance.md" = ["protocol-neutral", "channel-neutral", "PAL", "vault", "SSOT"]
 "docs/governance/protocol_channel_governance.md" = ["ACP", "A2A", "Telegram", "HTTP", "capability"]
 "docs/governance/code_governance.md" = ["code-governance.toml", "override", "budget"]
+"docs/governance/architecture_guardrails.md" = ["pattern_budget", "Protocol SDK", "Telegram", "PAL home"]
 "docs/governance/deploy_governance.md" = ["GitHub Actions", "GoReleaser", "local install", "release evidence"]
 "docs/governance/test_evidence_governance.md" = ["real-agent", "smoke", "evidence"]
 "docs/governance/issue_governance.md" = ["issues/closed", "accepted", "rejected"]
+"docs/governance/issue_triage_template.md" = ["accepted", "rejected", "issues/closed"]
+"docs/governance/release_evidence_template.md" = ["Release Identity", "GitHub Actions", "Local Install", "Runtime Evidence"]
 "docs/governance/security_governance.md" = ["vault", "secret", "installer", "token"]
 "docs/wiki/Governance.md" = ["governance_check", "protocol-neutral", "channel-neutral", "release evidence"]
 
@@ -86,3 +92,39 @@ required = [
   "Many to many",
   "Install without cloning the repo"
 ]
+
+[pattern_budget.protocol_sdk_imports_in_logic]
+roots = ["internal/logic"]
+patterns = [
+  "github.com/Josepavese/matrix/pkg/zedacp",
+  "github.com/a2aproject/a2a-go"
+]
+allowed_files = [
+  "internal/logic/agentdiscovery/discovery.go"
+]
+max = 0
+reason = "Protocol SDK usage must stay behind provider adapters or explicit discovery seams."
+
+[pattern_budget.telegram_provider_imports_outside_channel_runtime]
+roots = ["cmd", "internal/logic", "internal/middleware"]
+patterns = [
+  "github.com/Josepavese/matrix/internal/providers/telegram"
+]
+allowed_files = [
+  "internal/logic/channelruntime/runtime.go"
+]
+max = 0
+reason = "Telegram must remain one channel behind channel runtime composition."
+
+[pattern_budget.pal_home_bypass]
+roots = ["cmd", "internal", "pkg"]
+patterns = [
+  "os.UserHomeDir("
+]
+allowed_files = [
+  "internal/logic/matrixhome/home.go",
+  "internal/providers/fusefs/provider_common.go",
+  "internal/providers/osfs/fs.go"
+]
+max = 0
+reason = "PAL home resolution must stay centralized and provider-backed."
