@@ -10,6 +10,7 @@ required = [
   "docs/governance/architecture_governance.md",
   "docs/governance/protocol_channel_governance.md",
   "docs/governance/code_governance.md",
+  "docs/governance/code_debt_register.md",
   "docs/governance/architecture_guardrails.md",
   "docs/governance/deploy_governance.md",
   "docs/governance/test_evidence_governance.md",
@@ -31,6 +32,7 @@ required = [
 "docs/governance/architecture_governance.md" = ["protocol-neutral", "channel-neutral", "PAL", "vault", "SSOT"]
 "docs/governance/protocol_channel_governance.md" = ["ACP", "A2A", "Telegram", "HTTP", "capability"]
 "docs/governance/code_governance.md" = ["code-governance.toml", "override", "budget"]
+"docs/governance/code_debt_register.md" = ["Total quality warnings", "Maximum branch points", "Ratchet"]
 "docs/governance/architecture_guardrails.md" = ["pattern_budget", "Protocol SDK", "Telegram", "PAL home"]
 "docs/governance/deploy_governance.md" = ["GitHub Actions", "GoReleaser", "local install", "release evidence"]
 "docs/governance/test_evidence_governance.md" = ["real-agent", "smoke", "evidence"]
