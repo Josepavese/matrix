@@ -318,6 +318,4 @@ func (m *Manager) toWorkspaceEntry(meta workspace.Meta, active bool) middleware.
 	}
 }
 
-func workspaceEntryPtr(entry middleware.WorkspaceEntry) *middleware.WorkspaceEntry {
-	return &entry
-}
+func workspaceEntryPtr(entry middleware.WorkspaceEntry) *middleware.WorkspaceEntry { return &entry }

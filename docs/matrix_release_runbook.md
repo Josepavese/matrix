@@ -115,6 +115,11 @@ Minimum criteria for a local release candidate:
 - release archives install into one PAL home through `install/install.sh` and `install/install.ps1`
 - local PAL home has been updated from the generated host artifact through `scripts/deploy_local_install.sh`
 
+If a previous local daemon is still running during validation, `matrix doctor`
+or `matrix readiness` may warn that the runtime endpoint report is invalid and
+that local probe fallback was used. This is acceptable only when blockers are
+empty and the warning clearly identifies the fallback path.
+
 ## Versioning Rule
 
 Matrix releases use tags in `vX.Y.Z` form.

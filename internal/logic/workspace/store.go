@@ -38,21 +38,13 @@ type Meta struct {
 	UpdatedAt       time.Time              `json:"updated_at,omitempty"`
 }
 
-func MetaKey(workspaceID string) string {
-	return MetaKeyPrefix + workspaceID
-}
+func MetaKey(workspaceID string) string { return MetaKeyPrefix + workspaceID }
 
-func SessionIndexKey(workspaceID string) string {
-	return SessionIndexKeyPrefix + workspaceID
-}
+func SessionIndexKey(workspaceID string) string { return SessionIndexKeyPrefix + workspaceID }
 
-func ChannelIndexKey(workspaceID string) string {
-	return ChannelIndexKeyPrefix + workspaceID
-}
+func ChannelIndexKey(workspaceID string) string { return ChannelIndexKeyPrefix + workspaceID }
 
-func pathIndexKey(path string) string {
-	return PathIndexKeyPrefix + filepath.Clean(path)
-}
+func pathIndexKey(path string) string { return PathIndexKeyPrefix + filepath.Clean(path) }
 
 // SaveMeta persists workspace metadata and keeps the optional path index in sync.
 func SaveMeta(storage middleware.Storage, meta Meta) error {
@@ -66,18 +58,7 @@ func SaveMeta(storage middleware.Storage, meta Meta) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now().UTC()
-	if meta.CreatedAt.IsZero() {
-		if previousFound && !previous.CreatedAt.IsZero() {
-			meta.CreatedAt = previous.CreatedAt
-		} else {
-			meta.CreatedAt = now
-		}
-	}
-	meta.UpdatedAt = now
-	if meta.Name == "" {
-		meta.Name = meta.ID
-	}
+	meta = prepareMetaForSave(meta, previous, previousFound, time.Now().UTC())
 	data, err := json.Marshal(meta)
 	if err != nil {
 		return fmt.Errorf("failed to encode workspace %s: %w", meta.ID, err)
@@ -85,15 +66,34 @@ func SaveMeta(storage middleware.Storage, meta Meta) error {
 	if err := storage.Set(MetaKey(meta.ID), data); err != nil {
 		return fmt.Errorf("failed to store workspace %s: %w", meta.ID, err)
 	}
-	if strings.TrimSpace(meta.RootPath) != "" {
-		if err := storage.Set(pathIndexKey(meta.RootPath), []byte(meta.ID)); err != nil {
-			return fmt.Errorf("failed to store workspace path index for %s: %w", meta.ID, err)
+	return syncMetaPathIndex(storage, previous, meta, previousFound)
+}
+
+func prepareMetaForSave(meta, previous Meta, previousFound bool, now time.Time) Meta {
+	if meta.CreatedAt.IsZero() && previousFound && !previous.CreatedAt.IsZero() {
+		meta.CreatedAt = previous.CreatedAt
+	}
+	if meta.CreatedAt.IsZero() {
+		meta.CreatedAt = now
+	}
+	meta.UpdatedAt = now
+	if meta.Name == "" {
+		meta.Name = meta.ID
+	}
+	return meta
+}
+
+func syncMetaPathIndex(storage middleware.Storage, previous, current Meta, previousFound bool) error {
+	if strings.TrimSpace(current.RootPath) != "" {
+		if err := storage.Set(pathIndexKey(current.RootPath), []byte(current.ID)); err != nil {
+			return fmt.Errorf("failed to store workspace path index for %s: %w", current.ID, err)
 		}
 	}
-	if previousFound && strings.TrimSpace(previous.RootPath) != "" && filepath.Clean(previous.RootPath) != filepath.Clean(meta.RootPath) {
-		if err := storage.Delete(pathIndexKey(previous.RootPath)); err != nil {
-			return fmt.Errorf("failed to remove stale workspace path index for %s: %w", meta.ID, err)
-		}
+	if !previousFound || strings.TrimSpace(previous.RootPath) == "" || filepath.Clean(previous.RootPath) == filepath.Clean(current.RootPath) {
+		return nil
+	}
+	if err := storage.Delete(pathIndexKey(previous.RootPath)); err != nil {
+		return fmt.Errorf("failed to remove stale workspace path index for %s: %w", current.ID, err)
 	}
 	return nil
 }

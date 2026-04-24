@@ -33,9 +33,7 @@ func (b *EventBridge) OnUpdate(notif middleware.SessionNotification) {
 }
 
 // Events returns the read-only channel for consuming events.
-func (b *EventBridge) Events() <-chan middleware.SessionEvent {
-	return b.events
-}
+func (b *EventBridge) Events() <-chan middleware.SessionEvent { return b.events }
 
 func (b *EventBridge) send(ev middleware.SessionEvent) {
 	b.mu.Lock()

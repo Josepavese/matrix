@@ -107,14 +107,7 @@ func (w *Wizard) step2Handle(_ *Wizard, state *WizardState, input string) (strin
 		return w.invalidSelection(state, w.promptForStep(*state)), nil
 	}
 
-	// Parse selection index
-	idx := 0
-	for _, c := range input {
-		if c < '0' || c > '9' {
-			break
-		}
-		idx = idx*10 + int(c-'0')
-	}
+	idx := parseSelectionIndex(input)
 	if idx < 1 || idx > len(agents) {
 		return w.invalidSelection(state, w.promptForStep(*state)), nil
 	}
@@ -218,14 +211,7 @@ func (w *Wizard) step3Handle(_ *Wizard, state *WizardState, input string) (strin
 		return w.handleAuthInput(handler, methods[0], state, input)
 	}
 
-	// Multiple methods: parse selection
-	idx := 0
-	for _, c := range input {
-		if c < '0' || c > '9' {
-			break
-		}
-		idx = idx*10 + int(c-'0')
-	}
+	idx := parseSelectionIndex(input)
 	if idx < 1 || idx > len(methods) {
 		return w.invalidSelection(state, w.promptForStep(*state)), nil
 	}
@@ -331,6 +317,17 @@ func (w *Wizard) step5Handle(_ *Wizard, state *WizardState, input string) (strin
 
 func (w *Wizard) invalidSelection(state *WizardState, prompt string) string {
 	return w.localizer.GetString(state.Language, "invalid_selection_number") + "\n\n" + prompt
+}
+
+func parseSelectionIndex(input string) int {
+	idx := 0
+	for _, c := range input {
+		if c < '0' || c > '9' {
+			break
+		}
+		idx = idx*10 + int(c-'0')
+	}
+	return idx
 }
 
 // handleAuthInput processes user input for a given auth method via the handler.

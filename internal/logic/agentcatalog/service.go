@@ -285,48 +285,54 @@ func entriesFromRecords(records []agentdiscovery.Record) []Entry {
 
 func mergeEntry(current, candidate Entry) Entry {
 	if current.Source == agentdiscovery.SourceLocal {
-		current.Installed = current.Installed || candidate.Installed
-		if len(current.DistTypes) == 0 && len(candidate.DistTypes) > 0 {
-			current.DistTypes = append([]string{}, candidate.DistTypes...)
-		}
-		return current
+		return mergePreferredEntry(current, candidate)
 	}
 	if candidate.Source == agentdiscovery.SourceLocal {
-		candidate.Installed = candidate.Installed || current.Installed
-		if len(candidate.DistTypes) == 0 && len(current.DistTypes) > 0 {
-			candidate.DistTypes = append([]string{}, current.DistTypes...)
-		}
-		return candidate
+		return mergePreferredEntry(candidate, current)
 	}
 	current.Installed = current.Installed || candidate.Installed
-	if current.Name == "" {
-		current.Name = candidate.Name
-	}
-	if current.Description == "" {
-		current.Description = candidate.Description
-	}
-	if current.Version == "" {
-		current.Version = candidate.Version
-	}
-	if current.ProtocolVersion == "" {
-		current.ProtocolVersion = candidate.ProtocolVersion
-	}
-	if current.Kind == "" {
-		current.Kind = candidate.Kind
-	}
-	if current.Transport == "" {
-		current.Transport = candidate.Transport
-	}
-	if current.Address == "" {
-		current.Address = candidate.Address
-	}
-	if current.CardURL == "" {
-		current.CardURL = candidate.CardURL
-	}
-	if len(current.DistTypes) == 0 && len(candidate.DistTypes) > 0 {
-		current.DistTypes = append([]string{}, candidate.DistTypes...)
-	}
+	fillMissingEntryFields(&current, candidate)
 	return current
+}
+
+func mergePreferredEntry(preferred, other Entry) Entry {
+	preferred.Installed = preferred.Installed || other.Installed
+	fillMissingDistTypes(&preferred, other)
+	return preferred
+}
+
+func fillMissingEntryFields(target *Entry, source Entry) {
+	if target.Name == "" {
+		target.Name = source.Name
+	}
+	if target.Description == "" {
+		target.Description = source.Description
+	}
+	if target.Version == "" {
+		target.Version = source.Version
+	}
+	if target.ProtocolVersion == "" {
+		target.ProtocolVersion = source.ProtocolVersion
+	}
+	if target.Kind == "" {
+		target.Kind = source.Kind
+	}
+	if target.Transport == "" {
+		target.Transport = source.Transport
+	}
+	if target.Address == "" {
+		target.Address = source.Address
+	}
+	if target.CardURL == "" {
+		target.CardURL = source.CardURL
+	}
+	fillMissingDistTypes(target, source)
+}
+
+func fillMissingDistTypes(target *Entry, source Entry) {
+	if len(target.DistTypes) == 0 && len(source.DistTypes) > 0 {
+		target.DistTypes = append([]string{}, source.DistTypes...)
+	}
 }
 
 func firstNonEmpty(values ...string) string {

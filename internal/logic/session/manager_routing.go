@@ -128,54 +128,12 @@ func (m *Manager) persistAgentSession(meta SessionMeta, newAgentSessionID string
 	}
 
 	log := slog.With("component", "session_manager", "logical_session", meta.ID, "agent", meta.AgentID)
-	changed := false
-	if newAgentSessionID != "" && newAgentSessionID != meta.AgentSessionID {
-		meta.AgentSessionID = newAgentSessionID
-		changed = true
-	}
-	if endpoint, err := m.resolveEndpoint(meta.AgentID); err == nil {
-		if kind := string(endpoint.Kind); kind != "" && kind != meta.ProtocolKind {
-			meta.ProtocolKind = kind
-			changed = true
-		}
-	}
 	now := time.Now().UTC()
-	if meta.MirrorStatus != "mirrored" {
-		meta.MirrorStatus = "mirrored"
-		changed = true
-	}
 	meta.LastSyncedAt = now
-	if metadata.Title != "" && metadata.Title != meta.RemoteTitle {
-		meta.RemoteTitle = metadata.Title
-		changed = true
-	}
-	if metadata.Status != "" && metadata.Status != meta.RemoteStatus {
-		meta.RemoteStatus = metadata.Status
-		changed = true
-	}
-	if len(metadata.Meta) > 0 {
-		if meta.RemoteMeta == nil {
-			meta.RemoteMeta = make(map[string]interface{}, len(metadata.Meta))
-		}
-		for k, v := range metadata.Meta {
-			if existing, ok := meta.RemoteMeta[k]; !ok || !reflect.DeepEqual(existing, v) {
-				meta.RemoteMeta[k] = v
-				changed = true
-			}
-		}
-	}
-	if metadata.UpdatedAt != "" {
-		if parsed, err := time.Parse(time.RFC3339, metadata.UpdatedAt); err == nil {
-			if !parsed.Equal(meta.RemoteUpdatedAt) {
-				meta.RemoteUpdatedAt = parsed
-				changed = true
-			}
-		}
-	}
-	if meta.RemoteUpdatedAt.IsZero() {
-		meta.RemoteUpdatedAt = now
-		changed = true
-	}
+	changed := applyAgentSessionMirrorID(&meta, newAgentSessionID)
+	changed = m.applyAgentSessionProtocolKind(&meta) || changed
+	changed = applyAgentSessionMirrorStatus(&meta) || changed
+	changed = applyAgentSessionMetadata(&meta, metadata, now) || changed
 	if !changed {
 		return
 	}
@@ -187,6 +145,88 @@ func (m *Manager) persistAgentSession(meta SessionMeta, newAgentSessionID string
 		return
 	}
 	log.Info("updated stored acp session mapping", "event", "agent_session_updated", "agent_session", newAgentSessionID)
+}
+
+func applyAgentSessionMirrorID(meta *SessionMeta, newAgentSessionID string) bool {
+	if strings.TrimSpace(newAgentSessionID) == "" || newAgentSessionID == meta.AgentSessionID {
+		return false
+	}
+	meta.AgentSessionID = newAgentSessionID
+	return true
+}
+
+func (m *Manager) applyAgentSessionProtocolKind(meta *SessionMeta) bool {
+	endpoint, err := m.resolveEndpoint(meta.AgentID)
+	if err != nil {
+		return false
+	}
+	kind := string(endpoint.Kind)
+	if kind == "" || kind == meta.ProtocolKind {
+		return false
+	}
+	meta.ProtocolKind = kind
+	return true
+}
+
+func applyAgentSessionMirrorStatus(meta *SessionMeta) bool {
+	if meta.MirrorStatus == "mirrored" {
+		return false
+	}
+	meta.MirrorStatus = "mirrored"
+	return true
+}
+
+func applyAgentSessionMetadata(meta *SessionMeta, metadata middleware.ConversationMetadata, fallbackUpdatedAt time.Time) bool {
+	changed := setStringIfNew(&meta.RemoteTitle, metadata.Title)
+	changed = setStringIfNew(&meta.RemoteStatus, metadata.Status) || changed
+	changed = mergeRemoteMeta(meta, metadata.Meta) || changed
+	changed = applyRemoteUpdatedAt(meta, metadata.UpdatedAt, fallbackUpdatedAt) || changed
+	return changed
+}
+
+func setStringIfNew(target *string, value string) bool {
+	if value == "" || value == *target {
+		return false
+	}
+	*target = value
+	return true
+}
+
+func mergeRemoteMeta(meta *SessionMeta, values map[string]interface{}) bool {
+	if len(values) == 0 {
+		return false
+	}
+	if meta.RemoteMeta == nil {
+		meta.RemoteMeta = make(map[string]interface{}, len(values))
+	}
+	changed := false
+	for k, v := range values {
+		if existing, ok := meta.RemoteMeta[k]; !ok || !reflect.DeepEqual(existing, v) {
+			meta.RemoteMeta[k] = v
+			changed = true
+		}
+	}
+	return changed
+}
+
+func applyRemoteUpdatedAt(meta *SessionMeta, updatedAt string, fallback time.Time) bool {
+	if parsed, ok := parseRemoteUpdatedAt(updatedAt); ok && !parsed.Equal(meta.RemoteUpdatedAt) {
+		meta.RemoteUpdatedAt = parsed
+		return true
+	}
+	if meta.RemoteUpdatedAt.IsZero() {
+		meta.RemoteUpdatedAt = fallback
+		return true
+	}
+	return false
+}
+
+func parseRemoteUpdatedAt(value string) (time.Time, bool) {
+	if strings.TrimSpace(value) == "" {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	return parsed, err == nil
 }
 
 func (m *Manager) saveSessionMeta(meta SessionMeta) error {

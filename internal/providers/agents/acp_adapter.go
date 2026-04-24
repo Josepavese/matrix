@@ -92,65 +92,17 @@ func (c *acpConversationClient) Close() error {
 
 func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
 	log := slog.With("component", "acp_adapter", "logical_session", turn.LogicalSessionID, "agent", turn.AgentID)
-
-	remoteSessionID := turn.RemoteSessionID
 	cwd := c.turnCwd(turn)
-	if remoteSessionID == "" {
-		newSessResp, err := c.createACPRemoteSession(ctx, middleware.SessionMaterializeRequest{
-			LogicalSessionID: turn.LogicalSessionID,
-			WorkspacePath:    cwd,
-			Tools:            turn.Tools,
-		})
-		if err != nil {
-			return middleware.ConversationResult{}, err
-		}
-		remoteSessionID = newSessResp.SessionID
-		if modeID := pickAutoApproveMode(fromZedACPSession(newSessResp)); modeID != "" {
-			if err := c.client.SetMode(ctx, remoteSessionID, modeID); err != nil {
-				log.Warn("failed to set ACP mode", "mode", modeID, "error", err)
-			}
-		}
-	} else if c.sessionCapabilities.Load && !c.loadedSessions[remoteSessionID] {
-		obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier}
-		if err := c.client.LoadSession(ctx, acpLoadSessionRequest{
-			SessionID:  remoteSessionID,
-			Cwd:        cwd,
-			McpServers: []acpMcpServerConfig{},
-		}, obs); err != nil {
-			log.Warn("ACP session load failed, will fall back to prompt/recreate flow", "agent_session", remoteSessionID, "error", err)
-		} else {
-			c.loadedSessions[remoteSessionID] = true
-			obs.WaitIdle(ctx, 150*time.Millisecond)
-		}
+	remoteSessionID, err := c.ensureACPRemoteSession(ctx, turn, cwd, log)
+	if err != nil {
+		return middleware.ConversationResult{}, err
 	}
-
-	if turn.ThoughtNotifier != nil {
-		turn.ThoughtNotifier.SetHeader(turn.AgentID, remoteSessionID)
-	}
-	if c.handler != nil {
-		c.handler.WithNotifier(turn.ThoughtNotifier)
-	}
-
+	c.prepareTurnCallbacks(turn, remoteSessionID)
 	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier}
-	promptText := sidecar.ProjectPrompt(turn.Message, turn.SidecarCapsules)
-	resp, err := c.client.Prompt(ctx, acpPromptRequest{
-		SessionID: remoteSessionID,
-		Prompt: []acpContent{
-			{Type: "text", Text: promptText},
-		},
-		Meta: sidecarprojection.ACPMeta(turn.SidecarCapsules),
-	}, obs)
+	resp, err := c.promptACP(ctx, remoteSessionID, turn, obs)
 	if err != nil && remoteSessionID != "" && isSessionNotFoundError(err) {
 		log.Warn("ACP session lost, recreating", "agent_session", remoteSessionID)
-		return c.ExecuteTurn(ctx, middleware.ConversationTurn{
-			AgentID:          turn.AgentID,
-			LogicalSessionID: turn.LogicalSessionID,
-			WorkspacePath:    turn.WorkspacePath,
-			Message:          turn.Message,
-			SidecarCapsules:  turn.SidecarCapsules,
-			Tools:            turn.Tools,
-			ThoughtNotifier:  turn.ThoughtNotifier,
-		})
+		return c.retryTurnWithFreshSession(ctx, turn)
 	}
 	if err != nil {
 		return middleware.ConversationResult{
@@ -167,6 +119,94 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 		ToolCalls:       fromZedACPToolCalls(resp.ToolCalls),
 		Metadata:        obs.Metadata(),
 	}, nil
+}
+
+func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) (string, error) {
+	if turn.RemoteSessionID == "" {
+		return c.createAndConfigureACPRemoteSession(ctx, turn, cwd, log)
+	}
+	if c.sessionCapabilities.Load && !c.loadedSessions[turn.RemoteSessionID] {
+		c.loadACPRemoteSession(acpLoadRemoteSessionRequest{
+			Ctx:             ctx,
+			RemoteSessionID: turn.RemoteSessionID,
+			Cwd:             cwd,
+			Notifier:        turn.ThoughtNotifier,
+			Log:             log,
+		})
+	}
+	return turn.RemoteSessionID, nil
+}
+
+func (c *acpConversationClient) createAndConfigureACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) (string, error) {
+	newSessResp, err := c.createACPRemoteSession(ctx, middleware.SessionMaterializeRequest{
+		LogicalSessionID: turn.LogicalSessionID,
+		WorkspacePath:    cwd,
+		Tools:            turn.Tools,
+	})
+	if err != nil {
+		return "", err
+	}
+	c.setAutoApproveMode(ctx, newSessResp, log)
+	return newSessResp.SessionID, nil
+}
+
+func (c *acpConversationClient) setAutoApproveMode(ctx context.Context, resp *acpNewSessionResponse, log *slog.Logger) {
+	modeID := pickAutoApproveMode(fromZedACPSession(resp))
+	if modeID == "" {
+		return
+	}
+	if err := c.client.SetMode(ctx, resp.SessionID, modeID); err != nil {
+		log.Warn("failed to set ACP mode", "mode", modeID, "error", err)
+	}
+}
+
+type acpLoadRemoteSessionRequest struct {
+	Ctx             context.Context
+	RemoteSessionID string
+	Cwd             string
+	Notifier        middleware.ThoughtNotifier
+	Log             *slog.Logger
+}
+
+func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionRequest) {
+	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: req.Notifier}
+	err := c.client.LoadSession(req.Ctx, acpLoadSessionRequest{SessionID: req.RemoteSessionID, Cwd: req.Cwd, McpServers: []acpMcpServerConfig{}}, obs)
+	if err != nil {
+		req.Log.Warn("ACP session load failed, will fall back to prompt/recreate flow", "agent_session", req.RemoteSessionID, "error", err)
+		return
+	}
+	c.loadedSessions[req.RemoteSessionID] = true
+	obs.WaitIdle(req.Ctx, 150*time.Millisecond)
+}
+
+func (c *acpConversationClient) prepareTurnCallbacks(turn middleware.ConversationTurn, remoteSessionID string) {
+	if turn.ThoughtNotifier != nil {
+		turn.ThoughtNotifier.SetHeader(turn.AgentID, remoteSessionID)
+	}
+	if c.handler != nil {
+		c.handler.WithNotifier(turn.ThoughtNotifier)
+	}
+}
+
+func (c *acpConversationClient) promptACP(ctx context.Context, remoteSessionID string, turn middleware.ConversationTurn, obs *simpleObserver) (*acpPromptResponse, error) {
+	promptText := sidecar.ProjectPrompt(turn.Message, turn.SidecarCapsules)
+	return c.client.Prompt(ctx, acpPromptRequest{
+		SessionID: remoteSessionID,
+		Prompt:    []acpContent{{Type: "text", Text: promptText}},
+		Meta:      sidecarprojection.ACPMeta(turn.SidecarCapsules),
+	}, obs)
+}
+
+func (c *acpConversationClient) retryTurnWithFreshSession(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
+	return c.ExecuteTurn(ctx, middleware.ConversationTurn{
+		AgentID:          turn.AgentID,
+		LogicalSessionID: turn.LogicalSessionID,
+		WorkspacePath:    turn.WorkspacePath,
+		Message:          turn.Message,
+		SidecarCapsules:  turn.SidecarCapsules,
+		Tools:            turn.Tools,
+		ThoughtNotifier:  turn.ThoughtNotifier,
+	})
 }
 
 func (c *acpConversationClient) turnCwd(turn middleware.ConversationTurn) string {

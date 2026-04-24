@@ -13,6 +13,7 @@ type (
 	acpRequestHandler      = zedacp.RequestHandler
 	acpSessionObserver     = zedacp.SessionObserver
 	acpSessionNotification = zedacp.SessionNotification
+	acpSessionUpdate       = zedacp.SessionUpdate
 
 	acpInitializeRequest    = zedacp.InitializeRequest
 	acpInitializeResponse   = zedacp.InitializeResponse

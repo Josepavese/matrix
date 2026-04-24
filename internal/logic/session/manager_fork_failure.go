@@ -21,9 +21,7 @@ func (e forkWorkflowError) Error() string {
 	return e.err.Error()
 }
 
-func (e forkWorkflowError) Unwrap() error {
-	return e.err
-}
+func (e forkWorkflowError) Unwrap() error { return e.err }
 
 type forkWorkflowFailureData struct {
 	ChannelID string
@@ -89,9 +87,7 @@ func forkWorkflowErrorCode(err error) (string, string) {
 	return code, message
 }
 
-func errorAsForkWorkflow(err error, target *forkWorkflowError) bool {
-	return errors.As(err, target)
-}
+func errorAsForkWorkflow(err error, target *forkWorkflowError) bool { return errors.As(err, target) }
 
 func errorString(err error) string {
 	if err == nil {

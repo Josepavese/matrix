@@ -77,7 +77,12 @@ func (c *commandInterpreter) registerModeCommands(manager *Manager) {
 
 func (c *commandInterpreter) registerSessionCommands(manager *Manager) {
 	cancel := func(ctx context.Context, channelID string, invocation sessioncmd.Invocation) (string, error) {
-		return manager.handleSessionCancel(ctx, channelID, manager.wizard.GetLanguage(channelID), invocation.Args)
+		lang := manager.wizard.GetLanguage(channelID)
+		result, err := manager.handleSessionCancelTyped(ctx, channelID, lang, invocation.Args)
+		if err != nil {
+			return "", err
+		}
+		return manager.renderSessionAction(result, lang), nil
 	}
 	c.handlers["/status"] = func(_ context.Context, channelID string, _ sessioncmd.Invocation) (string, error) {
 		return manager.handleStatusCommand(channelID)

@@ -23,116 +23,108 @@ type jsonRPCResponse struct {
 	Params  json.RawMessage `json:"params,omitempty"`
 }
 
+type promptPart struct {
+	Text string `json:"text"`
+}
+
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		line := scanner.Bytes()
 		var req jsonRPCRequest
-		if err := json.Unmarshal(line, &req); err != nil {
+		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
 			continue
 		}
-
-		resp := jsonRPCResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-		}
-
-		switch req.Method {
-		case "initialize":
-			resp.Result = json.RawMessage(`{"capabilities": {"edit": {}}}`)
-		case "session/new":
-			var params struct { // Renamed from 'req' to 'params' to avoid conflict with outer 'req'
-				ClientTitle string `json:"clientTitle"`
-			}
-			if err := json.Unmarshal(req.Params, &params); err != nil {
-				continue
-			}
-
-			// The original instruction had 'middleware.NewSessionResponse' and 'writeResp'.
-			// These are not defined in the provided context.
-			// I'm adapting to the existing structure by setting resp.Result directly.
-			// If 'middleware' and 'writeResp' are meant to be added, they need to be defined.
-			resp.Result = json.RawMessage(`{"sessionId": "mock-session-id"}`)
-
-		case "session/prompt":
-			var params struct {
-				SessionID string `json:"sessionId"`
-				Prompt    []struct {
-					Text string `json:"text"`
-				} `json:"prompt"`
-			}
-			if err := json.Unmarshal(req.Params, &params); err != nil {
-				continue
-			}
-
-			// Check if the prompt requests a terminal/create test
-			terminalTest := false
-			for _, p := range params.Prompt {
-				if p.Text == "__TERMINAL_TEST__" {
-					terminalTest = true
-					break
-				}
-			}
-
-			if terminalTest {
-				// Send a terminal/create request to the client
-				termReq := jsonRPCRequest{
-					JSONRPC: "2.0",
-					ID:      100,
-					Method:  "terminal/create",
-					Params:  json.RawMessage(`{"command":"echo","args":["from-mock-agent"]}`),
-				}
-				tBytes, _ := json.Marshal(termReq)
-				fmt.Println(string(tBytes))
-
-				// Read the response from the client
-				if scanner.Scan() {
-					var termResp jsonRPCResponse
-					if json.Unmarshal(scanner.Bytes(), &termResp) == nil && termResp.Result != nil {
-						// Build the notification with properly JSON-escaped result
-						resultText := string(termResp.Result)
-						notifParams := map[string]interface{}{
-							"sessionId": params.SessionID,
-							"update": map[string]interface{}{
-								"sessionUpdate": "agent_message_chunk",
-								"content": map[string]interface{}{
-									"type": "text",
-									"text": "terminal result: " + resultText,
-								},
-							},
-						}
-						notifParamsBytes, _ := json.Marshal(notifParams)
-						notif := jsonRPCResponse{
-							JSONRPC: "2.0",
-							Method:  ptr("session/update"),
-							Params:  json.RawMessage(notifParamsBytes),
-						}
-						nBytes, _ := json.Marshal(notif)
-						fmt.Println(string(nBytes))
-					}
-				}
-			} else {
-				// Notify with the new session/update structured format
-				notif := jsonRPCResponse{
-					JSONRPC: "2.0",
-					Method:  ptr("session/update"),
-					Params:  json.RawMessage(fmt.Sprintf(`{"sessionId": "%s", "update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "I am a mock agent responding via stdio."}}}`, params.SessionID)),
-				}
-				nBytes, err := json.Marshal(notif)
-				if err != nil {
-					continue
-				}
-				fmt.Println(string(nBytes))
-			}
-
-			resp.Result = json.RawMessage(`{"stopReason": "end_turn"}`)
-		}
-
-		rBytes, err := json.Marshal(resp)
-		if err != nil {
+		resp, ok := handleRequest(req, scanner)
+		if !ok {
 			continue
 		}
-		fmt.Println(string(rBytes))
+		writeJSON(resp)
+	}
+}
+
+func handleRequest(req jsonRPCRequest, scanner *bufio.Scanner) (jsonRPCResponse, bool) {
+	resp := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID}
+	switch req.Method {
+	case "initialize":
+		resp.Result = json.RawMessage(`{"capabilities": {"edit": {}}}`)
+	case "session/new":
+		resp.Result = json.RawMessage(`{"sessionId": "mock-session-id"}`)
+	case "session/prompt":
+		result, ok := handlePrompt(req, scanner)
+		if !ok {
+			return jsonRPCResponse{}, false
+		}
+		resp.Result = result
+	}
+	return resp, true
+}
+
+func handlePrompt(req jsonRPCRequest, scanner *bufio.Scanner) (json.RawMessage, bool) {
+	var params struct {
+		SessionID string       `json:"sessionId"`
+		Prompt    []promptPart `json:"prompt"`
+	}
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return nil, false
+	}
+	if promptHasText(params.Prompt, "__TERMINAL_TEST__") {
+		writeTerminalRequest()
+		writeTerminalNotification(scanner, params.SessionID)
+	} else {
+		writeMessageNotification(params.SessionID, "I am a mock agent responding via stdio.")
+	}
+	return json.RawMessage(`{"stopReason": "end_turn"}`), true
+}
+
+func promptHasText(prompt []promptPart, text string) bool {
+	for _, part := range prompt {
+		if part.Text == text {
+			return true
+		}
+	}
+	return false
+}
+
+func writeTerminalRequest() {
+	writeJSON(jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      100,
+		Method:  "terminal/create",
+		Params:  json.RawMessage(`{"command":"echo","args":["from-mock-agent"]}`),
+	})
+}
+
+func writeTerminalNotification(scanner *bufio.Scanner, sessionID string) {
+	if !scanner.Scan() {
+		return
+	}
+	var termResp jsonRPCResponse
+	if json.Unmarshal(scanner.Bytes(), &termResp) != nil || termResp.Result == nil {
+		return
+	}
+	writeMessageNotification(sessionID, "terminal result: "+string(termResp.Result))
+}
+
+func writeMessageNotification(sessionID, text string) {
+	params := map[string]interface{}{
+		"sessionId": sessionID,
+		"update": map[string]interface{}{
+			"sessionUpdate": "agent_message_chunk",
+			"content":       map[string]interface{}{"type": "text", "text": text},
+		},
+	}
+	paramBytes, _ := json.Marshal(params)
+	writeJSON(jsonRPCResponse{
+		JSONRPC: "2.0",
+		Method:  ptr("session/update"),
+		Params:  json.RawMessage(paramBytes),
+	})
+}
+
+func writeJSON(value interface{}) {
+	payload, err := json.Marshal(value)
+	if err == nil {
+		fmt.Println(string(payload))
 	}
 }
 

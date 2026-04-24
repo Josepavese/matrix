@@ -116,16 +116,7 @@ func NormalizeToolKindFromMetadata(metadata map[string]interface{}, name, conten
 }
 
 func NormalizeOfficialToolKind(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "read", "edit", "delete", "move", "search", "execute", "think", "fetch", "switch_mode", "other":
-		return strings.ToLower(strings.TrimSpace(raw))
-	case "write", "create", "patch":
-		return "edit"
-	case "exec", "shell", "terminal":
-		return "execute"
-	default:
-		return ""
-	}
+	return officialToolKindAliases[strings.ToLower(strings.TrimSpace(raw))]
 }
 
 func fallbackToolKind(name, content string) (string, string, string) {
@@ -255,20 +246,11 @@ func subjectForKind(kind string, metadata map[string]interface{}, path string) s
 	if strings.TrimSpace(path) != "" || StringValue(metadata, "path") != "" {
 		return "filesystem"
 	}
-	switch kind {
-	case "read", "edit", "delete", "move", "search":
-		return "workspace"
-	case "execute":
-		return "process"
-	case "fetch":
-		return "network"
-	case "switch_mode":
-		return "agent_session"
-	case "think":
-		return "agent_reasoning"
-	default:
+	subject := toolSubjectByKind[kind]
+	if subject == "" {
 		return "unknown"
 	}
+	return subject
 }
 
 type toolNameRule struct {

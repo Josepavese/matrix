@@ -323,14 +323,10 @@ func (m *Manager) getOrCreateQueue(channelID string) *sessionqueue.OrderedMerge 
 }
 
 // getSessionKey returns the vault key for a SessionID metadata.
-func getSessionKey(sessionID string) string {
-	return "session.meta." + sessionID
-}
+func getSessionKey(sessionID string) string { return "session.meta." + sessionID }
 
 // getChannelKey returns the vault key for a ChannelID mapping.
-func getChannelKey(channelID string) string {
-	return "session.channel." + channelID
-}
+func getChannelKey(channelID string) string { return "session.channel." + channelID }
 
 // getChannelState returns the current ChannelState.
 func (m *Manager) getChannelState(channelID string) (ChannelState, error) {
