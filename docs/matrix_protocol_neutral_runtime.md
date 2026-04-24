@@ -170,6 +170,13 @@ Important distinction:
 - `workspace_id` or `workspace_path`: optional work context
 - `session_policy`: optional lifecycle policy. `new_ephemeral_delete_after_run` forces a fresh random logical session and schedules cleanup after the turn
 - `cleanup_policy`: optional cleanup policy for ephemeral run lifecycles. Supported values are `delete_remote_or_cancel_and_forget_local`, `delete_remote_or_forget_local`, `delete_remote`, and `forget_local`; by itself it does not clean up a normal active session
+- provider readiness failures are typed in sync/stream run responses with `code`
+  and `details`. `provider_model_unavailable`, `provider_auth_mismatch`, and
+  `agent_preflight_failed` identify adapter/provider problems and should not be
+  scored as task failures by external evaluators.
+- lane preflight is a normal `/v1/runs` call with a minimal prompt plus
+  `session_policy=new_ephemeral_delete_after_run`, so it exercises the same
+  channel-neutral Matrix path and still produces cleanup evidence.
 
 `POST /v1/session-actions` accepts a typed action envelope:
 

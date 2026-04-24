@@ -244,7 +244,7 @@ func (r *Router) createClient(ctx context.Context, agentID string, cwd string, l
 		TrustMode: r.trustMode,
 	})
 	if err != nil {
-		return nil, "", err
+		return nil, "", annotateProviderFailureAgent(err, agentID)
 	}
 	return client, endpoint.Kind, nil
 }

@@ -156,28 +156,12 @@ func (m *Manager) handleSessionSwitchTyped(ctx context.Context, channelID, lang,
 }
 
 func (m *Manager) handleSessionCancelTyped(ctx context.Context, channelID, lang, args string) (middleware.SessionActionResult, error) {
-	targetID := strings.TrimSpace(args)
-	if targetID == "" {
-		state, err := m.getChannelState(channelID)
-		if err != nil {
-			return middleware.SessionActionResult{}, err
-		}
-		targetID = state.ActiveSessionID
+	targetID, err := m.resolveSessionCancelTarget(channelID, args)
+	if err != nil {
+		return middleware.SessionActionResult{}, err
 	}
 	if targetID == "" {
 		return middleware.SessionActionResult{Action: "cancel", Message: m.wizard.GetString(lang, "session_history_empty")}, nil
-	}
-
-	state, err := m.getChannelState(channelID)
-	if err != nil {
-		return middleware.SessionActionResult{}, err
-	}
-	metas, err := m.loadSessionMetas(state.History)
-	if err != nil {
-		return middleware.SessionActionResult{}, err
-	}
-	if resolved := resolveSessionTarget(targetID, state, metas); resolved != "" {
-		targetID = resolved
 	}
 
 	meta, found, err := m.loadSessionMeta(targetID)
@@ -185,12 +169,8 @@ func (m *Manager) handleSessionCancelTyped(ctx context.Context, channelID, lang,
 		return middleware.SessionActionResult{}, err
 	}
 	if !found {
-		canceled, handled, err := m.tryCancelRemoteSession(ctx, channelID, targetID)
-		if handled {
-			if err != nil {
-				return middleware.SessionActionResult{}, err
-			}
-			return canceled, nil
+		if canceled, handled, err := m.tryCancelRemoteSession(ctx, channelID, targetID); handled {
+			return canceled, err
 		}
 		return middleware.SessionActionResult{}, fmt.Errorf("session %s not found", targetID)
 	}
@@ -212,6 +192,25 @@ func (m *Manager) handleSessionCancelTyped(ctx context.Context, channelID, lang,
 		ActiveSessionID: meta.ID,
 		Session:         m.toSessionEntry(meta, true),
 	}, nil
+}
+
+func (m *Manager) resolveSessionCancelTarget(channelID, args string) (string, error) {
+	state, err := m.getChannelState(channelID)
+	if err != nil {
+		return "", err
+	}
+	targetID := firstNonEmpty(strings.TrimSpace(args), state.ActiveSessionID)
+	if targetID == "" {
+		return "", nil
+	}
+	metas, err := m.loadSessionMetas(state.History)
+	if err != nil {
+		return "", err
+	}
+	if resolved := resolveSessionTarget(targetID, state, metas); resolved != "" {
+		targetID = resolved
+	}
+	return targetID, nil
 }
 
 func (m *Manager) switchToPreviousSessionTyped(channelID, lang string, state ChannelState) (middleware.SessionActionResult, error) {
@@ -395,6 +394,25 @@ func matchRemoteSessionTarget(target string, sessions []middleware.RemoteSession
 }
 
 func (m *Manager) importRemoteSession(channelID, agentID string, remote middleware.RemoteSessionInfo) (string, error) {
+	existingID, err := m.findRemoteSessionMirror(agentID, remote.RemoteSessionID)
+	if err != nil {
+		return "", err
+	}
+	if existingID != "" {
+		if err := m.AttachChannel(channelID, existingID); err != nil {
+			return "", err
+		}
+		return existingID, nil
+	}
+
+	meta, err := m.importedRemoteSessionMeta(channelID, agentID, remote)
+	if err != nil {
+		return "", err
+	}
+	return m.persistImportedRemoteSession(channelID, meta)
+}
+
+func (m *Manager) findRemoteSessionMirror(agentID, remoteSessionID string) (string, error) {
 	keys, err := m.storage.List("session.meta.")
 	if err != nil {
 		return "", err
@@ -405,40 +423,47 @@ func (m *Manager) importRemoteSession(channelID, agentID string, remote middlewa
 		if err != nil || !found {
 			continue
 		}
-		if meta.AgentID == agentID && meta.AgentSessionID == remote.RemoteSessionID {
-			if err := m.AttachChannel(channelID, meta.ID); err != nil {
-				return "", err
-			}
+		if meta.AgentID == agentID && meta.AgentSessionID == remoteSessionID {
 			return meta.ID, nil
 		}
 	}
+	return "", nil
+}
 
-	sessionID := uuid.New().String()
+func (m *Manager) importedRemoteSessionMeta(channelID, agentID string, remote middleware.RemoteSessionInfo) (SessionMeta, error) {
+	now := time.Now().UTC()
 	meta := SessionMeta{
-		ID:             sessionID,
+		ID:             uuid.New().String(),
 		AgentSessionID: remote.RemoteSessionID,
-		CreatedAt:      time.Now().UTC(),
+		CreatedAt:      now,
 		AgentID:        agentID,
 		Status:         "active",
 		ProtocolKind:   string(remote.ProtocolKind),
 		MirrorStatus:   "mirrored",
 		RemoteTitle:    remote.Title,
-		LastSyncedAt:   time.Now().UTC(),
+		LastSyncedAt:   now,
 	}
+	if parsed, ok := parseRemoteUpdatedAt(remote.UpdatedAt); ok {
+		meta.RemoteUpdatedAt = parsed
+	}
+	if err := m.applyPreferredWorkspace(channelID, &meta); err != nil {
+		return SessionMeta{}, err
+	}
+	return meta, nil
+}
+
+func (m *Manager) applyPreferredWorkspace(channelID string, meta *SessionMeta) error {
 	if state, err := m.getChannelState(channelID); err == nil && strings.TrimSpace(state.PreferredWorkspaceID) != "" {
-		if err := m.bindSessionWorkspace(&meta, state.PreferredWorkspaceID, ""); err != nil {
-			return "", err
-		}
+		return m.bindSessionWorkspace(meta, state.PreferredWorkspaceID, "")
 	}
-	if remote.UpdatedAt != "" {
-		if parsed, err := time.Parse(time.RFC3339, remote.UpdatedAt); err == nil {
-			meta.RemoteUpdatedAt = parsed
-		}
-	}
+	return nil
+}
+
+func (m *Manager) persistImportedRemoteSession(channelID string, meta SessionMeta) (string, error) {
 	if err := m.saveSessionMeta(meta); err != nil {
 		return "", err
 	}
-	if err := m.updateChannelState(channelID, sessionID); err != nil {
+	if err := m.updateChannelState(channelID, meta.ID); err != nil {
 		return "", err
 	}
 	if err := m.updateChannelWorkspaceState(channelID, meta.WorkspaceID); err != nil {
@@ -447,7 +472,7 @@ func (m *Manager) importRemoteSession(channelID, agentID string, remote middlewa
 	if err := m.indexSessionWorkspace(meta); err != nil {
 		return "", err
 	}
-	return sessionID, nil
+	return meta.ID, nil
 }
 
 func (m *Manager) tryDeleteRemoteSession(ctx context.Context, channelID, target string) (middleware.SessionActionResult, bool, error) {

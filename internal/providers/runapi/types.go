@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/memstore"
 	"github.com/Josepavese/matrix/internal/logic/rundelivery"
@@ -51,24 +52,16 @@ type runRequest struct {
 	TracePolicy          runtrace.TracePolicy        `json:"trace_policy,omitempty"`
 }
 
-type runResponse struct {
-	RunID      string                           `json:"run_id"`
-	Status     string                           `json:"status"`
-	Output     string                           `json:"output,omitempty"`
-	TraceURL   string                           `json:"trace_url"`
-	EventsURL  string                           `json:"events_url"`
-	ActionsURL string                           `json:"actions_url"`
-	Cleanup    *middleware.SessionCleanupResult `json:"cleanup,omitempty"`
+type runExecution struct {
+	runID            string
+	req              runRequest
+	agentID          string
+	emergencyTimeout time.Duration
 }
 
-type runErrorResponse struct {
-	RunID      string                           `json:"run_id"`
-	Status     string                           `json:"status"`
-	Error      string                           `json:"error"`
-	TraceURL   string                           `json:"trace_url"`
-	EventsURL  string                           `json:"events_url"`
-	ActionsURL string                           `json:"actions_url"`
-	Cleanup    *middleware.SessionCleanupResult `json:"cleanup,omitempty"`
+type runExecutionResult struct {
+	output  string
+	cleanup *middleware.SessionCleanupResult
 }
 
 type eventSinkRequest struct {

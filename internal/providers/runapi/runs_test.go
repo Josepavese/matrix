@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/memstore"
+	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/middleware"
+	runresponse "github.com/Josepavese/matrix/internal/providers/runapi/response"
 )
 
 type runTestRouter struct {
@@ -204,7 +206,7 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 		t.Fatalf("expected force cleanup action, got %+v", router.sessionActions[len(router.sessionActions)-1])
 	}
 
-	var resp runResponse
+	var resp runresponse.Success
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -243,12 +245,62 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCleansWhenRouteFails(t *testing.T)
 	if !hasSessionAction(router.sessionActions, "cleanup") {
 		t.Fatalf("expected cleanup action after route failure, got %+v", router.sessionActions)
 	}
-	var resp runErrorResponse
+	var resp runresponse.Error
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode error response: %v; body=%s", err, w.Body.String())
 	}
 	if resp.Cleanup == nil || !resp.Cleanup.Clean || !resp.Cleanup.LocalForgotten {
 		t.Fatalf("expected cleanup proof in error response, got %+v", resp.Cleanup)
+	}
+}
+
+func TestHandleRuns_ProviderFailureIsTyped(t *testing.T) {
+	router := &runTestRouter{routeErr: &providerfailure.Failure{
+		Code:           providerfailure.ModelUnavailable,
+		Message:        "configured provider model is unavailable through the selected adapter",
+		AgentID:        "codex",
+		Protocol:       "acp",
+		Phase:          "session/prompt",
+		RequestedModel: "gpt-5.5",
+		Diagnostics: map[string]string{
+			"command":   "/home/jose/.nvm/versions/node/v22.12.0/bin/codex-acp",
+			"adapter":   "codex-acp",
+			"transport": "stdio",
+		},
+		Err: errors.New("RPC error -32603: model access denied"),
+	}}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id": "eval-channel-model-mismatch",
+		"agent_id":   "codex",
+		"input":      "Respond with exactly OK",
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusFailedDependency {
+		t.Fatalf("expected 424, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp runresponse.Error
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode error response: %v; body=%s", err, w.Body.String())
+	}
+	if resp.Code != providerfailure.ModelUnavailable {
+		t.Fatalf("expected typed provider code, got %+v", resp)
+	}
+	if resp.Details["requested_model"] != "gpt-5.5" || resp.Details["adapter"] != "codex-acp" {
+		t.Fatalf("expected provider diagnostics, got %+v", resp.Details)
+	}
+	events, err := server.Store().LoadEvents(resp.RunID, 0)
+	if err != nil {
+		t.Fatalf("load events: %v", err)
+	}
+	if !hasEventKind(events, "provider.preflight.failed") {
+		t.Fatalf("expected provider preflight event, got %+v", events)
 	}
 }
 
@@ -306,7 +358,7 @@ func TestHandleRunActionsCancelCleansEphemeralRunWithDetachedContext(t *testing.
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected 202 async run, got %d: %s", w.Code, w.Body.String())
 	}
-	var runResp runResponse
+	var runResp runresponse.Success
 	if err := json.Unmarshal(w.Body.Bytes(), &runResp); err != nil {
 		t.Fatalf("decode run response: %v", err)
 	}
@@ -397,7 +449,7 @@ func TestHandleRuns_SidecarCapsulesAreNeutralAndTraced(t *testing.T) {
 		t.Fatalf("expected sidecar capsule on neutral conversation request, got %+v", router.lastConversation.SidecarCapsules)
 	}
 
-	var resp runResponse
+	var resp runresponse.Success
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}

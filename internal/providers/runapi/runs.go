@@ -9,23 +9,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/logic/runnotifier"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/logic/sidecar"
 	"github.com/Josepavese/matrix/internal/middleware"
+	runresponse "github.com/Josepavese/matrix/internal/providers/runapi/response"
 )
 
-type runExecution struct {
-	runID            string
-	req              runRequest
-	agentID          string
-	emergencyTimeout time.Duration
-}
-
-type runExecutionResult struct {
-	output  string
-	cleanup *middleware.SessionCleanupResult
-}
+var runResponseBuilder = runresponse.Builder{Prefix: RunResourcePrefixV1}
 
 func (s *Server) HandleRuns(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -127,7 +119,7 @@ func (s *Server) dispatchByExecutionMode(w http.ResponseWriter, r *http.Request,
 		ctx, cancel := executionContext(context.Background(), exec.emergencyTimeout)
 		s.trackRunCancel(exec.runID, cancel)
 		go s.executeRunAsync(ctx, exec)
-		writeJSON(w, http.StatusAccepted, newRunResponse(exec.runID, runtrace.StatusRunning, ""))
+		writeJSON(w, http.StatusAccepted, runResponseBuilder.NewSuccess(exec.runID, runtrace.StatusRunning, ""))
 	case runtrace.ExecutionModeStream:
 		s.handleRunStream(w, r, exec)
 	default:
@@ -146,13 +138,17 @@ func (s *Server) dispatchByExecutionMode(w http.ResponseWriter, r *http.Request,
 				return
 			}
 			if isEmergencyTimeout(ctx, err, exec) {
-				writeJSON(w, http.StatusGatewayTimeout, newRunErrorResponse(exec.runID, runtrace.StatusCancelled, "emergency kill deadline reached", res.cleanup))
+				writeJSON(w, http.StatusGatewayTimeout, runResponseBuilder.NewError(exec.runID, runtrace.StatusCancelled, "emergency kill deadline reached", res.cleanup))
 				return
 			}
-			writeJSON(w, http.StatusInternalServerError, newRunErrorResponse(exec.runID, runtrace.StatusFailed, err.Error(), res.cleanup))
+			if status, ok := providerfailure.HTTPStatus(err); ok {
+				writeJSON(w, status, runResponseBuilder.NewErrorForError(exec.runID, runtrace.StatusFailed, err, res.cleanup))
+				return
+			}
+			writeJSON(w, http.StatusInternalServerError, runResponseBuilder.NewErrorForError(exec.runID, runtrace.StatusFailed, err, res.cleanup))
 			return
 		}
-		writeJSON(w, http.StatusCreated, newRunResponse(exec.runID, runtrace.StatusCompleted, res.output, res.cleanup))
+		writeJSON(w, http.StatusCreated, runResponseBuilder.NewSuccess(exec.runID, runtrace.StatusCompleted, res.output, res.cleanup))
 	}
 }
 
@@ -160,6 +156,7 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 	before := s.sessionSnapshot(ctx, exec.req.ChannelID, exec.req.WorkspaceID)
 	if err := s.prepareSessionForRun(ctx, exec); err != nil {
 		_, _ = s.runStore.Fail(exec.runID, err)
+		providerfailure.AppendRunEvent(s.runStore, exec.runID, err)
 		s.untrackRunCancel(exec.runID)
 		return runExecutionResult{}, err
 	}
@@ -185,6 +182,7 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 			_, _ = s.runStore.Cancel(exec.runID, "cancelled")
 		default:
 			_, _ = s.runStore.Fail(exec.runID, err)
+			providerfailure.AppendRunEvent(s.runStore, exec.runID, err)
 		}
 		s.untrackRunCancel(exec.runID)
 		return runExecutionResult{cleanup: cleanup}, err
@@ -228,7 +226,7 @@ func (s *Server) route(ctx context.Context, req runRequest, agentID string, noti
 func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request, exec runExecution) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(newRunResponse(exec.runID, runtrace.StatusRunning, ""))
+	_ = json.NewEncoder(w).Encode(runResponseBuilder.NewSuccess(exec.runID, runtrace.StatusRunning, ""))
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
@@ -240,10 +238,10 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request, exec ru
 		if isEmergencyTimeout(ctx, err, exec) {
 			status = runtrace.StatusCancelled
 		}
-		_ = json.NewEncoder(w).Encode(newRunErrorResponse(exec.runID, status, err.Error(), res.cleanup))
+		_ = json.NewEncoder(w).Encode(runResponseBuilder.NewErrorForError(exec.runID, status, err, res.cleanup))
 		return
 	}
-	_ = json.NewEncoder(w).Encode(newRunResponse(exec.runID, runtrace.StatusCompleted, res.output, res.cleanup))
+	_ = json.NewEncoder(w).Encode(runResponseBuilder.NewSuccess(exec.runID, runtrace.StatusCompleted, res.output, res.cleanup))
 }
 
 func (s *Server) executeRunAsync(ctx context.Context, exec runExecution) {
