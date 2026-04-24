@@ -111,6 +111,4 @@ func (m *Manager) hasAgentClientReferences(meta SessionMeta, include func(Sessio
 	return false, nil
 }
 
-func cleanSessionWorkspacePath(path string) string {
-	return filepath.Clean(strings.TrimSpace(path))
-}
+func cleanSessionWorkspacePath(path string) string { return filepath.Clean(strings.TrimSpace(path)) }

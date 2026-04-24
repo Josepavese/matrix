@@ -28,6 +28,4 @@ func normalizeMode(mode string) string {
 	}
 }
 
-func defaultModeForWorkspace(meta workspace.Meta) string {
-	return normalizeMode(meta.DefaultMode)
-}
+func defaultModeForWorkspace(meta workspace.Meta) string { return normalizeMode(meta.DefaultMode) }

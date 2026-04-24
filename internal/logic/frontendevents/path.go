@@ -40,29 +40,48 @@ func firstPathFromMap(values map[string]interface{}) string {
 		}
 	}
 	for key, value := range values {
-		switch typed := value.(type) {
-		case map[string]interface{}:
-			if path := firstPathFromMap(typed); path != "" {
-				return path
-			}
-		case []interface{}:
-			for _, item := range typed {
-				if nested, ok := item.(map[string]interface{}); ok {
-					if path := firstPathFromMap(nested); path != "" {
-						return path
-					}
-				}
-			}
-		case string:
-			if isCommandPathSource(key) {
-				match := absolutePathPattern.FindString(typed)
-				if match != "" {
-					return filepath.Clean(match)
-				}
-			}
+		if path := firstPathFromValue(key, value); path != "" {
+			return path
 		}
 	}
 	return ""
+}
+
+func firstPathFromValue(key string, value interface{}) string {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return firstPathFromMap(typed)
+	case []interface{}:
+		return firstPathFromSlice(typed)
+	case string:
+		return pathFromCommandSource(key, typed)
+	default:
+		return ""
+	}
+}
+
+func firstPathFromSlice(values []interface{}) string {
+	for _, item := range values {
+		nested, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if path := firstPathFromMap(nested); path != "" {
+			return path
+		}
+	}
+	return ""
+}
+
+func pathFromCommandSource(key, value string) string {
+	if !isCommandPathSource(key) {
+		return ""
+	}
+	match := absolutePathPattern.FindString(value)
+	if match == "" {
+		return ""
+	}
+	return filepath.Clean(match)
 }
 
 func isCommandPathSource(key string) bool {

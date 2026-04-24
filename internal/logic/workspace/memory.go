@@ -51,21 +51,15 @@ type Snapshot struct {
 	CreatedAt              time.Time              `json:"created_at"`
 }
 
-func TurnKey(workspaceID, turnID string) string {
-	return TurnKeyPrefix + workspaceID + "." + turnID
-}
+func TurnKey(workspaceID, turnID string) string { return TurnKeyPrefix + workspaceID + "." + turnID }
 
-func TurnIndexKey(workspaceID string) string {
-	return TurnIndexKeyPrefix + workspaceID
-}
+func TurnIndexKey(workspaceID string) string { return TurnIndexKeyPrefix + workspaceID }
 
 func SnapshotKey(workspaceID, snapshotID string) string {
 	return SnapshotKeyPrefix + workspaceID + "." + snapshotID
 }
 
-func SnapshotIndexKey(workspaceID string) string {
-	return SnapshotIndexKeyPrefix + workspaceID
-}
+func SnapshotIndexKey(workspaceID string) string { return SnapshotIndexKeyPrefix + workspaceID }
 
 func RecordTurn(storage middleware.Storage, turn Turn) (Turn, error) {
 	if storage == nil {
@@ -99,10 +93,10 @@ func RecordTurn(storage middleware.Storage, turn Turn) (Turn, error) {
 	if err != nil {
 		return Turn{}, err
 	}
-	for _, turnID := range evicted {
-		if err := storage.Delete(TurnKey(turn.WorkspaceID, turnID)); err != nil {
-			return Turn{}, fmt.Errorf("failed to prune evicted workspace turn %s: %w", turnID, err)
-		}
+	if err := pruneEvictedObjects(storage, evicted, func(id string) string {
+		return TurnKey(turn.WorkspaceID, id)
+	}, "workspace turn"); err != nil {
+		return Turn{}, err
 	}
 	return turn, nil
 }
@@ -174,10 +168,10 @@ func SaveSnapshot(storage middleware.Storage, snapshot Snapshot) (Snapshot, erro
 	if err != nil {
 		return Snapshot{}, err
 	}
-	for _, snapshotID := range evicted {
-		if err := storage.Delete(SnapshotKey(snapshot.WorkspaceID, snapshotID)); err != nil {
-			return Snapshot{}, fmt.Errorf("failed to prune evicted workspace snapshot %s: %w", snapshotID, err)
-		}
+	if err := pruneEvictedObjects(storage, evicted, func(id string) string {
+		return SnapshotKey(snapshot.WorkspaceID, id)
+	}, "workspace snapshot"); err != nil {
+		return Snapshot{}, err
 	}
 	return snapshot, nil
 }

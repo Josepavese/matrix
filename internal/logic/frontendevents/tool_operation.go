@@ -33,19 +33,32 @@ func operationFromMap(values map[string]interface{}) string {
 		}
 	}
 	for _, value := range values {
-		switch typed := value.(type) {
-		case map[string]interface{}:
-			if op := operationFromMap(typed); op != "" {
-				return op
-			}
-		case []interface{}:
-			for _, item := range typed {
-				if nested, ok := item.(map[string]interface{}); ok {
-					if op := operationFromMap(nested); op != "" {
-						return op
-					}
-				}
-			}
+		if op := operationFromValue(value); op != "" {
+			return op
+		}
+	}
+	return ""
+}
+
+func operationFromValue(value interface{}) string {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return operationFromMap(typed)
+	case []interface{}:
+		return operationFromSlice(typed)
+	default:
+		return ""
+	}
+}
+
+func operationFromSlice(values []interface{}) string {
+	for _, item := range values {
+		nested, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if op := operationFromMap(nested); op != "" {
+			return op
 		}
 	}
 	return ""

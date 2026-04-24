@@ -72,6 +72,11 @@ The storage section includes:
 - per-workspace footprint
 - pruning indicators
 
+Runtime diagnostics are resilient to a stale or incompatible local daemon. If
+`/_matrix/runtime` is reachable but returns an invalid report, `matrix doctor`
+and `matrix readiness` fall back to local probes, keep the command usable, and
+surface an explicit warning instead of failing the operator command.
+
 ### 4. Decision trace
 
 Matrix now explains orchestration behavior through:

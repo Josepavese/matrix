@@ -54,13 +54,9 @@ func EventKey(workspaceID, eventID string) string {
 	return EventKeyPrefix + workspaceID + "." + eventID
 }
 
-func TimelineKey(workspaceID string) string {
-	return TimelineKeyPrefix + workspaceID
-}
+func TimelineKey(workspaceID string) string { return TimelineKeyPrefix + workspaceID }
 
-func StateKey(workspaceID string) string {
-	return StateKeyPrefix + workspaceID
-}
+func StateKey(workspaceID string) string { return StateKeyPrefix + workspaceID }
 
 // RecordEvent appends a workspace event and updates materialized current state.
 func RecordEvent(storage middleware.Storage, event Event) (Event, error) {
@@ -93,10 +89,10 @@ func RecordEvent(storage middleware.Storage, event Event) (Event, error) {
 	if err != nil {
 		return Event{}, err
 	}
-	for _, eventID := range evicted {
-		if err := storage.Delete(EventKey(event.WorkspaceID, eventID)); err != nil {
-			return Event{}, fmt.Errorf("failed to prune evicted workspace event %s: %w", eventID, err)
-		}
+	if err := pruneEvictedObjects(storage, evicted, func(id string) string {
+		return EventKey(event.WorkspaceID, id)
+	}, "workspace event"); err != nil {
+		return Event{}, err
 	}
 
 	state, _, err := LoadState(storage, event.WorkspaceID)
@@ -201,7 +197,12 @@ func applyEventToState(state State, event Event) State {
 	state.LastEventType = event.Type
 	state.LastEventMessage = event.Message
 	state.LastEventAt = event.CreatedAt
+	state = applyEventActiveRefs(state, event)
+	state = applyEventDerivedState(state, event)
+	return applyRemoteStatusOverride(state, event)
+}
 
+func applyEventActiveRefs(state State, event Event) State {
 	if event.LogicalSessionID != "" {
 		state.ActiveLogicalSessionID = event.LogicalSessionID
 	}
@@ -214,7 +215,10 @@ func applyEventToState(state State, event Event) State {
 	if event.Mode != "" {
 		state.ActiveMode = event.Mode
 	}
+	return state
+}
 
+func applyEventDerivedState(state State, event Event) State {
 	switch event.Type {
 	case "session.canceled":
 		state.RemoteStatus = "canceled"
@@ -232,13 +236,15 @@ func applyEventToState(state State, event Event) State {
 			state.RemoteStatus = "active"
 		}
 	}
+	return state
+}
 
+func applyRemoteStatusOverride(state State, event Event) State {
 	if rawStatus, ok := event.Metadata["remote_status"]; ok {
 		if status, ok := rawStatus.(string); ok && strings.TrimSpace(status) != "" {
 			state.RemoteStatus = status
 		}
 	}
-
 	return state
 }
 
@@ -320,4 +326,13 @@ func updateStringIndexWithLimitEvicted(storage middleware.Storage, key, value st
 		return nil, err
 	}
 	return evicted, nil
+}
+
+func pruneEvictedObjects(storage middleware.Storage, ids []string, keyFor func(string) string, objectType string) error {
+	for _, id := range ids {
+		if err := storage.Delete(keyFor(id)); err != nil {
+			return fmt.Errorf("failed to prune evicted %s %s: %w", objectType, id, err)
+		}
+	}
+	return nil
 }

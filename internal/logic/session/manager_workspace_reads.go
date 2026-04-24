@@ -374,63 +374,10 @@ func renderWorkspaceSnapshots(workspaceID string, snapshots []middleware.Workspa
 }
 
 func describeTimelineEvent(event middleware.WorkspaceTimelineEvent) string {
-	switch event.Type {
-	case "handoff.created":
-		fromAgent := valueOrDash(stringify(event.Metadata["from_agent_id"]))
-		toAgent := valueOrDash(stringify(event.Metadata["to_agent_id"]))
-		if summary := strings.TrimSpace(stringify(event.Metadata["summary"])); summary != "" {
-			return fmt.Sprintf("handoff created %s -> %s - %s", fromAgent, toAgent, summary)
+	if handler := timelineEventHandlers[event.Type]; handler != nil {
+		if description := handler(event); description != "" {
+			return description
 		}
-		return fmt.Sprintf("handoff created %s -> %s", fromAgent, toAgent)
-	case "handoff.applied":
-		fromAgent := valueOrDash(stringify(event.Metadata["from_agent_id"]))
-		toAgent := valueOrDash(stringify(event.Metadata["to_agent_id"]))
-		return fmt.Sprintf("handoff applied %s -> %s", fromAgent, toAgent)
-	case "decision.recorded":
-		if trace := toDecisionTrace(event.Metadata); trace != nil {
-			if trace.CreatedAt == "" {
-				trace.CreatedAt = event.CreatedAt
-			}
-			return describeDecisionTrace(trace)
-		}
-	case "mode.changed":
-		if event.Mode != "" {
-			return "mode changed to " + event.Mode
-		}
-	case "intent.review":
-		return "entered review mode"
-	case "intent.explain":
-		return "entered explain mode"
-	case "intent.triage":
-		return "entered triage mode"
-	case "intent.resume":
-		return "resumed workspace context"
-	case "intent.continue":
-		return "continued current work"
-	case "intent.handoff":
-		if event.AgentID != "" {
-			return "handed work to " + event.AgentID
-		}
-	case "session.created":
-		if event.AgentID != "" {
-			return "created session for " + event.AgentID
-		}
-	case "session.resumed":
-		if event.AgentID != "" {
-			return "resumed session for " + event.AgentID
-		}
-	case "session.switched":
-		if event.AgentID != "" {
-			return "switched to session for " + event.AgentID
-		}
-	case "session.canceled":
-		return "canceled remote session"
-	case "session.deleted":
-		return "deleted session"
-	case "workspace.bound":
-		return "bound session to workspace"
-	case "workspace.switched":
-		return "switched workspace context"
 	}
 
 	parts := []string{describeWorkspaceEventType(event.Type)}
@@ -447,47 +394,101 @@ func describeTimelineEvent(event middleware.WorkspaceTimelineEvent) string {
 }
 
 func describeWorkspaceEventType(eventType string) string {
-	switch eventType {
-	case "session.created":
-		return "session created"
-	case "session.resumed":
-		return "session resumed"
-	case "session.switched":
-		return "session switched"
-	case "session.canceled":
-		return "session canceled"
-	case "session.deleted":
-		return "session deleted"
-	case "workspace.bound":
-		return "workspace bound"
-	case "workspace.switched":
-		return "workspace switched"
-	case "mode.changed":
-		return "mode changed"
-	case "intent.continue":
-		return "continue intent"
-	case "intent.resume":
-		return "resume intent"
-	case "intent.review":
-		return "review intent"
-	case "intent.explain":
-		return "explain intent"
-	case "intent.triage":
-		return "triage intent"
-	case "intent.handoff":
-		return "handoff intent"
-	case "handoff.created":
-		return "handoff created"
-	case "handoff.applied":
-		return "handoff applied"
-	case "decision.recorded":
-		return "decision recorded"
-	default:
-		if strings.TrimSpace(eventType) == "" {
-			return "-"
-		}
-		return eventType
+	if description := workspaceEventTypeDescriptions[eventType]; description != "" {
+		return description
 	}
+	if strings.TrimSpace(eventType) == "" {
+		return "-"
+	}
+	return eventType
+}
+
+var timelineEventHandlers = map[string]func(middleware.WorkspaceTimelineEvent) string{
+	"handoff.created":    describeHandoffCreatedEvent,
+	"handoff.applied":    describeHandoffAppliedEvent,
+	"decision.recorded":  describeDecisionRecordedEvent,
+	"mode.changed":       describeModeChangedEvent,
+	"intent.review":      staticTimelineDescription("entered review mode"),
+	"intent.explain":     staticTimelineDescription("entered explain mode"),
+	"intent.triage":      staticTimelineDescription("entered triage mode"),
+	"intent.resume":      staticTimelineDescription("resumed workspace context"),
+	"intent.continue":    staticTimelineDescription("continued current work"),
+	"intent.handoff":     describeAgentTargetedEvent("handed work to "),
+	"session.created":    describeAgentTargetedEvent("created session for "),
+	"session.resumed":    describeAgentTargetedEvent("resumed session for "),
+	"session.switched":   describeAgentTargetedEvent("switched to session for "),
+	"session.canceled":   staticTimelineDescription("canceled remote session"),
+	"session.deleted":    staticTimelineDescription("deleted session"),
+	"workspace.bound":    staticTimelineDescription("bound session to workspace"),
+	"workspace.switched": staticTimelineDescription("switched workspace context"),
+}
+
+func describeHandoffCreatedEvent(event middleware.WorkspaceTimelineEvent) string {
+	fromAgent := valueOrDash(stringify(event.Metadata["from_agent_id"]))
+	toAgent := valueOrDash(stringify(event.Metadata["to_agent_id"]))
+	if summary := strings.TrimSpace(stringify(event.Metadata["summary"])); summary != "" {
+		return fmt.Sprintf("handoff created %s -> %s - %s", fromAgent, toAgent, summary)
+	}
+	return fmt.Sprintf("handoff created %s -> %s", fromAgent, toAgent)
+}
+
+func describeHandoffAppliedEvent(event middleware.WorkspaceTimelineEvent) string {
+	fromAgent := valueOrDash(stringify(event.Metadata["from_agent_id"]))
+	toAgent := valueOrDash(stringify(event.Metadata["to_agent_id"]))
+	return fmt.Sprintf("handoff applied %s -> %s", fromAgent, toAgent)
+}
+
+func describeDecisionRecordedEvent(event middleware.WorkspaceTimelineEvent) string {
+	trace := toDecisionTrace(event.Metadata)
+	if trace == nil {
+		return ""
+	}
+	if trace.CreatedAt == "" {
+		trace.CreatedAt = event.CreatedAt
+	}
+	return describeDecisionTrace(trace)
+}
+
+func describeModeChangedEvent(event middleware.WorkspaceTimelineEvent) string {
+	if event.Mode == "" {
+		return ""
+	}
+	return "mode changed to " + event.Mode
+}
+
+func staticTimelineDescription(description string) func(middleware.WorkspaceTimelineEvent) string {
+	return func(middleware.WorkspaceTimelineEvent) string {
+		return description
+	}
+}
+
+func describeAgentTargetedEvent(prefix string) func(middleware.WorkspaceTimelineEvent) string {
+	return func(event middleware.WorkspaceTimelineEvent) string {
+		if event.AgentID == "" {
+			return ""
+		}
+		return prefix + event.AgentID
+	}
+}
+
+var workspaceEventTypeDescriptions = map[string]string{
+	"session.created":    "session created",
+	"session.resumed":    "session resumed",
+	"session.switched":   "session switched",
+	"session.canceled":   "session canceled",
+	"session.deleted":    "session deleted",
+	"workspace.bound":    "workspace bound",
+	"workspace.switched": "workspace switched",
+	"mode.changed":       "mode changed",
+	"intent.continue":    "continue intent",
+	"intent.resume":      "resume intent",
+	"intent.review":      "review intent",
+	"intent.explain":     "explain intent",
+	"intent.triage":      "triage intent",
+	"intent.handoff":     "handoff intent",
+	"handoff.created":    "handoff created",
+	"handoff.applied":    "handoff applied",
+	"decision.recorded":  "decision recorded",
 }
 
 func formatTimestamp(value string) string {

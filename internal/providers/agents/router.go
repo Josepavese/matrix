@@ -267,67 +267,84 @@ type simpleObserver struct {
 func (o *simpleObserver) OnUpdate(notif acpSessionNotification) {
 	log := slog.With("component", "acp_observer", "session", notif.SessionID, "update_type", notif.Update.SessionUpdate)
 	log.Info("session update received", "event", "session_update", "update_type", notif.Update.SessionUpdate, "text_len", len(notif.Update.Content.Text), "text_preview", truncate(notif.Update.Content.Text, 120))
+	o.handleStreamUpdate(log, notif)
+	o.mergeUpdateMetadata(notif.Update)
+}
 
+func (o *simpleObserver) handleStreamUpdate(log *slog.Logger, notif acpSessionNotification) {
 	switch notif.Update.SessionUpdate {
 	case "agent_message_chunk":
-		o.mu.Lock()
-		o.content += notif.Update.Content.Text
-		o.mu.Unlock()
-		// Stream message chunks to the thought notifier in real-time
-		if o.notifier != nil && notif.Update.Content.Text != "" {
-			o.notifier.OnThought(middleware.ThoughtUpdate{
-				Type:    middleware.ThoughtTypeThinking,
-				Content: notif.Update.Content.Text,
-			})
-		}
-		if o.updates != nil {
-			select {
-			case o.updates <- struct{}{}:
-			default:
-			}
-		}
+		o.appendMessageChunk(notif.Update.Content.Text)
 	case "agent_thought_chunk":
-		// Agent reasoning — not included in the user-visible response.
-		// Forwarded to the UI as a "thinking" indicator if a notifier is set.
-		if o.notifier != nil {
-			o.notifier.OnThought(middleware.ThoughtUpdate{
-				Type:    middleware.ThoughtTypeThinking,
-				Content: notif.Update.Content.Text,
-			})
-		}
+		o.forwardThought(middleware.ThoughtTypeThinking, notif.Update.Content.Text, "", nil)
 	case "tool_call", "tool_call_update":
-		log.Info("tool call update", "event", "tool_call_update", "text_len", len(notif.Update.Content.Text))
-		if o.notifier != nil {
-			t := middleware.ThoughtTypeToolCall
-			if notif.Update.SessionUpdate == "tool_call_update" {
-				t = middleware.ThoughtTypeToolResult
-			}
-			o.notifier.OnThought(middleware.ThoughtUpdate{
-				Type:     t,
-				Content:  notif.Update.Content.Text,
-				Title:    notif.Update.Title,
-				Metadata: toolUpdateMetadata(notif),
-			})
-		}
+		o.forwardToolUpdate(log, notif)
 	}
+}
 
-	if notif.Update.Title != "" || notif.Update.UpdatedAt != "" || len(notif.Update.Meta) > 0 {
-		o.mu.Lock()
-		if notif.Update.Title != "" {
-			o.metadata.Title = notif.Update.Title
-		}
-		if notif.Update.UpdatedAt != "" {
-			o.metadata.UpdatedAt = notif.Update.UpdatedAt
-		}
-		if len(notif.Update.Meta) > 0 {
-			if o.metadata.Meta == nil {
-				o.metadata.Meta = make(map[string]interface{}, len(notif.Update.Meta))
-			}
-			for k, v := range notif.Update.Meta {
-				o.metadata.Meta[k] = v
-			}
-		}
-		o.mu.Unlock()
+func (o *simpleObserver) appendMessageChunk(text string) {
+	o.mu.Lock()
+	o.content += text
+	o.mu.Unlock()
+	o.forwardThought(middleware.ThoughtTypeThinking, text, "", nil)
+	o.signalUpdate()
+}
+
+func (o *simpleObserver) forwardToolUpdate(log *slog.Logger, notif acpSessionNotification) {
+	log.Info("tool call update", "event", "tool_call_update", "text_len", len(notif.Update.Content.Text))
+	thoughtType := middleware.ThoughtTypeToolCall
+	if notif.Update.SessionUpdate == "tool_call_update" {
+		thoughtType = middleware.ThoughtTypeToolResult
+	}
+	o.forwardThought(thoughtType, notif.Update.Content.Text, notif.Update.Title, toolUpdateMetadata(notif))
+}
+
+func (o *simpleObserver) forwardThought(thoughtType middleware.ThoughtUpdateType, content, title string, metadata map[string]interface{}) {
+	if o.notifier == nil || content == "" {
+		return
+	}
+	o.notifier.OnThought(middleware.ThoughtUpdate{
+		Type:     thoughtType,
+		Content:  content,
+		Title:    title,
+		Metadata: metadata,
+	})
+}
+
+func (o *simpleObserver) signalUpdate() {
+	if o.updates == nil {
+		return
+	}
+	select {
+	case o.updates <- struct{}{}:
+	default:
+	}
+}
+
+func (o *simpleObserver) mergeUpdateMetadata(update acpSessionUpdate) {
+	if update.Title == "" && update.UpdatedAt == "" && len(update.Meta) == 0 {
+		return
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if update.Title != "" {
+		o.metadata.Title = update.Title
+	}
+	if update.UpdatedAt != "" {
+		o.metadata.UpdatedAt = update.UpdatedAt
+	}
+	o.mergeMetadataMap(update.Meta)
+}
+
+func (o *simpleObserver) mergeMetadataMap(values map[string]interface{}) {
+	if len(values) == 0 {
+		return
+	}
+	if o.metadata.Meta == nil {
+		o.metadata.Meta = make(map[string]interface{}, len(values))
+	}
+	for k, v := range values {
+		o.metadata.Meta[k] = v
 	}
 }
 

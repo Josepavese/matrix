@@ -60,127 +60,171 @@ func (m *Manager) routeAgentTurnWithWorkspace(ctx context.Context, req middlewar
 	return m.routeResolvedSession(ctx, req, sessionID, agentID)
 }
 
+type workspaceRouteRequest struct {
+	ChannelID     string
+	TargetAgent   string
+	WorkspaceID   string
+	WorkspacePath string
+}
+
 func (m *Manager) getOrCreateSessionForWorkspace(channelID, targetAgent, workspaceID, workspacePath string) (string, *routeDecision, error) {
-	state, err := m.getChannelState(channelID)
-	if err == nil && state.ActiveSessionID != "" {
-		meta, found, metaErr := m.loadSessionMeta(state.ActiveSessionID)
-		if metaErr == nil && found {
-			if sessionMatchesWorkspaceHints(meta, workspaceID, workspacePath) && (strings.TrimSpace(targetAgent) == "" || meta.AgentID == targetAgent) {
-				if err := m.updateChannelWorkspaceState(channelID, meta.WorkspaceID); err != nil {
-					return "", nil, err
-				}
-				return state.ActiveSessionID, &routeDecision{
-					Kind:              "reuse-active-session",
-					Source:            "channel-active",
-					Explanation:       "Reused the channel's active session because it already matched the requested workspace and agent.",
-					RequestedAgentID:  strings.TrimSpace(targetAgent),
-					SelectedAgentID:   meta.AgentID,
-					SelectedSessionID: state.ActiveSessionID,
-					SelectedMode:      normalizeMode(meta.Mode),
-				}, nil
-			}
-		}
+	req := workspaceRouteRequest{
+		ChannelID:     channelID,
+		TargetAgent:   strings.TrimSpace(targetAgent),
+		WorkspaceID:   strings.TrimSpace(workspaceID),
+		WorkspacePath: strings.TrimSpace(workspacePath),
 	}
+	state, stateErr := m.getChannelState(req.ChannelID)
+	if sessionID, decision, reused, err := m.reuseActiveWorkspaceSession(req, state, stateErr); err != nil || reused {
+		return sessionID, decision, err
+	}
+	if sessionID, decision, resumed, err := m.resumeIndexedWorkspaceSession(req); err != nil || resumed {
+		return sessionID, decision, err
+	}
+	if stateErr == nil && strings.TrimSpace(state.PreferredWorkspaceID) != "" && req.WorkspaceID == "" {
+		req.WorkspaceID = state.PreferredWorkspaceID
+		return m.getOrCreateSessionForWorkspace(req.ChannelID, req.TargetAgent, req.WorkspaceID, req.WorkspacePath)
+	}
+	return m.createWorkspaceSession(req)
+}
 
-	if strings.TrimSpace(workspaceID) != "" {
-		sessionIDs, err := workspace.LoadSessionIndex(m.storage, workspaceID)
-		if err != nil {
-			return "", nil, err
-		}
-		var fallbackSessionID string
-		for _, sessionID := range sessionIDs {
-			meta, found, err := m.loadSessionMeta(sessionID)
-			if err != nil || !found {
-				continue
-			}
-			if strings.TrimSpace(meta.WorkspaceID) != workspaceID {
-				continue
-			}
-			if strings.TrimSpace(targetAgent) != "" && meta.AgentID != targetAgent {
-				if fallbackSessionID == "" {
-					fallbackSessionID = sessionID
-				}
-				continue
-			}
-			if err := m.attachChannelWithEvent(channelID, sessionID, "session.resumed", "Resumed workspace session", "workspace-resume", nil); err != nil {
-				return "", nil, err
-			}
-			if err := m.updateChannelWorkspaceState(channelID, workspaceID); err != nil {
-				return "", nil, err
-			}
-			return sessionID, &routeDecision{
-				Kind:              "resume-workspace-session",
-				Source:            "workspace-session-index",
-				Explanation:       "Resumed an existing session from the workspace because it matched the requested agent.",
-				RequestedAgentID:  strings.TrimSpace(targetAgent),
-				SelectedAgentID:   meta.AgentID,
-				SelectedSessionID: sessionID,
-				SelectedMode:      normalizeMode(meta.Mode),
-			}, nil
-		}
-		if strings.TrimSpace(targetAgent) == "" && fallbackSessionID != "" {
-			if err := m.attachChannelWithEvent(channelID, fallbackSessionID, "session.resumed", "Resumed workspace session", "workspace-resume", nil); err != nil {
-				return "", nil, err
-			}
-			if err := m.updateChannelWorkspaceState(channelID, workspaceID); err != nil {
-				return "", nil, err
-			}
-			meta, found, loadErr := m.loadSessionMeta(fallbackSessionID)
-			if loadErr != nil {
-				return "", nil, loadErr
-			}
-			if !found {
-				return "", nil, fmt.Errorf("workspace session %s not found", fallbackSessionID)
-			}
-			return fallbackSessionID, &routeDecision{
-				Kind:              "resume-workspace-session",
-				Source:            "workspace-session-index-fallback",
-				Explanation:       "Resumed the most recent workspace session because no explicit agent was requested.",
-				RequestedAgentID:  strings.TrimSpace(targetAgent),
-				SelectedAgentID:   meta.AgentID,
-				SelectedSessionID: fallbackSessionID,
-				SelectedMode:      normalizeMode(meta.Mode),
-				FallbackUsed:      true,
-			}, nil
-		}
+func (m *Manager) reuseActiveWorkspaceSession(req workspaceRouteRequest, state ChannelState, stateErr error) (string, *routeDecision, bool, error) {
+	if !canReuseActiveState(state, stateErr) {
+		return "", nil, false, nil
 	}
+	meta, found := m.loadReusableSessionMeta(state.ActiveSessionID)
+	if !found || !workspaceRouteMatches(meta, req) {
+		return "", nil, false, nil
+	}
+	if err := m.updateChannelWorkspaceState(req.ChannelID, meta.WorkspaceID); err != nil {
+		return "", nil, true, err
+	}
+	return state.ActiveSessionID, reuseActiveDecision(req, meta, state.ActiveSessionID), true, nil
+}
 
-	if err == nil && strings.TrimSpace(state.PreferredWorkspaceID) != "" && workspaceID == "" {
-		return m.getOrCreateSessionForWorkspace(channelID, targetAgent, state.PreferredWorkspaceID, workspacePath)
-	}
+func canReuseActiveState(state ChannelState, stateErr error) bool {
+	return stateErr == nil && strings.TrimSpace(state.ActiveSessionID) != ""
+}
 
-	resolvedAgent := strings.TrimSpace(targetAgent)
-	if resolvedAgent == "" && strings.TrimSpace(workspaceID) != "" {
-		if ws, found, err := workspace.LoadMeta(m.storage, workspaceID); err == nil && found && strings.TrimSpace(ws.DefaultAgentID) != "" {
-			resolvedAgent = ws.DefaultAgentID
+func (m *Manager) loadReusableSessionMeta(sessionID string) (SessionMeta, bool) {
+	meta, found, err := m.loadSessionMeta(sessionID)
+	return meta, err == nil && found
+}
+
+func workspaceRouteMatches(meta SessionMeta, req workspaceRouteRequest) bool {
+	return sessionMatchesWorkspaceHints(meta, req.WorkspaceID, req.WorkspacePath) &&
+		(req.TargetAgent == "" || meta.AgentID == req.TargetAgent)
+}
+
+func reuseActiveDecision(req workspaceRouteRequest, meta SessionMeta, sessionID string) *routeDecision {
+	return &routeDecision{
+		Kind:              "reuse-active-session",
+		Source:            "channel-active",
+		Explanation:       "Reused the channel's active session because it already matched the requested workspace and agent.",
+		RequestedAgentID:  req.TargetAgent,
+		SelectedAgentID:   meta.AgentID,
+		SelectedSessionID: sessionID,
+		SelectedMode:      normalizeMode(meta.Mode),
+	}
+}
+
+func (m *Manager) resumeIndexedWorkspaceSession(req workspaceRouteRequest) (string, *routeDecision, bool, error) {
+	if strings.TrimSpace(req.WorkspaceID) == "" {
+		return "", nil, false, nil
+	}
+	sessionIDs, err := workspace.LoadSessionIndex(m.storage, req.WorkspaceID)
+	if err != nil {
+		return "", nil, true, err
+	}
+	for _, sessionID := range sessionIDs {
+		candidate, ok := m.workspaceSessionCandidate(req, sessionID)
+		if !ok {
+			continue
 		}
+		if req.TargetAgent != "" && candidate.Meta.AgentID != req.TargetAgent {
+			continue
+		}
+		return m.resumeWorkspaceSession(req, candidate)
 	}
-	if resolvedAgent == "" {
-		resolvedAgent = m.defaultAgent
+	return "", nil, false, nil
+}
+
+type workspaceSessionCandidate struct {
+	SessionID string
+	Meta      SessionMeta
+}
+
+func (m *Manager) workspaceSessionCandidate(req workspaceRouteRequest, sessionID string) (workspaceSessionCandidate, bool) {
+	meta, found, err := m.loadSessionMeta(sessionID)
+	if err != nil || !found || strings.TrimSpace(meta.WorkspaceID) != req.WorkspaceID {
+		return workspaceSessionCandidate{}, false
 	}
-	sessionID, err := m.forceNewSessionWithWorkspace(channelID, resolvedAgent, workspaceID, workspacePath)
+	return workspaceSessionCandidate{SessionID: sessionID, Meta: meta}, true
+}
+
+func (m *Manager) resumeWorkspaceSession(req workspaceRouteRequest, candidate workspaceSessionCandidate) (string, *routeDecision, bool, error) {
+	if err := m.attachChannelWithEvent(req.ChannelID, candidate.SessionID, "session.resumed", "Resumed workspace session", "workspace-resume", nil); err != nil {
+		return "", nil, true, err
+	}
+	if err := m.updateChannelWorkspaceState(req.ChannelID, req.WorkspaceID); err != nil {
+		return "", nil, true, err
+	}
+	return candidate.SessionID, resumeWorkspaceDecision(req, candidate), true, nil
+}
+
+func resumeWorkspaceDecision(req workspaceRouteRequest, candidate workspaceSessionCandidate) *routeDecision {
+	return &routeDecision{
+		Kind:              "resume-workspace-session",
+		Source:            "workspace-session-index",
+		Explanation:       "Resumed an existing session from the workspace because it matched the requested agent.",
+		RequestedAgentID:  req.TargetAgent,
+		SelectedAgentID:   candidate.Meta.AgentID,
+		SelectedSessionID: candidate.SessionID,
+		SelectedMode:      normalizeMode(candidate.Meta.Mode),
+	}
+}
+
+func (m *Manager) createWorkspaceSession(req workspaceRouteRequest) (string, *routeDecision, error) {
+	resolvedAgent := m.resolveWorkspaceRouteAgent(req)
+	sessionID, err := m.forceNewSessionWithWorkspace(req.ChannelID, resolvedAgent, req.WorkspaceID, req.WorkspacePath)
 	if err != nil {
 		return "", nil, err
 	}
+	return sessionID, createWorkspaceDecision(req, resolvedAgent, sessionID), nil
+}
+
+func (m *Manager) resolveWorkspaceRouteAgent(req workspaceRouteRequest) string {
+	if req.TargetAgent != "" {
+		return req.TargetAgent
+	}
+	if req.WorkspaceID != "" {
+		if ws, found, err := workspace.LoadMeta(m.storage, req.WorkspaceID); err == nil && found && strings.TrimSpace(ws.DefaultAgentID) != "" {
+			return ws.DefaultAgentID
+		}
+	}
+	return m.defaultAgent
+}
+
+func createWorkspaceDecision(req workspaceRouteRequest, resolvedAgent, sessionID string) *routeDecision {
 	source := "requested-agent"
 	explanation := "Created a new session for the explicitly requested agent."
-	if strings.TrimSpace(targetAgent) == "" && strings.TrimSpace(workspaceID) != "" {
+	if req.TargetAgent == "" && req.WorkspaceID != "" {
 		source = "workspace-default-agent"
 		explanation = "Created a new session using the workspace default agent because no explicit agent was requested."
 	}
-	if strings.TrimSpace(targetAgent) == "" && strings.TrimSpace(workspaceID) == "" {
+	if req.TargetAgent == "" && req.WorkspaceID == "" {
 		source = "global-default-agent"
 		explanation = "Created a new session using the global default agent because no explicit agent or workspace default was available."
 	}
-	return sessionID, &routeDecision{
+	return &routeDecision{
 		Kind:              "create-session",
 		Source:            source,
 		Explanation:       explanation,
-		RequestedAgentID:  strings.TrimSpace(targetAgent),
+		RequestedAgentID:  req.TargetAgent,
 		SelectedAgentID:   resolvedAgent,
 		SelectedSessionID: sessionID,
 		SelectedMode:      modeImplementation,
-	}, nil
+	}
 }
 
 func (m *Manager) bindSessionWorkspace(meta *SessionMeta, workspaceID, workspacePath string) error {

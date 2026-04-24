@@ -210,66 +210,75 @@ func (m *Manager) handleModeActionTyped(ctx context.Context, channelID, lang, mo
 }
 
 func (m *Manager) handleExplainModeTyped(ctx context.Context, channelID, lang, target string) (middleware.IntentActionResult, error) {
-	state, _ := m.getChannelState(channelID)
-	if strings.TrimSpace(target) != "" {
-		if _, err := m.handleResumeIntentTyped(ctx, channelID, lang, target); err != nil {
-			return middleware.IntentActionResult{}, err
-		}
-		state, _ = m.getChannelState(channelID)
-	}
-	if strings.TrimSpace(state.ActiveSessionID) == "" {
-		return middleware.IntentActionResult{Intent: "explain", Message: m.wizard.GetString(lang, "status_empty")}, nil
-	}
-	meta, found, err := m.loadSessionMeta(state.ActiveSessionID)
-	if err != nil {
-		return middleware.IntentActionResult{}, err
-	}
-	if !found {
-		return middleware.IntentActionResult{Intent: "explain", Message: m.wizard.GetString(lang, "status_empty")}, nil
-	}
-	meta.Mode = modeExplain
-	if err := m.saveSessionMeta(meta); err != nil {
-		return middleware.IntentActionResult{}, err
-	}
-	m.recordWorkspaceEvent(meta, "mode.changed", channelID, "Changed mode to explain", "mode-change", nil)
-	m.recordWorkspaceEvent(meta, "intent.explain", channelID, "Entered explain mode", "intent-explain", nil)
-	wsEntry, _ := m.currentWorkspaceEntry(state, meta)
-	return middleware.IntentActionResult{
-		Intent:    "explain",
-		Message:   fmt.Sprintf(m.wizard.GetString(lang, "intent_explain"), valueOrDash(meta.WorkspaceID), meta.AgentID),
-		Workspace: wsEntry,
-		Session:   m.toSessionEntry(meta, true),
-	}, nil
+	return m.handleSimpleModeIntent(simpleModeIntentRequest{Ctx: ctx, ChannelID: channelID, Lang: lang, Target: target, Spec: simpleModeIntentSpec{
+		Intent:       "explain",
+		Mode:         modeExplain,
+		WizardKey:    "intent_explain",
+		ModeMessage:  "Changed mode to explain",
+		IntentEvent:  "intent.explain",
+		IntentReason: "intent-explain",
+		IntentDetail: "Entered explain mode",
+	}})
 }
 
 func (m *Manager) handleTriageModeTyped(ctx context.Context, channelID, lang, target string) (middleware.IntentActionResult, error) {
-	state, _ := m.getChannelState(channelID)
-	if strings.TrimSpace(target) != "" {
-		if _, err := m.handleResumeIntentTyped(ctx, channelID, lang, target); err != nil {
+	return m.handleSimpleModeIntent(simpleModeIntentRequest{Ctx: ctx, ChannelID: channelID, Lang: lang, Target: target, Spec: simpleModeIntentSpec{
+		Intent:       "triage",
+		Mode:         modeTriage,
+		WizardKey:    "intent_triage",
+		ModeMessage:  "Changed mode to triage",
+		IntentEvent:  "intent.triage",
+		IntentReason: "intent-triage",
+		IntentDetail: "Entered triage mode",
+	}})
+}
+
+type simpleModeIntentRequest struct {
+	Ctx       context.Context
+	ChannelID string
+	Lang      string
+	Target    string
+	Spec      simpleModeIntentSpec
+}
+
+type simpleModeIntentSpec struct {
+	Intent       string
+	Mode         string
+	WizardKey    string
+	ModeMessage  string
+	IntentEvent  string
+	IntentReason string
+	IntentDetail string
+}
+
+func (m *Manager) handleSimpleModeIntent(req simpleModeIntentRequest) (middleware.IntentActionResult, error) {
+	state, _ := m.getChannelState(req.ChannelID)
+	if strings.TrimSpace(req.Target) != "" {
+		if _, err := m.handleResumeIntentTyped(req.Ctx, req.ChannelID, req.Lang, req.Target); err != nil {
 			return middleware.IntentActionResult{}, err
 		}
-		state, _ = m.getChannelState(channelID)
+		state, _ = m.getChannelState(req.ChannelID)
 	}
 	if strings.TrimSpace(state.ActiveSessionID) == "" {
-		return middleware.IntentActionResult{Intent: "triage", Message: m.wizard.GetString(lang, "status_empty")}, nil
+		return middleware.IntentActionResult{Intent: req.Spec.Intent, Message: m.wizard.GetString(req.Lang, "status_empty")}, nil
 	}
 	meta, found, err := m.loadSessionMeta(state.ActiveSessionID)
 	if err != nil {
 		return middleware.IntentActionResult{}, err
 	}
 	if !found {
-		return middleware.IntentActionResult{Intent: "triage", Message: m.wizard.GetString(lang, "status_empty")}, nil
+		return middleware.IntentActionResult{Intent: req.Spec.Intent, Message: m.wizard.GetString(req.Lang, "status_empty")}, nil
 	}
-	meta.Mode = modeTriage
+	meta.Mode = req.Spec.Mode
 	if err := m.saveSessionMeta(meta); err != nil {
 		return middleware.IntentActionResult{}, err
 	}
-	m.recordWorkspaceEvent(meta, "mode.changed", channelID, "Changed mode to triage", "mode-change", nil)
-	m.recordWorkspaceEvent(meta, "intent.triage", channelID, "Entered triage mode", "intent-triage", nil)
+	m.recordWorkspaceEvent(meta, "mode.changed", req.ChannelID, req.Spec.ModeMessage, "mode-change", nil)
+	m.recordWorkspaceEvent(meta, req.Spec.IntentEvent, req.ChannelID, req.Spec.IntentDetail, req.Spec.IntentReason, nil)
 	wsEntry, _ := m.currentWorkspaceEntry(state, meta)
 	return middleware.IntentActionResult{
-		Intent:    "triage",
-		Message:   fmt.Sprintf(m.wizard.GetString(lang, "intent_triage"), valueOrDash(meta.WorkspaceID), meta.AgentID),
+		Intent:    req.Spec.Intent,
+		Message:   fmt.Sprintf(m.wizard.GetString(req.Lang, req.Spec.WizardKey), valueOrDash(meta.WorkspaceID), meta.AgentID),
 		Workspace: wsEntry,
 		Session:   m.toSessionEntry(meta, true),
 	}, nil

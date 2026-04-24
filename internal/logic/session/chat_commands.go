@@ -18,24 +18,39 @@ func (m *Manager) handleSessionCommand(ctx context.Context, channelID, input str
 
 	command := parts[1]
 	args := strings.TrimSpace(strings.TrimPrefix(input, parts[0]+" "+parts[1]))
+	var (
+		result middleware.SessionActionResult
+		err    error
+	)
 	switch command {
 	case "status":
-		return m.handleSessionStatus(channelID, lang)
+		result, err = m.handleSessionStatusTyped(channelID, lang, "")
 	case "name":
-		return m.handleSessionName(channelID, lang, args)
+		result, err = m.handleSessionNameTyped(channelID, lang, args)
 	case "new":
-		return m.handleSessionNew(channelID, lang, parts)
+		result, err = m.handleSessionNewTyped(newSessionRequest{ChannelID: channelID, Lang: lang, AgentID: agentFromSessionParts(parts, m.defaultAgent)})
 	case "list":
-		return m.handleSessionList(ctx, channelID, lang)
+		result, err = m.handleSessionListTyped(ctx, channelID, lang, "")
 	case "switch":
-		return m.handleSessionSwitch(ctx, channelID, lang, args)
+		result, err = m.handleSessionSwitchTyped(ctx, channelID, lang, args)
 	case "delete":
-		return m.handleSessionDelete(ctx, channelID, lang, args)
+		result, err = m.handleSessionDeleteTyped(ctx, sessionCleanupRequest{ChannelID: channelID, Lang: lang, Target: args})
 	case "cancel":
-		return m.handleSessionCancel(ctx, channelID, lang, args)
+		result, err = m.handleSessionCancelTyped(ctx, channelID, lang, args)
 	default:
 		return m.wizard.GetString(lang, "session_command_unknown"), nil
 	}
+	if err != nil {
+		return "", err
+	}
+	return m.renderSessionAction(result, lang), nil
+}
+
+func agentFromSessionParts(parts []string, fallback string) string {
+	if len(parts) >= 3 {
+		return parts[2]
+	}
+	return fallback
 }
 
 func (m *Manager) handleActionCommand(ctx context.Context, channelID string, input string) (string, error) {

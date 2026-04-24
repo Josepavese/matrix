@@ -12,14 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-func (m *Manager) handleSessionStatus(channelID, lang string) (string, error) {
-	result, err := m.handleSessionStatusTyped(channelID, lang, "")
-	if err != nil {
-		return "", err
-	}
-	return m.renderSessionAction(result, lang), nil
-}
-
 func (m *Manager) handleSessionStatusTyped(channelID, lang, workspaceID string) (middleware.SessionActionResult, error) {
 	if state, err := m.getChannelState(channelID); err == nil && strings.TrimSpace(workspaceID) == "" && strings.TrimSpace(state.ActiveSessionID) != "" {
 		meta, found, err := m.loadSessionMeta(state.ActiveSessionID)
@@ -51,14 +43,6 @@ func (m *Manager) handleSessionStatusTyped(channelID, lang, workspaceID string) 
 		ActiveSessionID: meta.ID,
 		Session:         m.toSessionEntry(meta, true),
 	}, nil
-}
-
-func (m *Manager) handleSessionName(channelID, lang, alias string) (string, error) {
-	result, err := m.handleSessionNameTyped(channelID, lang, alias)
-	if err != nil {
-		return "", err
-	}
-	return m.renderSessionAction(result, lang), nil
 }
 
 func (m *Manager) handleSessionNameTyped(channelID, lang, alias string) (middleware.SessionActionResult, error) {
@@ -95,30 +79,6 @@ func (m *Manager) handleSessionNameTyped(channelID, lang, alias string) (middlew
 	}, nil
 }
 
-func (m *Manager) handleSessionNew(channelID, lang string, parts []string) (string, error) {
-	agentID := m.defaultAgent
-	if len(parts) >= 3 {
-		agentID = parts[2]
-	}
-	result, err := m.handleSessionNewTyped(newSessionRequest{
-		ChannelID: channelID,
-		Lang:      lang,
-		AgentID:   agentID,
-	})
-	if err != nil {
-		return "", err
-	}
-	return m.renderSessionAction(result, lang), nil
-}
-
-func (m *Manager) handleSessionList(ctx context.Context, channelID, lang string) (string, error) {
-	result, err := m.handleSessionListTyped(ctx, channelID, lang, "")
-	if err != nil {
-		return "", err
-	}
-	return m.renderSessionAction(result, lang), nil
-}
-
 func (m *Manager) handleSessionListTyped(ctx context.Context, channelID, lang, workspaceID string) (middleware.SessionActionResult, error) {
 	state, err := m.getChannelState(channelID)
 	if err != nil {
@@ -152,14 +112,6 @@ func (m *Manager) handleSessionListTyped(ctx context.Context, channelID, lang, w
 		}
 	}
 	return result, nil
-}
-
-func (m *Manager) handleSessionSwitch(ctx context.Context, channelID, lang, args string) (string, error) {
-	result, err := m.handleSessionSwitchTyped(ctx, channelID, lang, args)
-	if err != nil {
-		return "", err
-	}
-	return m.renderSessionAction(result, lang), nil
 }
 
 func (m *Manager) handleSessionSwitchTyped(ctx context.Context, channelID, lang, args string) (middleware.SessionActionResult, error) {
@@ -200,26 +152,6 @@ func (m *Manager) handleSessionSwitchTyped(ctx context.Context, channelID, lang,
 		ActiveSessionID: targetID,
 		Session:         m.toSessionEntry(meta, true),
 	}, nil
-}
-
-func (m *Manager) handleSessionDelete(ctx context.Context, channelID, lang, args string) (string, error) {
-	result, err := m.handleSessionDeleteTyped(ctx, sessionCleanupRequest{
-		ChannelID: channelID,
-		Lang:      lang,
-		Target:    args,
-	})
-	if err != nil {
-		return "", err
-	}
-	return m.renderSessionAction(result, lang), nil
-}
-
-func (m *Manager) handleSessionCancel(ctx context.Context, channelID, lang, args string) (string, error) {
-	result, err := m.handleSessionCancelTyped(ctx, channelID, lang, args)
-	if err != nil {
-		return "", err
-	}
-	return m.renderSessionAction(result, lang), nil
 }
 
 func (m *Manager) handleSessionCancelTyped(ctx context.Context, channelID, lang, args string) (middleware.SessionActionResult, error) {
@@ -341,34 +273,6 @@ func (m *Manager) loadSessionMetas(sessionIDs []string) ([]SessionMeta, error) {
 		metas = append(metas, meta)
 	}
 	return metas, nil
-}
-
-func (m *Manager) formatHistoryEntry(index int, lang string, meta SessionMeta) string {
-	aliasStr := ""
-	if meta.Alias != "" {
-		aliasStr = fmt.Sprintf("\"%s\" ", meta.Alias)
-	}
-
-	isActive := ""
-	if index == 0 {
-		isActive = m.wizard.GetString(lang, "session_history_active")
-	}
-
-	shortID := meta.ID
-	if len(shortID) > 6 {
-		shortID = shortID[:6]
-	}
-
-	title := ""
-	if meta.RemoteTitle != "" {
-		title = " - " + meta.RemoteTitle
-	}
-	workspaceLabel := ""
-	if meta.WorkspaceID != "" {
-		workspaceLabel = " @" + meta.WorkspaceID
-	}
-
-	return fmt.Sprintf("[%d] %s%s: %s(%s)%s%s\n", index+1, meta.AgentID, workspaceLabel, aliasStr, shortID, isActive, title)
 }
 
 func resolveSessionTarget(args string, state ChannelState, metas []SessionMeta) string {
@@ -669,33 +573,27 @@ func (m *Manager) renderSessionAction(result middleware.SessionActionResult, lan
 }
 
 func (m *Manager) formatSessionEntry(index int, lang string, session middleware.SessionEntry) string {
-	meta := SessionMeta{
-		ID:          session.LogicalSessionID,
-		AgentID:     session.AgentID,
-		Alias:       session.Alias,
-		RemoteTitle: session.Title,
-		WorkspaceID: session.WorkspaceID,
-	}
-	if session.Active {
-		return m.formatHistoryEntry(index, lang, meta)
-	}
-	shortID := meta.ID
+	shortID := session.LogicalSessionID
 	if len(shortID) > 6 {
 		shortID = shortID[:6]
 	}
 	aliasStr := ""
-	if meta.Alias != "" {
-		aliasStr = fmt.Sprintf("\"%s\" ", meta.Alias)
+	if session.Alias != "" {
+		aliasStr = fmt.Sprintf("\"%s\" ", session.Alias)
 	}
 	title := ""
-	if meta.RemoteTitle != "" {
-		title = " - " + meta.RemoteTitle
+	if session.Title != "" {
+		title = " - " + session.Title
 	}
 	workspaceLabel := ""
 	if session.WorkspaceID != "" {
 		workspaceLabel = " @" + session.WorkspaceID
 	}
-	return fmt.Sprintf("[%d] %s%s: %s(%s)%s\n", index+1, meta.AgentID, workspaceLabel, aliasStr, shortID, title)
+	active := ""
+	if session.Active {
+		active = m.wizard.GetString(lang, "session_history_active")
+	}
+	return fmt.Sprintf("[%d] %s%s: %s(%s)%s%s\n", index+1, session.AgentID, workspaceLabel, aliasStr, shortID, active, title)
 }
 
 func (m *Manager) removeSessionMirror(channelID, sessionID string) error {

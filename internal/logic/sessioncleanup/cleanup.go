@@ -140,23 +140,29 @@ func FailureCode(err error) string {
 }
 
 func IsClean(input CleanInput) bool {
-	remoteClean := strings.TrimSpace(input.RemoteSessionID) == "" ||
-		input.RemoteDeleted ||
-		input.RemoteClosed ||
-		input.RemoteCanceled ||
-		input.ProcessReaped ||
-		input.CleanupPolicy == middleware.SessionCleanupPolicyForgetLocal
-	processClean := !input.ProcessReapRequired ||
-		input.ProcessReaped ||
-		(input.ProcessRetained && input.ProcessRetentionAllowed) ||
-		(!input.ProcessRetained && input.ProcessRetentionReason == NoMatchingCachedAgentClient)
-	if !input.LocalForgotten || !remoteClean || !processClean {
+	if !input.LocalForgotten || !remoteCleanupSatisfied(input) || !processCleanupSatisfied(input) {
 		return false
 	}
 	if input.Ephemeral && !HasStrongProof(input) {
 		return false
 	}
 	return true
+}
+
+func remoteCleanupSatisfied(input CleanInput) bool {
+	return strings.TrimSpace(input.RemoteSessionID) == "" ||
+		input.RemoteDeleted ||
+		input.RemoteClosed ||
+		input.RemoteCanceled ||
+		input.ProcessReaped ||
+		input.CleanupPolicy == middleware.SessionCleanupPolicyForgetLocal
+}
+
+func processCleanupSatisfied(input CleanInput) bool {
+	return !input.ProcessReapRequired ||
+		input.ProcessReaped ||
+		input.ProcessRetained && input.ProcessRetentionAllowed ||
+		!input.ProcessRetained && input.ProcessRetentionReason == NoMatchingCachedAgentClient
 }
 
 func HasStrongProof(input CleanInput) bool {
