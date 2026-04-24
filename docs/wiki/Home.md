@@ -24,6 +24,7 @@ Matrix fixes that. It runs locally, connects to your agents, and gives you one c
 | [Channels](Channels.md) | Set up Telegram, use the HTTP API, or drive Matrix from the CLI |
 | [API Reference](API-Reference.md) | Complete HTTP API documentation with request/response examples |
 | [CLI Reference](CLI-Reference.md) | Every `matrix` command explained with examples |
+| [Governance](Governance.md) | Understand the release gates and product invariants maintainers enforce |
 | [Examples](Examples.md) | Step-by-step walkthroughs of common workflows |
 | [FAQ](FAQ.md) | Common questions and troubleshooting |
 
@@ -35,6 +36,7 @@ Matrix fixes that. It runs locally, connects to your agents, and gives you one c
 - [Hand off work between agents](Handoff.md)
 - [Attach sidecar context](Sidecar-Capsules.md)
 - [Check live context interrupt policy](../matrix_live_context_interrupt_policy.md)
+- [Review governance](Governance.md)
 - [Browse the API](API-Reference.md)
 
 ## Contributing

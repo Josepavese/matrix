@@ -155,6 +155,7 @@ The [Matrix Wiki](docs/wiki/Home.md) is the developer guide. It covers everythin
 - [Channels](docs/wiki/Channels.md) -- Telegram, HTTP API, CLI setup
 - [API Reference](docs/wiki/API-Reference.md) -- every endpoint with examples
 - [CLI Reference](docs/wiki/CLI-Reference.md) -- every command documented
+- [Governance](docs/wiki/Governance.md) -- release gates and maintainer invariants
 - [Examples](docs/wiki/Examples.md) -- step-by-step workflows
 - [FAQ](docs/wiki/FAQ.md) -- common questions and troubleshooting
 
@@ -176,6 +177,7 @@ For contributors and those interested in the product direction:
 - [Timeout and recovery](docs/matrix_timeout_recovery_policy.md)
 - [Production readiness](docs/matrix_production_readiness.md)
 - [Deployment policy](docs/matrix_deployment_policy.md)
+- [Governance](docs/governance/README.md)
 - [Threat model](docs/matrix_threat_model.md)
 - [Brand direction](docs/brand_direction.md)
 

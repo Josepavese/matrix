@@ -1,0 +1,88 @@
+[metadata]
+name = "matrix-governance"
+version = "1"
+purpose = "Release gate for Matrix product, architecture, code, test, issue, and deploy governance."
+
+[documents]
+required = [
+  "docs/governance/README.md",
+  "docs/governance/product_governance.md",
+  "docs/governance/architecture_governance.md",
+  "docs/governance/protocol_channel_governance.md",
+  "docs/governance/code_governance.md",
+  "docs/governance/deploy_governance.md",
+  "docs/governance/test_evidence_governance.md",
+  "docs/governance/issue_governance.md",
+  "docs/governance/security_governance.md",
+  "docs/wiki/Governance.md",
+  "code-governance.toml",
+  "docs/matrix_deployment_policy.md",
+  "docs/matrix_release_runbook.md",
+  "docs/matrix_protocol_neutral_runtime.md",
+  "docs/matrix_production_readiness.md"
+]
+
+[required_text]
+"docs/governance/README.md" = ["governance/manifest.toml", "governance_check", "release gate"]
+"docs/governance/product_governance.md" = ["crossroads", "human-to-agent", "agent-to-agent", "one-to-many", "many-to-many"]
+"docs/governance/architecture_governance.md" = ["protocol-neutral", "channel-neutral", "PAL", "vault", "SSOT"]
+"docs/governance/protocol_channel_governance.md" = ["ACP", "A2A", "Telegram", "HTTP", "capability"]
+"docs/governance/code_governance.md" = ["code-governance.toml", "override", "budget"]
+"docs/governance/deploy_governance.md" = ["GitHub Actions", "GoReleaser", "local install", "release evidence"]
+"docs/governance/test_evidence_governance.md" = ["real-agent", "smoke", "evidence"]
+"docs/governance/issue_governance.md" = ["issues/closed", "accepted", "rejected"]
+"docs/governance/security_governance.md" = ["vault", "secret", "installer", "token"]
+"docs/wiki/Governance.md" = ["governance_check", "protocol-neutral", "channel-neutral", "release evidence"]
+
+[preflight]
+file = "scripts/deploy_preflight.sh"
+required = [
+  "go run ./scripts/governance_check --manifest governance/manifest.toml",
+  "go run ./scripts/code_governance.go --config code-governance.toml",
+  "golangci-lint run",
+  "go test -race -v ./...",
+  "go build ./cmd/matrix",
+  "goreleaser check"
+]
+
+[ci]
+file = ".github/workflows/ci.yml"
+required = [
+  "go run ./scripts/governance_check --manifest governance/manifest.toml",
+  "go run ./scripts/code_governance.go --config code-governance.toml"
+]
+
+[release_workflow]
+file = ".github/workflows/release.yml"
+required = [
+  "tags:",
+  "contents: write",
+  "goreleaser/goreleaser-action",
+  "release --clean",
+  "GITHUB_TOKEN"
+]
+
+[goreleaser]
+file = ".goreleaser.yml"
+required = [
+  "goos:",
+  "linux",
+  "darwin",
+  "windows",
+  "goarch:",
+  "amd64",
+  "arm64",
+  "install/install.sh",
+  "install/install.ps1",
+  "checksums.txt"
+]
+
+[readme]
+file = "README.md"
+required = [
+  "Human to agent",
+  "Agent to agent",
+  "One to many",
+  "Many to many",
+  "Install without cloning the repo"
+]
