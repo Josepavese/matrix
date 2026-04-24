@@ -19,6 +19,7 @@ No release should depend on memory, chat history, or one person remembering whic
 
 These gates must be green before a production-oriented release:
 
+- governance manifest and architecture guardrails
 - code governance
 - Go formatting
 - lint
@@ -226,6 +227,13 @@ The code-governance file is a ratchet.
 - New exceptions require a reason.
 - Large files should be split before increasing limits.
 - Increasing a governance budget is a deployment-policy change, not a casual fix.
+
+The governance manifest is also a ratchet.
+
+- Required docs and templates must stay present.
+- Architecture `pattern_budget.*` guardrails must not be weakened casually.
+- New protocol, channel, or PAL-home exceptions require a documented reason.
+- Release evidence should use [governance/release_evidence_template.md](governance/release_evidence_template.md).
 
 ## Rollback Policy
 

@@ -15,4 +15,6 @@ Maintainer response format:
 - Scope: files, surfaces, or commands affected.
 - Evidence: tests, real-agent smoke, deploy status, or reason evidence is not applicable.
 
+Use [issue_triage_template.md](issue_triage_template.md) for external or local issues that require maintainer response.
+
 Issues must not create hidden vertical paths for one provider, one protocol, or one channel.
