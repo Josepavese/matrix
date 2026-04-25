@@ -106,6 +106,9 @@ func AppendErrorWithCode(existing, code, phase string, err error) (string, strin
 	existing = AppendError(existing, phase, err)
 	if code == "" {
 		code = FailureCode(err)
+		if code == "" {
+			code = strings.TrimSpace(phase)
+		}
 	}
 	return existing, code
 }

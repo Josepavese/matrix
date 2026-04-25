@@ -1199,3 +1199,45 @@ func TestHandleSessionActions_TypedForkChildTurnFailureUses502(t *testing.T) {
 		t.Fatalf("unexpected typed fork failure response: %+v", resp)
 	}
 }
+
+func TestHandleSessionActions_TypedCleanupFailureIncludesProof(t *testing.T) {
+	router := &mockSessionRouter{typedResult: middleware.SessionActionResult{
+		Action: "cleanup",
+		Error: &middleware.SessionActionError{
+			Code:    "remote_delete",
+			Message: "remote_delete: provider refused cleanup",
+			Target:  "parent",
+		},
+		Cleanup: &middleware.SessionCleanupResult{
+			LogicalSessionID:      "parent",
+			RemoteSessionID:       "remote-parent",
+			RemoteDeleteAttempted: true,
+			FailureCode:           "remote_delete",
+			Error:                 "remote_delete: provider refused cleanup",
+		},
+	}}
+	_, mux := setupServer(router, "", "")
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "ch1",
+		"action":         "cleanup",
+		"target":         "parent",
+		"cleanup_policy": "delete_remote",
+	})
+	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp middleware.SessionActionResult
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response parse error: %v", err)
+	}
+	if resp.Error == nil || resp.Error.Code != "remote_delete" {
+		t.Fatalf("expected typed cleanup error, got %+v", resp)
+	}
+	if resp.Cleanup == nil || resp.Cleanup.LogicalSessionID != "parent" || !resp.Cleanup.RemoteDeleteAttempted {
+		t.Fatalf("expected cleanup proof, got %+v", resp.Cleanup)
+	}
+}

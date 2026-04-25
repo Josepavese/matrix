@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -72,18 +73,54 @@ func (m *Manager) cleanupSessionTyped(ctx context.Context, req sessionCleanupReq
 		CleanupPolicy:    req.CleanupPolicy,
 		ForceForgetLocal: req.ForceForgetLocal,
 	})
-	if cleanup.Error != "" && !sessioncleanup.AllowsLocalForget(cleanup.CleanupPolicy) {
-		return middleware.SessionActionResult{}, fmt.Errorf("%s", cleanup.Error)
-	}
-	if cleanup.Error != "" && !cleanup.LocalForgotten {
-		return middleware.SessionActionResult{}, fmt.Errorf("%s", cleanup.Error)
-	}
-	return middleware.SessionActionResult{
+	result := middleware.SessionActionResult{
 		Action:  req.Action,
 		Message: sessioncleanup.Message(req.Action, cleanup),
 		Session: m.toSessionEntry(meta, false),
 		Cleanup: &cleanup,
-	}, nil
+	}
+	if cleanup.Error != "" || !cleanup.Clean {
+		result.Error = cleanupActionError(cleanup, targetID)
+		slog.Warn("matrix session cleanup returned typed failure",
+			"action", req.Action,
+			"target", targetID,
+			"agent_id", cleanup.AgentID,
+			"logical_session_id", cleanup.LogicalSessionID,
+			"remote_session_id", cleanup.RemoteSessionID,
+			"failure_code", cleanup.FailureCode,
+			"cleanup_strength", cleanup.CleanupStrength,
+			"clean", cleanup.Clean,
+			"strong_cleanup", cleanup.StrongCleanup,
+			"local_forgotten", cleanup.LocalForgotten,
+			"remote_deleted", cleanup.RemoteDeleted,
+			"remote_closed", cleanup.RemoteClosed,
+			"remote_canceled", cleanup.RemoteCanceled,
+			"process_reaped", cleanup.ProcessReaped,
+			"process_retained", cleanup.ProcessRetained,
+			"error", cleanup.Error,
+		)
+	}
+	return result, nil
+}
+
+func cleanupActionError(cleanup middleware.SessionCleanupResult, targetID string) *middleware.SessionActionError {
+	code := strings.TrimSpace(cleanup.FailureCode)
+	if code == "" {
+		if cleanup.Clean {
+			code = "cleanup_warning"
+		} else {
+			code = "cleanup_failed"
+		}
+	}
+	message := strings.TrimSpace(cleanup.Error)
+	if message == "" {
+		message = "cleanup did not reach a clean provider/process state"
+	}
+	return &middleware.SessionActionError{
+		Code:    code,
+		Message: message,
+		Target:  targetID,
+	}
 }
 
 func (m *Manager) cleanupMissingLocalSession(ctx context.Context, channelID, targetID string) (middleware.SessionActionResult, error) {
@@ -167,7 +204,8 @@ func (m *Manager) cleanupSessionMirrorAndRemote(ctx context.Context, req session
 	if !result.Clean && result.FailureCode == "" && !sessioncleanup.HasStrongProof(cleanInput) {
 		result.FailureCode = sessioncleanup.WeakReason(cleanInput)
 	}
-	if result.Clean && result.FailureCode == "" {
+	if result.Clean {
+		result.FailureCode = ""
 		result.Error = ""
 	}
 	m.recordWorkspaceEvent(req.Meta, "session.cleanup", req.ChannelID, "Cleaned up session", "session-cleanup", sessioncleanup.Metadata(result))
