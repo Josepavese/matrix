@@ -1981,6 +1981,62 @@ func TestSessionManager_CleanupPrefersCloseBeforeCancelWhenDeleteUnsupported(t *
 	}
 }
 
+func TestSessionManager_CleanupFailureReturnsTypedProof(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{deleteErr: errors.New("provider refused cleanup")}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	newResult, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "eval-channel",
+		Action:        "new",
+		Target:        "opencode",
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemote,
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	meta, found, err := mgr.loadSessionMeta(newResult.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("loadSessionMeta: err=%v found=%v", err, found)
+	}
+	meta.AgentSessionID = "remote-parent"
+	meta.ProtocolKind = string(middleware.ProtocolKindACP)
+	if err := mgr.saveSessionMeta(meta); err != nil {
+		t.Fatalf("saveSessionMeta: %v", err)
+	}
+
+	cleanup, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "eval-channel",
+		Action:        "cleanup",
+		Target:        meta.ID,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemote,
+	})
+	if err != nil {
+		t.Fatalf("cleanup should return typed proof, got error: %v", err)
+	}
+	if cleanup.Error == nil || cleanup.Error.Code != "remote_delete" {
+		t.Fatalf("expected typed remote_delete error, got %+v", cleanup)
+	}
+	if cleanup.Cleanup == nil {
+		t.Fatalf("expected cleanup proof")
+	}
+	proof := cleanup.Cleanup
+	if proof.Clean || proof.StrongCleanup || proof.LocalForgotten {
+		t.Fatalf("expected failed cleanup proof without local forget, got %+v", proof)
+	}
+	if !proof.RemoteDeleteAttempted || proof.RemoteDeleted || proof.FailureCode != "remote_delete" {
+		t.Fatalf("expected remote delete failure proof, got %+v", proof)
+	}
+	raw, _ := storage.Get("session.meta." + meta.ID)
+	if len(raw) == 0 {
+		t.Fatalf("delete_remote failure must preserve local mirror")
+	}
+}
+
 func TestSessionManager_SessionDeleteDeletesRemoteOnlyTarget(t *testing.T) {
 	storage := &mockStorage{data: make(map[string][]byte)}
 	if err := storage.Set("system.configured", []byte("true")); err != nil {

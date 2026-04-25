@@ -215,6 +215,7 @@ Behavior:
 - `/cancel` and `/stop` are UX aliases for `/session cancel`
 - `/session delete [target]` removes the local mirror and calls the closest remote lifecycle operation available
 - `cleanup` produces explicit proof fields: `clean`, `remote_deleted`, `remote_canceled`, `process_reaped`, `process_retained`, `process_retention_allowed`, `local_forgotten`, `remote_delete_unsupported`, optional `warnings`, and optional `failure_code`
+- `delete` and `cleanup` failures return typed JSON with `error.code` plus the `cleanup` proof whenever Matrix has cleanup state to report; lifecycle phase codes include `remote_delete`, `remote_close`, `remote_cancel`, `local_forget`, `local_status`, `process_reap`, and `process_reap_refs`
 - `/session new [agent]`, `/session name <alias>`, and `/session status` are exposed by the same typed session-action core used by HTTP and future channel adapters
 
 Defaulting:

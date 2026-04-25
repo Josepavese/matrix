@@ -217,6 +217,10 @@ func sessionActionHTTPStatus(result middleware.SessionActionResult) int {
 		return http.StatusBadGateway
 	case "fork_parent_restore_failed":
 		return http.StatusConflict
+	case "remote_delete", "remote_close", "remote_cancel", "process_reap", "cleanup_failed":
+		return http.StatusBadGateway
+	case "local_forget", "local_status", "process_reap_refs", "cleanup_clean_without_remote_or_process_proof", "cleanup_warning":
+		return http.StatusConflict
 	default:
 		return http.StatusBadRequest
 	}
