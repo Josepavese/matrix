@@ -206,24 +206,29 @@ func sessionActionHTTPStatus(result middleware.SessionActionResult) int {
 	if result.Error == nil {
 		return http.StatusCreated
 	}
-	switch result.Error.Code {
-	case "agent_not_found":
-		return http.StatusNotFound
-	case "missing_remote_session_id":
-		return http.StatusConflict
-	case "remote_session_materialize_failed":
-		return http.StatusBadGateway
-	case "fork_child_turn_failed", "fork_child_cleanup_failed":
-		return http.StatusBadGateway
-	case "fork_parent_restore_failed":
-		return http.StatusConflict
-	case "remote_delete", "remote_close", "remote_cancel", "process_reap", "cleanup_failed":
-		return http.StatusBadGateway
-	case "local_forget", "local_status", "process_reap_refs", "cleanup_clean_without_remote_or_process_proof", "cleanup_warning":
-		return http.StatusConflict
-	default:
-		return http.StatusBadRequest
+	if status, ok := sessionActionErrorStatus[result.Error.Code]; ok {
+		return status
 	}
+	return http.StatusBadRequest
+}
+
+var sessionActionErrorStatus = map[string]int{
+	"agent_not_found": http.StatusNotFound,
+	"cleanup_clean_without_remote_or_process_proof": http.StatusConflict,
+	"cleanup_failed":                    http.StatusBadGateway,
+	"cleanup_warning":                   http.StatusConflict,
+	"fork_child_cleanup_failed":         http.StatusBadGateway,
+	"fork_child_turn_failed":            http.StatusBadGateway,
+	"fork_parent_restore_failed":        http.StatusConflict,
+	"local_forget":                      http.StatusConflict,
+	"local_status":                      http.StatusConflict,
+	"missing_remote_session_id":         http.StatusConflict,
+	"process_reap":                      http.StatusBadGateway,
+	"process_reap_refs":                 http.StatusConflict,
+	"remote_cancel":                     http.StatusBadGateway,
+	"remote_close":                      http.StatusBadGateway,
+	"remote_delete":                     http.StatusBadGateway,
+	"remote_session_materialize_failed": http.StatusBadGateway,
 }
 
 // HandleWorkspaceActions is the typed HTTP handler for workspace control actions.
