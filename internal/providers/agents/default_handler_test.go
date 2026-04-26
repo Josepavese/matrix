@@ -9,9 +9,22 @@ import (
 
 	"strings"
 
+	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/exec"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
 )
+
+type recordingNotifier struct {
+	updates []middleware.ThoughtUpdate
+}
+
+func (n *recordingNotifier) OnThought(update middleware.ThoughtUpdate) {
+	n.updates = append(n.updates, update)
+}
+
+func (n *recordingNotifier) SetHeader(_, _ string) {}
+
+func (n *recordingNotifier) FormattedHeader() string { return "" }
 
 func TestHandleTerminalCreate_Echo(t *testing.T) {
 	handler := newConfigurableRequestHandler(nil).
@@ -253,6 +266,82 @@ func TestHandleFSWrite_Success(t *testing.T) {
 	}
 	if string(data) != "written by agent" {
 		t.Errorf("file content = %q, want 'written by agent'", string(data))
+	}
+}
+
+func TestHandleFSWrite_EmitsStructuralToolEvents(t *testing.T) {
+	tmpDir := t.TempDir()
+	notifier := &recordingNotifier{}
+	handler := newConfigurableRequestHandler(nil).
+		WithFS(osfs.NewFSProvider(), tmpDir).
+		WithNotifier(notifier)
+
+	params, _ := json.Marshal(map[string]interface{}{
+		"path":    "sub/dir/output.txt",
+		"content": "sensitive file content must not enter metadata",
+	})
+	if _, err := handler.HandleRequest(context.Background(), "fs/write_text_file", params); err != nil {
+		t.Fatalf("fs/write_text_file: %v", err)
+	}
+
+	if len(notifier.updates) != 2 {
+		t.Fatalf("expected request and result tool updates, got %#v", notifier.updates)
+	}
+	if notifier.updates[0].Type != middleware.ThoughtTypeToolCall || notifier.updates[1].Type != middleware.ThoughtTypeToolResult {
+		t.Fatalf("unexpected update types: %#v", notifier.updates)
+	}
+	meta := notifier.updates[0].Metadata
+	if meta["protocol_method"] != "fs/write_text_file" || meta["tool_kind"] != "edit" || meta["tool_name"] != "write_file" {
+		t.Fatalf("unexpected request metadata: %#v", meta)
+	}
+	path, ok := meta["path"].(string)
+	if !ok || !strings.HasSuffix(path, "sub/dir/output.txt") {
+		t.Fatalf("expected resolved path in metadata, got %#v", meta["path"])
+	}
+	raw, ok := meta["raw_input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected sanitized raw_input, got %#v", meta["raw_input"])
+	}
+	if _, leaked := raw["content"]; leaked {
+		t.Fatalf("raw_input leaked file content: %#v", raw)
+	}
+	if notifier.updates[1].Metadata["status"] != "completed" {
+		t.Fatalf("expected completed result metadata, got %#v", notifier.updates[1].Metadata)
+	}
+}
+
+func TestHandleTerminalCreate_EmitsStructuralToolEvents(t *testing.T) {
+	tmpDir := t.TempDir()
+	notifier := &recordingNotifier{}
+	handler := newConfigurableRequestHandler(nil).
+		WithProcess(exec.NewProvider()).
+		WithFS(osfs.NewFSProvider(), tmpDir).
+		WithNotifier(notifier)
+
+	params, _ := json.Marshal(map[string]interface{}{
+		"command": "sh",
+		"args":    []string{"-c", "exit 42"},
+	})
+	result, err := handler.HandleRequest(context.Background(), "terminal/create", params)
+	if err != nil {
+		t.Fatalf("terminal/create: %v", err)
+	}
+	resultMap, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map result, got %T", result)
+	}
+	if resultMap["exitCode"] != 42 {
+		t.Fatalf("expected nonzero command result, got %#v", result)
+	}
+
+	if len(notifier.updates) != 2 {
+		t.Fatalf("expected request and result tool updates, got %#v", notifier.updates)
+	}
+	if notifier.updates[0].Metadata["tool_kind"] != "execute" || notifier.updates[0].Metadata["protocol_method"] != "terminal/create" {
+		t.Fatalf("unexpected request metadata: %#v", notifier.updates[0].Metadata)
+	}
+	if notifier.updates[1].Metadata["status"] != "failed" || notifier.updates[1].Metadata["exit_code"] != 42 {
+		t.Fatalf("expected failed result metadata, got %#v", notifier.updates[1].Metadata)
 	}
 }
 

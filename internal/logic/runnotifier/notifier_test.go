@@ -108,6 +108,75 @@ func TestNotifierNormalizesFrontendToolEvents(t *testing.T) {
 	}
 }
 
+func TestNotifierRecordsMetadataOnlyACPToolEvents(t *testing.T) {
+	store := runtrace.NewStore(memstore.New())
+	run, _, err := store.Start(runtrace.Run{
+		AgentID:     "opencode",
+		Protocol:    "acp",
+		ChannelID:   "http.test",
+		TracePolicy: runtrace.TracePolicy{ContentMode: runtrace.ContentModeInline, RedactionProfile: "frontend", IncludeProtocolMeta: false},
+	})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	notifier := New(store, run.ID, "opencode", "acp")
+	metadata := map[string]interface{}{
+		"source_update_type": "tool_call",
+		"tool_call_id":       "native-tool-1",
+		"tool_name":          "write_file",
+		"tool_kind":          "edit",
+		"status":             "pending",
+		"raw_input": map[string]interface{}{
+			"path": "/tmp/noema_matrix_contract.go",
+		},
+	}
+	notifier.OnThought(middleware.ThoughtUpdate{
+		Type:     middleware.ThoughtTypeToolCall,
+		Title:    "write_file",
+		Metadata: metadata,
+	})
+	resultMetadata := map[string]interface{}{
+		"source_update_type": "tool_call_update",
+		"tool_call_id":       "native-tool-1",
+		"tool_name":          "write_file",
+		"tool_kind":          "edit",
+		"status":             "completed",
+		"raw_input": map[string]interface{}{
+			"path": "/tmp/noema_matrix_contract.go",
+		},
+	}
+	notifier.OnThought(middleware.ThoughtUpdate{
+		Type:     middleware.ThoughtTypeToolResult,
+		Metadata: resultMetadata,
+	})
+
+	trace, found, err := store.Trace(run.ID)
+	if err != nil || !found {
+		t.Fatalf("trace found=%v err=%v", found, err)
+	}
+	var requested, completed *runtrace.Event
+	for i := range trace.Events {
+		switch trace.Events[i].Kind {
+		case "tool.call.requested":
+			requested = &trace.Events[i]
+		case "tool.result.received":
+			completed = &trace.Events[i]
+		}
+	}
+	if requested == nil || completed == nil {
+		t.Fatalf("expected metadata-only tool events in trace: %#v", trace.Events)
+	}
+	if requested.ToolName != "write_file" || requested.ToolKind != "edit" {
+		t.Fatalf("unexpected requested event: %#v", requested)
+	}
+	if requested.Inputs["path"] != "/tmp/noema_matrix_contract.go" || completed.Outputs["path"] != "/tmp/noema_matrix_contract.go" {
+		t.Fatalf("expected path projection: requested=%#v completed=%#v", requested.Inputs, completed.Outputs)
+	}
+	if len(completed.ArtifactRefs) != 1 || completed.ArtifactRefs[0] != "file:///tmp/noema_matrix_contract.go" {
+		t.Fatalf("expected artifact ref, got %#v", completed.ArtifactRefs)
+	}
+}
+
 func TestNotifierRecordsPermissionAuditEvents(t *testing.T) {
 	store := runtrace.NewStore(memstore.New())
 	run, _, err := store.Start(runtrace.Run{AgentID: "opencode", Protocol: "acp", ChannelID: "http.test"})

@@ -27,6 +27,7 @@ type runTestRouter struct {
 	statusQueue      []middleware.SessionEntry
 	attachMu         sync.Mutex
 	attachRequests   []middleware.RunContextAttachmentRequest
+	routeThoughts    []middleware.ThoughtUpdate
 	routeErr         error
 	routeWaitCancel  bool
 	routeStarted     chan struct{}
@@ -61,6 +62,11 @@ func (r *runTestRouter) Route(_ context.Context, channelID string, agentID strin
 
 func (r *runTestRouter) RouteConversation(ctx context.Context, req middleware.ConversationRequest) (string, error) {
 	r.lastConversation = req
+	for _, thought := range r.routeThoughts {
+		if req.Notifier != nil {
+			req.Notifier.OnThought(thought)
+		}
+	}
 	if r.routeWaitCancel {
 		if r.routeStarted != nil {
 			r.routeStartOnce.Do(func() { close(r.routeStarted) })
@@ -231,6 +237,79 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 	}
 	if !hasEventKind(events, "session.policy.applied") || !hasEventKind(events, "session.cleanup") {
 		t.Fatalf("expected policy and cleanup events, got %+v", events)
+	}
+}
+
+func TestHandleRuns_ProjectsStructuralToolEventsFromRouteNotifier(t *testing.T) {
+	router := &runTestRouter{
+		routeThoughts: []middleware.ThoughtUpdate{
+			{
+				Type:  middleware.ThoughtTypeToolCall,
+				Title: "write_file",
+				Metadata: map[string]interface{}{
+					"source_update_type": "tool_call",
+					"tool_call_id":       "native-tool-1",
+					"tool_name":          "write_file",
+					"tool_kind":          "edit",
+					"status":             "pending",
+					"raw_input": map[string]interface{}{
+						"path": "/tmp/noema_matrix_contract.go",
+					},
+				},
+			},
+			{
+				Type: middleware.ThoughtTypeToolResult,
+				Metadata: map[string]interface{}{
+					"source_update_type": "tool_call_update",
+					"tool_call_id":       "native-tool-1",
+					"tool_name":          "write_file",
+					"tool_kind":          "edit",
+					"status":             "completed",
+					"raw_input": map[string]interface{}{
+						"path": "/tmp/noema_matrix_contract.go",
+					},
+				},
+			},
+		},
+	}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id": "noema-eval-channel-tools",
+		"agent_id":   "opencode",
+		"input":      "edit file",
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp runresponse.Success
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	trace, found, err := server.Store().Trace(resp.RunID)
+	if err != nil || !found {
+		t.Fatalf("trace found=%v err=%v", found, err)
+	}
+	var requested, completed *runtrace.Event
+	for i := range trace.Events {
+		switch trace.Events[i].Kind {
+		case "tool.call.requested":
+			requested = &trace.Events[i]
+		case "tool.result.received":
+			completed = &trace.Events[i]
+		}
+	}
+	if requested == nil || completed == nil {
+		t.Fatalf("expected tool events in public run trace: %#v", trace.Events)
+	}
+	if requested.ToolKind != "edit" || completed.Outputs["path"] != "/tmp/noema_matrix_contract.go" {
+		t.Fatalf("unexpected structural projection: requested=%#v completed=%#v", requested, completed)
 	}
 }
 
