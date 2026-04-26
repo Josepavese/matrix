@@ -300,7 +300,7 @@ func (o *simpleObserver) forwardToolUpdate(log *slog.Logger, notif acpSessionNot
 }
 
 func (o *simpleObserver) forwardThought(thoughtType middleware.ThoughtUpdateType, content, title string, metadata map[string]interface{}) {
-	if o.notifier == nil || content == "" {
+	if o.notifier == nil || !hasThoughtSignal(content, title, metadata) {
 		return
 	}
 	o.notifier.OnThought(middleware.ThoughtUpdate{
@@ -309,6 +309,10 @@ func (o *simpleObserver) forwardThought(thoughtType middleware.ThoughtUpdateType
 		Title:    title,
 		Metadata: metadata,
 	})
+}
+
+func hasThoughtSignal(content, title string, metadata map[string]interface{}) bool {
+	return strings.TrimSpace(content) != "" || strings.TrimSpace(title) != "" || len(metadata) > 0
 }
 
 func (o *simpleObserver) signalUpdate() {

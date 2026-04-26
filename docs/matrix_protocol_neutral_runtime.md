@@ -235,6 +235,7 @@ Response model:
 - `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`
 - `GET /v1/runs/{run_id}/events` returns ordered run events
 - tool and permission events expose provider-neutral frontend fields such as `sequence`, `tool_call_id`, `permission_id`, `tool_name`, `tool_kind`, `summary`, `inputs`, `outputs`, `artifact_refs`, and visibility metadata
+- ACP tool events are accepted even when the provider sends only structured metadata and no text content. Matrix also emits neutral tool events for ACP client-handled `fs/read_text_file`, `fs/write_text_file`, and `terminal/create` calls, so coding runs expose read/edit/execute pressure without requiring consumers to parse agent prose.
 - `POST /v1/runs/{run_id}/actions` exposes operational run controls such as `cancel` and live sidecar context attachment through `attach_context` / `append_context`
 - `POST /v1/event-sinks` registers generic run-event consumers
 - `/v1/session-actions` returns a synchronous typed JSON object describing the session action result

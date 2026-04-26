@@ -254,6 +254,8 @@ Tool enrichment is intentionally layered:
 
 - provider structured tool fields are used first;
 - provider metadata is used when it carries safe fields such as `path`, `file`, `command`, or `operation`;
+- metadata-only ACP tool updates are still emitted; Matrix does not require a text chunk when `title`, `toolCallId`, `kind`, `status`, `rawInput`, or locations identify a tool action;
+- ACP client-handled tools such as `fs/read_text_file`, `fs/write_text_file`, and `terminal/create` are also projected into neutral tool events when Matrix executes them on behalf of the agent;
 - a pending tool call can be enriched from the correlated permission request for the same active tool window;
 - file artifact references are emitted as `file://...` only for completed edit/delete/move-style operations with a safe absolute path;
 - Matrix avoids arbitrary natural-language inference when no structured source exists.

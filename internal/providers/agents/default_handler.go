@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Josepavese/matrix/internal/logic/frontendevents"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -184,10 +185,14 @@ func (h *defaultRequestHandler) handleFSRead(_ context.Context, log *slog.Logger
 		return nil, fmt.Errorf("invalid path: %s", req.Path)
 	}
 
+	signal := h.beginClientTool(frontendevents.ACPClientFSToolSignal("fs/read_text_file", absPath, -1), params)
 	data, err := h.fs.ReadFile(absPath)
 	if err != nil {
+		h.failClientTool(signal)
 		return nil, fmt.Errorf("failed to read file %s: %w", absPath, err)
 	}
+	signal.Metadata["bytes"] = len(data)
+	h.completeClientTool(signal)
 
 	log.Info("agent read file", "path", absPath, "bytes", len(data))
 	return map[string]interface{}{
@@ -214,21 +219,27 @@ func (h *defaultRequestHandler) handleFSWrite(_ context.Context, log *slog.Logge
 		return nil, fmt.Errorf("invalid path: %s", req.Path)
 	}
 
+	signal := h.beginClientTool(frontendevents.ACPClientFSToolSignal("fs/write_text_file", absPath, len(req.Content)), params)
+
 	// Ensure parent directory exists
 	dir := filepath.Dir(absPath)
 	if err := h.fs.MkdirAll(dir, 0755); err != nil {
+		h.failClientTool(signal)
 		return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
 	f, err := h.fs.OpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
+		h.failClientTool(signal)
 		return nil, fmt.Errorf("failed to open file %s for writing: %w", absPath, err)
 	}
 	defer func() { _ = f.Close() }()
 
 	if _, err := f.Write([]byte(req.Content)); err != nil {
+		h.failClientTool(signal)
 		return nil, fmt.Errorf("failed to write file %s: %w", absPath, err)
 	}
+	h.completeClientTool(signal)
 
 	log.Info("agent wrote file", "path", absPath, "bytes", len(req.Content))
 	return map[string]interface{}{"status": "ok"}, nil
@@ -259,37 +270,23 @@ func (h *defaultRequestHandler) handleTerminalCreate(ctx context.Context, log *s
 		return nil, fmt.Errorf("terminal access not available")
 	}
 
-	var req struct {
-		Command string   `json:"command"`
-		Args    []string `json:"args"`
-		Cwd     string   `json:"cwd"`
-	}
-	if err := json.Unmarshal(params, &req); err != nil {
-		return nil, fmt.Errorf("invalid terminal/create params: %w", err)
-	}
-	if req.Command == "" {
-		return nil, fmt.Errorf("terminal/create requires a 'command' field")
-	}
-
-	// Resolve cwd: use request cwd if provided and within sandbox, else handler cwd
-	workDir := h.cwd
-	if req.Cwd != "" {
-		resolved := h.resolvePath(req.Cwd)
-		if resolved != "" {
-			workDir = resolved
-		}
-	}
-
-	spec := middleware.CommandSpec{
-		Runner: req.Command,
-		Args:   req.Args,
-		Dir:    workDir,
-	}
-
-	log.Info("agent executing command", "command", req.Command, "args", req.Args, "cwd", workDir)
-	result, err := h.proc.ExecSeparate(ctx, spec)
+	req, err := h.parseTerminalCreateRequest(params)
 	if err != nil {
+		return nil, err
+	}
+
+	log.Info("agent executing command", "command", req.Command, "args", req.Args, "cwd", req.WorkDir)
+	signal := h.beginClientTool(frontendevents.ACPClientTerminalToolSignal(req.Command, req.Args, req.WorkDir, nil), params)
+	result, err := h.proc.ExecSeparate(ctx, req.commandSpec())
+	if err != nil {
+		h.failClientTool(signal)
 		return nil, fmt.Errorf("command execution failed: %w", err)
+	}
+	resultSignal := withRawInput(frontendevents.ACPClientTerminalToolSignal(req.Command, req.Args, req.WorkDir, &result.ExitCode), frontendevents.SanitizedRawInput(params))
+	if result.ExitCode == 0 {
+		h.completeClientTool(resultSignal)
+	} else {
+		h.failClientTool(resultSignal)
 	}
 
 	// Truncate large outputs to prevent memory issues

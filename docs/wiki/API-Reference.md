@@ -195,6 +195,7 @@ Streams results as they arrive from the agent.
 ### `GET /v1/runs/{run_id}/trace`
 
 Get the full trace for a run, including routing decisions, prompt, completion, and any failures.
+Coding-agent traces include protocol-neutral tool events such as `tool.call.requested` and `tool.result.received` when the provider reports ACP tool metadata or when Matrix executes ACP client-side `fs/*` / `terminal/*` requests.
 
 ```bash
 curl http://127.0.0.1:9091/v1/runs/run-abc123/trace
@@ -205,6 +206,7 @@ curl http://127.0.0.1:9091/v1/runs/run-abc123/trace
 ### `GET /v1/runs/{run_id}/events`
 
 Get the events for a run.
+Consumers should use `kind`, `tool_call_id`, `tool_kind`, `inputs`, `outputs`, and `artifact_refs` instead of parsing agent prose.
 
 ```bash
 curl http://127.0.0.1:9091/v1/runs/run-abc123/events
