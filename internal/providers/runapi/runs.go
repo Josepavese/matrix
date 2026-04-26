@@ -154,7 +154,8 @@ func (s *Server) dispatchByExecutionMode(w http.ResponseWriter, r *http.Request,
 
 func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutionResult, error) {
 	before := s.sessionSnapshot(ctx, exec.req.ChannelID, exec.req.WorkspaceID)
-	if err := s.prepareSessionForRun(ctx, exec); err != nil {
+	prepared, err := s.prepareSessionForRun(ctx, exec)
+	if err != nil {
 		_, _ = s.runStore.Fail(exec.runID, err)
 		providerfailure.AppendRunEvent(s.runStore, exec.runID, err)
 		s.untrackRunCancel(exec.runID)
@@ -173,7 +174,7 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 		})
 		var cleanup *middleware.SessionCleanupResult
 		if runRequiresCleanup(exec.req) {
-			cleanup, _ = s.cleanupRunSession(ctx, exec, after)
+			cleanup, _ = s.cleanupRunSession(ctx, exec, cleanupTargetSnapshot(prepared, after))
 		}
 		switch {
 		case isEmergencyTimeout(ctx, err, exec):
@@ -195,7 +196,7 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 	})
 	var cleanup *middleware.SessionCleanupResult
 	if runRequiresCleanup(exec.req) {
-		cleanup, err = s.cleanupRunSession(ctx, exec, after)
+		cleanup, err = s.cleanupRunSession(ctx, exec, cleanupTargetSnapshot(prepared, after))
 		if err != nil {
 			_, _ = s.runStore.Fail(exec.runID, err)
 			s.untrackRunCancel(exec.runID)

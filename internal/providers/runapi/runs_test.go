@@ -23,6 +23,8 @@ import (
 type runTestRouter struct {
 	lastConversation middleware.ConversationRequest
 	sessionActions   []middleware.SessionActionRequest
+	newSessionID     string
+	statusQueue      []middleware.SessionEntry
 	attachMu         sync.Mutex
 	attachRequests   []middleware.RunContextAttachmentRequest
 	routeErr         error
@@ -80,11 +82,12 @@ func (r *runTestRouter) HandleSessionActionTyped(ctx context.Context, req middle
 	r.sessionActions = append(r.sessionActions, req)
 	switch req.Action {
 	case "new":
+		sessionID := firstNonEmpty(r.newSessionID, "logical-eval")
 		return middleware.SessionActionResult{
 			Action:          "new",
-			ActiveSessionID: "logical-eval",
+			ActiveSessionID: sessionID,
 			Session: &middleware.SessionEntry{
-				LogicalSessionID: "logical-eval",
+				LogicalSessionID: sessionID,
 				AgentID:          req.Target,
 				WorkspacePath:    req.WorkspacePath,
 				Ephemeral:        req.Ephemeral,
@@ -93,6 +96,15 @@ func (r *runTestRouter) HandleSessionActionTyped(ctx context.Context, req middle
 			},
 		}, nil
 	case "status":
+		if len(r.statusQueue) > 0 {
+			entry := r.statusQueue[0]
+			r.statusQueue = r.statusQueue[1:]
+			return middleware.SessionActionResult{
+				Action:          "status",
+				ActiveSessionID: entry.LogicalSessionID,
+				Session:         &entry,
+			}, nil
+		}
 		return middleware.SessionActionResult{
 			Action:          "status",
 			ActiveSessionID: "logical-eval",
@@ -219,6 +231,39 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 	}
 	if !hasEventKind(events, "session.policy.applied") || !hasEventKind(events, "session.cleanup") {
 		t.Fatalf("expected policy and cleanup events, got %+v", events)
+	}
+}
+
+func TestHandleRuns_EphemeralCleanupTargetsPolicySessionWhenActiveChanges(t *testing.T) {
+	router := &runTestRouter{
+		newSessionID: "policy-session",
+		statusQueue: []middleware.SessionEntry{
+			{LogicalSessionID: "pre-existing", AgentID: "opencode", Active: true},
+			{LogicalSessionID: "active-after-route", AgentID: "opencode", Active: true},
+		},
+	}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "noema-eval-channel-active-switch",
+		"agent_id":       "opencode",
+		"input":          "run eval",
+		"workspace_path": "/tmp/eval-ws",
+		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
+		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	cleanup := router.sessionActions[len(router.sessionActions)-1]
+	if cleanup.Action != "cleanup" || cleanup.Target != "policy-session" {
+		t.Fatalf("cleanup must target prepared policy session, got %+v", cleanup)
 	}
 }
 

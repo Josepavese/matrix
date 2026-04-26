@@ -110,7 +110,7 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
   }'
 ```
 
-The response may include `cleanup`, and the run trace records `session.policy.applied` and `session.cleanup`. If the agent fails after Matrix creates an ephemeral session, sync and stream error responses also include `cleanup` so callers can verify whether Matrix forgot the local mirror, canceled/deleted the provider session when supported, and reaped the workspace-bound agent process.
+The response may include `cleanup`, and the run trace records `session.policy.applied` and `session.cleanup`. If the agent fails after Matrix creates an ephemeral session, sync and stream error responses also include `cleanup` so callers can verify whether Matrix forgot the local mirror, canceled/deleted the provider session when supported, and reaped the workspace-bound agent process. Ephemeral policy cleanup is pinned to the logical session created by `session.policy.applied`; it does not follow a later active-session switch caused by fork, judge, or sidecar workflows.
 
 Cleanup proof includes:
 
