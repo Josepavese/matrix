@@ -109,9 +109,9 @@ func sessionSnapshotFromEntry(entry middleware.SessionEntry) sessionSnapshot {
 	}
 }
 
-func (s *Server) prepareSessionForRun(ctx context.Context, exec runExecution) error {
+func (s *Server) prepareSessionForRun(ctx context.Context, exec runExecution) (sessionSnapshot, error) {
 	if normalizeRunSessionPolicy(exec.req.SessionPolicy) != middleware.SessionPolicyNewEphemeralDeleteAfterRun {
-		return nil
+		return sessionSnapshot{}, nil
 	}
 	result, err := s.router.HandleSessionActionTyped(ctx, middleware.SessionActionRequest{
 		ChannelID:     exec.req.ChannelID,
@@ -123,7 +123,7 @@ func (s *Server) prepareSessionForRun(ctx context.Context, exec runExecution) er
 		CleanupPolicy: cleanupPolicyForRun(exec.req),
 	})
 	if err != nil {
-		return err
+		return sessionSnapshot{}, err
 	}
 	_, _ = s.runStore.AppendEvent(runtrace.Event{
 		RunID:          exec.runID,
@@ -141,7 +141,25 @@ func (s *Server) prepareSessionForRun(ctx context.Context, exec runExecution) er
 			"ephemeral":          true,
 		},
 	})
-	return nil
+	return preparedSessionSnapshot(result, exec), nil
+}
+
+func preparedSessionSnapshot(result middleware.SessionActionResult, exec runExecution) sessionSnapshot {
+	if result.Session != nil {
+		return sessionSnapshotFromEntry(*result.Session)
+	}
+	return sessionSnapshot{
+		LogicalSessionID: strings.TrimSpace(result.ActiveSessionID),
+		AgentID:          strings.TrimSpace(exec.agentID),
+		WorkspaceID:      strings.TrimSpace(exec.req.WorkspaceID),
+	}
+}
+
+func cleanupTargetSnapshot(prepared, after sessionSnapshot) sessionSnapshot {
+	if strings.TrimSpace(prepared.LogicalSessionID) != "" || strings.TrimSpace(prepared.RemoteSessionID) != "" {
+		return prepared
+	}
+	return after
 }
 
 func (s *Server) cleanupRunSession(ctx context.Context, exec runExecution, after sessionSnapshot) (*middleware.SessionCleanupResult, error) {

@@ -229,7 +229,7 @@ Response model:
 - `/v1/runs` supports `sync`, `async`, and `stream` execution modes under one Matrix envelope
 - `/v1/runs` has no default absolute turn timeout; callers may opt into an emergency wall-clock fuse with `emergency_kill_seconds`
 - synchronous `/v1/runs` responses include `output` when the run completes inline
-- isolated `/v1/runs` success and error responses may include `cleanup`; traces record `session.policy.applied` and `session.cleanup`. A `session.cleanup` event with `status=failed` and `clean=false` is explicit evidence that provider/process cleanup was incomplete
+- isolated `/v1/runs` success and error responses may include `cleanup`; traces record `session.policy.applied` and `session.cleanup`. A `session.cleanup` event with `status=failed` and `clean=false` is explicit evidence that provider/process cleanup was incomplete. When `session_policy=new_ephemeral_delete_after_run` creates a policy-owned session, cleanup is pinned to that prepared logical session even if fork, judge, or sidecar workflows change the channel's active session before the run finishes.
 - sidecar capsule traces expose `sidecar_provider`, `sidecar_id`, `sidecar_schema`, `sidecar_version`, `sidecar_carrier`, and `sidecar_visibility` as top-level event fields so redaction can hide raw content without losing audit evidence
 - synchronous `/v1/runs` returns structured HTTP `409` `SETUP_REQUIRED` instead of wizard text when `system.configured=false`
 - `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`
