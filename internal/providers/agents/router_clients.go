@@ -17,10 +17,27 @@ const noReusableCachedAgentClient = "no reusable cached agent client owns worksp
 // underlying child process through the transport Close path.
 func (r *Router) ReapAgentClient(_ context.Context, agentID string, workspacePath string) (bool, error) {
 	key := clientCacheKey(agentID, r.effectiveCwd(workspacePath))
+	return r.reapAgentClientByKey(key, "")
+}
+
+func (r *Router) ReapAgentSessionClient(_ context.Context, agentID string, remoteSessionID string, workspacePath string) (bool, error) {
+	key := clientCacheKey(agentID, r.effectiveCwd(workspacePath))
+	return r.reapAgentClientByKey(key, strings.TrimSpace(remoteSessionID))
+}
+
+func (r *Router) reapAgentClientByKey(key string, remoteSessionID string) (bool, error) {
 	r.mu.Lock()
 	client, ok := r.clients[key]
 	if ok {
+		if remoteSessionID != "" && !clientTracksRemoteSession(client, remoteSessionID) {
+			r.mu.Unlock()
+			return false, nil
+		}
 		delete(r.clients, key)
+		delete(r.clientTombstones, key)
+	} else if r.consumeClientTombstoneLocked(key, remoteSessionID) {
+		r.mu.Unlock()
+		return true, nil
 	}
 	r.mu.Unlock()
 	if !ok {
@@ -154,6 +171,7 @@ func (r *Router) getOrCreateClient(ctx context.Context, agentID string, cwd stri
 		return client, nil
 	}
 	delete(r.clients, key)
+	delete(r.clientTombstones, key)
 	client, kind, err := r.createClient(ctx, agentID, cwd, log)
 	if err != nil {
 		return nil, err

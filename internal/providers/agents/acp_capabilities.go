@@ -53,9 +53,9 @@ func acpSessionCapabilities(resp *acpInitializeResponse) middleware.Conversation
 			"info_update": acpCapability("info_update", list, "stable", "zed_acp_session_info_update"),
 			"load":        acpCapability("load", load, "stable", "zed_acp_schema_loadSession"),
 			"cancel":      acpCapability("cancel", true, "stable", "zed_acp_schema_session_cancel"),
-			"close":       acpCapability("close", closeSession, "preview", "zed_acp_rfd_session_close"),
+			"close":       acpCapability("close", closeSession, "stable", "zed_acp_schema_session_close"),
 			"delete":      acpCapability("delete", deleteSession, "draft", "zed_acp_rfd_session_delete"),
-			"resume":      acpCapability("resume", resume, "preview", "zed_acp_rfd_session_resume"),
+			"resume":      acpCapability("resume", resume, "stable", "zed_acp_schema_session_resume"),
 			"fork":        acpForkCapability(fork),
 		},
 	}
@@ -81,6 +81,11 @@ func acpForkCapability(supported bool) middleware.CapabilityDescriptor {
 		desc.ActiveParentSafe = boolPtr(true)
 		desc.RequiresIdleParent = boolPtr(false)
 		desc.ArtifactTurn = boolPtr(true)
+		desc.AsyncSupported = boolPtr(true)
+		desc.Blocking = boolPtr(true)
+		desc.ArtifactStreaming = boolPtr(false)
+		desc.LiveInterventionSuitable = boolPtr(false)
+		desc.Detail = "true provider fork is state-safe, but synchronous artifact turns are provider-bound; use async polling for live sidecar flows"
 	}
 	return desc
 }

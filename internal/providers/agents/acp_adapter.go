@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/sidecar"
@@ -78,7 +79,9 @@ type acpConversationClient struct {
 	cwd                 string
 	endpoint            middleware.ProtocolEndpoint
 	sessionCapabilities middleware.ConversationSessionCapabilities
+	mu                  sync.Mutex
 	loadedSessions      map[string]bool
+	activePrompts       map[string]chan struct{}
 }
 
 func (c *acpConversationClient) Alive() bool {
@@ -100,6 +103,12 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 		return middleware.ConversationResult{}, classifyProviderFailure(turn.AgentID, c.endpoint, "session/new", err)
 	}
 	c.prepareTurnCallbacks(turn, remoteSessionID)
+	endPrompt, err := c.beginPrompt(ctx, remoteSessionID, turn.LiveContextAttach)
+	if err != nil {
+		return middleware.ConversationResult{RemoteSessionID: remoteSessionID}, err
+	}
+	defer endPrompt()
+
 	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier}
 	resp, err := c.promptACP(ctx, remoteSessionID, turn, obs)
 	if err != nil && remoteSessionID != "" && isSessionNotFoundError(err) {
@@ -127,7 +136,18 @@ func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn
 	if turn.RemoteSessionID == "" {
 		return c.createAndConfigureACPRemoteSession(ctx, turn, cwd, log)
 	}
-	if c.sessionCapabilities.Load && !c.loadedSessions[turn.RemoteSessionID] {
+	if !c.isLoadedSession(turn.RemoteSessionID) && c.sessionCapabilities.Resume {
+		if c.resumeACPRemoteSession(acpLoadRemoteSessionRequest{
+			Ctx:             ctx,
+			RemoteSessionID: turn.RemoteSessionID,
+			Cwd:             cwd,
+			Notifier:        turn.ThoughtNotifier,
+			Log:             log,
+		}) {
+			return turn.RemoteSessionID, nil
+		}
+	}
+	if !c.isLoadedSession(turn.RemoteSessionID) && c.sessionCapabilities.Load {
 		c.loadACPRemoteSession(acpLoadRemoteSessionRequest{
 			Ctx:             ctx,
 			RemoteSessionID: turn.RemoteSessionID,
@@ -139,6 +159,27 @@ func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn
 	return turn.RemoteSessionID, nil
 }
 
+func (c *acpConversationClient) isLoadedSession(remoteSessionID string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.loadedSessions[remoteSessionID]
+}
+
+func (c *acpConversationClient) markLoadedSession(remoteSessionID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.loadedSessions == nil {
+		c.loadedSessions = map[string]bool{}
+	}
+	c.loadedSessions[remoteSessionID] = true
+}
+
+func (c *acpConversationClient) unmarkLoadedSession(remoteSessionID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.loadedSessions, remoteSessionID)
+}
+
 func (c *acpConversationClient) createAndConfigureACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) (string, error) {
 	newSessResp, err := c.createACPRemoteSession(ctx, middleware.SessionMaterializeRequest{
 		LogicalSessionID: turn.LogicalSessionID,
@@ -148,12 +189,24 @@ func (c *acpConversationClient) createAndConfigureACPRemoteSession(ctx context.C
 	if err != nil {
 		return "", err
 	}
+	c.markLoadedSession(newSessResp.SessionID)
 	c.setAutoApproveMode(ctx, newSessResp, log)
 	return newSessResp.SessionID, nil
 }
 
 func (c *acpConversationClient) setAutoApproveMode(ctx context.Context, resp *acpNewSessionResponse, log *slog.Logger) {
-	modeID := pickAutoApproveMode(fromZedACPSession(resp))
+	session := fromZedACPSession(resp)
+	if configID, value := pickAutoApproveConfigOption(session); configID != "" && value != "" {
+		if _, err := c.client.SetConfigOption(ctx, acpSetConfigOptionRequest{
+			SessionID: resp.SessionID,
+			ConfigID:  configID,
+			Value:     value,
+		}); err != nil {
+			log.Warn("failed to set ACP config option", "config_id", configID, "value", value, "error", err)
+		}
+		return
+	}
+	modeID := pickAutoApproveMode(session)
 	if modeID == "" {
 		return
 	}
@@ -170,14 +223,46 @@ type acpLoadRemoteSessionRequest struct {
 	Log             *slog.Logger
 }
 
+func (c *acpConversationClient) resumeACPRemoteSession(req acpLoadRemoteSessionRequest) bool {
+	resp, err := c.client.ResumeSession(req.Ctx, acpResumeSessionRequest{
+		SessionID:  req.RemoteSessionID,
+		Cwd:        req.Cwd,
+		McpServers: []acpMcpServerConfig{},
+	})
+	if err != nil {
+		req.Log.Warn("ACP session resume failed, will fall back to load/prompt flow", "agent_session", req.RemoteSessionID, "error", err)
+		return false
+	}
+	c.markLoadedSession(req.RemoteSessionID)
+	if configID, value := pickAutoApproveConfigOption(fromZedACPResumeSession(resp)); configID != "" && value != "" {
+		if _, err := c.client.SetConfigOption(req.Ctx, acpSetConfigOptionRequest{
+			SessionID: req.RemoteSessionID,
+			ConfigID:  configID,
+			Value:     value,
+		}); err != nil {
+			req.Log.Warn("failed to set ACP resumed config option", "config_id", configID, "value", value, "error", err)
+		}
+	}
+	return true
+}
+
 func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionRequest) {
 	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: req.Notifier}
-	err := c.client.LoadSession(req.Ctx, acpLoadSessionRequest{SessionID: req.RemoteSessionID, Cwd: req.Cwd, McpServers: []acpMcpServerConfig{}}, obs)
+	resp, err := c.client.LoadSession(req.Ctx, acpLoadSessionRequest{SessionID: req.RemoteSessionID, Cwd: req.Cwd, McpServers: []acpMcpServerConfig{}}, obs)
 	if err != nil {
 		req.Log.Warn("ACP session load failed, will fall back to prompt/recreate flow", "agent_session", req.RemoteSessionID, "error", err)
 		return
 	}
-	c.loadedSessions[req.RemoteSessionID] = true
+	c.markLoadedSession(req.RemoteSessionID)
+	if configID, value := pickAutoApproveConfigOption(fromZedACPLoadSession(resp)); configID != "" && value != "" {
+		if _, err := c.client.SetConfigOption(req.Ctx, acpSetConfigOptionRequest{
+			SessionID: req.RemoteSessionID,
+			ConfigID:  configID,
+			Value:     value,
+		}); err != nil {
+			req.Log.Warn("failed to set ACP loaded config option", "config_id", configID, "value", value, "error", err)
+		}
+	}
 	obs.WaitIdle(req.Ctx, 150*time.Millisecond)
 }
 
@@ -201,13 +286,14 @@ func (c *acpConversationClient) promptACP(ctx context.Context, remoteSessionID s
 
 func (c *acpConversationClient) retryTurnWithFreshSession(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
 	return c.ExecuteTurn(ctx, middleware.ConversationTurn{
-		AgentID:          turn.AgentID,
-		LogicalSessionID: turn.LogicalSessionID,
-		WorkspacePath:    turn.WorkspacePath,
-		Message:          turn.Message,
-		SidecarCapsules:  turn.SidecarCapsules,
-		Tools:            turn.Tools,
-		ThoughtNotifier:  turn.ThoughtNotifier,
+		AgentID:           turn.AgentID,
+		LogicalSessionID:  turn.LogicalSessionID,
+		WorkspacePath:     turn.WorkspacePath,
+		Message:           turn.Message,
+		SidecarCapsules:   turn.SidecarCapsules,
+		Tools:             turn.Tools,
+		ThoughtNotifier:   turn.ThoughtNotifier,
+		LiveContextAttach: turn.LiveContextAttach,
 	})
 }
 
@@ -246,22 +332,40 @@ func (c *acpConversationClient) ListRemoteSessions(ctx context.Context) ([]middl
 }
 
 func (c *acpConversationClient) GetRemoteSession(ctx context.Context, remoteSessionID string) (middleware.RemoteSessionInfo, error) {
-	sessions, err := c.ListRemoteSessions(ctx)
-	if err != nil {
-		return middleware.RemoteSessionInfo{}, err
+	if c.sessionCapabilities.List {
+		sessions, err := c.ListRemoteSessions(ctx)
+		if err != nil {
+			return middleware.RemoteSessionInfo{}, err
+		}
+		for _, session := range sessions {
+			if session.RemoteSessionID == remoteSessionID || session.DisplayID == remoteSessionID {
+				return session, nil
+			}
+		}
 	}
-	for _, session := range sessions {
-		if session.RemoteSessionID == remoteSessionID || session.DisplayID == remoteSessionID {
-			return session, nil
+	if c.sessionCapabilities.Resume {
+		if _, err := c.client.ResumeSession(ctx, acpResumeSessionRequest{
+			SessionID:  remoteSessionID,
+			Cwd:        c.cwd,
+			McpServers: []acpMcpServerConfig{},
+		}); err == nil {
+			c.markLoadedSession(remoteSessionID)
+			return middleware.RemoteSessionInfo{
+				RemoteSessionID: remoteSessionID,
+				DisplayID:       remoteSessionID,
+				ProtocolKind:    middleware.ProtocolKindACP,
+				CanResume:       true,
+				CanDelete:       c.sessionCapabilities.Delete,
+			}, nil
 		}
 	}
 	if c.sessionCapabilities.Load {
-		if err := c.client.LoadSession(ctx, acpLoadSessionRequest{
+		if _, err := c.client.LoadSession(ctx, acpLoadSessionRequest{
 			SessionID:  remoteSessionID,
 			Cwd:        c.cwd,
 			McpServers: []acpMcpServerConfig{},
 		}, nil); err == nil {
-			c.loadedSessions[remoteSessionID] = true
+			c.markLoadedSession(remoteSessionID)
 			return middleware.RemoteSessionInfo{
 				RemoteSessionID: remoteSessionID,
 				DisplayID:       remoteSessionID,
@@ -281,7 +385,7 @@ func (c *acpConversationClient) DeleteRemoteSession(ctx context.Context, remoteS
 	if err := c.client.DeleteSession(ctx, remoteSessionID); err != nil {
 		return err
 	}
-	delete(c.loadedSessions, remoteSessionID)
+	c.unmarkLoadedSession(remoteSessionID)
 	return nil
 }
 
@@ -302,7 +406,7 @@ func (c *acpConversationClient) CloseRemoteSession(ctx context.Context, remoteSe
 	if err := c.client.CloseSession(ctx, remoteSessionID); err != nil {
 		return err
 	}
-	delete(c.loadedSessions, remoteSessionID)
+	c.unmarkLoadedSession(remoteSessionID)
 	return nil
 }
 

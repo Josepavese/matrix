@@ -16,16 +16,20 @@ External references:
 - Zed ACP transports: https://agentclientprotocol.com/protocol/transports
 - Zed ACP registry: https://agentclientprotocol.com/get-started/registry
 - TypeScript SDK docs: https://agentclientprotocol.github.io/typescript-sdk/
+- TypeScript SDK version reviewed: v0.21.0
 - Python library page: https://agentclientprotocol.com/libraries/python
 - Java library page: https://agentclientprotocol.com/libraries/java
+- Zed ACP `session/fork` RFD: https://agentclientprotocol.com/rfds/session-fork
+- Zed ACP `additionalDirectories` RFD: https://agentclientprotocol.com/rfds/additional-directories
+- Zed ACP request cancellation RFD: https://agentclientprotocol.com/rfds/request-cancellation
 - Community Go SDK repo: https://github.com/coder/acp-go-sdk
 
 Local findings:
 
-- `go list -m -versions github.com/coder/acp-go-sdk` currently returns published module versions through `v0.6.3`
-- the repository README on `main` advertises `v0.10.8`, which suggests a gap between repository head and published module releases
-- the published `v0.6.3` module exposes client and agent side connections and is useful for both ACP client and server implementations
-- the published `v0.6.3` module does not expose the newer Matrix-needed surface around `session/list`, preview `session/close`, draft `session/delete`, and `session_info_update`
+- `go list -m -versions github.com/coder/acp-go-sdk` currently returns published module versions through `v0.12.2`
+- the repository README on `main` advertises `v0.12.2`, matching the latest official ACP schema release
+- the published `v0.12.2` module exposes client and agent side connections and is useful for both ACP client and server implementations
+- the published `v0.12.2` module tracks stable `session/close` and `session/resume`; migration is now a realistic follow-up, but Matrix should still keep its ACP backend port so the transition remains reversible
 
 ## What `coder/acp-go-sdk` Gets Right
 
@@ -38,31 +42,38 @@ Local findings:
 
 For a future standalone ACP project, this is the strongest available community candidate we have found.
 
-## What Blocks Immediate Migration
+## What Still Blocks Immediate Migration
 
-### 1. Published surface is behind Matrix needs
+### 1. Matrix has not yet validated the SDK adapter surface end-to-end
 
 Matrix now relies or is preparing to rely on:
 
 - `session/load`
 - `session/list`
-- `session/close` preview support when capability-gated
+- stable `session/close` support when capability-gated
+- stable `session/resume` support when capability-gated
+- stable `session/set_config_option` support and complete `configOptions` state
 - `session/delete` draft support when capability-gated
 - `session_info_update`
+- `session/fork` draft support when capability-gated
+- `additionalDirectories` modeling for multi-root workspaces
+- prompt `messageId` / `userMessageId` correlation
 - protocol-transparent remote session control in channel flows
 
-The published `coder/acp-go-sdk@v0.6.3` surface is narrower than that.
+The published `coder/acp-go-sdk@v0.12.2` surface now covers substantially more
+of this list than earlier versions. Before migration, Matrix still needs a
+small adapter spike proving that its generated types, connection lifecycle, and
+extension handling preserve Matrix's current behavior with OpenCode, Codex ACP,
+and Gemini.
 
-### 2. Release maturity is not yet ideal
+### 2. Dependency migration still needs a reversible seam
 
-There is a mismatch between:
+The old release mismatch has been resolved for the current audit: `go list`,
+the repository README, and the latest GitHub release all point to `v0.12.2`.
+That improves confidence, but Matrix should still keep `pkg/zedacp` behind the
+ACP backend port until the community SDK has passed real-provider Matrix tests.
 
-- the published versions visible to `go list`
-- the newer version string shown in the repository README on `main`
-
-That does not make the project unusable, but it does reduce confidence for a production migration where Matrix would depend on timely published releases.
-
-### 3. Matrix already has custom runtime concerns
+### 3. Matrix still has custom runtime concerns
 
 Matrix does not only need ACP wire calls. It also needs:
 
@@ -83,6 +94,8 @@ Current concerns:
 - it is Matrix-maintained, so protocol catch-up is our burden
 - `session/cancel` semantics must stay aligned with current Zed ACP notifications
 - `session/close` semantics must stay aligned with the Preview RFD while it is not yet stable
+- `session/fork` semantics must stay aligned with the Draft RFD and must not be confused with a non-existent ACP `side` primitive
+- `additionalDirectories` and prompt message ids must stay optional and capability-gated while unstable
 - long-term maintenance cost is on us unless we rebase or extract it cleanly
 
 So the right answer is not "never migrate". The right answer is "do not couple Matrix directly to a single ACP backend."
@@ -170,16 +183,14 @@ Reasons:
 
 ## Final Recommendation
 
-Matrix should **not migrate immediately** to `coder/acp-go-sdk`.
+Matrix should **not hard-switch immediately** to `coder/acp-go-sdk`, but it
+should treat `v0.12.2` as a serious migration candidate.
 
 Matrix should:
 
 1. keep `pkg/zedacp` as the current ACP backend
 2. keep strengthening compliance against Zed ACP
 3. use the new ACP backend port as the stable seam for future migration
-4. revisit migration when a community or official Go SDK offers:
-   - published support for `session/list`
-   - published support for `session_info_update`
-   - an acceptable story for preview `session/close`
-   - an acceptable story for draft `session/delete`
-   - stable releases that match repository head closely
+4. run a follow-up adapter spike against `coder/acp-go-sdk@v0.12.2`
+5. migrate only if the adapter passes Matrix's real-provider smoke suite and
+   keeps draft/unstable features capability-gated

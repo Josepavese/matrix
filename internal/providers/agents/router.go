@@ -39,6 +39,7 @@ import (
 
 // healthCheckInterval is how often the background goroutine scans for dead clients.
 const healthCheckInterval = 30 * time.Second
+const clientReapTombstoneTTL = 5 * time.Minute
 
 // Router implements middleware.AgentRouter using protocol-specific adapters behind
 // a protocol-neutral boundary.
@@ -48,6 +49,10 @@ type Router struct {
 	mu      sync.RWMutex
 	clients map[string]middleware.ConversationClient
 	factory map[middleware.ProtocolKind]middleware.ConversationFactory
+
+	// Tombstones preserve short-lived OS/process cleanup proof when a dead
+	// stdio client is evicted by keepalive before strict session cleanup runs.
+	clientTombstones map[string]agentClientTombstone
 
 	// trustMode returns true when auto-approve is enabled (default).
 	// When false, permission requests from agents are denied.
@@ -71,8 +76,9 @@ type Router struct {
 // NewRouter creates a new agent Router with the given endpoint resolver.
 func NewRouter(resolver middleware.AgentEndpointResolver) *Router {
 	return &Router{
-		resolver: resolver,
-		clients:  make(map[string]middleware.ConversationClient),
+		resolver:         resolver,
+		clients:          make(map[string]middleware.ConversationClient),
+		clientTombstones: make(map[string]agentClientTombstone),
 		factory: map[middleware.ProtocolKind]middleware.ConversationFactory{
 			middleware.ProtocolKindACP: &acpConversationFactory{},
 			middleware.ProtocolKindA2A: a2aclient.Factory{},
@@ -185,6 +191,7 @@ func (r *Router) evictCachedClient(key string) bool {
 	client, ok := r.clients[key]
 	if ok {
 		delete(r.clients, key)
+		r.rememberClientTombstoneLocked(key, client)
 	}
 	r.mu.Unlock()
 	if ok {
@@ -250,254 +257,6 @@ func (r *Router) createClient(ctx context.Context, agentID string, cwd string, l
 }
 
 // ----------------------------------------------------------------------------
-// Observer — buffers streaming text chunks into a final response
-// ----------------------------------------------------------------------------
-
-// simpleObserver buffers text chunks to form the final result.
-// It also forwards real-time thought/tool updates to an optional ThoughtNotifier
-// so the UI (e.g. Telegram) can show a live "thinking" indicator.
-type simpleObserver struct {
-	mu       sync.Mutex
-	content  string
-	updates  chan struct{}
-	notifier middleware.ThoughtNotifier
-	metadata middleware.ConversationMetadata
-}
-
-func (o *simpleObserver) OnUpdate(notif acpSessionNotification) {
-	log := slog.With("component", "acp_observer", "session", notif.SessionID, "update_type", notif.Update.SessionUpdate)
-	log.Info("session update received", "event", "session_update", "update_type", notif.Update.SessionUpdate, "text_len", len(notif.Update.Content.Text), "text_preview", truncate(notif.Update.Content.Text, 120))
-	o.handleStreamUpdate(log, notif)
-	o.mergeUpdateMetadata(notif.Update)
-}
-
-func (o *simpleObserver) handleStreamUpdate(log *slog.Logger, notif acpSessionNotification) {
-	switch notif.Update.SessionUpdate {
-	case "agent_message_chunk":
-		o.appendMessageChunk(notif.Update.Content.Text)
-	case "agent_thought_chunk":
-		o.forwardThought(middleware.ThoughtTypeThinking, notif.Update.Content.Text, "", nil)
-	case "tool_call", "tool_call_update":
-		o.forwardToolUpdate(log, notif)
-	}
-}
-
-func (o *simpleObserver) appendMessageChunk(text string) {
-	o.mu.Lock()
-	o.content += text
-	o.mu.Unlock()
-	o.forwardThought(middleware.ThoughtTypeThinking, text, "", nil)
-	o.signalUpdate()
-}
-
-func (o *simpleObserver) forwardToolUpdate(log *slog.Logger, notif acpSessionNotification) {
-	log.Info("tool call update", "event", "tool_call_update", "text_len", len(notif.Update.Content.Text))
-	thoughtType := middleware.ThoughtTypeToolCall
-	if notif.Update.SessionUpdate == "tool_call_update" {
-		thoughtType = middleware.ThoughtTypeToolResult
-	}
-	o.forwardThought(thoughtType, notif.Update.Content.Text, notif.Update.Title, toolUpdateMetadata(notif))
-}
-
-func (o *simpleObserver) forwardThought(thoughtType middleware.ThoughtUpdateType, content, title string, metadata map[string]interface{}) {
-	if o.notifier == nil || !hasThoughtSignal(content, title, metadata) {
-		return
-	}
-	o.notifier.OnThought(middleware.ThoughtUpdate{
-		Type:     thoughtType,
-		Content:  content,
-		Title:    title,
-		Metadata: metadata,
-	})
-}
-
-func hasThoughtSignal(content, title string, metadata map[string]interface{}) bool {
-	return strings.TrimSpace(content) != "" || strings.TrimSpace(title) != "" || len(metadata) > 0
-}
-
-func (o *simpleObserver) signalUpdate() {
-	if o.updates == nil {
-		return
-	}
-	select {
-	case o.updates <- struct{}{}:
-	default:
-	}
-}
-
-func (o *simpleObserver) mergeUpdateMetadata(update acpSessionUpdate) {
-	if update.Title == "" && update.UpdatedAt == "" && len(update.Meta) == 0 {
-		return
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if update.Title != "" {
-		o.metadata.Title = update.Title
-	}
-	if update.UpdatedAt != "" {
-		o.metadata.UpdatedAt = update.UpdatedAt
-	}
-	o.mergeMetadataMap(update.Meta)
-}
-
-func (o *simpleObserver) mergeMetadataMap(values map[string]interface{}) {
-	if len(values) == 0 {
-		return
-	}
-	if o.metadata.Meta == nil {
-		o.metadata.Meta = make(map[string]interface{}, len(values))
-	}
-	for k, v := range values {
-		o.metadata.Meta[k] = v
-	}
-}
-
-func (o *simpleObserver) GetContent() string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return stripThinking(o.content)
-}
-
-// RawContent returns the unfiltered content (including think blocks) for debugging.
-func (o *simpleObserver) RawContent() string {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.content
-}
-
-func (o *simpleObserver) Metadata() middleware.ConversationMetadata {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	meta := middleware.ConversationMetadata{
-		Title:     o.metadata.Title,
-		UpdatedAt: o.metadata.UpdatedAt,
-		Status:    o.metadata.Status,
-	}
-	if len(o.metadata.Meta) > 0 {
-		meta.Meta = make(map[string]interface{}, len(o.metadata.Meta))
-		for k, v := range o.metadata.Meta {
-			meta.Meta[k] = v
-		}
-	}
-	return meta
-}
-
-func toolUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
-	meta := make(map[string]interface{}, len(notif.Update.Meta)+4)
-	meta["source_update_type"] = notif.Update.SessionUpdate
-	meta["content_type"] = notif.Update.Content.Type
-	meta["protocol"] = "acp"
-	meta["protocol_method"] = "session/update"
-	meta["acp"] = map[string]interface{}{
-		"session_id":     notif.SessionID,
-		"session_update": notif.Update.SessionUpdate,
-		"tool_call_id":   notif.Update.ToolCallID,
-		"tool_kind":      notif.Update.Kind,
-		"status":         notif.Update.Status,
-		"raw_input":      notif.Update.RawInput,
-		"locations":      notif.Update.Locations,
-		"content": map[string]interface{}{
-			"type": notif.Update.Content.Type,
-			"text": notif.Update.Content.Text,
-		},
-		"title":      notif.Update.Title,
-		"updated_at": notif.Update.UpdatedAt,
-		"_meta":      notif.Update.Meta,
-	}
-	if strings.TrimSpace(notif.Update.Title) != "" {
-		meta["title"] = notif.Update.Title
-	}
-	if strings.TrimSpace(notif.SessionID) != "" {
-		meta["remote_session_id"] = notif.SessionID
-	}
-	if strings.TrimSpace(notif.Update.ToolCallID) != "" {
-		meta["tool_call_id"] = notif.Update.ToolCallID
-	}
-	if strings.TrimSpace(notif.Update.Kind) != "" {
-		meta["tool_kind"] = notif.Update.Kind
-		meta["acp_tool_kind"] = notif.Update.Kind
-	}
-	if strings.TrimSpace(notif.Update.Status) != "" {
-		meta["status"] = notif.Update.Status
-	}
-	if len(notif.Update.RawInput) > 0 {
-		meta["raw_input"] = notif.Update.RawInput
-	}
-	if len(notif.Update.Locations) > 0 {
-		meta["locations"] = notif.Update.Locations
-	}
-	for k, v := range notif.Update.Meta {
-		meta[k] = v
-	}
-	return meta
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}
-
-// stripThinking removes <think...</think...> blocks from agent output.
-// Some agents emit reasoning inside these tags; they should not reach the user.
-func stripThinking(s string) string {
-	return stripTagBlock(s, "<think", "</think")
-}
-
-func stripTagBlock(s, openTag, closeTag string) string {
-	for {
-		start := strings.Index(s, openTag)
-		if start == -1 {
-			break
-		}
-		// Find end of the opening tag (skip attributes like <think xmlns=...>)
-		tagEnd := strings.Index(s[start:], ">")
-		if tagEnd == -1 {
-			break
-		}
-		end := strings.Index(s[start:], closeTag)
-		if end == -1 {
-			break
-		}
-		closeEnd := strings.Index(s[start+end:], ">")
-		if closeEnd == -1 {
-			break
-		}
-		s = s[:start] + s[start+end+closeEnd+1:]
-	}
-	return s
-}
-
-// WaitIdle blocks until the stream has been silent for the given duration,
-// indicating the agent has finished emitting chunks.
-func (o *simpleObserver) WaitIdle(ctx context.Context, idle time.Duration) {
-	if o.updates == nil {
-		return
-	}
-
-	timer := time.NewTimer(idle)
-	defer timer.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			return
-		case <-o.updates:
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			timer.Reset(idle)
-		}
-	}
-}
-
-// ----------------------------------------------------------------------------
 // Session management
 // ----------------------------------------------------------------------------
 
@@ -509,22 +268,38 @@ func isSessionNotFoundError(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "session not found")
 }
 
-// pickAutoApproveMode finds the most permissive mode from the session/new response.
+// pickAutoApproveConfigOption finds the most permissive config-option value
+// when the agent exposes ACP's preferred session config options surface.
+func pickAutoApproveConfigOption(resp *middleware.NewSessionResponse) (string, string) {
+	if resp == nil || len(resp.ConfigOptions) == 0 {
+		return "", ""
+	}
+	for _, opt := range resp.ConfigOptions {
+		if opt.Category != "mode" && !strings.EqualFold(opt.ID, "mode") {
+			continue
+		}
+		if value := pickPreferredID(configOptionIDs(opt.Options)); value != "" {
+			return opt.ID, value
+		}
+	}
+	return "", ""
+}
+
+func configOptionIDs(values []middleware.ConfigOptionValue) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, value.ID)
+	}
+	return out
+}
+
+// pickAutoApproveMode finds the most permissive legacy mode from the session/new response.
 // Priority: build > yolo > auto > autoEdit > code > agent > first available.
 // Mode IDs are agent-defined strings, so we match case-insensitively against
 // known write-enabled mode names. "build" is opencode's write mode, "yolo" is
 // Zed's auto-approve mode, "code" is Claude Code's default mode.
 func pickAutoApproveMode(resp *middleware.NewSessionResponse) string {
 	var available []string
-	if resp.ConfigOptions != nil {
-		for _, opt := range resp.ConfigOptions {
-			if opt.Category == "mode" {
-				for _, v := range opt.Options {
-					available = append(available, v.ID)
-				}
-			}
-		}
-	}
 	if resp.Modes != nil {
 		for _, m := range resp.Modes.AvailableModes {
 			available = append(available, m.ID)
@@ -534,7 +309,13 @@ func pickAutoApproveMode(resp *middleware.NewSessionResponse) string {
 		return ""
 	}
 
-	// Priority order for known auto-approve/write-enabled mode IDs
+	return pickPreferredID(available)
+}
+
+func pickPreferredID(available []string) string {
+	if len(available) == 0 {
+		return ""
+	}
 	priority := []string{"build", "yolo", "auto", "autoEdit", "code", "agent"}
 	for _, preferred := range priority {
 		for _, id := range available {
@@ -558,14 +339,15 @@ func pickAutoApproveMode(resp *middleware.NewSessionResponse) string {
 //  4. Collect final response and return
 func (r *Router) executePrompt(ctx context.Context, client middleware.ConversationClient, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
 	turn := middleware.ConversationTurn{
-		AgentID:          req.AgentID,
-		LogicalSessionID: req.LogicalSessionID,
-		RemoteSessionID:  req.AgentSessionID,
-		WorkspacePath:    req.WorkspacePath,
-		Message:          req.Message,
-		SidecarCapsules:  req.SidecarCapsules,
-		Tools:            req.Tools,
-		ThoughtNotifier:  req.ThoughtNotifier,
+		AgentID:           req.AgentID,
+		LogicalSessionID:  req.LogicalSessionID,
+		RemoteSessionID:   req.AgentSessionID,
+		WorkspacePath:     req.WorkspacePath,
+		Message:           req.Message,
+		SidecarCapsules:   req.SidecarCapsules,
+		Tools:             req.Tools,
+		ThoughtNotifier:   req.ThoughtNotifier,
+		LiveContextAttach: req.LiveContextAttach,
 	}
 	result, err := client.ExecuteTurn(ctx, turn)
 	if err != nil && turn.RemoteSessionID != "" && isSessionNotFoundError(err) && !req.StrictSession {

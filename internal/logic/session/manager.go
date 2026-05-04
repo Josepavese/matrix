@@ -183,39 +183,48 @@ func (m *Manager) HandleIntent(ctx context.Context, channelID, intent, target st
 // HandleSessionActionTyped executes a typed session lifecycle action using the shared core semantics.
 func (m *Manager) HandleSessionActionTyped(ctx context.Context, req middleware.SessionActionRequest) (middleware.SessionActionResult, error) {
 	lang := m.wizard.GetLanguage(req.ChannelID)
-	switch strings.ToLower(strings.TrimSpace(req.Action)) {
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	result, handled, err := m.handleSessionCoreAction(ctx, req, lang, action)
+	if handled || err != nil {
+		return result, err
+	}
+	return m.handleSessionProviderAction(ctx, req, action)
+}
+
+func (m *Manager) handleSessionCoreAction(ctx context.Context, req middleware.SessionActionRequest, lang, action string) (middleware.SessionActionResult, bool, error) {
+	switch action {
 	case "cancel":
-		return m.handleSessionCancelTyped(ctx, req.ChannelID, lang, req.Target)
+		result, err := m.handleSessionCancelTyped(ctx, req.ChannelID, lang, req.Target)
+		return result, true, err
 	case "delete":
-		return m.handleSessionDeleteTyped(ctx, sessionCleanupRequest{
+		result, err := m.handleSessionDeleteTyped(ctx, sessionCleanupRequest{
 			ChannelID:        req.ChannelID,
 			Lang:             lang,
 			Target:           req.Target,
 			CleanupPolicy:    req.CleanupPolicy,
 			ForceForgetLocal: req.ForceForgetLocal,
 		})
+		return result, true, err
 	case "cleanup":
-		return m.handleSessionCleanupTyped(ctx, sessionCleanupRequest{
+		result, err := m.handleSessionCleanupTyped(ctx, sessionCleanupRequest{
 			ChannelID:        req.ChannelID,
 			Lang:             lang,
 			Target:           req.Target,
 			CleanupPolicy:    req.CleanupPolicy,
 			ForceForgetLocal: req.ForceForgetLocal,
 		})
+		return result, true, err
 	case "switch":
-		return m.handleSessionSwitchTyped(ctx, req.ChannelID, lang, req.Target)
+		result, err := m.handleSessionSwitchTyped(ctx, req.ChannelID, lang, req.Target)
+		return result, true, err
 	case "list":
-		return m.handleSessionListTyped(ctx, req.ChannelID, lang, req.WorkspaceID)
-	case "capabilities", "capability", "providers":
-		return m.handleSessionCapabilitiesTyped(ctx, req)
-	case "fork":
-		return m.handleSessionForkTyped(ctx, req)
-	case "reconcile":
-		return m.handleSessionReconcileTyped(ctx, req)
+		result, err := m.handleSessionListTyped(ctx, req, lang)
+		return result, true, err
 	case "status":
-		return m.handleSessionStatusTyped(req.ChannelID, lang, req.WorkspaceID)
+		result, err := m.handleSessionStatusTyped(req.ChannelID, lang, req.WorkspaceID)
+		return result, true, err
 	case "new":
-		return m.handleSessionNewTyped(newSessionRequest{
+		result, err := m.handleSessionNewTyped(newSessionRequest{
 			ChannelID:     req.ChannelID,
 			Lang:          lang,
 			AgentID:       req.Target,
@@ -224,8 +233,25 @@ func (m *Manager) HandleSessionActionTyped(ctx context.Context, req middleware.S
 			Ephemeral:     req.Ephemeral,
 			CleanupPolicy: req.CleanupPolicy,
 		})
+		return result, true, err
 	case "name":
-		return m.handleSessionNameTyped(req.ChannelID, lang, req.Target)
+		result, err := m.handleSessionNameTyped(req.ChannelID, lang, req.Target)
+		return result, true, err
+	default:
+		return middleware.SessionActionResult{}, false, nil
+	}
+}
+
+func (m *Manager) handleSessionProviderAction(ctx context.Context, req middleware.SessionActionRequest, action string) (middleware.SessionActionResult, error) {
+	switch action {
+	case "capabilities", "capability", "providers":
+		return m.handleSessionCapabilitiesTyped(ctx, req)
+	case "fork":
+		return m.handleSessionForkTyped(ctx, req)
+	case "fork_status", "fork-status", "forkstatus":
+		return m.handleSessionForkStatusTyped(req)
+	case "reconcile":
+		return m.handleSessionReconcileTyped(ctx, req)
 	default:
 		return middleware.SessionActionResult{}, fmt.Errorf("unsupported session action: %s", req.Action)
 	}

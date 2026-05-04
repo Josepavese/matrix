@@ -1,6 +1,6 @@
 # Matrix Live Context Interrupt Policy
 
-Last reviewed: 2026-04-19.
+Last reviewed: 2026-05-04.
 
 ## Decision
 
@@ -11,10 +11,25 @@ ACP guarantees a cancellation path for an active prompt turn. It does not define
 a standard "append this new prompt/context into the currently running turn and
 make the model consume it before final answer" operation.
 
+The latest ACP docs and schema release v0.12.2 also do not define a `side`,
+`session/side`, or equivalent inline side-channel primitive. The official
+branching primitive is draft `session/fork`; it creates a separate session and
+does not solve mid-turn live context injection by itself.
+
+ACP `session/update` notifications are session-scoped, not request-scoped. A
+client receiving updates for `sessionId=s1` cannot prove which concurrent
+`session/prompt` request caused an update unless the agent and client negotiate
+a custom `_meta` correlation extension. Matrix therefore forbids concurrent ACP
+`session/prompt` calls for the same remote session.
+
 Matrix therefore separates these controls:
 
 - `cancel`: interrupt/stop the active turn through provider protocol support;
-- `attach_context`: best-effort live sidecar delivery into the active session;
+- `attach_context`: best-effort live sidecar delivery only when the provider has
+  a safe live-interrupt path;
+- `unverified`: provider returned without live attach activity proof;
+- `terminal_boundary`: provider returned near run completion without live
+  attach activity proof;
 - `late`: delivery did not complete before the original run became terminal;
 - next-turn append/restart: safe fallback for providers that do not consume
   injected context mid-turn.
@@ -39,6 +54,18 @@ must be explicitly negotiated and cannot be assumed for interoperability.
 
 Reference: https://agentclientprotocol.com/protocol/extensibility
 
+ACP request cancellation RFD proposes `$/cancel_request` for cancelling a
+specific JSON-RPC request, but it is still an RFD and does not add mid-turn
+context injection.
+
+Reference: https://agentclientprotocol.com/rfds/request-cancellation
+
+Community prior art: `acpx` solves active-session concurrency with per-session
+prompt queueing and cooperative `session/cancel`. It does not treat a second
+concurrent `session/prompt` as live injection.
+
+Reference: https://github.com/openclaw/acpx
+
 Gemini CLI ACP docs list `prompt` for sending a prompt and `cancel` for
 cancelling an ongoing prompt. They do not document a standard mid-turn context
 append/interruption operation.
@@ -55,27 +82,41 @@ Reference: https://github.com/zed-industries/codex-acp
 ## Observed Matrix Runtime Results
 
 Real-agent probes were run through Matrix `/v1/runs` and
-`/v1/runs/{run_id}/actions` using `scripts/probe_live_attach.sh`.
+`/v1/runs/{run_id}/actions` using `scripts/probe_live_attach.sh`. Earlier
+probes that issued a second ACP `session/prompt` on the active session are no
+longer considered valid proof, because ACP updates are session-scoped and can be
+observed by multiple overlapping request observers.
 
 | Agent | Wire path | Observed live context result | Matrix interpretation |
 | --- | --- | --- | --- |
-| `opencode` | ACP | delivered before `run.completed`; marker observed in provider output | supports live context interrupt for this probe |
-| `codex` | `codex-acp` | request accepted while run active, then `late`; no provider-output marker | does not currently provide reliable mid-turn live context consumption |
-| `gemini` | Gemini CLI ACP | request accepted while run active, then `late`; no provider-output marker | does not currently provide reliable mid-turn live context consumption |
+| ACP baseline | `session/prompt` on active session | unsafe/ambiguous | Matrix rejects live attach while a prompt is active |
+| `opencode` | ACP | no negotiated Matrix live-injection extension | use cancel/restart or next-turn context |
+| `codex` | `codex-acp` | no negotiated Matrix live-injection extension | use cancel/restart or next-turn context |
+| `gemini` | Gemini CLI ACP | no negotiated Matrix live-injection extension | use cancel/restart or next-turn context |
 
-`late` is not a provider failure. It means Matrix accepted a live-context
-delivery request while the run was active, but the provider did not finish
-consuming that context before the run completed.
+`unsupported` for ACP live attach during an active prompt is intentional. It
+means Matrix refused to create a false live-intervention claim. The caller must
+choose `cancel`, cancel-and-restart, or next-turn context.
 
 ## Product Semantics
 
 Matrix must never present `accepted` as proof that the target LLM consumed the
-context. Proof requires one of:
+context. Useful live attach proof requires:
 
-- `run.context.attached status=delivered` before `run.completed`;
-- matching provider output in `run.context.attached.message`,
-  `agent.message.delta`, or `agent.message.final` when inline traces are
-  explicitly enabled.
+- `run.context.attached status=delivered`;
+- `live_consumption_proven=true`;
+- `delivery_class=live_activity_observed`;
+- `provider_activity_events > 0`.
+
+For ACP, those activity events are valid only when Matrix knows there is no
+overlapping prompt observer for the same remote session, or when a negotiated
+provider extension carries per-request/turn correlation. Baseline ACP exposes no
+standard turn id on `session/update`.
+
+`unverified` means the provider returned while the run stayed active, but Matrix
+still lacks hard evidence that the LLM used the context. `terminal_boundary`
+means the provider returned near completion with no attach activity. Clients
+must not count either state as useful live intervention.
 
 If a provider records `late`, clients should choose one of:
 
@@ -83,9 +124,14 @@ If a provider records `late`, clients should choose one of:
 - cancel and restart the run with the new context;
 - queue the context as next-turn state.
 
+If a provider records `unsupported` with reason `conversation turn already
+active`, clients should make the same fallback choice immediately instead of
+waiting for the current turn to finish.
+
 `accepted` followed by a terminal delivery state for the same `delivery_id` is
 expected. `accepted` means Matrix accepted the action and queued the delivery
-attempt; `delivered`, `late`, `failed`, or `unsupported` is the final evidence.
+attempt; `delivered`, `unverified`, `terminal_boundary`, `late`, `failed`, or
+`unsupported` is the final evidence.
 For active runs, Matrix treats the run trace's `logical_session_id` and
 `remote_session_id` as the delivery SSOT. A channel/session mirror may lag until
 the active turn finishes, especially after provider recovery or forked artifact
@@ -111,7 +157,10 @@ for a session owned by a reaped process. If process reap already proves the old
 session unreachable, cleanup can remain `clean=true strong_cleanup=true` and
 carry typed warnings such as
 `remote_lifecycle_skipped_no_reusable_cached_agent_client` or
-`remote_cancel_session_not_found_after_process_reap`.
+`remote_cancel_session_not_found_after_process_reap`. If keepalive evicts the
+dead client before cleanup runs, Matrix keeps a short-lived tombstone bound to
+the agent, workspace, and tracked remote session ids; cleanup may consume it as
+process proof only for the matching target session.
 
 For shared non-ephemeral sessions, Matrix may retain a provider client when
 other local sessions still reference the same `agent_id + workspace_path`. That
@@ -129,7 +178,17 @@ Provider capability names should stay explicit:
 - `supports_live_context_interrupt`: provider has been proven to consume
   Matrix live context before the current run completes;
 - `supports_next_turn_context`: provider can receive the same context on a
-  later turn.
+  later prompt turn;
+- `supports_concurrent_prompt`: provider explicitly supports concurrent
+  prompt-request correlation for one remote session. Baseline ACP does not.
+
+ACP adapter rule:
+
+- one active `session/prompt` per remote session;
+- normal user prompts wait behind the active prompt for the same session;
+- `attach_context` never waits behind an active ACP prompt and never sends a
+  concurrent prompt; it returns typed `unsupported` so supervisors can apply
+  cancel/restart or next-turn fallback.
 
 Do not infer `supports_live_context_interrupt=true` from ACP compatibility
 alone.

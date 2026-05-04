@@ -46,15 +46,16 @@ type AgentRouter interface {
 
 // RouteRequest contains the parameters for routing a prompt to an agent.
 type RouteRequest struct {
-	AgentID          string
-	LogicalSessionID string
-	AgentSessionID   string
-	WorkspacePath    string
-	Message          string
-	SidecarCapsules  []SidecarCapsule
-	Tools            []Tool
-	ThoughtNotifier  ThoughtNotifier // optional: receives real-time thought/tool updates during prompt
-	StrictSession    bool            // do not recover by creating a replacement remote session
+	AgentID           string
+	LogicalSessionID  string
+	AgentSessionID    string
+	WorkspacePath     string
+	Message           string
+	SidecarCapsules   []SidecarCapsule
+	Tools             []Tool
+	ThoughtNotifier   ThoughtNotifier // optional: receives real-time thought/tool updates during prompt
+	StrictSession     bool            // do not recover by creating a replacement remote session
+	LiveContextAttach bool            // true when this route is a best-effort live context injection
 }
 
 // ThoughtUpdateType classifies the kind of intermediate update from an agent.
@@ -218,17 +219,20 @@ type SessionMode struct {
 
 // ConfigOption describes a session-level configuration option.
 type ConfigOption struct {
-	ID       string              `json:"id"`
-	Name     string              `json:"name"`
-	Category string              `json:"category"`
-	Options  []ConfigOptionValue `json:"options"`
-	Current  string              `json:"current,omitempty"`
+	ID          string              `json:"id"`
+	Name        string              `json:"name"`
+	Description string              `json:"description,omitempty"`
+	Category    string              `json:"category,omitempty"`
+	Type        string              `json:"type,omitempty"`
+	Options     []ConfigOptionValue `json:"options,omitempty"`
+	Current     string              `json:"current_value,omitempty"`
 }
 
 // ConfigOptionValue is one of the possible values for a ConfigOption.
 type ConfigOptionValue struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 // PromptRequest is the payload sent to execute a prompt turn in an agent session.

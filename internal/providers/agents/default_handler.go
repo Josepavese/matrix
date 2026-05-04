@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	goexec "os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Josepavese/matrix/internal/logic/frontendevents"
 	"github.com/Josepavese/matrix/internal/middleware"
@@ -34,16 +38,24 @@ type defaultRequestHandler struct {
 	notifierMu sync.Mutex
 
 	// terminalRegistry holds active terminal sessions for async terminal methods.
-	terminals   map[string]*terminalSession
-	terminalsMu sync.Mutex
+	terminals      map[string]*terminalSession
+	terminalsMu    sync.Mutex
+	nextTerminalID uint64
 }
 
 // terminalSession tracks a running terminal process and its accumulated output.
 type terminalSession struct {
-	id     middleware.PipedProcess
-	output bytes.Buffer
-	done   chan struct{}
-	once   sync.Once
+	id              middleware.PipedProcess
+	output          bytes.Buffer
+	outputByteLimit int
+	truncated       bool
+	exitCode        *int
+	signal          string
+	done            chan struct{}
+	once            sync.Once
+	mu              sync.Mutex
+	toolSignal      frontendevents.ToolSignal
+	handler         *defaultRequestHandler
 }
 
 // newConfigurableRequestHandler creates a handler that consults the given
@@ -174,7 +186,9 @@ func (h *defaultRequestHandler) handleFSRead(_ context.Context, log *slog.Logger
 	}
 
 	var req struct {
-		Path string `json:"path"`
+		Path  string `json:"path"`
+		Line  *int   `json:"line,omitempty"`
+		Limit *int   `json:"limit,omitempty"`
 	}
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, fmt.Errorf("invalid fs/read_text_file params: %w", err)
@@ -191,13 +205,36 @@ func (h *defaultRequestHandler) handleFSRead(_ context.Context, log *slog.Logger
 		h.failClientTool(signal)
 		return nil, fmt.Errorf("failed to read file %s: %w", absPath, err)
 	}
-	signal.Metadata["bytes"] = len(data)
+	content := sliceTextLines(string(data), req.Line, req.Limit)
+	signal.Metadata["bytes"] = len(content)
 	h.completeClientTool(signal)
 
-	log.Info("agent read file", "path", absPath, "bytes", len(data))
+	log.Info("agent read file", "path", absPath, "bytes", len(content))
 	return map[string]interface{}{
-		"content": string(data),
+		"content": content,
 	}, nil
+}
+
+func sliceTextLines(content string, line, limit *int) string {
+	if line == nil && limit == nil {
+		return content
+	}
+	lines := strings.SplitAfter(content, "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return ""
+	}
+	start := 0
+	if line != nil && *line > 1 {
+		start = *line - 1
+	}
+	if start >= len(lines) {
+		return ""
+	}
+	end := len(lines)
+	if limit != nil && *limit >= 0 && start+*limit < end {
+		end = start + *limit
+	}
+	return strings.Join(lines[start:end], "")
 }
 
 func (h *defaultRequestHandler) handleFSWrite(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
@@ -245,17 +282,21 @@ func (h *defaultRequestHandler) handleFSWrite(_ context.Context, log *slog.Logge
 	return map[string]interface{}{"status": "ok"}, nil
 }
 
-// resolvePath resolves a path against cwd and validates it stays within cwd.
-// Both relative and absolute paths are confined to cwd to prevent directory traversal.
+// resolvePath resolves a path and validates it stays within cwd. ACP asks for
+// absolute paths, but relative paths are still accepted for tolerant adapters.
 func (h *defaultRequestHandler) resolvePath(p string) string {
 	if p == "" || h.cwd == "" {
 		return ""
 	}
 
-	absPath := filepath.Clean(filepath.Join(h.cwd, p))
+	cwd := filepath.Clean(h.cwd)
+	absPath := filepath.Clean(p)
+	if !filepath.IsAbs(absPath) {
+		absPath = filepath.Clean(filepath.Join(cwd, p))
+	}
 
 	// Path traversal check: ensure resolved path is within cwd
-	if absPath != h.cwd && !strings.HasPrefix(absPath, h.cwd+string(filepath.Separator)) {
+	if absPath != cwd && !strings.HasPrefix(absPath, cwd+string(filepath.Separator)) {
 		return ""
 	}
 
@@ -264,7 +305,7 @@ func (h *defaultRequestHandler) resolvePath(p string) string {
 
 // --- Terminal methods ---
 
-func (h *defaultRequestHandler) handleTerminalCreate(ctx context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+func (h *defaultRequestHandler) handleTerminalCreate(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
 	if h.proc == nil {
 		log.Warn("terminal handler not configured")
 		return nil, fmt.Errorf("terminal access not available")
@@ -277,35 +318,131 @@ func (h *defaultRequestHandler) handleTerminalCreate(ctx context.Context, log *s
 
 	log.Info("agent executing command", "command", req.Command, "args", req.Args, "cwd", req.WorkDir)
 	signal := h.beginClientTool(frontendevents.ACPClientTerminalToolSignal(req.Command, req.Args, req.WorkDir, nil), params)
-	result, err := h.proc.ExecSeparate(ctx, req.commandSpec())
+	pp, err := h.proc.StartPiped(req.commandSpec())
 	if err != nil {
 		h.failClientTool(signal)
-		return nil, fmt.Errorf("command execution failed: %w", err)
-	}
-	resultSignal := withRawInput(frontendevents.ACPClientTerminalToolSignal(req.Command, req.Args, req.WorkDir, &result.ExitCode), frontendevents.SanitizedRawInput(params))
-	if result.ExitCode == 0 {
-		h.completeClientTool(resultSignal)
-	} else {
-		h.failClientTool(resultSignal)
+		return nil, fmt.Errorf("command start failed: %w", err)
 	}
 
-	// Truncate large outputs to prevent memory issues
-	stdout := string(result.Stdout)
-	stderr := string(result.Stderr)
-	const maxOutputLen = 100 * 1024 // 100KB
-	if len(stdout) > maxOutputLen {
-		stdout = stdout[:maxOutputLen] + "\n... (truncated)"
+	terminalID := h.nextACPClientTerminalID()
+	ts := &terminalSession{
+		id:              pp,
+		done:            make(chan struct{}),
+		outputByteLimit: terminalOutputLimit(req.OutputByteLimit),
+		toolSignal:      signal,
+		handler:         h,
 	}
-	if len(stderr) > maxOutputLen {
-		stderr = stderr[:maxOutputLen] + "\n... (truncated)"
-	}
+	h.terminalsMu.Lock()
+	h.terminals[terminalID] = ts
+	h.terminalsMu.Unlock()
 
-	log.Info("command completed", "exit_code", result.ExitCode, "stdout_len", len(result.Stdout), "stderr_len", len(result.Stderr))
+	go ts.capture(terminalID, log)
 	return map[string]interface{}{
-		"exitCode": result.ExitCode,
-		"stdout":   stdout,
-		"stderr":   stderr,
+		"terminalId": terminalID,
 	}, nil
+}
+
+const defaultTerminalOutputByteLimit = 1024 * 1024
+
+func (h *defaultRequestHandler) nextACPClientTerminalID() string {
+	next := atomic.AddUint64(&h.nextTerminalID, 1)
+	return fmt.Sprintf("terminal-%d", next)
+}
+
+func terminalOutputLimit(requested int) int {
+	if requested <= 0 {
+		return defaultTerminalOutputByteLimit
+	}
+	return requested
+}
+
+func (ts *terminalSession) capture(terminalID string, log *slog.Logger) {
+	readErr := ts.copyOutput(ts.id.Stdout())
+	waitErr := ts.id.Wait()
+	code, signal := terminalExitStatus(waitErr)
+
+	ts.mu.Lock()
+	ts.exitCode = code
+	ts.signal = signal
+	ts.mu.Unlock()
+
+	resultSignal := ts.toolSignal
+	resultSignal.Metadata = cloneMetadata(resultSignal.Metadata)
+	if code != nil {
+		resultSignal.Metadata["exit_code"] = *code
+	}
+	if signal != "" {
+		resultSignal.Metadata["signal"] = signal
+	}
+	if readErr != nil {
+		resultSignal.Metadata["read_error"] = readErr.Error()
+	}
+	if waitErr == nil || (code != nil && *code == 0) {
+		ts.handler.completeClientTool(resultSignal)
+	} else {
+		ts.handler.failClientTool(resultSignal)
+	}
+	log.Info("terminal completed", "terminalId", terminalID, "exit_code", codeValue(code), "signal", signal, "read_error", readErr, "wait_error", waitErr)
+	ts.once.Do(func() { close(ts.done) })
+}
+
+func (ts *terminalSession) copyOutput(r io.Reader) error {
+	buf := make([]byte, 4096)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			ts.appendOutput(buf[:n])
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+func (ts *terminalSession) appendOutput(chunk []byte) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.outputByteLimit <= 0 {
+		ts.output.Write(chunk)
+		return
+	}
+	remaining := ts.outputByteLimit - ts.output.Len()
+	if remaining <= 0 {
+		ts.truncated = true
+		return
+	}
+	if len(chunk) > remaining {
+		ts.output.Write(chunk[:remaining])
+		ts.truncated = true
+		return
+	}
+	ts.output.Write(chunk)
+}
+
+func terminalExitStatus(err error) (*int, string) {
+	if err == nil {
+		code := 0
+		return &code, ""
+	}
+	var exitErr *goexec.ExitError
+	if errors.As(err, &exitErr) {
+		code := exitErr.ExitCode()
+		if code >= 0 {
+			return &code, ""
+		}
+		return nil, "terminated"
+	}
+	return nil, "error"
+}
+
+func codeValue(code *int) interface{} {
+	if code == nil {
+		return nil
+	}
+	return *code
 }
 
 // --- Async terminal methods ---
@@ -345,11 +482,19 @@ func (h *defaultRequestHandler) handleTerminalOutput(_ context.Context, log *slo
 		return nil, err
 	}
 
-	output := ts.output.String()
+	output, truncated, exitCode, signal, done := ts.snapshot()
 	log.Info("terminal output", "terminalId", id, "output_len", len(output))
-	return map[string]interface{}{
-		"output": output,
-	}, nil
+	resp := map[string]interface{}{
+		"output":    output,
+		"truncated": truncated,
+	}
+	if done {
+		resp["exitStatus"] = map[string]interface{}{
+			"exitCode": codeValue(exitCode),
+			"signal":   nullableString(signal),
+		}
+	}
+	return resp, nil
 }
 
 func (h *defaultRequestHandler) handleTerminalWaitForExit(ctx context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
@@ -370,11 +515,11 @@ func (h *defaultRequestHandler) handleTerminalWaitForExit(ctx context.Context, l
 		return nil, fmt.Errorf("wait cancelled: %w", ctx.Err())
 	}
 
-	output := ts.output.String()
-	log.Info("terminal exited", "terminalId", id, "output_len", len(output))
+	_, _, exitCode, signal, _ := ts.snapshot()
+	log.Info("terminal exited", "terminalId", id, "exit_code", codeValue(exitCode), "signal", signal)
 	return map[string]interface{}{
-		"exitCode": 0,
-		"output":   output,
+		"exitCode": codeValue(exitCode),
+		"signal":   nullableString(signal),
 	}, nil
 }
 
@@ -392,10 +537,9 @@ func (h *defaultRequestHandler) handleTerminalKill(_ context.Context, log *slog.
 		log.Warn("failed to kill terminal", "terminalId", id, "error", err)
 		return nil, fmt.Errorf("failed to kill terminal %s: %w", id, err)
 	}
-	ts.once.Do(func() { close(ts.done) })
 
 	log.Info("terminal killed", "terminalId", id)
-	return map[string]interface{}{"status": "ok"}, nil
+	return map[string]interface{}{}, nil
 }
 
 func (h *defaultRequestHandler) handleTerminalRelease(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
@@ -417,10 +561,9 @@ func (h *defaultRequestHandler) handleTerminalRelease(_ context.Context, log *sl
 
 	// Ensure process is cleaned up
 	_ = ts.id.Kill()
-	ts.once.Do(func() { close(ts.done) })
 
 	log.Info("terminal released", "terminalId", id)
-	return map[string]interface{}{"status": "ok"}, nil
+	return map[string]interface{}{}, nil
 }
 
 // CloseTerminals cleans up all active terminal sessions.
@@ -429,7 +572,30 @@ func (h *defaultRequestHandler) CloseTerminals() {
 	defer h.terminalsMu.Unlock()
 	for id, ts := range h.terminals {
 		_ = ts.id.Kill()
-		ts.once.Do(func() { close(ts.done) })
 		delete(h.terminals, id)
 	}
+}
+
+func (ts *terminalSession) snapshot() (string, bool, *int, string, bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	done := false
+	select {
+	case <-ts.done:
+		done = true
+	default:
+	}
+	var code *int
+	if ts.exitCode != nil {
+		value := *ts.exitCode
+		code = &value
+	}
+	return ts.output.String(), ts.truncated, code, ts.signal, done
+}
+
+func nullableString(value string) interface{} {
+	if value == "" {
+		return nil
+	}
+	return value
 }

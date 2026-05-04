@@ -59,6 +59,31 @@ func TestRemoteCancelIsStrongCleanupProof(t *testing.T) {
 	}
 }
 
+func TestRetainedProcessDowngradesRemoteCancelCleanupStrength(t *testing.T) {
+	input := CleanInput{
+		Ephemeral:               true,
+		RemoteSessionID:         "remote-1",
+		CleanupPolicy:           middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		RemoteCanceled:          true,
+		ProcessRetained:         true,
+		ProcessRetentionAllowed: true,
+		ProcessRetentionReason:  ForkChildUsesParentAgentClient,
+		LocalForgotten:          true,
+	}
+	if !IsClean(input) {
+		t.Fatalf("retained process with remote cancel remains operationally clean")
+	}
+	if !HasStrongProof(input) {
+		t.Fatalf("remote cancel still provides provider proof")
+	}
+	if got := Strength(input); got != StrengthRetained {
+		t.Fatalf("retained process must downgrade strength, got %q", got)
+	}
+	if got := WeakReason(input); got != WeakCleanupProcessRetained {
+		t.Fatalf("unexpected weak reason: %q", got)
+	}
+}
+
 func TestProcessReapIsStrongCleanupProofForEphemeralRemoteSession(t *testing.T) {
 	input := CleanInput{
 		Ephemeral:           true,

@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
+	"github.com/Josepavese/matrix/internal/logic/runactivity"
 	"github.com/Josepavese/matrix/internal/logic/runnotifier"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/logic/sidecar"
@@ -43,7 +43,8 @@ func (s *Server) HandleRuns(w http.ResponseWriter, r *http.Request) {
 		runID:            run.ID,
 		req:              req,
 		agentID:          agentID,
-		emergencyTimeout: emergencyTimeout(req),
+		emergencyTimeout: runactivity.DurationSeconds(req.EmergencyKillSeconds),
+		activityTimeout:  runactivity.DurationSeconds(req.ActivityTimeoutSeconds),
 	})
 }
 
@@ -116,14 +117,14 @@ func (s *Server) appendRouteEvents(run runtrace.Run, requestedAgentID, selectedA
 func (s *Server) dispatchByExecutionMode(w http.ResponseWriter, r *http.Request, exec runExecution) {
 	switch normalizeRunExecutionMode(exec.req.ExecutionMode) {
 	case runtrace.ExecutionModeAsync:
-		ctx, cancel := executionContext(context.Background(), exec.emergencyTimeout)
+		ctx, cancel := runactivity.Context(context.Background(), exec.emergencyTimeout)
 		s.trackRunCancel(exec.runID, cancel)
 		go s.executeRunAsync(ctx, exec)
 		writeJSON(w, http.StatusAccepted, runResponseBuilder.NewSuccess(exec.runID, runtrace.StatusRunning, ""))
 	case runtrace.ExecutionModeStream:
 		s.handleRunStream(w, r, exec)
 	default:
-		ctx, cancel := executionContext(r.Context(), exec.emergencyTimeout)
+		ctx, cancel := runactivity.Context(r.Context(), exec.emergencyTimeout)
 		defer cancel()
 		res, err := s.executeRun(ctx, exec)
 		if err != nil {
@@ -137,8 +138,12 @@ func (s *Server) dispatchByExecutionMode(w http.ResponseWriter, r *http.Request,
 				})
 				return
 			}
-			if isEmergencyTimeout(ctx, err, exec) {
+			if runactivity.IsDeadline(ctx, err, exec.emergencyTimeout) {
 				writeJSON(w, http.StatusGatewayTimeout, runResponseBuilder.NewError(exec.runID, runtrace.StatusCancelled, "emergency kill deadline reached", res.cleanup))
+				return
+			}
+			if runactivity.IsTimeoutError(err) {
+				writeJSON(w, http.StatusGatewayTimeout, runResponseBuilder.NewErrorForError(exec.runID, runtrace.StatusCancelled, err, res.cleanup))
 				return
 			}
 			if status, ok := providerfailure.HTTPStatus(err); ok {
@@ -153,8 +158,7 @@ func (s *Server) dispatchByExecutionMode(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutionResult, error) {
-	before := s.sessionSnapshot(ctx, exec.req.ChannelID, exec.req.WorkspaceID)
-	prepared, err := s.prepareSessionForRun(ctx, exec)
+	sessionCtx, err := s.prepareRunSessionContext(ctx, exec)
 	if err != nil {
 		_, _ = s.runStore.Fail(exec.runID, err)
 		providerfailure.AppendRunEvent(s.runStore, exec.runID, err)
@@ -162,7 +166,9 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 		return runExecutionResult{}, err
 	}
 	notifier := runnotifier.New(s.runStore, exec.runID, exec.agentID, s.resolveProtocol(exec.agentID))
-	res, err := s.route(ctx, exec.req, exec.agentID, notifier)
+	routeCtx, routeNotifier, activityState, stopActivityWatch := runactivity.WithTimeout(ctx, exec.activityTimeout, notifier)
+	defer stopActivityWatch()
+	res, err := s.route(routeCtx, exec.req, exec.agentID, routeNotifier)
 	if err != nil {
 		postCtx, postCancel := postRunContext(ctx)
 		defer postCancel()
@@ -170,16 +176,16 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 			runID:       exec.runID,
 			channelID:   exec.req.ChannelID,
 			workspaceID: exec.req.WorkspaceID,
-			before:      before,
+			before:      sessionCtx.before,
 		})
-		var cleanup *middleware.SessionCleanupResult
-		if runRequiresCleanup(exec.req) {
-			cleanup, _ = s.cleanupRunSession(ctx, exec, cleanupTargetSnapshot(prepared, after))
-		}
+		cleanup, _ := s.cleanupRunSessionContext(postCtx, exec, sessionCtx, after)
 		switch {
-		case isEmergencyTimeout(ctx, err, exec):
+		case runactivity.IsTimeout(activityState, err):
+			err = runactivity.Error(activityState)
+			_, _ = s.runStore.Cancel(exec.runID, "activity_timeout")
+		case runactivity.IsDeadline(ctx, err, exec.emergencyTimeout):
 			_, _ = s.runStore.Cancel(exec.runID, "emergency_kill_timeout")
-		case isRunContextCancelled(ctx, err):
+		case runactivity.IsContextCancelled(ctx, err):
 			_, _ = s.runStore.Cancel(exec.runID, "cancelled")
 		default:
 			_, _ = s.runStore.Fail(exec.runID, err)
@@ -192,16 +198,13 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 		runID:       exec.runID,
 		channelID:   exec.req.ChannelID,
 		workspaceID: exec.req.WorkspaceID,
-		before:      before,
+		before:      sessionCtx.before,
 	})
-	var cleanup *middleware.SessionCleanupResult
-	if runRequiresCleanup(exec.req) {
-		cleanup, err = s.cleanupRunSession(ctx, exec, cleanupTargetSnapshot(prepared, after))
-		if err != nil {
-			_, _ = s.runStore.Fail(exec.runID, err)
-			s.untrackRunCancel(exec.runID)
-			return runExecutionResult{output: res, cleanup: cleanup}, err
-		}
+	cleanup, err := s.cleanupRunSessionContext(ctx, exec, sessionCtx, after)
+	if err != nil {
+		_, _ = s.runStore.Fail(exec.runID, err)
+		s.untrackRunCancel(exec.runID)
+		return runExecutionResult{output: res, cleanup: cleanup}, err
 	}
 	_, err = s.runStore.Complete(exec.runID, res, "end_turn")
 	s.untrackRunCancel(exec.runID)
@@ -231,12 +234,12 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request, exec ru
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
-	ctx, cancel := executionContext(r.Context(), exec.emergencyTimeout)
+	ctx, cancel := runactivity.Context(r.Context(), exec.emergencyTimeout)
 	defer cancel()
 	res, err := s.executeRun(ctx, exec)
 	if err != nil {
 		status := runtrace.StatusFailed
-		if isEmergencyTimeout(ctx, err, exec) {
+		if runactivity.IsDeadline(ctx, err, exec.emergencyTimeout) || runactivity.IsTimeoutError(err) {
 			status = runtrace.StatusCancelled
 		}
 		_ = json.NewEncoder(w).Encode(runResponseBuilder.NewErrorForError(exec.runID, status, err, res.cleanup))
@@ -251,39 +254,19 @@ func (s *Server) executeRunAsync(ctx context.Context, exec runExecution) {
 		return
 	}
 	switch {
-	case isEmergencyTimeout(ctx, err, exec):
+	case runactivity.IsDeadline(ctx, err, exec.emergencyTimeout):
 		slog.Warn("matrix async run emergency timeout", append([]any{"event", "run_emergency_timeout", "error", err, "run_id", exec.runID}, cleanupLogArgs(res.cleanup)...)...)
-	case isRunContextCancelled(ctx, err):
+	case runactivity.IsTimeoutError(err):
+		slog.Warn("matrix async run activity timeout", append([]any{"event", "run_activity_timeout", "error", err, "run_id", exec.runID}, cleanupLogArgs(res.cleanup)...)...)
+	case runactivity.IsContextCancelled(ctx, err):
 		slog.Info("matrix async run cancelled", append([]any{"event", "run_cancelled", "error", err, "run_id", exec.runID}, cleanupLogArgs(res.cleanup)...)...)
 	default:
 		slog.Error("matrix async run bridge failed", append([]any{"error", err, "run_id", exec.runID}, cleanupLogArgs(res.cleanup)...)...)
 	}
 }
 
-func executionContext(parent context.Context, emergencyTimeout time.Duration) (context.Context, context.CancelFunc) {
-	if emergencyTimeout <= 0 {
-		return context.WithCancel(parent)
-	}
-	return context.WithTimeout(parent, emergencyTimeout)
-}
-
 func postRunContext(parent context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(parent), runCleanupTimeout)
-}
-
-func emergencyTimeout(req runRequest) time.Duration {
-	if req.EmergencyKillSeconds <= 0 {
-		return 0
-	}
-	return time.Duration(req.EmergencyKillSeconds) * time.Second
-}
-
-func isEmergencyTimeout(ctx context.Context, err error, exec runExecution) bool {
-	return exec.emergencyTimeout > 0 && (errors.Is(err, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded)
-}
-
-func isRunContextCancelled(ctx context.Context, err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled)
 }
 
 func isSetupRequired(err error) bool {

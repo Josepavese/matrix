@@ -64,6 +64,7 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
 | `cleanup_policy` | string | No | Cleanup policy for `session_policy=new_ephemeral_delete_after_run`; ignored as a destructive cleanup trigger when `session_policy` is omitted |
 | `sidecar_capsules` | array | No | Protocol-neutral sidecar context projected into ACP/A2A and traced as `sidecar.capsule.delivered` |
 | `emergency_kill_seconds` | number | No | Explicit wall-clock emergency fuse. Omitted means no hard run timeout |
+| `activity_timeout_seconds` | number | No | Explicit idle-progress watchdog. Omitted means no activity timeout; when set, no agent/tool activity for this duration cancels the run with `activity_timeout` |
 
 **Response (sync mode):**
 
@@ -256,17 +257,18 @@ curl -X POST http://127.0.0.1:9091/v1/runs/run-abc123/actions \
   }'
 ```
 
-`attach_context` returns `202` with a `delivery_id` when accepted. Delivery happens in the background and is visible in run events. `run.context.attached` first records `accepted`, then records final evidence for the same `delivery_id`: `delivered`, `late`, `failed`, or `unsupported`. `delivered` is used only when the context is delivered while the run is still active. If the provider processes it after the run becomes terminal, Matrix records `status=late` and does not emit `sidecar.capsule.delivered` for that run. Matrix returns `status=unsupported` when the run is not active, the session is not ready, or the runtime cannot attach live context. The run trace's `logical_session_id + remote_session_id` is the live-delivery SSOT; Matrix does not reject delivery just because the channel mirror has not yet persisted the active run remote id.
+`attach_context` returns `202` with a `delivery_id` when accepted. Delivery happens in the background and is visible in run events. `run.context.attached` first records `accepted`, then records final evidence for the same `delivery_id`: `delivered`, `unverified`, `terminal_boundary`, `late`, `failed`, or `unsupported`. `delivered` is reserved for useful live attach proof and carries `delivery_class`, `live_consumption_proven=true`, and `provider_activity_events>0` unless the provider supplies an equivalent explicit proof. If the provider returns near run completion without attach-stream/tool activity, Matrix records `terminal_boundary` and does not emit `sidecar.capsule.delivered`. If the provider returns while the run remains active but still emits no attach activity, Matrix records `unverified` and also does not emit `sidecar.capsule.delivered`. If the provider processes it after the run becomes terminal, Matrix records `late`. Matrix returns `unsupported` when the run is not active, the session is not ready, or the runtime cannot attach live context. The run trace's `logical_session_id + remote_session_id` is the live-delivery SSOT; Matrix does not reject delivery just because the channel mirror has not yet persisted the active run remote id.
 
 `attach_context` is not the same as ACP `session/cancel`. ACP-compatible agents
 are expected to support cancellation, but mid-turn live context consumption is
 provider-specific. Treat `accepted` as queue/delivery acceptance only; treat
-`delivered` before `run.completed` as in-run delivery proof; treat `late` as
-"provider did not consume this context before the run ended." Current real
-probes showed OpenCode consuming live context in-run, while Codex via
-`codex-acp` and Gemini CLI ACP accepted the request but completed with `late`.
-Use cancel-and-restart or next-turn context for providers without proven live
-interrupt support.
+`delivered` with `live_consumption_proven=true` as useful live attach proof;
+treat `unverified`, `terminal_boundary`, and `late` as "provider did not prove useful
+consumption before the run ended." Baseline ACP exposes session-scoped updates,
+not prompt-request-scoped updates, so Matrix serializes normal prompts per
+remote session and returns `unsupported` for live `attach_context` when an ACP
+prompt is already active. Use `cancel`, cancel-and-restart, or next-turn
+context for providers without a negotiated live-interrupt extension.
 
 ---
 
@@ -366,7 +368,11 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
   }'
 ```
 
-`delete` and `cleanup` return a `cleanup` proof. If the provider does not support remote delete, Matrix attempts remote close when advertised by the protocol adapter, then remote cancel when policy allows it, then forgets the local mirror when requested by policy. After local deletion, Matrix closes the exact workspace-bound agent client when no other local session still references the same `agent_id + workspace_path`; otherwise it reports `process_retained=true`, `process_retention_allowed=true`, `cleanup_strength=retained`, and `weak_cleanup_reason=process_retained`. Cleanup proof can include `warnings` and `failure_code`; for example `agent_start_context_cancelled_during_cleanup` means a cleanup operation tried to start a provider while using an already-canceled context.
+`delete` and `cleanup` return a `cleanup` proof. If the provider does not support remote delete, Matrix attempts remote close when advertised by the protocol adapter, then remote cancel when policy allows it, then forgets the local mirror when requested by policy. Cleanup is fork-aware: before cleaning the target session, Matrix cleans any mirrored fork children and reports `fork_children_cleaned` plus nested `fork_children` cleanup records. After local deletion, Matrix closes the exact workspace-bound agent client when no other local session still references the same `agent_id + workspace_path`; otherwise non-ephemeral session cleanup reports `process_retained=true`, `process_retention_allowed=true`, `cleanup_strength=retained`, and `weak_cleanup_reason=process_retained`. `/v1/runs` ephemeral cleanup can also include `related_sessions`: Matrix cleans new owned related sessions, reconciles unreferenced provider clients as `run_unreferenced_agent_client_reaped`, and fails pre-existing/shared related sessions with `clean=false` and `failure_code=run_related_session_retained` instead of reporting isolated success. Run-internal session snapshots are local-only, so cleanup accounting does not spawn provider discovery clients. Cleanup proof can include `warnings` and `failure_code`; for example `agent_start_context_cancelled_during_cleanup` means a cleanup operation tried to start a provider while using an already-canceled context.
+
+Fork child cleanup retains the workspace process with
+`cleanup_strength=retained` and reason `fork child uses parent agent client`;
+the parent or run-level lifecycle is responsible for the final process reap.
 
 Cleanup failures are typed JSON responses, not generic `500` errors, when Matrix has cleanup state to report. The response includes `error.code` and the full `cleanup` object. Phase-level codes include `remote_delete`, `remote_close`, `remote_cancel`, `local_forget`, `local_status`, `process_reap`, and `process_reap_refs`.
 
@@ -420,7 +426,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
   }'
 ```
 
-The response contains `capabilities.session`, keyed by lifecycle feature. Each entry includes `supported`, `status`, `stability`, and `source`. ACP reports `list` and `info_update` as stable, `resume` and `close` as preview, and `fork` / `delete` as draft when the provider advertises them. Fork descriptors also expose `active_parent_safe`, `requires_idle_parent`, and `artifact_turn` so supervisors can decide whether a live parent run can be forked for one-turn artifact generation.
+The response contains `capabilities.session`, keyed by lifecycle feature. Each entry includes `supported`, `status`, `stability`, and `source`. ACP reports `list`, `info_update`, `resume`, and `close` as stable, and `fork` / `delete` as draft when the provider advertises them. Fork descriptors also expose `active_parent_safe`, `requires_idle_parent`, `artifact_turn`, `async_supported`, `blocking`, `artifact_streaming`, and `live_intervention_suitable`. `active_parent_safe=true` means the fork does not switch or damage the parent session; it does not mean a blocking child artifact turn will finish early enough for live intervention.
 
 Unknown agent ids return a typed client error such as
 `error.code=agent_not_found` instead of a generic server failure. Supervisory
@@ -441,6 +447,10 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 
 `fork` is a capability-gated experimental operation. Matrix calls a true provider fork only when the active protocol adapter advertises it; otherwise the response is typed with `unsupported=true` and `fork.unsupported=true`.
 
+ACP does not expose a separate `side` or `session/side` method. Matrix's
+sidecar feature is a protocol-neutral context abstraction; ACP branch work is
+implemented through real `session/fork`, not through a hidden side channel.
+
 For automation, `fork` also accepts `make_active=false`, `restore_parent=true`,
 and optional `input`. With `make_active=false`, Matrix mirrors the child without
 switching the user's active channel session. If the logical parent has no remote
@@ -453,12 +463,49 @@ not interpret the artifact content. If remote parent materialization is blocked,
 Matrix returns typed evidence such as `error.code=missing_remote_session_id` or
 `error.code=remote_session_materialize_failed` instead of HTTP `500`.
 
+For live sidecar workflows, set `async=true` with `input`. Matrix then returns as
+soon as the real provider child session has been created and mirrored. The child
+artifact turn runs in the background, and the response includes
+`fork.async=true`, `fork.job_id`, and an initial `fork.job` record. Poll the job
+with `action=fork_status` until `fork.job.status` is `completed` or `failed`.
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/session-actions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "docs.http",
+    "action": "fork",
+    "target": "sess-123",
+    "make_active": false,
+    "restore_parent": true,
+    "async": true,
+    "input": "Produce concise live guidance from the current trace.",
+    "ephemeral": true,
+    "cleanup_policy": "delete_remote_or_cancel_and_forget_local"
+  }'
+```
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/session-actions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "docs.http",
+    "action": "fork_status",
+    "target": "forkjob-..."
+  }'
+```
+
 When `capabilities.session.fork.active_parent_safe=true`, Matrix supports
-forking while the parent run is still active. Parent cleanup preserves the shared
-provider process while a mirrored fork child still references the same
-`agent_id + workspace_path`; cleanup proof then marks process retention
-explicitly. If a child artifact turn or child cleanup fails after the provider
-child exists, Matrix returns typed evidence such as
+forking while the parent run is still active. Parent cleanup is subtree cleanup:
+Matrix cleans mirrored fork children first, then the parent, then reaps the
+shared provider process when no Matrix session still references the same
+`agent_id + workspace_path`. Child cleanup records may temporarily show
+`process_retained=true` while the parent mirror still exists, but the final
+parent proof must account for the whole fork subtree. If an async fork job later
+finds its child already cleaned by parent cleanup, it records the warning
+`fork_child_cleanup_already_missing` instead of failing cleanup accounting. If a
+child artifact turn or child cleanup fails after the provider child exists,
+Matrix returns typed evidence such as
 `error.code=fork_child_turn_failed` or `error.code=fork_child_cleanup_failed`
 and includes any available `fork.cleanup` proof instead of returning a generic
 server failure.
@@ -481,7 +528,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `channel_id` | string | Yes | Stable caller/channel id |
-| `action` | string | Yes | `new`, `list`, `switch`, `cancel`, `delete`, `cleanup`, `name`, `capabilities`, `fork`, `reconcile` |
+| `action` | string | Yes | `new`, `list`, `switch`, `cancel`, `delete`, `cleanup`, `name`, `capabilities`, `fork`, `fork_status`, `reconcile` |
 | `target` | string | No | Action operand: agent id, session selector, or alias |
 | `workspace_id` | string | No | Workspace to bind the session to |
 | `workspace_path` | string | No | Workspace root path for sessions that do not need persistent workspace metadata |
@@ -490,6 +537,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 | `force_forget_local` | boolean | No | Removes the Matrix local mirror even when remote delete is unsupported |
 | `make_active` | boolean | No | Fork only: whether the child becomes active. Defaults to `true` unless `input` is supplied |
 | `restore_parent` | boolean | No | Fork only: restore/preserve the parent as active after child work |
+| `async` | boolean | No | Fork only: background the child artifact turn and return a pollable `fork.job_id` |
 | `input` | string | No | Fork only: one child turn to run for artifact-producing workflows |
 
 Cleanup proof fields distinguish provider state from Matrix mirror state: `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `remote_deleted`, `remote_closed`, `remote_canceled`, `remote_*_attempted`, `remote_*_unsupported`, process reaping fields, and `local_forgotten`.

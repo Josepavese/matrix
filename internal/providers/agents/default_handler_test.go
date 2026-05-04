@@ -26,6 +26,51 @@ func (n *recordingNotifier) SetHeader(_, _ string) {}
 
 func (n *recordingNotifier) FormattedHeader() string { return "" }
 
+func startTerminalForTest(t *testing.T, handler *defaultRequestHandler, params json.RawMessage) string {
+	t.Helper()
+	result, err := handler.HandleRequest(context.Background(), "terminal/create", params)
+	if err != nil {
+		t.Fatalf("terminal/create: %v", err)
+	}
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map result, got %T", result)
+	}
+	terminalID, ok := m["terminalId"].(string)
+	if !ok || terminalID == "" {
+		t.Fatalf("expected terminalId in result, got %#v", m)
+	}
+	return terminalID
+}
+
+func waitTerminalForTest(t *testing.T, handler *defaultRequestHandler, terminalID string) map[string]interface{} {
+	t.Helper()
+	params, _ := json.Marshal(map[string]interface{}{"terminalId": terminalID})
+	result, err := handler.HandleRequest(context.Background(), "terminal/wait_for_exit", params)
+	if err != nil {
+		t.Fatalf("terminal/wait_for_exit: %v", err)
+	}
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map wait result, got %T", result)
+	}
+	return m
+}
+
+func outputTerminalForTest(t *testing.T, handler *defaultRequestHandler, terminalID string) map[string]interface{} {
+	t.Helper()
+	params, _ := json.Marshal(map[string]interface{}{"terminalId": terminalID})
+	result, err := handler.HandleRequest(context.Background(), "terminal/output", params)
+	if err != nil {
+		t.Fatalf("terminal/output: %v", err)
+	}
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map output result, got %T", result)
+	}
+	return m
+}
+
 func TestHandleTerminalCreate_Echo(t *testing.T) {
 	handler := newConfigurableRequestHandler(nil).
 		WithProcess(exec.NewProvider())
@@ -35,29 +80,22 @@ func TestHandleTerminalCreate_Echo(t *testing.T) {
 		"args":    []string{"hello", "world"},
 	})
 
-	result, err := handler.HandleRequest(context.Background(), "terminal/create", params)
-	if err != nil {
-		t.Fatalf("HandleRequest terminal/create: %v", err)
-	}
-
-	m, ok := result.(map[string]interface{})
+	terminalID := startTerminalForTest(t, handler, params)
+	wait := waitTerminalForTest(t, handler, terminalID)
+	exitCode, ok := wait["exitCode"].(int)
 	if !ok {
-		t.Fatalf("expected map result, got %T", result)
-	}
-
-	exitCode, ok := m["exitCode"].(int)
-	if !ok {
-		t.Fatalf("exitCode type = %T, want int", m["exitCode"])
+		t.Fatalf("exitCode type = %T, want int", wait["exitCode"])
 	}
 	if exitCode != 0 {
 		t.Errorf("exitCode = %d, want 0", exitCode)
 	}
-	stdout, ok := m["stdout"].(string)
+	output := outputTerminalForTest(t, handler, terminalID)
+	stdout, ok := output["output"].(string)
 	if !ok {
-		t.Fatalf("stdout type = %T, want string", m["stdout"])
+		t.Fatalf("output type = %T, want string", output["output"])
 	}
 	if stdout == "" {
-		t.Error("stdout should not be empty")
+		t.Error("output should not be empty")
 	}
 }
 
@@ -108,22 +146,16 @@ func TestHandleTerminalCreate_NonzeroExit(t *testing.T) {
 		"args":    []string{"-c", "echo err >&2; exit 42"},
 	})
 
-	result, err := handler.HandleRequest(context.Background(), "terminal/create", params)
-	if err != nil {
-		t.Fatalf("HandleRequest should not error for nonzero exit: %v", err)
-	}
-
-	m, ok := result.(map[string]interface{})
-	if !ok {
-		t.Fatalf("result is not a map, got %T", result)
-	}
-	exitCode, _ := m["exitCode"].(int)
+	terminalID := startTerminalForTest(t, handler, params)
+	wait := waitTerminalForTest(t, handler, terminalID)
+	exitCode, _ := wait["exitCode"].(int)
 	if exitCode != 42 {
 		t.Errorf("exitCode = %d, want 42", exitCode)
 	}
-	stderr, _ := m["stderr"].(string)
-	if stderr == "" {
-		t.Error("stderr should contain 'err'")
+	output := outputTerminalForTest(t, handler, terminalID)
+	text, _ := output["output"].(string)
+	if !strings.Contains(text, "err") {
+		t.Errorf("output should contain 'err', got %q", text)
 	}
 }
 
@@ -145,26 +177,20 @@ func TestHandleTerminalCreate_CwdPropagation(t *testing.T) {
 		"args":    []string{markerFile},
 	})
 
-	result, err := handler.HandleRequest(context.Background(), "terminal/create", params)
-	if err != nil {
-		t.Fatalf("HandleRequest: %v", err)
-	}
-
-	m, ok := result.(map[string]interface{})
-	if !ok {
-		t.Fatalf("result is not a map, got %T", result)
-	}
-	exitCode, _ := m["exitCode"].(int)
+	terminalID := startTerminalForTest(t, handler, params)
+	wait := waitTerminalForTest(t, handler, terminalID)
+	exitCode, _ := wait["exitCode"].(int)
 	if exitCode != 0 {
-		t.Fatalf("exitCode = %d, want 0; stderr: %s", exitCode, m["stderr"])
+		t.Fatalf("exitCode = %d, want 0", exitCode)
 	}
 
-	stdout, ok := m["stdout"].(string)
+	output := outputTerminalForTest(t, handler, terminalID)
+	stdout, ok := output["output"].(string)
 	if !ok {
-		t.Fatal("stdout is not a string")
+		t.Fatal("output is not a string")
 	}
 	if !strings.Contains(stdout, "found") {
-		t.Errorf("stdout should contain 'found', got: %q — command ran in wrong directory", stdout)
+		t.Errorf("output should contain 'found', got: %q — command ran in wrong directory", stdout)
 	}
 }
 
@@ -188,21 +214,19 @@ func TestHandleTerminalCreate_CwdFromRequest(t *testing.T) {
 		"cwd":     "sub",
 	})
 
-	result, err := handler.HandleRequest(context.Background(), "terminal/create", params)
-	if err != nil {
-		t.Fatalf("HandleRequest: %v", err)
+	terminalID := startTerminalForTest(t, handler, params)
+	wait := waitTerminalForTest(t, handler, terminalID)
+	exitCode, _ := wait["exitCode"].(int)
+	if exitCode != 0 {
+		t.Fatalf("exitCode = %d, want 0", exitCode)
 	}
-
-	m, ok := result.(map[string]interface{})
+	output := outputTerminalForTest(t, handler, terminalID)
+	stdout, ok := output["output"].(string)
 	if !ok {
-		t.Fatalf("result is not a map, got %T", result)
-	}
-	stdout, ok := m["stdout"].(string)
-	if !ok {
-		t.Fatal("stdout is not a string")
+		t.Fatal("output is not a string")
 	}
 	if !strings.Contains(stdout, "inner-content") {
-		t.Errorf("stdout should contain 'inner-content', got: %q", stdout)
+		t.Errorf("output should contain 'inner-content', got: %q", stdout)
 	}
 }
 
@@ -232,6 +256,35 @@ func TestHandleFSRead_Success(t *testing.T) {
 	content, _ := m["content"].(string)
 	if content != "hello fs" {
 		t.Errorf("content = %q, want 'hello fs'", m["content"])
+	}
+}
+
+func TestHandleFSRead_LineAndLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("one\ntwo\nthree\nfour\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := newConfigurableRequestHandler(nil).
+		WithFS(osfs.NewFSProvider(), tmpDir)
+
+	params, _ := json.Marshal(map[string]interface{}{
+		"path":  filepath.Join(tmpDir, "test.txt"),
+		"line":  2,
+		"limit": 2,
+	})
+
+	result, err := handler.HandleRequest(context.Background(), "fs/read_text_file", params)
+	if err != nil {
+		t.Fatalf("fs/read_text_file: %v", err)
+	}
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result is not a map, got %T", result)
+	}
+	if m["content"] != "two\nthree\n" {
+		t.Fatalf("unexpected sliced content: %#v", m["content"])
 	}
 }
 
@@ -322,16 +375,10 @@ func TestHandleTerminalCreate_EmitsStructuralToolEvents(t *testing.T) {
 		"command": "sh",
 		"args":    []string{"-c", "exit 42"},
 	})
-	result, err := handler.HandleRequest(context.Background(), "terminal/create", params)
-	if err != nil {
-		t.Fatalf("terminal/create: %v", err)
-	}
-	resultMap, ok := result.(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected map result, got %T", result)
-	}
-	if resultMap["exitCode"] != 42 {
-		t.Fatalf("expected nonzero command result, got %#v", result)
+	terminalID := startTerminalForTest(t, handler, params)
+	wait := waitTerminalForTest(t, handler, terminalID)
+	if wait["exitCode"] != 42 {
+		t.Fatalf("expected nonzero command result, got %#v", wait)
 	}
 
 	if len(notifier.updates) != 2 {
@@ -390,7 +437,7 @@ func TestResolvePath_BoundaryCases(t *testing.T) {
 		{"double dot parent", "..", true},
 		{"deep traversal", "a/../../../etc/passwd", true},
 		{"absolute within cwd", tmpDir + "/safe.txt", false},
-		{"absolute outside cwd is sandboxed to cwd", "/etc/passwd", false},
+		{"absolute outside cwd rejected", "/etc/passwd", true},
 	}
 
 	for _, tc := range tests {

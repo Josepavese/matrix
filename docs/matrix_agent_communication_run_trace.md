@@ -56,11 +56,24 @@ Optional emergency fuse:
 
 ```json
 {
-  "emergency_kill_seconds": 0
+  "emergency_kill_seconds": 0,
+  "activity_timeout_seconds": 0
 }
 ```
 
-Omitted or `0` means no absolute turn timeout. Matrix intentionally does not define a default hard timeout for communication runs because long-running autonomous agents are valid workloads. Production control is based on run events, stream/async observation, explicit `cancel`/`stop`, and channel or supervisor policy. Wall-clock termination is only allowed when the caller explicitly sends `emergency_kill_seconds`.
+Omitted or `0` means no timeout. Matrix intentionally does not define a
+default hard timeout for communication runs because long-running autonomous
+agents are valid workloads. Production control is based on run events,
+stream/async observation, explicit `cancel`/`stop`, and channel or supervisor
+policy. Wall-clock termination is only allowed when the caller explicitly sends
+`emergency_kill_seconds`.
+
+`activity_timeout_seconds` is an optional idle watchdog, not a total turn cap.
+When set, Matrix cancels the run with `stop_reason=activity_timeout` if no
+agent/tool activity is observed through the run notifier for the configured
+duration. This is intended for bounded judge/critic/supervisor calls that must
+fail closed when a provider accepts a prompt but emits no progress. It is not
+enabled by default.
 
 Timeout and recovery rules are tracked in [matrix_timeout_recovery_policy.md](matrix_timeout_recovery_policy.md).
 
@@ -94,7 +107,7 @@ Every response includes:
 }
 ```
 
-`cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, process fields, `warnings`, and `failure_code` instead of inferring cleanup from HTTP status alone. Cleanup after `/v1/runs/{run_id}/actions` `cancel` uses a bounded context detached from the canceled run context, so remote cleanup and process reap are not run under an already-canceled context.
+`cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, process fields, `fork_children_cleaned`, nested `fork_children`, `related_sessions`, `warnings`, and `failure_code` instead of inferring cleanup from HTTP status alone. Cleanup after `/v1/runs/{run_id}/actions` `cancel` uses a bounded context detached from the canceled run context, so remote cleanup and process reap are not run under an already-canceled context.
 
 Provider readiness failures are also projected into the run response and event
 stream. Matrix emits `provider.preflight.failed` with `code`, `agent_id`,
@@ -104,7 +117,37 @@ failure prevents task execution. Typical codes are `provider_model_unavailable`,
 
 `clean=true` means Matrix reached an operational cleanup state for that lifecycle. `strong_cleanup=true` means Matrix has hard evidence from the provider or OS process layer. For ephemeral interrupt/resume flows, Matrix requires strong proof; local-only forgetting fails with `failure_code=cleanup_clean_without_remote_or_process_proof`. For non-ephemeral shared sessions, retained clients are allowed but explicitly marked with `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`.
 
-For local stdio ACP agents, Matrix does not spawn a fresh workspace client only to clean up a session owned by a now-dead process. If process reap proves the old agent is gone, cleanup remains strong and may include typed warnings such as `remote_lifecycle_skipped_no_reusable_cached_agent_client` and `remote_cancel_session_not_found_after_process_reap`. Expected async cancellation is logged as `run_cancelled`, not as a generic `matrix async run bridge failed` error.
+Run-level cleanup also accounts for sessions touched during the run but not equal
+to the primary ephemeral policy session. New owned sessions are cleaned as
+supplemental targets and listed in `related_sessions`. Pre-existing or shared
+sessions are retained explicitly with `process_retained=true`,
+`failure_code=run_related_session_retained`, and reason
+`run_related_session_retained`; Matrix reports the run cleanup as
+`clean=false`, because an ephemeral run is not fully cleaned while a related
+session remains alive. Non-ephemeral session cleanup may still use
+`cleanup_strength=retained` for safe shared-client reuse, but run-level
+ephemeral cleanup must fail rather than claim isolated success.
+
+Run-internal session snapshots are local-only. Matrix must not call provider
+remote discovery just to compute before/after cleanup state, because discovery
+can spawn local stdio ACP control clients that are unrelated to the run turn.
+After ephemeral cleanup, Matrix also reconciles cached provider clients against
+vault session references. Unreferenced clients closed by that pass appear in
+`related_sessions` with reason `run_unreferenced_agent_client_reaped`; reconcile
+failure fails the cleanup with `failure_code=run_agent_client_reconcile_failed`.
+
+The same rule applies inside fork cleanup proofs: a fork child may retain the
+shared parent workspace process with reason `fork child uses parent agent
+client`, but that proof is `cleanup_strength=retained`, not `strong`.
+
+For local stdio ACP agents, Matrix does not spawn a fresh workspace client only to clean up a session owned by a now-dead process. If process reap proves the old agent is gone, cleanup remains strong and may include typed warnings such as `remote_lifecycle_skipped_no_reusable_cached_agent_client` and `remote_cancel_session_not_found_after_process_reap`. If keepalive observes and evicts a dead workspace client before cleanup runs, Matrix preserves a short-lived session-bound reap tombstone so the later cleanup can still report `process_reaped=true` only for the matching `remote_session_id`. Expected async cancellation is logged as `run_cancelled`, not as a generic `matrix async run bridge failed` error.
+
+Fork cleanup is subtree-based. If the target session owns mirrored fork
+children, Matrix records child cleanup proofs under `fork_children` before
+finalizing the parent cleanup. Async fork jobs that discover their child was
+already cleaned by parent teardown record
+`fork_child_cleanup_already_missing` as a warning rather than leaving a provider
+process unaccounted.
 
 ## Canonical State
 
@@ -192,13 +235,17 @@ See [matrix_sidecar_capsules.md](matrix_sidecar_capsules.md) for the API
 contract and projection rules.
 
 Live context attachment uses `run.context.attached` for request, delivery,
-late delivery, failure, or unsupported evidence. The event metadata includes
-`delivery_id`, `delivery_status`, `reason`, optional `source_event_id` /
-`source_sequence`, and frontend/audit visibility flags. Successful in-run live
-attachments also emit `sidecar.capsule.delivered` events with the same
-`delivery_id`. If a provider processes the injected context after the run has
-already completed, Matrix records `status=late` and does not claim in-run
-capsule delivery.
+unverified provider return, terminal-boundary, late delivery, failure, or
+unsupported evidence. The event metadata includes `delivery_id`,
+`delivery_status`, `delivery_class`,
+`live_consumption_proven`, `provider_activity_events`, `reason`, optional
+`source_event_id` / `source_sequence`, and frontend/audit visibility flags.
+Successful live attachments with provider activity proof emit
+`sidecar.capsule.delivered` events with the same `delivery_id`. If a provider
+returns without attach activity, Matrix records `status=unverified` or
+`status=terminal_boundary` and does not emit `sidecar.capsule.delivered`. If a
+provider processes the injected context after the run has already completed,
+Matrix records `status=late`.
 
 ## Frontend Event Contract
 
@@ -287,6 +334,7 @@ Frontend projection contract:
 - `outcome.summary_ref` and event `content_ref` remain present for audit and replay, but frontend consumers do not need to dereference `matrix://...` refs to display the final answer.
 - `include_protocol_meta=false` strips protocol/debug metadata from trace event projections while preserving protocol-neutral event kinds and renderable agent content.
 - Matrix technical events such as `run.started`, `routing.decision`, and `session.resumed` remain part of the trace; frontend facades can filter them without losing final content.
+- `run.context.attached.message` is delivery evidence or provider acknowledgement, not the canonical final answer. Consumers should use `agent.message.final.message` or `outcome.summary` as the stable final-output channel.
 
 ## Run Actions
 
@@ -303,9 +351,11 @@ Mandatory action:
 
 `attach_context` is accepted only for active runs with a known logical and
 remote session. Matrix returns a typed `unsupported` response when live context
-cannot be delivered safely. Matrix records `late` when delivery returns only
-after the original run has already reached a terminal status. Optional future
-actions such as `annotate` or
+cannot be delivered safely. Matrix records `unverified` when provider return
+happens without attach activity proof, records `terminal_boundary` when that
+return is near completion, and records `late` when delivery returns only after
+the original run has already reached a
+terminal status. Optional future actions such as `annotate` or
 `set_mode` are only acceptable if they remain protocol-neutral operational
 controls. Matrix must not turn run actions into cognitive policy APIs.
 
@@ -321,7 +371,12 @@ silently into a replacement session.
 `session/cancel` for interrupting/stopping an ongoing turn; it does not
 standardize injecting a second prompt into a running turn and requiring the LLM
 to consume it before final output. Matrix therefore records live context as a
-best-effort provider capability, not as a protocol guarantee. See
+best-effort provider capability, not as a protocol guarantee. Baseline ACP
+`session/update` notifications are scoped to `sessionId`, not to a prompt
+request id, so overlapping `session/prompt` calls cannot produce reliable
+delivery proof. Matrix serializes normal ACP prompts per remote session and
+returns `unsupported` for live `attach_context` while the ACP prompt is already
+active. See
 [matrix_live_context_interrupt_policy.md](matrix_live_context_interrupt_policy.md).
 
 ## Event Sinks
@@ -361,7 +416,8 @@ Current surfaces:
 - `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`.
 - `GET /v1/runs/{run_id}/events` returns ordered run events.
 - `POST /v1/runs/{run_id}/actions` supports `cancel`, `attach_context`, and `append_context`.
-- `emergency_kill_seconds` is the only wall-clock kill path and is disabled by default.
+- `emergency_kill_seconds` is the only total wall-clock kill path and is disabled by default.
+- `activity_timeout_seconds` is an explicit idle-progress watchdog and is disabled by default.
 - `POST /v1/event-sinks` persists generic sink registration and queues HTTP delivery for matching run events through the persistent delivery outbox.
 - non-interactive `/v1/runs` never emits first-run wizard prompts as agent output; when `system.configured` is false or missing, sync callers receive HTTP `409` with `code=SETUP_REQUIRED`.
 
@@ -458,4 +514,4 @@ Operational notes:
 - non-interactive `/v1/runs` traffic fails with `SETUP_REQUIRED` until setup is complete, so external frontends never receive wizard prompts as fake agent answers;
 - after onboarding, provider selection remains channel-neutral and resolves through the Matrix agent catalog/session layer;
 - real provider latency depends on the external agent, so run surfaces must be treated as asynchronous operational surfaces even when the caller chooses `sync`;
-- no absolute run timeout is applied by default; emergency wall-clock termination is opt-in through `emergency_kill_seconds`.
+- no absolute run timeout is applied by default; emergency wall-clock termination is opt-in through `emergency_kill_seconds`, and idle-progress termination is opt-in through `activity_timeout_seconds`.

@@ -37,6 +37,6 @@ func (c *acpConversationClient) createACPRemoteSession(ctx context.Context, req 
 	if err != nil {
 		return nil, fmt.Errorf("ACP new session failed: %w", err)
 	}
-	c.loadedSessions[resp.SessionID] = true
+	c.markLoadedSession(resp.SessionID)
 	return resp, nil
 }

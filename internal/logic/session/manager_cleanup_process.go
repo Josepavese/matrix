@@ -15,6 +15,11 @@ func (m *Manager) reapAgentClientAfterLocalCleanup(ctx context.Context, req sess
 		return
 	}
 	result.ProcessReapAttempted = true
+	if reaper, ok := m.router.(middleware.AgentSessionClientReaper); ok && strings.TrimSpace(req.Meta.AgentSessionID) != "" {
+		reaped, err := reaper.ReapAgentSessionClient(ctx, req.Meta.AgentID, req.Meta.AgentSessionID, req.Meta.WorkspacePath)
+		recordAgentClientReapResult(reaped, err, result)
+		return
+	}
 	reaper, ok := m.router.(middleware.AgentClientReaper)
 	if !ok {
 		result.ProcessRetained = true
@@ -22,6 +27,10 @@ func (m *Manager) reapAgentClientAfterLocalCleanup(ctx context.Context, req sess
 		return
 	}
 	reaped, err := reaper.ReapAgentClient(ctx, req.Meta.AgentID, req.Meta.WorkspacePath)
+	recordAgentClientReapResult(reaped, err, result)
+}
+
+func recordAgentClientReapResult(reaped bool, err error, result *middleware.SessionCleanupResult) {
 	if err != nil {
 		result.ProcessRetained = true
 		result.ProcessRetentionReason = err.Error()
@@ -50,6 +59,12 @@ func (m *Manager) allowProcessRetention(meta SessionMeta, result *middleware.Ses
 		result.ProcessRetained = true
 		result.ProcessRetentionAllowed = true
 		result.ProcessRetentionReason = sessioncleanup.OtherLocalSessionsStillReferenceAgentClient
+		return true
+	}
+	if strings.TrimSpace(meta.ParentSessionID) != "" || strings.TrimSpace(meta.ParentRemoteID) != "" {
+		result.ProcessRetained = true
+		result.ProcessRetentionAllowed = true
+		result.ProcessRetentionReason = sessioncleanup.ForkChildUsesParentAgentClient
 		return true
 	}
 	hasReferences, err := m.hasOtherAgentClientReferences(meta)

@@ -11,8 +11,8 @@ Supported agents out of the box:
 | Agent | Command | Protocol | Status |
 |-------|---------|----------|--------|
 | OpenCode | `opencode acp` | ACP (stdio) | Active by default |
-| Gemini CLI | `gemini --experimental-acp` | ACP (stdio) | Active |
-| Claude Code | `claude acp` | ACP (stdio) | Available |
+| Gemini CLI | `gemini --acp` | ACP (stdio) | Active |
+| Claude Code | `claude-agent-acp` | ACP (stdio) | Available |
 | Kimi | `kimi acp` | ACP (stdio) | Available |
 
 You can also discover and install agents from the ACP Registry or A2A catalogs.
@@ -22,6 +22,7 @@ Key ideas:
 - **You bring your own agents.** Matrix connects to them. It does not replace them.
 - **Agents speak protocols.** Matrix handles ACP and A2A so you do not have to think about it.
 - **You pick the default.** During setup, you choose which agent handles new conversations.
+- **Capabilities decide behavior.** Matrix uses provider-advertised features such as ACP `session/fork`, `session/list`, and `session/close`; it does not fake unsupported wire operations.
 
 Read more: [Using Agents](Using-Agents.md)
 
@@ -82,6 +83,10 @@ Matrix keeps the task body separate from the sidecar, projects the capsule into 
 
 Use sidecar capsules when an upstream system needs to attach intent, evidence, constraints, success criteria, or read-only inspection hints without becoming tied to one backend protocol.
 
+ACP note: ACP has no official `side` or `session/side` primitive. Matrix
+sidecar is a Matrix abstraction. When branch work is needed on ACP, Matrix uses
+capability-gated `session/fork`.
+
 Read more: [Sidecar Capsules](Sidecar-Capsules.md)
 
 ## How They Fit Together
@@ -125,6 +130,8 @@ This loop works the same whether you are on Telegram, HTTP, or CLI.
 | Vault | The local encrypted database (BoltDB) that stores all Matrix state |
 | Run | One execution cycle: a prompt goes in, an agent processes it, a result comes back |
 | Sidecar Capsule | Machine-trackable context attached to a run and projected into ACP/A2A without becoming normal chat |
+| ACP Fork | Provider-created branch session through ACP `session/fork`; Matrix never simulates it by replaying prompts |
+| Additional Directories | Unstable ACP field for declaring extra workspace roots beyond `cwd` when the provider advertises support |
 | Handoff | Transferring active work from one agent to another with context preservation |
 | Intent | A high-level operation like `continue`, `review`, `explain`, `triage`, or `handoff` |
 | Mode | The current work mode: implementation, review, explanation, triage |

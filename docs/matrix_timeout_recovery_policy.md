@@ -14,9 +14,11 @@ Timeouts are allowed only around bounded infrastructure operations. Every timeou
 
 | Area | Timeout | Recovery Policy |
 | --- | --- | --- |
-| `/v1/runs` agent turn | none by default | observe through events/SSE, use explicit `cancel`/`stop`, or opt into `emergency_kill_seconds` |
+| `/v1/runs` agent turn | none by default | observe through events/SSE, use explicit `cancel`/`stop`, or opt into `emergency_kill_seconds` or `activity_timeout_seconds` |
 | `/v1/runs` emergency kill | caller-provided `emergency_kill_seconds` | run is marked `cancelled` with `emergency_kill_timeout`; caller can inspect trace and start a new run |
+| `/v1/runs` idle activity watchdog | caller-provided `activity_timeout_seconds` | run is marked `cancelled` with `activity_timeout`; cleanup still uses a detached bounded cleanup context |
 | `/v1/runs` cleanup after cancel | 30s cleanup context | cleanup uses a context detached from the canceled run context; trace records `session.cleanup` with `clean`, `warnings`, and `failure_code` |
+| `/v1/runs` post-cleanup client reconcile | 30s cleanup context | unreferenced provider clients are closed and reported as related cleanup evidence; reconcile failure fails cleanup explicitly |
 | HTTP event sink delivery | 3s per POST | persistent delivery outbox, retry with exponential backoff, dead-letter after max attempts |
 | Agent router keepalive | 30s scan interval | dead clients are evicted and pre-warmed on the next scan; failures retry on the next scan |
 | Supervised network agents | watchdog loop | restart with backoff; crash-loop state after repeated fast crashes |
@@ -33,6 +35,7 @@ Timeouts are allowed only around bounded infrastructure operations. Every timeou
 ## Rules
 
 - Do not add default run-turn timeouts.
+- Do not add default idle-progress timeouts.
 - Do not retry non-idempotent POST operations unless the caller supplies an idempotency key or an explicit retry contract.
 - Prefer `async` plus event observation for long-running agent work.
 - Prefer durable queues for outbound integrations where losing an event is worse than delayed delivery.

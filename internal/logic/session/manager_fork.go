@@ -26,6 +26,8 @@ type forkResultData struct {
 	Plan           forkPlan
 	ActiveID       string
 	ParentRestored bool
+	Async          bool
+	Job            *middleware.SessionForkJob
 	Artifact       *middleware.SessionForkArtifact
 	Cleanup        *middleware.SessionCleanupResult
 }
@@ -42,6 +44,9 @@ func (m *Manager) handleSessionForkTyped(ctx context.Context, req middleware.Ses
 	childMeta := buildForkChildMeta(plan.Parent, plan.ChildRemote, req.Ephemeral, plan.CleanupPolicy)
 	if err := m.persistForkChild(req.ChannelID, childMeta, plan.MakeActive); err != nil {
 		return middleware.SessionActionResult{}, err
+	}
+	if forkAsyncRequested(req) {
+		return m.acceptAsyncFork(ctx, req, plan, childMeta)
 	}
 	artifact, cleanup, err := m.runForkChildWorkflow(ctx, req, childMeta, plan.CleanupPolicy)
 	if err != nil {
@@ -91,20 +96,13 @@ func (m *Manager) prepareFork(ctx context.Context, req middleware.SessionActionR
 	if err != nil {
 		return forkPlan{}, nil, err
 	}
-	forker, ok := m.router.(middleware.AgentSessionForker)
-	if !ok {
-		result := unsupportedForkResult(meta, "router does not expose session fork")
-		return forkPlan{}, &result, nil
+	forker, unsupported := m.sessionForker(meta)
+	if unsupported != nil {
+		return forkPlan{}, unsupported, nil
 	}
-	if strings.TrimSpace(meta.AgentSessionID) == "" {
-		if result := m.forkUnsupportedByCapabilities(ctx, meta); result != nil {
-			return forkPlan{}, result, nil
-		}
-		materialized, result, err := m.materializeForkParent(ctx, req, meta)
-		if result != nil || err != nil {
-			return forkPlan{}, result, err
-		}
-		meta = materialized
+	meta, unsupported, err = m.ensureForkParentRemote(ctx, req, meta)
+	if unsupported != nil || err != nil {
+		return forkPlan{}, unsupported, err
 	}
 	child, err := forker.ForkAgentSession(ctx, meta.AgentID, middleware.SessionForkRequest{
 		RemoteSessionID: meta.AgentSessionID,
@@ -115,18 +113,40 @@ func (m *Manager) prepareFork(ctx context.Context, req middleware.SessionActionR
 		return forkPlan{}, &result, nil
 	}
 	makeActive := forkMakeActive(req)
-	cleanupPolicy := ""
-	if req.Ephemeral || strings.TrimSpace(req.CleanupPolicy) != "" {
-		cleanupPolicy = sessioncleanup.NormalizePolicy(req.CleanupPolicy)
-	}
 	return forkPlan{
 		State:         state,
 		Parent:        meta,
 		ChildRemote:   child,
 		MakeActive:    makeActive,
 		RestoreParent: req.RestoreParent || !makeActive || strings.TrimSpace(req.Input) != "",
-		CleanupPolicy: cleanupPolicy,
+		CleanupPolicy: forkCleanupPolicy(req),
 	}, nil, nil
+}
+
+func (m *Manager) sessionForker(meta SessionMeta) (middleware.AgentSessionForker, *middleware.SessionActionResult) {
+	forker, ok := m.router.(middleware.AgentSessionForker)
+	if ok {
+		return forker, nil
+	}
+	result := unsupportedForkResult(meta, "router does not expose session fork")
+	return nil, &result
+}
+
+func (m *Manager) ensureForkParentRemote(ctx context.Context, req middleware.SessionActionRequest, meta SessionMeta) (SessionMeta, *middleware.SessionActionResult, error) {
+	if strings.TrimSpace(meta.AgentSessionID) != "" {
+		return meta, nil, nil
+	}
+	if result := m.forkUnsupportedByCapabilities(ctx, meta); result != nil {
+		return SessionMeta{}, result, nil
+	}
+	return m.materializeForkParent(ctx, req, meta)
+}
+
+func forkCleanupPolicy(req middleware.SessionActionRequest) string {
+	if req.Ephemeral || strings.TrimSpace(req.CleanupPolicy) != "" {
+		return sessioncleanup.NormalizePolicy(req.CleanupPolicy)
+	}
+	return ""
 }
 
 func buildForkChildMeta(parent SessionMeta, child middleware.RemoteSessionInfo, ephemeral bool, cleanupPolicy string) SessionMeta {
@@ -189,9 +209,13 @@ func (m *Manager) restoreForkParent(channelID string, plan forkPlan, childID str
 }
 
 func forkActionResult(data forkResultData) middleware.SessionActionResult {
+	message := fmt.Sprintf("Forked session: %s", data.ChildMeta.ID)
+	if data.Async && data.Job != nil {
+		message = fmt.Sprintf("Fork accepted asynchronously: %s", data.Job.JobID)
+	}
 	return middleware.SessionActionResult{
 		Action:          "fork",
-		Message:         fmt.Sprintf("Forked session: %s", data.ChildMeta.ID),
+		Message:         message,
 		ActiveSessionID: data.ActiveID,
 		Session:         data.Session,
 		Fork: &middleware.SessionForkResult{
@@ -202,6 +226,9 @@ func forkActionResult(data forkResultData) middleware.SessionActionResult {
 			MakeActive:             data.Plan.MakeActive,
 			Ephemeral:              data.ChildMeta.Ephemeral,
 			CleanupPolicy:          data.Plan.CleanupPolicy,
+			Async:                  data.Async,
+			JobID:                  forkJobID(data.Job),
+			Job:                    data.Job,
 			Artifact:               data.Artifact,
 			Cleanup:                data.Cleanup,
 			ParentRestored:         data.ParentRestored,
@@ -235,4 +262,15 @@ func forkMakeActive(req middleware.SessionActionRequest) bool {
 		return *req.MakeActive
 	}
 	return strings.TrimSpace(req.Input) == ""
+}
+
+func forkAsyncRequested(req middleware.SessionActionRequest) bool {
+	return req.Async && strings.TrimSpace(req.Input) != ""
+}
+
+func forkJobID(job *middleware.SessionForkJob) string {
+	if job == nil {
+		return ""
+	}
+	return job.JobID
 }

@@ -118,6 +118,24 @@ type deadClosableClient struct {
 
 func (c *deadClosableClient) Alive() bool { return false }
 
+type trackedClosableClient struct {
+	closableClient
+	remoteSessionIDs []string
+}
+
+func (c *trackedClosableClient) TrackedRemoteSessionIDs() []string {
+	return append([]string(nil), c.remoteSessionIDs...)
+}
+
+type trackedDeadClosableClient struct {
+	deadClosableClient
+	remoteSessionIDs []string
+}
+
+func (c *trackedDeadClosableClient) TrackedRemoteSessionIDs() []string {
+	return append([]string(nil), c.remoteSessionIDs...)
+}
+
 func TestRouter_ReapAgentClientClosesExactWorkspaceClient(t *testing.T) {
 	router := NewRouter(nil)
 	client := &closableClient{}
@@ -133,6 +151,68 @@ func TestRouter_ReapAgentClientClosesExactWorkspaceClient(t *testing.T) {
 	}
 	if _, ok := router.clients[key]; ok {
 		t.Fatalf("expected client cache entry to be evicted")
+	}
+}
+
+func TestRouter_ReapAgentSessionClientUsesRecentDeadClientTombstone(t *testing.T) {
+	router := NewRouter(&mockResolver{protocol: "stdio", address: "opencode"})
+	client := &trackedDeadClosableClient{remoteSessionIDs: []string{"remote-1"}}
+	key := clientCacheKey("opencode", "/tmp/ws")
+	router.clients[key] = client
+
+	router.checkAndReconnect()
+
+	if !client.closed {
+		t.Fatalf("expected dead local ACP client to be closed")
+	}
+	if _, ok := router.clients[key]; ok {
+		t.Fatalf("expected dead local ACP client to be evicted")
+	}
+	reaped, err := router.ReapAgentSessionClient(context.Background(), "opencode", "remote-1", "/tmp/ws")
+	if err != nil {
+		t.Fatalf("ReapAgentSessionClient: %v", err)
+	}
+	if !reaped {
+		t.Fatalf("expected tombstone to provide process reap proof")
+	}
+	reaped, err = router.ReapAgentSessionClient(context.Background(), "opencode", "remote-1", "/tmp/ws")
+	if err != nil {
+		t.Fatalf("second ReapAgentSessionClient: %v", err)
+	}
+	if reaped {
+		t.Fatalf("expected tombstone to be consumed after first proof")
+	}
+}
+
+func TestRouter_ReapAgentSessionClientRequiresTrackedRemoteSession(t *testing.T) {
+	router := NewRouter(&mockResolver{protocol: "stdio", address: "opencode"})
+	client := &trackedDeadClosableClient{remoteSessionIDs: []string{"remote-2"}}
+	key := clientCacheKey("opencode", "/tmp/ws")
+	router.clients[key] = client
+
+	router.checkAndReconnect()
+
+	reaped, err := router.ReapAgentSessionClient(context.Background(), "opencode", "remote-1", "/tmp/ws")
+	if err != nil {
+		t.Fatalf("ReapAgentSessionClient: %v", err)
+	}
+	if reaped {
+		t.Fatalf("must not use tombstone for an unrelated remote session")
+	}
+}
+
+func TestRouter_ReapAgentSessionClientDoesNotCloseCurrentUntrackedClient(t *testing.T) {
+	router := NewRouter(nil)
+	client := &trackedClosableClient{remoteSessionIDs: []string{"remote-2"}}
+	key := clientCacheKey("opencode", "/tmp/ws")
+	router.clients[key] = client
+
+	reaped, err := router.ReapAgentSessionClient(context.Background(), "opencode", "remote-1", "/tmp/ws")
+	if err != nil {
+		t.Fatalf("ReapAgentSessionClient: %v", err)
+	}
+	if reaped || client.closed {
+		t.Fatalf("must not close current client for unrelated remote session, reaped=%v closed=%v", reaped, client.closed)
 	}
 }
 

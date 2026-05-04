@@ -28,3 +28,4 @@ Operational templates:
 - [Release evidence template](release_evidence_template.md)
 - [Issue triage template](issue_triage_template.md)
 - [Architecture guardrails](architecture_guardrails.md)
+- [Zed ACP compliance](../matrix_zed_acp_compliance.md)

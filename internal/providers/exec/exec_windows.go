@@ -272,10 +272,7 @@ func (p *Provider) StartPiped(spec middleware.CommandSpec) (middleware.PipedProc
 			Err:     err,
 		}
 	}
-	go func() {
-		cmd.Wait()
-		pw.Close()
-	}()
+	pw.Close()
 
 	return &pipedProcess{
 		cmd:    cmd,

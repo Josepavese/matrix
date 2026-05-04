@@ -67,6 +67,11 @@ ACP routes receive:
 
 Matrix treats `_meta` as correlation only. The model-visible carrier remains the safe default because real coding agents do not consistently forward protocol metadata into model context.
 
+ACP does not define a `side` or `session/side` primitive. Matrix sidecar
+capsules are therefore not mapped to a hidden ACP side channel. For separate
+branch work, Matrix uses capability-gated ACP `session/fork`; for inline
+model-visible context, Matrix appends the visible carrier to the prompt.
+
 ### A2A
 
 A2A routes receive:
@@ -104,18 +109,22 @@ Supervisors can attach sidecar context to an active async run through `/v1/runs/
 }
 ```
 
-Matrix accepts the request only for active runs with a known logical and remote session. It returns a `delivery_id` immediately, delivers in the background to the same session, and records `run.context.attached` plus `sidecar.capsule.delivered` evidence when delivery completes while the run is still active. If the provider processes the context after the run has already completed, Matrix records `run.context.attached` with `status=late` and does not mark the capsule as delivered into that run. If the run/session/backend cannot receive live context, Matrix returns a typed `unsupported` response instead of silent success.
+Matrix accepts the request only for active runs with a known logical and remote session. It returns a `delivery_id` immediately, delivers in the background when the provider has a safe live path, and records `run.context.attached` evidence. If the provider emits unambiguous streaming/tool activity for the live attach, Matrix records `delivery_status=delivered`, `delivery_class=live_activity_observed`, and emits `sidecar.capsule.delivered`. If the provider returns near run completion without attach activity, Matrix records `delivery_status=terminal_boundary` and does not claim live intervention. If the provider returns while the run remains active but still emits no attach activity, Matrix records `delivery_status=unverified` and also does not emit `sidecar.capsule.delivered`. If the provider processes the context after the run has already completed, Matrix records `delivery_status=late`. If the run/session/backend cannot receive live context, Matrix returns a typed `unsupported` response instead of silent success.
 
 ACP compatibility alone does not mean the provider can consume new context
 inside an already running prompt turn. The ACP baseline includes
 `session/cancel`, which interrupts/stops the current turn, but it does not
-standardize mid-turn prompt/context injection. Matrix therefore treats live
-context interrupt as a measured provider capability. Current real-agent probes:
+standardize mid-turn prompt/context injection. ACP `session/update` events are
+session-scoped, so overlapping prompt observers cannot prove which prompt caused
+an update. Matrix therefore treats live context interrupt as a measured provider
+capability and forbids concurrent ACP `session/prompt` calls for the same remote
+session.
 
-- `opencode`: live context delivered before completion and marker observed in
-  provider output;
-- `codex` through `codex-acp`: request accepted while active, then `late`;
-- `gemini` through Gemini CLI ACP: request accepted while active, then `late`.
+Current ACP fallback behavior:
+
+- normal user prompts wait behind the active prompt for the same remote session;
+- `attach_context` while the ACP prompt is active returns typed `unsupported`;
+- callers should use `cancel`, cancel-and-restart, or next-turn context.
 
 See [matrix_live_context_interrupt_policy.md](matrix_live_context_interrupt_policy.md)
 for source review, tested semantics, and fallback policy.

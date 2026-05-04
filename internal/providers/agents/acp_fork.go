@@ -28,7 +28,7 @@ func (c *acpConversationClient) ForkRemoteSession(ctx context.Context, req middl
 	if err != nil {
 		return middleware.RemoteSessionInfo{}, err
 	}
-	c.loadedSessions[resp.SessionID] = true
+	c.markLoadedSession(resp.SessionID)
 	return middleware.RemoteSessionInfo{
 		RemoteSessionID: resp.SessionID,
 		DisplayID:       resp.SessionID,

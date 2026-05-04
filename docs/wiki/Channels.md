@@ -166,15 +166,26 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 ```
 
 Actions: `new`, `list`, `status`, `switch`, `cancel`, `delete`, `cleanup`,
-`name`, `capabilities`, `fork`, `reconcile`
+`name`, `capabilities`, `fork`, `fork_status`, `reconcile`
 
-`capabilities`, `fork`, and `reconcile` use the same channel-neutral contract as
-Telegram and future ingress adapters. `fork` is provider-gated: Matrix calls a
-real provider fork when available and otherwise returns a typed
-`unsupported=true` response. Fork capability descriptors include
-`active_parent_safe`, `requires_idle_parent`, and `artifact_turn`; when active
-parent fork is supported, cleanup retains the shared provider process while a
-fork child still references the same agent/workspace binding.
+`capabilities`, `fork`, `fork_status`, and `reconcile` use the same
+channel-neutral contract as Telegram and future ingress adapters. `fork` is
+provider-gated: Matrix calls a real provider fork when available and otherwise
+returns a typed `unsupported=true` response. Fork capability descriptors include
+`active_parent_safe`, `requires_idle_parent`, `artifact_turn`,
+`async_supported`, `blocking`, `artifact_streaming`, and
+`live_intervention_suitable`. `active_parent_safe` means state safety only, not
+fast live delivery. For live sidecar use, callers can set `async=true` and poll
+`fork_status` with the returned `fork.job_id`.
+
+Text channels expose the same surface through `/session`:
+
+```text
+/session capabilities [agent]
+/session fork [target] [--async --restore-parent --ephemeral --cleanup-policy delete_remote_or_cancel_and_forget_local --input prompt]
+/session fork-status <forkjob-id>
+/session reconcile
+```
 
 ### Workspace management
 

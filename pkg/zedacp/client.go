@@ -41,7 +41,8 @@ type Client struct {
 	mu        sync.RWMutex
 	nextID    int64
 	pending   map[int64]chan *jsonRPCResponse
-	observers map[string]SessionObserver
+	observers map[string]map[uint64]SessionObserver
+	nextObsID uint64
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -52,7 +53,7 @@ func NewClient(ctx context.Context, transport Transport) *Client {
 	client := &Client{
 		transport: transport,
 		pending:   make(map[int64]chan *jsonRPCResponse),
-		observers: make(map[string]SessionObserver),
+		observers: make(map[string]map[uint64]SessionObserver),
 		ctx:       cctx,
 		cancel:    cancel,
 	}
@@ -166,10 +167,7 @@ func (c *Client) handleNotification(notif *jsonRPCResponse) {
 		var update SessionNotification
 		if err := json.Unmarshal(notif.Params, &update); err == nil {
 			if update.SessionID != "" {
-				c.mu.RLock()
-				obs, ok := c.observers[update.SessionID]
-				c.mu.RUnlock()
-				if ok && obs != nil {
+				for _, obs := range c.sessionObservers(update.SessionID) {
 					obs.OnUpdate(update)
 				}
 			}
@@ -278,23 +276,37 @@ func (c *Client) NewSession(ctx context.Context, req NewSessionRequest) (*NewSes
 	return &res, nil
 }
 
-func (c *Client) LoadSession(ctx context.Context, req LoadSessionRequest, observer SessionObserver) error {
-	if observer != nil {
-		c.mu.Lock()
-		c.observers[req.SessionID] = observer
-		c.mu.Unlock()
-		defer func() {
-			c.mu.Lock()
-			delete(c.observers, req.SessionID)
-			c.mu.Unlock()
-		}()
+func (c *Client) LoadSession(ctx context.Context, req LoadSessionRequest, observer SessionObserver) (*LoadSessionResponse, error) {
+	defer c.registerObserver(req.SessionID, observer)()
+	resp, err := c.doCall(ctx, "session/load", req)
+	if err != nil {
+		return nil, err
 	}
-	_, err := c.doCall(ctx, "session/load", req)
-	return err
+	var res LoadSessionResponse
+	if err := decodeOptionalResult(resp.Result, &res); err != nil {
+		return nil, fmt.Errorf("failed to decode session/load response: %w", err)
+	}
+	return &res, nil
+}
+
+func (c *Client) ResumeSession(ctx context.Context, req ResumeSessionRequest) (*ResumeSessionResponse, error) {
+	resp, err := c.doCall(ctx, "session/resume", req)
+	if err != nil {
+		return nil, err
+	}
+	var res ResumeSessionResponse
+	if err := decodeOptionalResult(resp.Result, &res); err != nil {
+		return nil, fmt.Errorf("failed to decode session/resume response: %w", err)
+	}
+	return &res, nil
 }
 
 func (c *Client) ListSessions(ctx context.Context) (*ListSessionsResponse, error) {
-	resp, err := c.doCall(ctx, "session/list", map[string]interface{}{})
+	return c.ListSessionsWithRequest(ctx, ListSessionsRequest{})
+}
+
+func (c *Client) ListSessionsWithRequest(ctx context.Context, req ListSessionsRequest) (*ListSessionsResponse, error) {
+	resp, err := c.doCall(ctx, "session/list", req)
 	if err != nil {
 		return nil, err
 	}
@@ -306,16 +318,7 @@ func (c *Client) ListSessions(ctx context.Context) (*ListSessionsResponse, error
 }
 
 func (c *Client) Prompt(ctx context.Context, req PromptRequest, observer SessionObserver) (*PromptResponse, error) {
-	if observer != nil {
-		c.mu.Lock()
-		c.observers[req.SessionID] = observer
-		c.mu.Unlock()
-		defer func() {
-			c.mu.Lock()
-			delete(c.observers, req.SessionID)
-			c.mu.Unlock()
-		}()
-	}
+	defer c.registerObserver(req.SessionID, observer)()
 	resp, err := c.doCall(ctx, "session/prompt", req)
 	if err != nil {
 		return nil, err
@@ -333,6 +336,18 @@ func (c *Client) SetMode(ctx context.Context, sessionID, modeID string) error {
 		"modeId":    modeID,
 	})
 	return err
+}
+
+func (c *Client) SetConfigOption(ctx context.Context, req SetSessionConfigOptionRequest) (*SetSessionConfigOptionResponse, error) {
+	resp, err := c.doCall(ctx, "session/set_config_option", req)
+	if err != nil {
+		return nil, err
+	}
+	var res SetSessionConfigOptionResponse
+	if err := decodeOptionalResult(resp.Result, &res); err != nil {
+		return nil, fmt.Errorf("failed to decode session/set_config_option response: %w", err)
+	}
+	return &res, nil
 }
 
 func (c *Client) CancelSession(ctx context.Context, sessionID string) error {
@@ -355,10 +370,17 @@ func (c *Client) ForkSession(ctx context.Context, req ForkSessionRequest) (*Fork
 		return nil, err
 	}
 	var res ForkSessionResponse
-	if err := json.Unmarshal(resp.Result, &res); err != nil {
+	if err := decodeOptionalResult(resp.Result, &res); err != nil {
 		return nil, fmt.Errorf("failed to decode session/fork response: %w", err)
 	}
 	return &res, nil
+}
+
+func decodeOptionalResult(data json.RawMessage, target interface{}) error {
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	return json.Unmarshal(data, target)
 }
 
 func (c *Client) logInbound(raw map[string]interface{}, msgBytes []byte) {

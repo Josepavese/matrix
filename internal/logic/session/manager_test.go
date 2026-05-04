@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/onboarding"
 	"github.com/Josepavese/matrix/internal/logic/sessioncleanup"
@@ -16,27 +18,47 @@ import (
 
 // mockStorage is a simple in-memory storage for testing Session routing
 type mockStorage struct {
+	mu   sync.Mutex
 	data map[string][]byte
 }
 
 func (m *mockStorage) Get(key string) ([]byte, error) {
-	return m.data[key], nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.data == nil {
+		return nil, nil
+	}
+	value := m.data[key]
+	if value == nil {
+		return nil, nil
+	}
+	out := make([]byte, len(value))
+	copy(out, value)
+	return out, nil
 }
 
 func (m *mockStorage) Set(key string, val []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.data == nil {
 		m.data = make(map[string][]byte)
 	}
-	m.data[key] = val
+	out := make([]byte, len(val))
+	copy(out, val)
+	m.data[key] = out
 	return nil
 }
 
 func (m *mockStorage) Delete(key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	delete(m.data, key)
 	return nil
 }
 
 func (m *mockStorage) List(prefix string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	var keys []string
 	for k := range m.data {
 		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
@@ -53,6 +75,7 @@ type mockRouter struct {
 	lastMsg        string
 	lastStrict     bool
 	remote         []middleware.RemoteSessionInfo
+	listCalls      int
 	deleted        []string
 	canceled       []string
 	closed         []string
@@ -64,6 +87,7 @@ type mockRouter struct {
 	closeErr       error
 	closeOK        bool
 	reaped         []string
+	reapedSession  []string
 	reapErr        error
 	capErr         error
 	capFork        *bool
@@ -75,6 +99,9 @@ type mockRouter struct {
 	materialRemote middleware.RemoteSessionInfo
 	metadata       middleware.ConversationMetadata
 	routeErr       error
+	routeStarted   chan struct{}
+	routeRelease   chan struct{}
+	routeStartOnce sync.Once
 }
 
 func (m *mockRouter) Route(_ context.Context, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
@@ -82,10 +109,17 @@ func (m *mockRouter) Route(_ context.Context, req middleware.RouteRequest) (stri
 	m.lastRemote = req.AgentSessionID
 	m.lastMsg = req.Message
 	m.lastStrict = req.StrictSession
+	if m.routeStarted != nil {
+		m.routeStartOnce.Do(func() { close(m.routeStarted) })
+	}
+	if m.routeRelease != nil {
+		<-m.routeRelease
+	}
 	return "Ok", req.AgentSessionID, nil, m.metadata, m.routeErr
 }
 
 func (m *mockRouter) ListAgentSessions(_ context.Context, _ string) ([]middleware.RemoteSessionInfo, middleware.ConversationSessionCapabilities, error) {
+	m.listCalls++
 	return m.remote, middleware.ConversationSessionCapabilities{List: true, Load: true, Cancel: true, Close: m.closeOK, Delete: true}, nil
 }
 
@@ -140,6 +174,11 @@ func (m *mockRouter) ReapAgentClient(_ context.Context, agentID string, workspac
 		return false, m.reapErr
 	}
 	return true, nil
+}
+
+func (m *mockRouter) ReapAgentSessionClient(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) (bool, error) {
+	m.reapedSession = append(m.reapedSession, remoteSessionID+"|"+workspacePath)
+	return m.ReapAgentClient(ctx, agentID, workspacePath)
 }
 
 func (m *mockRouter) AgentCapabilities(_ context.Context, agentID string) (middleware.ProviderCapabilityReport, error) {
@@ -437,6 +476,46 @@ func TestSessionManager_SessionListIncludesRemoteSessions(t *testing.T) {
 	}
 	if got == "" || !contains(got, "Remote sessions:") || !contains(got, "acp-remote-1") {
 		t.Fatalf("expected remote sessions in list, got %q", got)
+	}
+}
+
+func TestSessionManager_LocalOnlySessionListSkipsRemoteDiscovery(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		remote: []middleware.RemoteSessionInfo{
+			{RemoteSessionID: "acp-remote-1", DisplayID: "acp-remote-1", ProtocolKind: middleware.ProtocolKindACP},
+		},
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	if _, err := mgr.GetOrCreateSession("run_snapshot_ch", "opencode"); err != nil {
+		t.Fatalf("GetOrCreateSession: %v", err)
+	}
+
+	got, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID: "run_snapshot_ch",
+		Action:    "list",
+		LocalOnly: true,
+	})
+	if err != nil {
+		t.Fatalf("HandleSessionActionTyped(list local-only): %v", err)
+	}
+	if len(got.RemoteSessions) != 0 {
+		t.Fatalf("local-only list must not include remote sessions: %+v", got.RemoteSessions)
+	}
+	if router.listCalls != 0 {
+		t.Fatalf("local-only list must not call provider discovery, calls=%d", router.listCalls)
+	}
+}
+
+func TestResolveSessionTargetDoesNotTreatUUIDPrefixAsHistoryIndex(t *testing.T) {
+	target := "6abc-parent-session"
+	state := ChannelState{History: []string{"one", "two", "three", "four", "five", "wrong-child"}}
+	metas := []SessionMeta{{ID: target}}
+	if got := resolveSessionTarget(target, state, metas); got != target {
+		t.Fatalf("UUID-like target must resolve by id prefix, got %q", got)
 	}
 }
 
@@ -1583,8 +1662,11 @@ func TestSessionManager_ForkInputCanCleanupChildAndRestoreParent(t *testing.T) {
 	if result.Fork == nil || result.Fork.Artifact == nil || result.Fork.Artifact.Content != "Ok" {
 		t.Fatalf("expected child artifact, got %+v", result.Fork)
 	}
-	if result.Fork.Cleanup == nil || !result.Fork.Cleanup.Clean || !result.Fork.Cleanup.StrongCleanup {
-		t.Fatalf("expected strong cleanup proof, got %+v", result.Fork.Cleanup)
+	if result.Fork.Cleanup == nil || !result.Fork.Cleanup.Clean || result.Fork.Cleanup.StrongCleanup {
+		t.Fatalf("expected clean retained child cleanup proof, got %+v", result.Fork.Cleanup)
+	}
+	if result.Fork.Cleanup.CleanupStrength != sessioncleanup.StrengthRetained || result.Fork.Cleanup.WeakCleanupReason != sessioncleanup.WeakCleanupProcessRetained {
+		t.Fatalf("expected retained child cleanup strength, got %+v", result.Fork.Cleanup)
 	}
 	if result.ActiveSessionID != parentMeta.ID || !result.Fork.ParentRestored {
 		t.Fatalf("expected parent restored, got active=%q fork=%+v", result.ActiveSessionID, result.Fork)
@@ -1598,6 +1680,240 @@ func TestSessionManager_ForkInputCanCleanupChildAndRestoreParent(t *testing.T) {
 	}
 	if len(router.reaped) != 0 {
 		t.Fatalf("fork child cleanup must not reap shared parent client, got %+v", router.reaped)
+	}
+}
+
+func TestSessionManager_ForkAsyncReturnsBeforeChildTurnCompletes(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		routeStarted: make(chan struct{}),
+		routeRelease: make(chan struct{}),
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "fork-async-ch",
+		Action:        "new",
+		Target:        "opencode",
+		WorkspacePath: "/tmp/fork-async-ws",
+	})
+	if err != nil {
+		t.Fatalf("new parent: %v", err)
+	}
+	parentMeta, found, err := mgr.loadSessionMeta(parent.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("load parent: err=%v found=%v", err, found)
+	}
+	parentMeta.AgentSessionID = "parent-async-remote"
+	if err := mgr.saveSessionMeta(parentMeta); err != nil {
+		t.Fatalf("save parent: %v", err)
+	}
+	makeActive := false
+	start := time.Now()
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "fork-async-ch",
+		Action:        "fork",
+		Target:        parentMeta.ID,
+		Input:         "produce live sidecar guidance",
+		MakeActive:    &makeActive,
+		RestoreParent: true,
+		Async:         true,
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("async fork: %v", err)
+	}
+	if time.Since(start) > 200*time.Millisecond {
+		t.Fatalf("async fork blocked on child turn")
+	}
+	if result.Fork == nil || !result.Fork.Async || result.Fork.JobID == "" || result.Fork.Artifact != nil {
+		t.Fatalf("expected accepted async fork without artifact, got %+v", result.Fork)
+	}
+	if result.ActiveSessionID != parentMeta.ID || !result.Fork.ParentRestored {
+		t.Fatalf("expected parent restored immediately, got active=%q fork=%+v", result.ActiveSessionID, result.Fork)
+	}
+	select {
+	case <-router.routeStarted:
+	case <-time.After(time.Second):
+		t.Fatalf("expected background child turn to start")
+	}
+	status := waitForForkJobStatus(t, mgr, "fork-async-ch", result.Fork.JobID, forkJobStatusRunning)
+	if status.Fork == nil || status.Fork.Job == nil || status.Fork.Job.StartedAt == "" {
+		t.Fatalf("expected running job evidence, got %+v", status.Fork)
+	}
+	close(router.routeRelease)
+	status = waitForForkJobStatus(t, mgr, "fork-async-ch", result.Fork.JobID, forkJobStatusCompleted)
+	if status.Fork.Job.Artifact == nil || status.Fork.Job.Artifact.Content != "Ok" {
+		t.Fatalf("expected completed artifact, got %+v", status.Fork.Job)
+	}
+	if status.Fork.Job.Cleanup == nil || !status.Fork.Job.Cleanup.Clean {
+		t.Fatalf("expected async cleanup proof, got %+v", status.Fork.Job.Cleanup)
+	}
+	raw, _ := storage.Get("session.meta." + result.Fork.ChildLogicalSessionID)
+	if len(raw) != 0 {
+		t.Fatalf("expected async child meta removed after cleanup, got %q", string(raw))
+	}
+}
+
+func TestSessionManager_ParentCleanupCascadesToRunningAsyncForkChild(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		routeStarted: make(chan struct{}),
+		routeRelease: make(chan struct{}),
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "fork-async-cleanup-ch",
+		Action:        "new",
+		Target:        "opencode",
+		WorkspacePath: "/tmp/fork-async-cleanup-ws",
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("new parent: %v", err)
+	}
+	parentMeta, found, err := mgr.loadSessionMeta(parent.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("load parent: err=%v found=%v", err, found)
+	}
+	parentMeta.AgentSessionID = "parent-running-remote"
+	if err := mgr.saveSessionMeta(parentMeta); err != nil {
+		t.Fatalf("save parent: %v", err)
+	}
+
+	makeActive := false
+	fork, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "fork-async-cleanup-ch",
+		Action:        "fork",
+		Target:        parentMeta.ID,
+		Input:         "produce async guidance",
+		MakeActive:    &makeActive,
+		RestoreParent: true,
+		Async:         true,
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("async fork: %v", err)
+	}
+	select {
+	case <-router.routeStarted:
+	case <-time.After(time.Second):
+		t.Fatalf("expected background child turn to start")
+	}
+
+	cleanup, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "fork-async-cleanup-ch",
+		Action:           "cleanup",
+		Target:           parentMeta.ID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup parent: %v", err)
+	}
+	if cleanup.Cleanup == nil || !cleanup.Cleanup.Clean || !cleanup.Cleanup.ProcessReaped {
+		t.Fatalf("expected parent cleanup to reap after cascading child, got %+v", cleanup.Cleanup)
+	}
+	if cleanup.Cleanup.ForkChildrenCleaned != 1 {
+		t.Fatalf("expected one fork child cleanup, got %+v", cleanup.Cleanup)
+	}
+	if len(router.reaped) != 1 || router.reaped[0] != "opencode|/tmp/fork-async-cleanup-ws" {
+		t.Fatalf("expected final client reap after cascade, got %+v", router.reaped)
+	}
+
+	close(router.routeRelease)
+	status := waitForForkJobStatus(t, mgr, "fork-async-cleanup-ch", fork.Fork.JobID, forkJobStatusCompleted)
+	if status.Fork.Job.Cleanup == nil || !status.Fork.Job.Cleanup.Clean {
+		t.Fatalf("expected idempotent async child cleanup after cascade, got %+v", status.Fork.Job.Cleanup)
+	}
+	if !sessioncleanup.HasWarning(status.Fork.Job.Cleanup.Warnings, sessioncleanup.WarningForkChildCleanupAlreadyMissing) {
+		t.Fatalf("expected already-cleaned warning, got %+v", status.Fork.Job.Cleanup)
+	}
+}
+
+func TestSessionManager_SessionCommandForkAsyncAndStatus(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{
+		routeStarted: make(chan struct{}),
+		routeRelease: make(chan struct{}),
+	}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "fork-command-ch",
+		Action:        "new",
+		Target:        "opencode",
+		WorkspacePath: "/tmp/fork-command-ws",
+	})
+	if err != nil {
+		t.Fatalf("new parent: %v", err)
+	}
+	parentMeta, found, err := mgr.loadSessionMeta(parent.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("load parent: err=%v found=%v", err, found)
+	}
+	parentMeta.AgentSessionID = "parent-command-remote"
+	if err := mgr.saveSessionMeta(parentMeta); err != nil {
+		t.Fatalf("save parent: %v", err)
+	}
+	got, err := mgr.Route(
+		context.Background(),
+		"fork-command-ch",
+		"opencode",
+		"/session fork "+parentMeta.ID+" --async --restore-parent --ephemeral --cleanup-policy delete_remote_or_cancel_and_forget_local --input produce channel guidance",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("session fork command: %v", err)
+	}
+	if !contains(got, "Fork accepted asynchronously") {
+		t.Fatalf("expected async fork command response, got %q", got)
+	}
+	state, err := mgr.getChannelState("fork-command-ch")
+	if err != nil {
+		t.Fatalf("channel state: %v", err)
+	}
+	if state.ActiveSessionID != parentMeta.ID {
+		t.Fatalf("expected command async fork to restore parent, got active=%q", state.ActiveSessionID)
+	}
+	keys, err := storage.List(forkJobKeyPrefix)
+	if err != nil {
+		t.Fatalf("list fork jobs: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("expected one fork job, got %v", keys)
+	}
+	jobID := strings.TrimPrefix(keys[0], forkJobKeyPrefix)
+	select {
+	case <-router.routeStarted:
+	case <-time.After(time.Second):
+		t.Fatalf("expected command async fork child turn to start")
+	}
+	status, err := mgr.Route(context.Background(), "fork-command-ch", "opencode", "/session fork-status "+jobID, nil)
+	if err != nil {
+		t.Fatalf("session fork-status command: %v", err)
+	}
+	if !contains(status, "running") {
+		t.Fatalf("expected running fork-status response, got %q", status)
+	}
+	close(router.routeRelease)
+	waitForForkJobStatus(t, mgr, "fork-command-ch", jobID, forkJobStatusCompleted)
+	status, err = mgr.Route(context.Background(), "fork-command-ch", "opencode", "/session fork-status "+jobID, nil)
+	if err != nil {
+		t.Fatalf("session fork-status command after completion: %v", err)
+	}
+	if !contains(status, "completed") {
+		t.Fatalf("expected completed fork-status response, got %q", status)
 	}
 }
 
@@ -1659,7 +1975,30 @@ func TestSessionManager_ForkChildTurnFailureReturnsTypedCleanupProof(t *testing.
 	}
 }
 
-func TestSessionManager_EphemeralParentCleanupRetainsProcessWhenForkChildExists(t *testing.T) {
+func waitForForkJobStatus(t *testing.T, mgr *Manager, channelID string, jobID string, status string) middleware.SessionActionResult {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	var last middleware.SessionActionResult
+	for time.Now().Before(deadline) {
+		result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+			ChannelID: channelID,
+			Action:    "fork_status",
+			Target:    jobID,
+		})
+		if err != nil {
+			t.Fatalf("fork status: %v", err)
+		}
+		last = result
+		if result.Fork != nil && result.Fork.Job != nil && result.Fork.Job.Status == status {
+			return result
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("fork job did not reach %q, last=%+v", status, last)
+	return middleware.SessionActionResult{}
+}
+
+func TestSessionManager_EphemeralParentCleanupCascadesToForkChild(t *testing.T) {
 	storage := &mockStorage{data: make(map[string][]byte)}
 	if err := storage.Set("system.configured", []byte("true")); err != nil {
 		t.Fatalf("Failed to set configured flag: %v", err)
@@ -1709,14 +2048,23 @@ func TestSessionManager_EphemeralParentCleanupRetainsProcessWhenForkChildExists(
 	if err != nil {
 		t.Fatalf("cleanup parent: %v", err)
 	}
-	if result.Cleanup == nil || !result.Cleanup.Clean || !result.Cleanup.ProcessRetained || !result.Cleanup.ProcessRetentionAllowed {
-		t.Fatalf("expected retained clean parent cleanup, got %+v", result.Cleanup)
+	if result.Cleanup == nil || !result.Cleanup.Clean || !result.Cleanup.ProcessReaped || result.Cleanup.ProcessRetained {
+		t.Fatalf("expected strong clean parent cleanup with process reap, got %+v", result.Cleanup)
 	}
-	if len(router.reaped) != 0 {
-		t.Fatalf("parent cleanup must not reap while fork child exists, got %+v", router.reaped)
+	if result.Cleanup.ForkChildrenCleaned != 1 || len(result.Cleanup.ForkChildren) != 1 {
+		t.Fatalf("expected fork child cleanup evidence, got %+v", result.Cleanup)
 	}
-	if _, found, err := mgr.loadSessionMeta(child.ID); err != nil || !found {
-		t.Fatalf("fork child should remain available: err=%v found=%v", err, found)
+	if got := result.Cleanup.ForkChildren[0]; !got.Clean || !got.ProcessRetained || !got.ProcessRetentionAllowed {
+		t.Fatalf("expected child cleanup retained until parent reap, got %+v", got)
+	}
+	if len(router.reaped) != 1 || router.reaped[0] != "opencode|/tmp/active-parent-ws" {
+		t.Fatalf("expected parent cleanup to reap final workspace client, got %+v", router.reaped)
+	}
+	if len(router.reapedSession) != 1 || router.reapedSession[0] != "parent-remote|/tmp/active-parent-ws" {
+		t.Fatalf("expected parent cleanup to use remote-session-bound reap, got %+v", router.reapedSession)
+	}
+	if _, found, err := mgr.loadSessionMeta(child.ID); err != nil || found {
+		t.Fatalf("fork child should be removed: err=%v found=%v", err, found)
 	}
 }
 

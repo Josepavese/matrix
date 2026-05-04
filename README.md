@@ -97,11 +97,16 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
 | Agent | Command | Status |
 |-------|---------|--------|
 | OpenCode | `opencode acp` | Active by default |
-| Gemini CLI | `gemini --experimental-acp` | Active |
-| Claude Code | `claude acp` | Available |
+| Gemini CLI | `gemini --acp` | Active |
+| Claude Code | `claude-agent-acp` | Available |
 | Kimi | `kimi acp` | Available |
 
 Any agent that speaks ACP or A2A works. Search and install more with `matrix agent search`.
+
+Protocol note: Matrix follows Zed ACP for ACP agents. ACP branch work uses real
+capability-gated `session/fork`; there is no ACP `side` primitive. Matrix
+sidecar capsules are Matrix-level context, projected into ACP/A2A without
+polluting normal chat.
 
 ## How It Works
 

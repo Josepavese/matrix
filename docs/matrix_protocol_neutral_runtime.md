@@ -181,7 +181,7 @@ Important distinction:
 `POST /v1/session-actions` accepts a typed action envelope:
 
 - `channel_id`: physical ingress identity or routing key
-- `action`: currently `cancel`, `delete`, `cleanup`, `switch`, `list`, `status`, `new`, `name`, `capabilities`, `fork`, or `reconcile`
+- `action`: currently `cancel`, `delete`, `cleanup`, `switch`, `list`, `status`, `new`, `name`, `capabilities`, `fork`, `fork_status`, or `reconcile`
 - `target`: optional action operand
 - `workspace_id` or `workspace_path`: optional binding for new sessions
 - `ephemeral`: optional flag for temporary sessions
@@ -189,6 +189,7 @@ Important distinction:
 - `force_forget_local`: optional local mirror removal override for cleanup
 - `make_active`: optional fork flag; defaults to `true` for plain fork handles and `false` when `input` is supplied
 - `restore_parent`: optional fork flag to restore the previous/parent active session after child work
+- `async`: optional fork flag; backgrounds the child artifact turn and returns a pollable `fork.job_id`
 - `input`: optional one-turn prompt for fork-child artifact workflows
 
 Current target semantics:
@@ -198,6 +199,7 @@ Current target semantics:
 - `name`: alias for the active logical session
 - `capabilities`: optional agent id; unknown agents return typed `agent_not_found`
 - `fork`: parent local or remote session selector; true provider fork only, never prompt replay
+- `fork_status`: async fork job id
 - `reconcile`: no target required
 
 Behavior:
@@ -228,6 +230,7 @@ Response model:
 - `/v1/runs` always materializes a `run_id` and returns `trace_url`, `events_url`, and `actions_url`
 - `/v1/runs` supports `sync`, `async`, and `stream` execution modes under one Matrix envelope
 - `/v1/runs` has no default absolute turn timeout; callers may opt into an emergency wall-clock fuse with `emergency_kill_seconds`
+- `/v1/runs` can also opt into `activity_timeout_seconds`, an idle-progress watchdog that cancels with `stop_reason=activity_timeout` when no agent/tool activity is observed for the configured duration
 - synchronous `/v1/runs` responses include `output` when the run completes inline
 - isolated `/v1/runs` success and error responses may include `cleanup`; traces record `session.policy.applied` and `session.cleanup`. A `session.cleanup` event with `status=failed` and `clean=false` is explicit evidence that provider/process cleanup was incomplete. When `session_policy=new_ephemeral_delete_after_run` creates a policy-owned session, cleanup is pinned to that prepared logical session even if fork, judge, or sidecar workflows change the channel's active session before the run finishes.
 - sidecar capsule traces expose `sidecar_provider`, `sidecar_id`, `sidecar_schema`, `sidecar_version`, `sidecar_carrier`, and `sidecar_visibility` as top-level event fields so redaction can hide raw content without losing audit evidence
@@ -278,20 +281,48 @@ Current mirror fields include:
 
 Current behavior:
 
-- ACP remote sessions are enumerated through `session/list`, resumed through `session/load`, and can be deleted when the provider advertises draft `sessionCapabilities.delete`
-- ACP remote sessions can be closed when the provider advertises preview `sessionCapabilities.close`; Matrix uses this before `session/cancel` when `session/delete` is unavailable
+- ACP remote sessions are enumerated through `session/list`, resumed through stable `session/resume` when advertised, and fall back to `session/load` when needed
+- ACP remote sessions can be closed when the provider advertises stable `sessionCapabilities.close`; Matrix uses this before `session/cancel` when `session/delete` is unavailable
 - ACP remote sessions can also be interrupted through `session/cancel`, which Matrix sends as a JSON-RPC notification
 - ACP lifecycle support is reported through a protocol-neutral capability model with `supported`, `status`, `stability`, and `source` for `list`, `info_update`, `load`, `cancel`, `close`, `delete`, `resume`, and `fork`
-- Fork capability descriptors also expose Matrix orchestration truth: `active_parent_safe`, `requires_idle_parent`, and `artifact_turn`
+- ACP session configuration prefers stable `configOptions` plus `session/set_config_option`; legacy `modes` are fallback only
+- Fork capability descriptors also expose Matrix orchestration truth: `active_parent_safe`, `requires_idle_parent`, `artifact_turn`, `async_supported`, `blocking`, `artifact_streaming`, and `live_intervention_suitable`
 - ACP `session/fork` is wired only as a Draft capability-gated operation; Matrix returns typed unsupported results unless the provider advertises it
 - A2A remote tasks are enumerated through `ListTasks`, imported through `GetTask`, and deleted through `CancelTask`
 - channel users do not select ACP or A2A explicitly; Matrix resolves the provider from SSOT and the active session
 
-As of 2026-04-22, Zed ACP exposes `session/list` and `session_info_update` as stable, `session/resume` and `session/close` as Preview RFDs, and `session/fork` plus `session/delete` as Draft RFD capability-gated provider features. Matrix records this lifecycle state instead of collapsing it into booleans.
+As of 2026-05-04, the current Zed ACP source of truth is the official
+`agentclientprotocol.com` protocol docs plus the `agentclientprotocol` schema
+release `v0.12.2`.
+`session/list`, `session_info_update`, `session/resume`, `session/close`, and
+`session/set_config_option` are stable lifecycle/configuration operations with
+capability checks where applicable.
+`session/fork`, `session/delete`, `additionalDirectories`, message ids,
+provider configuration, logout, NES/document events, elicitation,
+`session/set_model`, `usage_update`, and generic `$/cancel_request` remain
+RFD/unstable/draft surfaces unless the official docs move them to
+completed/stable. Matrix records this lifecycle state instead of collapsing it
+into booleans.
 
-Cleanup is also capability-aware. For ephemeral interrupt/resume flows, `clean=true` requires at least one strong provider or process proof: `remote_deleted`, `remote_closed`, `remote_canceled`, or `process_reaped`. Local-only forgetting is reported as failed or weak evidence, not as strong cleanup. Non-ephemeral retained clients can still be operationally clean, but carry `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`. For local stdio ACP providers, Matrix targets only the exact reusable workspace client for remote lifecycle cleanup; it does not start a fresh provider process just to cancel a session owned by a reaped process, and records typed cleanup `warnings` when process proof satisfies the lifecycle.
+There is no ACP primitive named `side`, `session/side`, or `side session` in
+the official docs or schema. Matrix uses `sidecar` as a protocol-neutral
+product concept for auxiliary context. When Matrix needs a separate provider
+conversation that does not pollute parent history, the ACP projection is the
+real capability-gated `session/fork` method. When Matrix needs mid-turn live
+context, ACP baseline still does not standardize that as `side`; Matrix must
+use measured provider-specific live attach, cancel/restart, next-turn context,
+or async fork artifact workflows.
 
-Channels and HTTP can request `action=capabilities`, `action=fork`, and `action=reconcile` through the same `/v1/session-actions` contract. `reconcile` closes cached provider clients that no longer have a Matrix vault session reference.
+Cleanup is also capability-aware. For ephemeral interrupt/resume flows, `clean=true` requires at least one strong provider or process proof: `remote_deleted`, `remote_closed`, `remote_canceled`, or `process_reaped`. Local-only forgetting is reported as failed or weak evidence, not as strong cleanup. Non-ephemeral retained clients can still be operationally clean, but carry `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`. For local stdio ACP providers, Matrix targets only the exact reusable workspace client for remote lifecycle cleanup; it does not start a fresh provider process just to cancel a session owned by a reaped process, and records typed cleanup `warnings` when process proof satisfies the lifecycle. If keepalive evicts a dead workspace client before cleanup runs, Matrix keeps a short-lived tombstone keyed by agent, workspace, and tracked remote sessions; cleanup can consume it as `process_reaped=true` only for the matching remote session. Cleanup/delete is fork-aware: child sessions forked from the target are cleaned first, and the parent cleanup proof includes `fork_children_cleaned` plus nested `fork_children` cleanup records. Ephemeral `/v1/runs` cleanup also records `related_sessions`: newly created owned related sessions are cleaned as supplemental targets, while pre-existing or shared related sessions fail the run cleanup with `clean=false`, `failure_code=run_related_session_retained`, `process_retained=true`, and reason `run_related_session_retained`. Run-internal snapshots use local-only session lists so cleanup accounting never spawns provider discovery clients. After ephemeral cleanup, Matrix runs client reconciliation; unreferenced provider clients closed by that pass are recorded as `related_sessions` with reason `run_unreferenced_agent_client_reaped`, while reconcile failure fails cleanup with `failure_code=run_agent_client_reconcile_failed`.
+
+Fork child cleanup never reaps the workspace agent client directly because ACP
+fork children share the parent workspace client. The child cleanup proof can
+therefore carry `process_retained=true`, `cleanup_strength=retained`, and reason
+`fork child uses parent agent client`; the parent or run-level cleanup remains
+responsible for final process reap. Retained process evidence is never reported
+as `strong_cleanup=true`.
+
+Channels and HTTP can request `action=capabilities`, `action=fork`, `action=fork_status`, and `action=reconcile` through the same session-action contract. HTTP uses `/v1/session-actions`; text channels use `/session capabilities`, `/session fork`, `/session fork-status`, and `/session reconcile`. `reconcile` closes cached provider clients that no longer have a Matrix vault session reference.
 
 Fork is safe for automation when callers set `make_active=false`. Matrix mirrors
 the child, keeps or restores the parent as active, and returns
@@ -304,12 +335,29 @@ Matrix routes exactly one child turn and returns the raw child response as
 Matrix then cleans the child and returns `fork.cleanup`. Matrix still does not
 evaluate or interpret the artifact.
 
+For live sidecar workflows, `fork` can run the child artifact turn
+asynchronously by setting `async=true` with `input`. Matrix still performs a
+true provider fork before acknowledging the request, but then returns
+`fork.job_id` immediately and runs the child turn in the background. Callers poll
+`action=fork_status` to retrieve `fork.job.status`, `fork.job.artifact`,
+`fork.job.cleanup`, and `fork.job.error`. This fixes the synchronous live
+intervention bug where a provider-bound artifact turn blocked the caller until
+the active parent run had already completed. `active_parent_safe=true` now means
+state safety only; it is not a latency guarantee. Current ACP fork descriptors
+therefore set `blocking=true`, `artifact_streaming=false`, and
+`live_intervention_suitable=false` while also setting `async_supported=true`.
+This is intentionally not described as ACP `side`: the official protocol name is
+`session/fork`, while Matrix `sidecar` remains the neutral orchestration layer.
+
 Active-parent fork is supported when `capabilities.session.fork.active_parent_safe=true`.
-Parent cleanup must not reap the shared provider process while a fork child that
-references the same `agent_id + workspace_path` is still mirrored. In that case
-Matrix retains the process, reports `process_retained=true` with
-`process_retention_allowed=true`, and still requires remote/process proof for
-ephemeral cleanup.
+Parent cleanup is subtree cleanup: Matrix first cleans mirrored fork children,
+then cleans the parent, then reaps the shared provider client when no local
+session still references the same `agent_id + workspace_path`. Child cleanup
+records may show temporary `process_retained=true` while the parent still
+exists; the final parent proof must account for the whole fork subtree. If an
+async fork job later notices that its child was already cleaned by parent
+cleanup, it records `fork_child_cleanup_already_missing` instead of leaking the
+process or failing cleanup accounting.
 
 If parent materialization is impossible, Matrix returns typed blocked evidence
 instead of a generic server failure. Current codes include
@@ -331,12 +379,15 @@ Matrix is intentionally ready for both ACP and A2A at the runtime boundary, but 
 
 ACP is the current operational standard for real coding agents in this environment.
 
-This has been verified with real products and adapters:
+Available ACP products and adapters include:
 
 - Codex via `codex-acp`
 - Gemini CLI via `gemini --acp`
-- Claude via `@zed-industries/claude-code-acp`
+- Claude via `@agentclientprotocol/claude-agent-acp`
 - OpenCode via `opencode acp`
+
+The latest three-provider Matrix smoke evidence is recorded below for OpenCode,
+Codex ACP, and Gemini CLI.
 
 For day-to-day usage, ACP should be treated as the default production path.
 
@@ -374,19 +425,28 @@ Until then:
 
 ### Real Provider Lifecycle Probe
 
-The 2026-04-22 lifecycle probe was executed through the installed Matrix binary
-against real ACP agents, not mocks:
+The 2026-05-04 lifecycle probe was executed against real ACP providers through
+`pkg/zedacp`, temporary workspaces, and real LLM prompts:
 
-- `opencode`: advertised ACP lifecycle capabilities for list, load,
-  `session_info_update`, resume, fork, and cancel; Matrix executed a real
-  `session/fork`, received the child remote session id, reconciled cached
-  clients, and cleaned ephemeral runs with strong proof.
-- `codex` through `codex-acp`: advertised list, load, `session_info_update`,
-  close, and cancel; Matrix reported fork/delete as unsupported instead of
-  simulating them, and cleanup completed with remote/process proof.
-- `gemini` through Gemini CLI ACP: advertised load and cancel only; Matrix
-  reported list/info-update/resume/close/fork/delete as unsupported and cleaned
-  runs through cancel plus process proof.
+- `opencode` 1.4.1 via `opencode acp --pure`: advertised `loadSession`,
+  `session/list`, stable `session/resume`, and draft `session/fork`;
+  `session/list`, `session/resume`, prompt processing, file-token retrieval, and
+  terminal-token retrieval succeeded.
+- `codex` via `@zed-industries/codex-acp` 0.13.0 over `@openai/codex` 0.128.0:
+  advertised `loadSession`, `session/list`, and stable `session/close`;
+  prompt processing succeeded after upgrading `codex-acp` from 0.11.1. For a
+  fresh temporary workspace, `session/list` returned zero persisted sessions and
+  `session/load` returned resource-not-found, which Matrix treats as provider
+  state, not as a protocol simulation opportunity.
+- `gemini` 0.40.1 via `gemini --acp --yolo`: advertised `loadSession`, then
+  returned "No previous sessions found" for a fresh temporary workspace;
+  prompt processing succeeded and Gemini requested ACP `session/request_permission`.
+
+The same probe showed that OpenCode and Codex can satisfy file/terminal tasks
+through provider-native tools while emitting structural ACP `tool_call` updates,
+without invoking Matrix client-side `fs/*` or `terminal/*` request methods.
+Matrix must therefore treat client requests and provider tool updates as two
+valid execution evidence channels.
 
 This is the intended contract: Matrix exposes one channel-neutral lifecycle
 surface, but every provider action remains capability-gated and evidence-based.

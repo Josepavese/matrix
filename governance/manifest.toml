@@ -23,6 +23,7 @@ required = [
   "docs/matrix_deployment_policy.md",
   "docs/matrix_release_runbook.md",
   "docs/matrix_protocol_neutral_runtime.md",
+  "docs/matrix_zed_acp_compliance.md",
   "docs/matrix_production_readiness.md"
 ]
 
@@ -41,6 +42,7 @@ required = [
 "docs/governance/release_evidence_template.md" = ["Release Identity", "GitHub Actions", "Local Install", "Runtime Evidence"]
 "docs/governance/security_governance.md" = ["vault", "secret", "installer", "token"]
 "docs/wiki/Governance.md" = ["governance_check", "protocol-neutral", "channel-neutral", "release evidence"]
+"docs/matrix_zed_acp_compliance.md" = ["Zed Agent Client Protocol", "session/fork", "additionalDirectories", "side"]
 
 [preflight]
 file = "scripts/deploy_preflight.sh"
