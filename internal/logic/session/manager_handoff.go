@@ -11,38 +11,20 @@ import (
 )
 
 func (m *Manager) handleHandoffIntentTyped(_ context.Context, channelID, lang, workspaceID, agentID, target, note string) (middleware.IntentActionResult, error) {
-	toAgentID := strings.TrimSpace(agentID)
-	if toAgentID == "" {
-		toAgentID = strings.TrimSpace(target)
-	}
+	toAgentID := firstNonEmpty(agentID, target)
 	if toAgentID == "" {
 		return middleware.IntentActionResult{}, fmt.Errorf("handoff requires a target agent")
 	}
-
 	wsMeta, err := m.resolveIntentWorkspaceWithHint(channelID, workspaceID)
 	if err != nil {
 		return middleware.IntentActionResult{}, err
 	}
-
 	sourceMeta, _ := m.currentSessionForWorkspace(channelID, wsMeta.ID)
-	targetSessionID, _, err := m.getOrCreateSessionForWorkspace(channelID, toAgentID, wsMeta.ID, wsMeta.RootPath)
+	targetMeta, err := m.getOrCreateHandoffTarget(channelID, toAgentID, wsMeta)
 	if err != nil {
 		return middleware.IntentActionResult{}, err
 	}
-	targetMeta, found, err := m.loadSessionMeta(targetSessionID)
-	if err != nil {
-		return middleware.IntentActionResult{}, err
-	}
-	if !found {
-		return middleware.IntentActionResult{}, fmt.Errorf("handoff session %s not found", targetSessionID)
-	}
-
-	targetMeta.Mode = normalizeMode(targetMeta.Mode)
-	packet := m.buildHandoffPacket(sourceMeta, targetMeta, wsMeta, note)
-	if packet != nil && (sourceMeta.ID == "" || sourceMeta.ID != targetMeta.ID) {
-		targetMeta.PendingHandoff = packet
-	}
-	targetMeta.LastHandoff = packet
+	packet := applyHandoffPacket(&targetMeta, sourceMeta, m.buildHandoffPacket(sourceMeta, targetMeta, wsMeta, note))
 	if err := m.saveSessionMeta(targetMeta); err != nil {
 		return middleware.IntentActionResult{}, err
 	}
@@ -58,6 +40,23 @@ func (m *Manager) handleHandoffIntentTyped(_ context.Context, channelID, lang, w
 		Session:   m.toSessionEntry(targetMeta, true),
 		Handoff:   packet,
 	}, nil
+}
+
+func (m *Manager) getOrCreateHandoffTarget(channelID, agentID string, wsMeta workspace.Meta) (SessionMeta, error) {
+	targetSessionID, _, err := m.getOrCreateSessionForWorkspace(channelID, agentID, wsMeta.ID, wsMeta.RootPath)
+	if err != nil {
+		return SessionMeta{}, err
+	}
+	return m.loadRequiredSessionMeta(targetSessionID, "handoff session")
+}
+
+func applyHandoffPacket(targetMeta *SessionMeta, sourceMeta SessionMeta, packet *middleware.HandoffPacket) *middleware.HandoffPacket {
+	targetMeta.Mode = normalizeMode(targetMeta.Mode)
+	if packet != nil && (sourceMeta.ID == "" || sourceMeta.ID != targetMeta.ID) {
+		targetMeta.PendingHandoff = packet
+	}
+	targetMeta.LastHandoff = packet
+	return packet
 }
 
 func (m *Manager) currentSessionForWorkspace(channelID, workspaceID string) (SessionMeta, bool) {

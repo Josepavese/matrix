@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/workspace"
 	"github.com/Josepavese/matrix/internal/middleware"
@@ -28,36 +27,19 @@ func (m *Manager) RouteConversation(ctx context.Context, req middleware.Conversa
 }
 
 func (m *Manager) routeAgentTurnWithWorkspace(ctx context.Context, req middleware.ConversationRequest) (string, error) {
-	if sessionID := strings.TrimSpace(req.LogicalSessionID); sessionID != "" {
-		meta, found, err := m.loadSessionMeta(sessionID)
-		if err != nil {
-			return "", err
-		}
-		if !found {
-			return "", fmt.Errorf("session %s not found", sessionID)
-		}
-		return m.routeResolvedSession(ctx, req, sessionID, meta.AgentID)
+	if output, handled, err := m.routeExplicitLogicalSession(ctx, req); handled || err != nil {
+		return output, err
 	}
-	workspaceID, workspacePath, err := m.resolveWorkspaceHint(req.WorkspaceID, req.WorkspacePath)
+	routeReq, err := m.conversationWorkspaceRoute(req)
 	if err != nil {
 		return "", err
 	}
-	agentID := strings.TrimSpace(req.AgentID)
-	if workspaceID != "" {
-		if ws, found, err := workspace.LoadMeta(m.storage, workspaceID); err == nil && found && strings.TrimSpace(ws.DefaultAgentID) != "" && req.AgentID == "" {
-			agentID = ws.DefaultAgentID
-		}
-	}
-	sessionID, decision, err := m.getOrCreateSessionForWorkspace(req.ChannelID, agentID, workspaceID, workspacePath)
+	sessionID, decision, err := m.getOrCreateSessionForWorkspace(routeReq.ChannelID, routeReq.TargetAgent, routeReq.WorkspaceID, routeReq.WorkspacePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to route session: %w", err)
 	}
-	if decision != nil {
-		if meta, found, loadErr := m.loadSessionMeta(sessionID); loadErr == nil && found {
-			m.recordWorkspaceDecision(meta, req.ChannelID, decision)
-		}
-	}
-	return m.routeResolvedSession(ctx, req, sessionID, agentID)
+	m.recordWorkspaceRouteDecision(sessionID, routeReq.ChannelID, decision)
+	return m.routeResolvedSession(ctx, req, sessionID, routeReq.TargetAgent)
 }
 
 type workspaceRouteRequest struct {
@@ -232,25 +214,11 @@ func (m *Manager) bindSessionWorkspace(meta *SessionMeta, workspaceID, workspace
 	if err != nil {
 		return err
 	}
-	if resolvedID == "" && strings.TrimSpace(resolvedPath) == "" {
+	if workspaceBindingEmpty(resolvedID, resolvedPath) {
 		return nil
 	}
-	if meta.WorkspaceID != resolvedID || meta.WorkspacePath != resolvedPath {
-		meta.WorkspaceBoundAt = time.Now().UTC()
-	}
-	meta.WorkspaceID = resolvedID
-	meta.WorkspacePath = resolvedPath
-	if meta.WorkspaceRole == "" && resolvedID != "" {
-		meta.WorkspaceRole = "primary"
-	}
-	if meta.Mode == "" && resolvedID != "" {
-		if ws, found, err := workspace.LoadMeta(m.storage, resolvedID); err == nil && found {
-			meta.Mode = defaultModeForWorkspace(ws)
-		}
-	}
-	if meta.Mode == "" {
-		meta.Mode = modeImplementation
-	}
+	applyWorkspaceBinding(meta, resolvedID, resolvedPath)
+	m.applyWorkspaceModeDefaults(meta, resolvedID)
 	return nil
 }
 

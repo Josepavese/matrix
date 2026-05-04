@@ -278,11 +278,9 @@ func (p *Provider) StartPiped(spec middleware.CommandSpec) (middleware.PipedProc
 		}
 	}
 	// Close the write end in the parent after the child has inherited it.
-	// The child's copy remains open until the process exits.
-	go func() {
-		_ = cmd.Wait()
-		_ = pw.Close()
-	}()
+	// The child's copy remains open until the process exits, while callers can
+	// still call Wait exactly once to get the real exit status.
+	_ = pw.Close()
 
 	return &pipedProcess{
 		cmd:    cmd,

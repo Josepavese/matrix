@@ -19,6 +19,7 @@ Matrix fixes that. It runs locally, connects to your agents, and gives you one c
 | [Using Agents](Using-Agents.md) | Search, install, configure, and switch between coding agents |
 | [Handoff](Handoff.md) | Transfer work from one agent to another with full context |
 | [Sidecar Capsules](Sidecar-Capsules.md) | Attach machine-trackable context to runs without polluting chat |
+| [Zed ACP Compliance](../matrix_zed_acp_compliance.md) | Current ACP support, unstable fields, and why Matrix has no ACP `side` primitive |
 | [Live Context Interrupt Policy](../matrix_live_context_interrupt_policy.md) | Understand cancel vs live attach, provider limits, and tested fallback behavior |
 | [Workspaces](Workspaces.md) | Organize work by project, track timelines, create snapshots, and build memory |
 | [Channels](Channels.md) | Set up Telegram, use the HTTP API, or drive Matrix from the CLI |
@@ -35,6 +36,7 @@ Matrix fixes that. It runs locally, connects to your agents, and gives you one c
 - [Set up Telegram](Channels.md#telegram)
 - [Hand off work between agents](Handoff.md)
 - [Attach sidecar context](Sidecar-Capsules.md)
+- [Review Zed ACP compliance](../matrix_zed_acp_compliance.md)
 - [Check live context interrupt policy](../matrix_live_context_interrupt_policy.md)
 - [Review governance](Governance.md)
 - [Browse the API](API-Reference.md)

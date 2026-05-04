@@ -37,19 +37,20 @@ type Server struct {
 }
 
 type runRequest struct {
-	ChannelID            string                      `json:"channel_id"`
-	Input                runpayload.Input            `json:"input"`
-	AgentID              string                      `json:"agent_id"`
-	WorkspaceID          string                      `json:"workspace_id,omitempty"`
-	WorkspacePath        string                      `json:"workspace_path,omitempty"`
-	ExecutionMode        string                      `json:"execution_mode,omitempty"`
-	SessionPolicy        string                      `json:"session_policy,omitempty"`
-	CleanupPolicy        string                      `json:"cleanup_policy,omitempty"`
-	EmergencyKillSeconds int                         `json:"emergency_kill_seconds,omitempty"`
-	Context              []runtrace.ContextRef       `json:"context,omitempty"`
-	SidecarCapsules      []middleware.SidecarCapsule `json:"sidecar_capsules,omitempty"`
-	ClientMeta           map[string]interface{}      `json:"client_meta,omitempty"`
-	TracePolicy          runtrace.TracePolicy        `json:"trace_policy,omitempty"`
+	ChannelID              string                      `json:"channel_id"`
+	Input                  runpayload.Input            `json:"input"`
+	AgentID                string                      `json:"agent_id"`
+	WorkspaceID            string                      `json:"workspace_id,omitempty"`
+	WorkspacePath          string                      `json:"workspace_path,omitempty"`
+	ExecutionMode          string                      `json:"execution_mode,omitempty"`
+	SessionPolicy          string                      `json:"session_policy,omitempty"`
+	CleanupPolicy          string                      `json:"cleanup_policy,omitempty"`
+	EmergencyKillSeconds   int                         `json:"emergency_kill_seconds,omitempty"`
+	ActivityTimeoutSeconds int                         `json:"activity_timeout_seconds,omitempty"`
+	Context                []runtrace.ContextRef       `json:"context,omitempty"`
+	SidecarCapsules        []middleware.SidecarCapsule `json:"sidecar_capsules,omitempty"`
+	ClientMeta             map[string]interface{}      `json:"client_meta,omitempty"`
+	TracePolicy            runtrace.TracePolicy        `json:"trace_policy,omitempty"`
 }
 
 type runExecution struct {
@@ -57,6 +58,7 @@ type runExecution struct {
 	req              runRequest
 	agentID          string
 	emergencyTimeout time.Duration
+	activityTimeout  time.Duration
 }
 
 type runExecutionResult struct {

@@ -164,41 +164,20 @@ func (m *Manager) handleWorkspaceSnapshotsReadTyped(_ context.Context, channelID
 
 func (m *Manager) resolveWorkspaceReadContext(channelID, requestedWorkspaceID string) (workspace.Meta, SessionMeta, error) {
 	if strings.TrimSpace(requestedWorkspaceID) != "" {
-		ws, found, err := workspace.LoadMeta(m.storage, requestedWorkspaceID)
+		ws, err := m.loadRequiredWorkspace(requestedWorkspaceID)
 		if err != nil {
 			return workspace.Meta{}, SessionMeta{}, err
-		}
-		if !found {
-			return workspace.Meta{}, SessionMeta{}, fmt.Errorf("workspace %s not found", requestedWorkspaceID)
 		}
 		meta, _ := m.currentSessionForWorkspace(channelID, ws.ID)
 		return ws, meta, nil
 	}
 	state, _ := m.getChannelState(channelID)
-	if strings.TrimSpace(state.PreferredWorkspaceID) != "" {
-		ws, found, err := workspace.LoadMeta(m.storage, state.PreferredWorkspaceID)
-		if err != nil {
-			return workspace.Meta{}, SessionMeta{}, err
-		}
-		if found {
-			meta, _ := m.currentSessionForWorkspace(channelID, ws.ID)
-			return ws, meta, nil
-		}
+	if ws, found, err := m.workspaceFromPreferredState(state); err != nil || found {
+		meta, _ := m.currentSessionForWorkspace(channelID, ws.ID)
+		return ws, meta, err
 	}
-	if strings.TrimSpace(state.ActiveSessionID) != "" {
-		meta, found, err := m.loadSessionMeta(state.ActiveSessionID)
-		if err != nil {
-			return workspace.Meta{}, SessionMeta{}, err
-		}
-		if found && strings.TrimSpace(meta.WorkspaceID) != "" {
-			ws, found, err := workspace.LoadMeta(m.storage, meta.WorkspaceID)
-			if err != nil {
-				return workspace.Meta{}, SessionMeta{}, err
-			}
-			if found {
-				return ws, meta, nil
-			}
-		}
+	if ws, meta, found, err := m.workspaceFromActiveSessionState(state); err != nil || found {
+		return ws, meta, err
 	}
 	return workspace.Meta{}, SessionMeta{}, fmt.Errorf("no workspace context available")
 }

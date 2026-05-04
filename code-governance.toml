@@ -11,10 +11,10 @@ branch_points_warn = 10
 long_function_ratio_warn = 0.08
 
 [warning_budget]
-# 2026-04-24 ratchet after typed provider failures, remote-session import, wizard auth-flow,
-# and session cancel target-resolution refactors.
-max_total_warnings = 12
-max_branch_points = 13
+# 2026-04-27 ratchet after splitting session/workspace complexity hotspots.
+# The checker treats 0 as disabled, so keep the total-warning ceiling at 1 while current output is 0.
+max_total_warnings = 1
+max_branch_points = 10
 
 [scope]
 roots = ["cmd", "internal", "pkg"]
@@ -25,15 +25,18 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/logic/agentmgr" = 900
 "internal/logic/onboarding" = 1400
 "internal/logic/runtrace" = 830
-# 2026-04-23: active-parent fork safety, typed fork failure evidence, and cleanup retention proof.
-"internal/logic/session" = 4400
-"internal/middleware" = 850
-# 2026-04-24: workspace retention now deletes evicted objects and stale path indexes.
-"internal/logic/workspace" = 900
-# 2026-04-22: ACP session materialization for true fork parents without prompt replay.
-"internal/providers/agents" = 2000
-"internal/providers/runapi" = 930
-"pkg/zedacp" = 850
+# 2026-04-27: complexity-warning cleanup split branch-heavy session logic into focused helpers.
+"internal/logic/session" = 4895
+"internal/middleware" = 900
+# 2026-04-27: workspace timeline event recording split validation/persistence/state update.
+"internal/logic/workspace" = 910
+# 2026-05-04: Zed ACP v0.12.2 stable resume/close/config options plus
+# official terminal lifecycle and real-provider smoke support.
+"internal/providers/agents" = 2600
+# 2026-04-27: run-level cleanup proofs now account for related sessions/fork children.
+"internal/providers/runapi" = 1120
+# 2026-05-04: Zed ACP schema v0.12.2 stable lifecycle/config surface.
+"pkg/zedacp" = 1160
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390
@@ -50,10 +53,12 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/logic/workspace/timeline.go" = 310
 "internal/providers/matrixapi/server.go" = 530
 "internal/providers/agents/a2a_adapter.go" = 320
-"internal/providers/agents/acp_adapter.go" = 360
-"internal/providers/agents/default_handler.go" = 360
+"internal/providers/agents/acp_adapter.go" = 450
+"internal/providers/agents/default_handler.go" = 520
 "internal/providers/agents/router.go" = 480
+"internal/providers/agents/router_observer.go" = 330
 "pkg/zedacp/client.go" = 380
+"pkg/zedacp/types.go" = 480
 
 [function_overrides]
 "cmd/mock-agent/main.go::main" = 100

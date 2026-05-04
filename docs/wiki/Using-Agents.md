@@ -7,9 +7,14 @@ Matrix connects to real AI coding agents that you already have installed. This p
 Each agent in Matrix has:
 
 - A **name** (like `opencode`, `claude`, `gemini`)
-- A **command** (the binary to run, like `claude acp`)
+- A **command** (the binary to run, like `claude-agent-acp`)
 - A **protocol** (how Matrix talks to it -- ACP or A2A)
 - An **active/inactive** status
+
+Protocol behavior is capability-gated. For ACP, Matrix follows the Zed Agent
+Client Protocol and reads provider-advertised capabilities before using
+features such as `session/list`, `session/close`, `session/fork`, or
+`additionalDirectories`.
 
 ## Listing Agents
 
@@ -151,6 +156,16 @@ Matrix creates a handoff packet with full context and routes the next turn to Ge
 
 Read more: [Handoff](Handoff.md)
 
+### ACP fork vs Matrix sidecar
+
+ACP does not expose a `side` or `session/side` method. If a workflow needs a
+separate provider branch, Matrix uses real ACP `session/fork` only when the
+agent advertises it. If a workflow needs auxiliary context, Matrix uses sidecar
+capsules and projects them into the selected protocol without making them normal
+chat text.
+
+Read more: [Zed ACP Compliance](../matrix_zed_acp_compliance.md)
+
 ### Meta-agent
 
 The `/action` command delegates system administration tasks to a designated meta-agent:
@@ -172,8 +187,8 @@ Matrix ships with these agents pre-configured:
 | Agent | ID | Command | Notes |
 |-------|----|---------|-------|
 | OpenCode | `opencode` | `opencode acp` | Default agent for new sessions |
-| Gemini CLI | `gemini` | `gemini --experimental-acp` | Default meta-agent for `/action` |
-| Claude Code | `claude` | `claude acp` | Available but inactive by default |
+| Gemini CLI | `gemini` | `gemini --acp` | Default meta-agent for `/action` |
+| Claude Code | `claude` | `claude-agent-acp` | Available but inactive by default |
 | Kimi | `kimi` | `kimi acp` | Available but inactive by default |
 
 You can modify these, add new ones, or remove them entirely.
@@ -201,7 +216,8 @@ Fields:
 |-------|---------|
 | `command` | The binary to execute |
 | `args` | Arguments passed to the command |
-| `protocol` | `stdio`, `ws`, or `http` |
+| `kind` | Agent protocol family, usually `acp` or `a2a` |
+| `transport` | Wire transport, usually `stdio`, `ws`, or `http` |
 | `env_isolation` | Whether to isolate the agent's environment |
 | `active` | Whether Matrix will route to this agent |
 | `healthcheck_path` | Optional health check endpoint |
@@ -234,7 +250,7 @@ Check that the binary is in your PATH and the command is correct.
 For stdio agents, check that the command works standalone:
 
 ```bash
-claude acp
+claude-agent-acp
 ```
 
 For networked agents, check that the endpoint is reachable:

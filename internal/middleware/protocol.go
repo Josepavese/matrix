@@ -1,6 +1,15 @@
 package middleware
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var ErrConversationTurnActive = errors.New("conversation turn already active")
+
+func IsConversationTurnActive(err error) bool {
+	return errors.Is(err, ErrConversationTurnActive)
+}
 
 // ProtocolKind identifies the agent protocol family used by an endpoint.
 type ProtocolKind string
@@ -25,14 +34,15 @@ type ProtocolEndpoint struct {
 
 // ConversationTurn is the protocol-neutral representation of a single user turn.
 type ConversationTurn struct {
-	AgentID          string
-	LogicalSessionID string
-	RemoteSessionID  string
-	WorkspacePath    string
-	Message          string
-	SidecarCapsules  []SidecarCapsule
-	Tools            []Tool
-	ThoughtNotifier  ThoughtNotifier
+	AgentID           string
+	LogicalSessionID  string
+	RemoteSessionID   string
+	WorkspacePath     string
+	Message           string
+	SidecarCapsules   []SidecarCapsule
+	Tools             []Tool
+	ThoughtNotifier   ThoughtNotifier
+	LiveContextAttach bool
 }
 
 // ConversationResult is the protocol-neutral result of a single agent turn.
@@ -76,15 +86,19 @@ type RemoteSessionInfo struct {
 // Boolean fields on ConversationSessionCapabilities remain convenience shortcuts;
 // this descriptor carries the stability/source required for safe orchestration.
 type CapabilityDescriptor struct {
-	Name               string `json:"name,omitempty"`
-	Supported          bool   `json:"supported"`
-	Status             string `json:"status,omitempty"`
-	Stability          string `json:"stability,omitempty"`
-	Source             string `json:"source,omitempty"`
-	Detail             string `json:"detail,omitempty"`
-	ActiveParentSafe   *bool  `json:"active_parent_safe,omitempty"`
-	RequiresIdleParent *bool  `json:"requires_idle_parent,omitempty"`
-	ArtifactTurn       *bool  `json:"artifact_turn,omitempty"`
+	Name                     string `json:"name,omitempty"`
+	Supported                bool   `json:"supported"`
+	Status                   string `json:"status,omitempty"`
+	Stability                string `json:"stability,omitempty"`
+	Source                   string `json:"source,omitempty"`
+	Detail                   string `json:"detail,omitempty"`
+	ActiveParentSafe         *bool  `json:"active_parent_safe,omitempty"`
+	RequiresIdleParent       *bool  `json:"requires_idle_parent,omitempty"`
+	ArtifactTurn             *bool  `json:"artifact_turn,omitempty"`
+	AsyncSupported           *bool  `json:"async_supported,omitempty"`
+	Blocking                 *bool  `json:"blocking,omitempty"`
+	ArtifactStreaming        *bool  `json:"artifact_streaming,omitempty"`
+	LiveInterventionSuitable *bool  `json:"live_intervention_suitable,omitempty"`
 }
 
 // ProviderCapabilityReport is a channel-safe provider capability snapshot.
@@ -194,6 +208,21 @@ type SessionForkArtifact struct {
 	Content string `json:"content,omitempty"`
 }
 
+// SessionForkJob is Matrix-owned evidence for an asynchronous fork child turn.
+type SessionForkJob struct {
+	JobID                  string                `json:"job_id,omitempty"`
+	Status                 string                `json:"status,omitempty"`
+	ParentLogicalSessionID string                `json:"parent_logical_session_id,omitempty"`
+	ChildLogicalSessionID  string                `json:"child_logical_session_id,omitempty"`
+	ParentRestored         bool                  `json:"parent_restored,omitempty"`
+	AcceptedAt             string                `json:"accepted_at,omitempty"`
+	StartedAt              string                `json:"started_at,omitempty"`
+	CompletedAt            string                `json:"completed_at,omitempty"`
+	Artifact               *SessionForkArtifact  `json:"artifact,omitempty"`
+	Cleanup                *SessionCleanupResult `json:"cleanup,omitempty"`
+	Error                  *SessionActionError   `json:"error,omitempty"`
+}
+
 // SessionForkResult records the provider-neutral outcome of a fork attempt.
 type SessionForkResult struct {
 	ParentLogicalSessionID string                `json:"parent_logical_session_id,omitempty"`
@@ -203,6 +232,9 @@ type SessionForkResult struct {
 	MakeActive             bool                  `json:"make_active"`
 	Ephemeral              bool                  `json:"ephemeral,omitempty"`
 	CleanupPolicy          string                `json:"cleanup_policy,omitempty"`
+	Async                  bool                  `json:"async,omitempty"`
+	JobID                  string                `json:"job_id,omitempty"`
+	Job                    *SessionForkJob       `json:"job,omitempty"`
 	Artifact               *SessionForkArtifact  `json:"artifact,omitempty"`
 	Cleanup                *SessionCleanupResult `json:"cleanup,omitempty"`
 	ParentRestored         bool                  `json:"parent_restored,omitempty"`
@@ -225,6 +257,13 @@ type AgentSessionForker interface {
 // cleanup flows to close the cached protocol client bound to an agent/workspace.
 type AgentClientReaper interface {
 	ReapAgentClient(ctx context.Context, agentID string, workspacePath string) (bool, error)
+}
+
+// AgentSessionClientReaper is the strict cleanup variant used when Matrix knows
+// which remote session must be accounted for. Implementations should only return
+// reaped=true when the closed/evicted client is known to own that remote session.
+type AgentSessionClientReaper interface {
+	ReapAgentSessionClient(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) (bool, error)
 }
 
 // AgentClientRef identifies one cached provider client binding.

@@ -186,7 +186,7 @@ func TestACPClient_FullLifecycle(t *testing.T) {
 
 	t.Run("LoadSession", func(t *testing.T) {
 		obs := &testObserver{}
-		err := client.LoadSession(ctx, zedacp.LoadSessionRequest{
+		_, err := client.LoadSession(ctx, zedacp.LoadSessionRequest{
 			SessionID:  "test-session-123",
 			Cwd:        "/tmp",
 			McpServers: nil,

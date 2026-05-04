@@ -103,6 +103,7 @@ type sessionActionRequest struct {
 	ForceForgetLocal bool   `json:"force_forget_local,omitempty"`
 	MakeActive       *bool  `json:"make_active,omitempty"`
 	RestoreParent    bool   `json:"restore_parent,omitempty"`
+	Async            bool   `json:"async,omitempty"`
 	Input            string `json:"input,omitempty"`
 }
 
@@ -187,6 +188,7 @@ func (s *Server) HandleSessionActions(w http.ResponseWriter, r *http.Request) {
 		ForceForgetLocal: req.ForceForgetLocal,
 		MakeActive:       req.MakeActive,
 		RestoreParent:    req.RestoreParent,
+		Async:            req.Async,
 		Input:            req.Input,
 	})
 	if err != nil {
@@ -219,6 +221,7 @@ var sessionActionErrorStatus = map[string]int{
 	"cleanup_warning":                   http.StatusConflict,
 	"fork_child_cleanup_failed":         http.StatusBadGateway,
 	"fork_child_turn_failed":            http.StatusBadGateway,
+	"fork_job_not_found":                http.StatusNotFound,
 	"fork_parent_restore_failed":        http.StatusConflict,
 	"local_forget":                      http.StatusConflict,
 	"local_status":                      http.StatusConflict,

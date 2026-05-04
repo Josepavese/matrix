@@ -77,53 +77,79 @@ Reference pages:
 - Python library: https://agentclientprotocol.com/libraries/python
 - Java library: https://agentclientprotocol.com/libraries/java
 
-## Compliance Work Still Missing
+## Current Compliance Snapshot
 
-### session/list
+Last reviewed against the official ACP docs and schema release v0.12.2 on
+2026-05-04.
+
+Implemented in `pkg/zedacp` and the Matrix ACP adapter:
+
+- `initialize`
+- `authenticate`
+- `session/new`
+- `session/load`
+- `session/list`
+- stable `session/resume`
+- `session/prompt`
+- `session/cancel` notification
+- stable `session/close`
+- stable `session/set_config_option`
+- `session/fork`
+- `session/delete`
+- `session_info_update`
+- client-side filesystem and terminal request handling used by Matrix
+- stdio, websocket, and unix transports
+- object-style capability parsing for current Zed `sessionCapabilities`
+
+Newly tracked unstable/draft schema deltas:
+
+- `additionalDirectories` on new/load/fork/list request and session info shapes
+- `messageId` / `userMessageId` on prompt request/response
+- `$/cancel_request` as generic JSON-RPC request cancellation
+- provider configuration and logout surfaces
+- NES/document event surfaces
+- elicitation surfaces
+
+Important semantic conclusion:
+
+- ACP does not expose `side`, `session/side`, or a side-session lifecycle method.
+- Matrix `sidecar` is a Matrix-owned protocol-neutral context concept.
+- ACP branch/side work must use capability-gated `session/fork`; live mid-turn context remains provider-specific and cannot be inferred from baseline ACP compatibility.
+
+## Compliance Work Still Open
+
+### additionalDirectories propagation
 
 Protocol value:
 
-- enumerate remote ACP sessions
+- declare multi-root workspace scope without changing `cwd`
 
 Matrix impact:
 
-- optional runtime introspection
-- better diagnostics
-- low direct impact on onboarding/channels
+- the package now models the fields, but Matrix still needs an end-to-end policy for when PAL/workspace roots should be forwarded
+- usage must stay gated on `sessionCapabilities.additionalDirectories`
 
-### session/load
+### Generic request cancellation
 
 Protocol value:
 
-- re-attach to an existing ACP session after reconnect or restart
+- cancel individual JSON-RPC requests through `$/cancel_request`
 
 Matrix impact:
 
-- high value for daemon restart recovery
-- session vault becomes a real mirror of ACP session state rather than only a local cache
-- touches router recovery and startup warm state
+- could map Go `context.Context` cancellation to ACP request ids
+- should not replace `session/cancel` for prompt-turn semantics until the official protocol makes that transition
 
-### session/cancel
+### Provider configuration/logout/NES/elicitation
 
 Protocol value:
 
-- interrupt an in-flight ACP turn
+- richer editor-agent integration surfaces
 
 Matrix impact:
 
-- requires a cancellable turn model in session queues
-- affects channels, CLI commands, and `/v1/runs`
-
-### session_info_update
-
-Protocol value:
-
-- real-time session metadata updates from the agent
-
-Matrix impact:
-
-- vault should mirror session titles/status/metadata
-- improves `/session list`, aliases, history, and observability
+- useful for future channel UX, but not required for current Matrix production runtime
+- must remain optional and capability-gated
 
 ### Streamable HTTP
 
@@ -162,12 +188,12 @@ That means:
 
 ## Recommended Sequence
 
-1. keep extracting Matrix to consume `pkg/zedacp` only through adapters
-2. implement `session/load`
-3. mirror ACP session metadata into vault
-4. implement `session/list`
-5. implement `session_info_update`
-6. add `session/cancel`
+1. keep Matrix consuming `pkg/zedacp` only through adapters
+2. propagate `additionalDirectories` only when the provider advertises support
+3. evaluate generic `$/cancel_request` below the existing prompt-turn cancellation layer
+4. evaluate provider configuration/logout only when a real agent requires them
+5. evaluate NES/document events as editor-style context signals, not as Matrix sidecar replacement
+6. evaluate elicitation as a structured user-input surface for channels
 7. evaluate Streamable HTTP
 
 This order maximizes value to Matrix while also making the ACP package more standalone.

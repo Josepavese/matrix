@@ -29,6 +29,7 @@ type mockSessionRouter struct {
 	lastForceForgetLocal bool
 	lastMakeActive       *bool
 	lastRestoreParent    bool
+	lastAsync            bool
 	lastSessionInput     string
 	lastIntentAgentID    string
 	lastIntentNote       string
@@ -87,6 +88,7 @@ func (m *mockSessionRouter) HandleSessionActionTyped(_ context.Context, req midd
 	m.lastForceForgetLocal = req.ForceForgetLocal
 	m.lastMakeActive = req.MakeActive
 	m.lastRestoreParent = req.RestoreParent
+	m.lastAsync = req.Async
 	m.lastSessionInput = req.Input
 	if m.typedResult.Action == "" {
 		m.typedResult = middleware.SessionActionResult{Action: req.Action, Message: m.response}
@@ -1088,6 +1090,7 @@ func TestHandleSessionActions_ForkPassesSafetyFlags(t *testing.T) {
 		"target":         "parent",
 		"make_active":    false,
 		"restore_parent": true,
+		"async":          true,
 		"input":          "child interpreter prompt",
 		"ephemeral":      true,
 		"cleanup_policy": "delete_remote_or_cancel_and_forget_local",
@@ -1102,8 +1105,8 @@ func TestHandleSessionActions_ForkPassesSafetyFlags(t *testing.T) {
 	if router.lastMakeActive == nil || *router.lastMakeActive {
 		t.Fatalf("expected make_active=false passthrough, got %+v", router.lastMakeActive)
 	}
-	if !router.lastRestoreParent || router.lastSessionInput != "child interpreter prompt" {
-		t.Fatalf("expected fork safety fields, restore=%t input=%q", router.lastRestoreParent, router.lastSessionInput)
+	if !router.lastRestoreParent || !router.lastAsync || router.lastSessionInput != "child interpreter prompt" {
+		t.Fatalf("expected fork safety fields, restore=%t async=%t input=%q", router.lastRestoreParent, router.lastAsync, router.lastSessionInput)
 	}
 }
 

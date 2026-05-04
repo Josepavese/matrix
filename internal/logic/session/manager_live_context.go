@@ -31,16 +31,20 @@ func (m *Manager) AttachRunContext(ctx context.Context, req middleware.RunContex
 	}
 	agentID := firstNonEmpty(meta.AgentID, req.AgentID)
 	output, newRemoteID, _, metadata, routeErr := m.router.Route(ctx, middleware.RouteRequest{
-		AgentID:          agentID,
-		LogicalSessionID: logicalID,
-		AgentSessionID:   remoteID,
-		WorkspacePath:    firstNonEmpty(meta.WorkspacePath, req.WorkspacePath),
-		Message:          "Matrix live context update for run " + strings.TrimSpace(req.RunID) + ". Reason: " + firstNonEmpty(req.Reason, "live_context") + ". Apply attached sidecar context conservatively.",
-		SidecarCapsules:  req.SidecarCapsules,
-		ThoughtNotifier:  req.Notifier,
-		StrictSession:    runRemoteID != "",
+		AgentID:           agentID,
+		LogicalSessionID:  logicalID,
+		AgentSessionID:    remoteID,
+		WorkspacePath:     firstNonEmpty(meta.WorkspacePath, req.WorkspacePath),
+		Message:           "Matrix live context update for run " + strings.TrimSpace(req.RunID) + ". Reason: " + firstNonEmpty(req.Reason, "live_context") + ". Apply attached sidecar context conservatively.",
+		SidecarCapsules:   req.SidecarCapsules,
+		ThoughtNotifier:   req.Notifier,
+		StrictSession:     runRemoteID != "",
+		LiveContextAttach: true,
 	})
 	if routeErr != nil {
+		if middleware.IsConversationTurnActive(routeErr) {
+			return unsupportedAttach(base, "ACP live context cannot be injected with a concurrent session/prompt while the target turn is active; use cancel/restart or queue this context for the next turn."), nil
+		}
 		return base, fmt.Errorf("live context delivery failed: %w", routeErr)
 	}
 	if runRemoteID != "" && newRemoteID != "" && newRemoteID != runRemoteID {
@@ -50,6 +54,7 @@ func (m *Manager) AttachRunContext(ctx context.Context, req middleware.RunContex
 	m.persistAgentSession(meta, firstNonEmpty(newRemoteID, remoteID), metadata, nil)
 	base.Status = "delivered"
 	base.Message = firstNonEmpty(output, "Live context delivered to active session.")
+	base.DeliveryClass = "provider_returned_unverified"
 	return base, nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,8 +81,8 @@ func (m *Manager) handleSessionNameTyped(channelID, lang, alias string) (middlew
 	}, nil
 }
 
-func (m *Manager) handleSessionListTyped(ctx context.Context, channelID, lang, workspaceID string) (middleware.SessionActionResult, error) {
-	state, err := m.getChannelState(channelID)
+func (m *Manager) handleSessionListTyped(ctx context.Context, req middleware.SessionActionRequest, lang string) (middleware.SessionActionResult, error) {
+	state, err := m.getChannelState(req.ChannelID)
 	if err != nil {
 		return middleware.SessionActionResult{}, err
 	}
@@ -92,24 +93,20 @@ func (m *Manager) handleSessionListTyped(ctx context.Context, channelID, lang, w
 	}
 	local := make([]middleware.SessionEntry, 0, len(metas))
 	for _, meta := range metas {
-		if workspaceID != "" && meta.WorkspaceID != workspaceID {
-			continue
+		if req.WorkspaceID == "" || meta.WorkspaceID == req.WorkspaceID {
+			local = append(local, *m.toSessionEntry(meta, meta.ID == state.ActiveSessionID))
 		}
-		local = append(local, *m.toSessionEntry(meta, meta.ID == state.ActiveSessionID))
 	}
 
-	remote, _, remoteErr := m.listRemoteSessionsForChannel(ctx, channelID)
-	result := middleware.SessionActionResult{
-		Action:          "list",
-		ActiveSessionID: state.ActiveSessionID,
-		Sessions:        local,
-		RemoteSessions:  remote,
+	remote, _, remoteErr := []middleware.RemoteSessionInfo(nil), middleware.ConversationSessionCapabilities{}, error(nil)
+	if !req.LocalOnly {
+		remote, _, remoteErr = m.listRemoteSessionsForChannel(ctx, req.ChannelID)
 	}
+	result := middleware.SessionActionResult{Action: "list", ActiveSessionID: state.ActiveSessionID, Sessions: local, RemoteSessions: remote}
 	if len(local) == 0 && len(remote) == 0 {
+		result.Message = m.wizard.GetString(lang, "session_history_empty")
 		if remoteErr != nil {
-			result.Message = fmt.Sprintf("%s\nRemote discovery unavailable: %v", m.wizard.GetString(lang, "session_history_empty"), remoteErr)
-		} else {
-			result.Message = m.wizard.GetString(lang, "session_history_empty")
+			result.Message = fmt.Sprintf("%s\nRemote discovery unavailable: %v", result.Message, remoteErr)
 		}
 	}
 	return result, nil
@@ -276,8 +273,7 @@ func (m *Manager) loadSessionMetas(sessionIDs []string) ([]SessionMeta, error) {
 }
 
 func resolveSessionTarget(args string, state ChannelState, metas []SessionMeta) string {
-	var idx int
-	if _, err := fmt.Sscanf(args, "%d", &idx); err == nil && idx > 0 && idx <= len(state.History) {
+	if idx, err := strconv.Atoi(args); err == nil && idx > 0 && idx <= len(state.History) {
 		return state.History[idx-1]
 	}
 

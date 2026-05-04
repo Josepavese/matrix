@@ -75,6 +75,10 @@ ACP:
 - appends `llm_visible` capsule content to the prompt;
 - adds `_meta` correlation under `matrix.dev/sidecar` and `<provider>.dev/sidecar`.
 
+ACP has no official `side` / `session/side` primitive. Matrix sidecar is a
+Matrix-level context abstraction: visible capsules become prompt context, while
+separate branch work uses real capability-gated ACP `session/fork`.
+
 A2A:
 
 - sends one text part for the task body;
@@ -123,6 +127,8 @@ If a provider accepts the additional turn but only processes it after the origin
 
 Provider note: ACP standardizes `session/cancel` for interrupting/stopping an
 active turn, not guaranteed mid-turn live context injection. Matrix therefore
-measures live attach per provider. Current probes show OpenCode consuming live
-context before completion; Codex via `codex-acp` and Gemini CLI ACP currently
-complete with `late`.
+measures live attach per provider. Baseline ACP `session/update` messages are
+session-scoped, not prompt-request-scoped, so Matrix does not send concurrent
+`session/prompt` calls to prove live attach. Normal prompts are serialized per
+remote session; live `attach_context` returns `unsupported` while an ACP prompt
+is active unless a provider-specific live-interrupt extension is negotiated.

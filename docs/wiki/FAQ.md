@@ -134,6 +134,23 @@ matrix vault seal
 
 ACP (Agent Client Protocol) is the operational default. A2A (Agent-to-Agent) is implemented and ready. The routing core is protocol-agnostic.
 
+### Does ACP have a `side` or `session/side` feature?
+
+No. The current Zed ACP docs and SDK expose `session/fork` for branch work, not
+`side`. Matrix `sidecar` is a Matrix abstraction for auxiliary context; ACP
+providers receive it as prompt-visible context plus metadata, or through real
+`session/fork` when a separate branch session is needed.
+
+### Which latest ACP additions does Matrix track?
+
+Matrix tracks current stable additions such as `session/resume`,
+`session/close`, `session/set_config_option`, and `session_info_update`.
+It also models unstable/draft additions such as `additionalDirectories`, prompt
+`messageId` / `userMessageId`, generic `$/cancel_request`, provider
+config/logout, NES/document events, `session/set_model`, usage updates, and
+elicitation. Runtime usage stays capability-gated and unsupported features are
+reported clearly instead of simulated.
+
 ### How does Matrix connect to agents?
 
 Agents communicate via stdio (standard input/output), WebSocket, or HTTP. The default mode for most agents is stdio. Matrix spawns the agent process and communicates through its standard streams.

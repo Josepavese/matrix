@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/sessioncleanup"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -60,6 +61,9 @@ func (m *Manager) runForkChildTurn(ctx context.Context, req middleware.SessionAc
 }
 
 func (m *Manager) cleanupForkChild(ctx context.Context, req middleware.SessionActionRequest, childID string, cleanupPolicy string) (*middleware.SessionCleanupResult, error) {
+	if _, found, err := m.loadSessionMeta(childID); err == nil && !found {
+		return alreadyCleanedForkChild(childID, cleanupPolicy), nil
+	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), forkCleanupTimeout)
 	defer cancel()
 	result, err := m.cleanupSessionTyped(cleanupCtx, sessionCleanupRequest{
@@ -74,6 +78,22 @@ func (m *Manager) cleanupForkChild(ctx context.Context, req middleware.SessionAc
 		return result.Cleanup, err
 	}
 	return result.Cleanup, nil
+}
+
+func alreadyCleanedForkChild(childID string, cleanupPolicy string) *middleware.SessionCleanupResult {
+	policy := cleanupPolicy
+	if strings.TrimSpace(policy) == "" {
+		policy = middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal
+	}
+	return &middleware.SessionCleanupResult{
+		LogicalSessionID:  childID,
+		CleanupPolicy:     policy,
+		Clean:             true,
+		CleanupStrength:   sessioncleanup.StrengthWeak,
+		WeakCleanupReason: "already_cleaned",
+		LocalForgotten:    true,
+		Warnings:          []string{sessioncleanup.WarningForkChildCleanupAlreadyMissing},
+	}
 }
 
 func (m *Manager) cleanupForkChildIfRequested(ctx context.Context, req middleware.SessionActionRequest, childID string, cleanupPolicy string) (*middleware.SessionCleanupResult, error) {

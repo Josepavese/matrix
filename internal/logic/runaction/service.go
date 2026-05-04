@@ -5,17 +5,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/runnotifier"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/logic/sidecar"
-	"github.com/Josepavese/matrix/internal/logic/sidecartrace"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/google/uuid"
 )
-
-const attachTerminalPollInterval = 500 * time.Millisecond
 
 type Request struct {
 	Action          string                      `json:"action"`
@@ -38,22 +34,6 @@ type Service struct {
 	store    *runtrace.Store
 	attacher middleware.RunContextAttacher
 	cancel   func(string)
-}
-
-type deliveryState struct {
-	ID      string
-	Status  string
-	Message string
-}
-
-type deliveryRecorder func(runtrace.Run, deliveryState, bool)
-
-type deliveryWatch struct {
-	run        runtrace.Run
-	deliveryID string
-	done       <-chan struct{}
-	cancel     context.CancelFunc
-	recordLate deliveryRecorder
 }
 
 func New(store *runtrace.Store, attacher middleware.RunContextAttacher, cancel func(string)) Service {
@@ -96,7 +76,7 @@ func (s Service) attachContext(ctx context.Context, runID string, req Request) (
 		return http.StatusAccepted, unsupportedResponse(runID, req.Action, "runtime does not support live context attachment")
 	}
 	deliveryID := "ctx-" + uuid.NewString()
-	s.appendAttachEvent(run, req, deliveryState{ID: deliveryID, Status: "accepted"})
+	s.appendAttachEvent(run, req, deliveryState{ID: deliveryID, Status: deliveryStatusAccepted, Class: deliveryClassPending})
 	go s.deliver(ctx, run, req, deliveryID)
 	return http.StatusAccepted, Response{RunID: run.ID, Status: run.Status, Action: "attach_context", Accepted: true, DeliveryID: deliveryID}
 }
@@ -136,11 +116,10 @@ func (s Service) deliver(ctx context.Context, run runtrace.Run, req Request, del
 		run:        run,
 		deliveryID: deliveryID,
 		done:       done,
-		cancel: func() {
-			cancel()
-		},
+		cancel:     cancel,
 		recordLate: record,
 	})
+	notifier := newAttachProofNotifier(runnotifier.New(s.store, run.ID, run.AgentID, run.Protocol), deliveryID)
 	result, err := s.attacher.AttachRunContext(deliverCtx, middleware.RunContextAttachmentRequest{
 		RunID:            run.ID,
 		DeliveryID:       deliveryID,
@@ -152,146 +131,28 @@ func (s Service) deliver(ctx context.Context, run runtrace.Run, req Request, del
 		RemoteSessionID:  run.RemoteSessionID,
 		Reason:           req.Reason,
 		SidecarCapsules:  req.SidecarCapsules,
-		Notifier:         runnotifier.New(s.store, run.ID, run.AgentID, run.Protocol),
+		Notifier:         notifier,
 	})
 	close(done)
 	if err != nil {
-		record(run, deliveryState{ID: deliveryID, Status: "failed", Message: err.Error()}, false)
+		record(run, deliveryState{ID: deliveryID, Status: deliveryStatusFailed, Message: err.Error(), Class: deliveryClassProviderFailed}, false)
 		return
 	}
 	if result.Unsupported {
-		record(run, deliveryState{ID: deliveryID, Status: "unsupported", Message: result.Message}, false)
+		record(run, deliveryState{ID: deliveryID, Status: deliveryStatusUnsupported, Message: result.Message, Class: deliveryClassUnsupported}, false)
 		return
 	}
 	currentRun, ok := s.currentRunningRun(run)
 	if !ok {
-		record(currentRun, deliveryState{ID: deliveryID, Status: "late", Message: firstNonEmpty(result.Message, "Live context delivered after run completion.")}, false)
+		record(currentRun, deliveryState{ID: deliveryID, Status: deliveryStatusLate, Message: firstNonEmpty(result.Message, "Live context delivered after run completion."), Class: deliveryClassRunCompletedBeforeReturn}, false)
 		return
 	}
-	record(currentRun, deliveryState{ID: deliveryID, Status: "delivered", Message: result.Message}, true)
-}
-
-func (s Service) recordAttach(run runtrace.Run, req Request, state deliveryState, emitSidecars bool) {
-	if emitSidecars {
-		s.appendDeliveredSidecars(run, req, state.ID)
-	}
-	s.appendAttachEvent(run, req, state)
-}
-
-func (s Service) appendDeliveredSidecars(run runtrace.Run, req Request, deliveryID string) {
-	for _, event := range sidecartrace.Events(run, req.SidecarCapsules) {
-		event.Metadata = mergeMeta(event.Metadata, attachMetadata(req, deliveryID, "delivered", ""))
-		_, _ = s.store.AppendEvent(event)
-	}
-}
-
-func (s Service) watchRunTerminal(ctx context.Context, watch deliveryWatch) {
-	ticker := time.NewTicker(attachTerminalPollInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-watch.done:
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			current, ok := s.currentRunningRun(watch.run)
-			if ok {
-				continue
-			}
-			watch.cancel()
-			watch.recordLate(current, deliveryState{ID: watch.deliveryID, Status: "late", Message: "Live context delivery was still pending when the run completed."}, false)
-			return
-		}
-	}
-}
-
-func (s Service) currentRunningRun(run runtrace.Run) (runtrace.Run, bool) {
-	current, found, err := s.store.LoadRun(run.ID)
-	if err != nil || !found {
-		return run, false
-	}
-	if current.Status != runtrace.StatusRunning {
-		return current, false
-	}
-	return current, true
-}
-
-func (s Service) appendAttachEvent(run runtrace.Run, req Request, state deliveryState) {
-	event := runtrace.Event{
-		RunID:          run.ID,
-		Kind:           "run.context.attached",
-		Actor:          "matrix",
-		Status:         state.Status,
-		Protocol:       run.Protocol,
-		ProtocolMethod: "matrix.run.context.attach",
-		Summary:        attachSummary(state),
-		Metadata:       attachRunMetadata(run, attachMetadata(req, state.ID, state.Status, state.Message)),
-	}
-	if run.TracePolicy.ContentMode == runtrace.ContentModeInline {
-		event.Message = state.Message
-	}
-	_, _ = s.store.AppendEvent(event)
-}
-
-func attachSummary(state deliveryState) string {
-	if state.Status == "delivered" {
-		return "Live context delivered to active session."
-	}
-	return state.Message
-}
-
-func attachMetadata(req Request, deliveryID, status, message string) map[string]interface{} {
-	meta := map[string]interface{}{
-		"delivery_id":      deliveryID,
-		"delivery_status":  status,
-		"reason":           strings.TrimSpace(req.Reason),
-		"capsule_count":    len(req.SidecarCapsules),
-		"frontend_visible": false,
-		"audit_visible":    true,
-		"trace_visible":    true,
-	}
-	if req.SourceEventID != "" {
-		meta["source_event_id"] = strings.TrimSpace(req.SourceEventID)
-	}
-	if req.SourceSequence > 0 {
-		meta["source_sequence"] = req.SourceSequence
-	}
-	if message != "" {
-		meta["message"] = message
-	}
-	return meta
-}
-
-func attachRunMetadata(run runtrace.Run, meta map[string]interface{}) map[string]interface{} {
-	if strings.TrimSpace(run.LogicalSessionID) != "" {
-		meta["logical_session_id"] = strings.TrimSpace(run.LogicalSessionID)
-	}
-	if strings.TrimSpace(run.RemoteSessionID) != "" {
-		meta["remote_session_id"] = strings.TrimSpace(run.RemoteSessionID)
-	}
-	if strings.TrimSpace(run.AgentID) != "" {
-		meta["agent_id"] = strings.TrimSpace(run.AgentID)
-	}
-	if strings.TrimSpace(run.WorkspaceID) != "" {
-		meta["workspace_id"] = strings.TrimSpace(run.WorkspaceID)
-	}
-	return meta
+	state, emitSidecars := s.classifyProviderReturn(deliverCtx, currentRun, result, notifier)
+	record(currentRun, state, emitSidecars)
 }
 
 func unsupportedResponse(runID, action, message string) Response {
 	return Response{RunID: runID, Action: firstNonEmpty(action, "attach_context"), Status: "unsupported", Accepted: false, Message: message}
-}
-
-func mergeMeta(a, b map[string]interface{}) map[string]interface{} {
-	out := map[string]interface{}{}
-	for k, v := range a {
-		out[k] = v
-	}
-	for k, v := range b {
-		out[k] = v
-	}
-	return out
 }
 
 func firstNonEmpty(values ...string) string {

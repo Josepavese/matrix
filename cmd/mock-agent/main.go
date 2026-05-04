@@ -86,23 +86,56 @@ func promptHasText(prompt []promptPart, text string) bool {
 }
 
 func writeTerminalRequest() {
-	writeJSON(jsonRPCRequest{
-		JSONRPC: "2.0",
-		ID:      100,
-		Method:  "terminal/create",
-		Params:  json.RawMessage(`{"command":"echo","args":["from-mock-agent"]}`),
-	})
+	callClient(nil, 100, "terminal/create", map[string]interface{}{"command": "echo", "args": []string{"from-mock-agent"}})
 }
 
 func writeTerminalNotification(scanner *bufio.Scanner, sessionID string) {
+	createResult, ok := readClientResponse(scanner)
+	if !ok {
+		return
+	}
+	var create struct {
+		TerminalID string `json:"terminalId"`
+	}
+	if json.Unmarshal(createResult, &create) != nil || create.TerminalID == "" {
+		writeMessageNotification(sessionID, "terminal result: "+string(createResult))
+		return
+	}
+	waitResult, ok := callClient(scanner, 101, "terminal/wait_for_exit", map[string]interface{}{"terminalId": create.TerminalID})
+	if !ok {
+		return
+	}
+	outputResult, ok := callClient(scanner, 102, "terminal/output", map[string]interface{}{"terminalId": create.TerminalID})
+	if !ok {
+		return
+	}
+	_, _ = callClient(scanner, 103, "terminal/release", map[string]interface{}{"terminalId": create.TerminalID})
+	writeMessageNotification(sessionID, "terminal result: "+string(waitResult)+" output: "+string(outputResult))
+}
+
+func callClient(scanner *bufio.Scanner, id int, method string, params map[string]interface{}) (json.RawMessage, bool) {
+	paramsBytes, _ := json.Marshal(params)
+	writeJSON(jsonRPCRequest{
+		JSONRPC: "2.0",
+		ID:      id,
+		Method:  method,
+		Params:  json.RawMessage(paramsBytes),
+	})
+	if scanner == nil {
+		return nil, true
+	}
+	return readClientResponse(scanner)
+}
+
+func readClientResponse(scanner *bufio.Scanner) (json.RawMessage, bool) {
 	if !scanner.Scan() {
-		return
+		return nil, false
 	}
-	var termResp jsonRPCResponse
-	if json.Unmarshal(scanner.Bytes(), &termResp) != nil || termResp.Result == nil {
-		return
+	var resp jsonRPCResponse
+	if json.Unmarshal(scanner.Bytes(), &resp) != nil || resp.Result == nil {
+		return nil, false
 	}
-	writeMessageNotification(sessionID, "terminal result: "+string(termResp.Result))
+	return resp.Result, true
 }
 
 func writeMessageNotification(sessionID, text string) {

@@ -1,9 +1,7 @@
 {
   "claude": {
-    "args": [
-      "acp"
-    ],
-    "command": "claude",
+    "args": [],
+    "command": "claude-agent-acp",
     "healthcheck_path": "",
     "kind": "acp",
     "transport": "stdio",
@@ -12,7 +10,7 @@
   },
   "gemini": {
     "args": [
-      "--experimental-acp"
+      "--acp"
     ],
     "command": "gemini",
     "healthcheck_path": "",

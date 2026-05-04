@@ -7,8 +7,8 @@ Install Matrix and run your first agent conversation in under 5 minutes.
 Matrix talks to real coding agents. Before you start, make sure you have at least one of these installed and working on your machine:
 
 - [OpenCode](https://github.com/opencode-ai/opencode) with ACP support (`opencode acp`)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude acp`)
-- [Gemini CLI](https://github.com/google-gemini/gemini-cli) (`gemini --experimental-acp`)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude-agent-acp`)
+- [Gemini CLI](https://github.com/google-gemini/gemini-cli) (`gemini --acp`)
 
 Matrix does not replace your agents. It routes communication to them. You need the agent binaries already installed.
 

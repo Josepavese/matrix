@@ -84,13 +84,7 @@ func (m *Manager) handleReviewIntentTyped(_ context.Context, channelID, lang, ta
 	if err != nil {
 		return middleware.IntentActionResult{}, err
 	}
-	reviewer := strings.TrimSpace(wsMeta.ReviewerAgentID)
-	if reviewer == "" {
-		reviewer = strings.TrimSpace(m.actionAgent)
-	}
-	if reviewer == "" {
-		reviewer = strings.TrimSpace(wsMeta.DefaultAgentID)
-	}
+	reviewer := firstNonEmpty(wsMeta.ReviewerAgentID, m.actionAgent, wsMeta.DefaultAgentID)
 	if reviewer == "" {
 		return middleware.IntentActionResult{}, fmt.Errorf("no reviewer agent configured for workspace %s", wsMeta.ID)
 	}
@@ -99,20 +93,13 @@ func (m *Manager) handleReviewIntentTyped(_ context.Context, channelID, lang, ta
 	if err != nil {
 		return middleware.IntentActionResult{}, err
 	}
-	meta, found, err := m.loadSessionMeta(sessionID)
+	meta, err := m.loadRequiredSessionMeta(sessionID, "review session")
 	if err != nil {
 		return middleware.IntentActionResult{}, err
 	}
-	if !found {
-		return middleware.IntentActionResult{}, fmt.Errorf("review session %s not found", sessionID)
-	}
 	meta.Mode = modeReview
 	m.recordWorkspaceDecision(meta, channelID, decision)
-	packet := m.buildHandoffPacket(sourceMeta, meta, wsMeta, "Switching to review specialist.")
-	if packet != nil && (sourceMeta.ID == "" || sourceMeta.ID != meta.ID) {
-		meta.PendingHandoff = packet
-	}
-	meta.LastHandoff = packet
+	packet := applyHandoffPacket(&meta, sourceMeta, m.buildHandoffPacket(sourceMeta, meta, wsMeta, "Switching to review specialist."))
 	if err := m.saveSessionMeta(meta); err != nil {
 		return middleware.IntentActionResult{}, err
 	}
@@ -133,41 +120,60 @@ func (m *Manager) handleReviewIntentTyped(_ context.Context, channelID, lang, ta
 func (m *Manager) resolveIntentWorkspace(channelID, target string) (workspace.Meta, error) {
 	target = strings.TrimSpace(target)
 	if target != "" {
-		ws, found, err := workspace.LoadMeta(m.storage, target)
-		if err != nil {
-			return workspace.Meta{}, err
-		}
-		if !found {
-			return workspace.Meta{}, fmt.Errorf("workspace %s not found", target)
-		}
-		return ws, nil
+		return m.loadRequiredWorkspace(target)
 	}
 	state, _ := m.getChannelState(channelID)
-	if strings.TrimSpace(state.PreferredWorkspaceID) != "" {
-		ws, found, err := workspace.LoadMeta(m.storage, state.PreferredWorkspaceID)
-		if err != nil {
-			return workspace.Meta{}, err
-		}
-		if found {
-			return ws, nil
-		}
+	if ws, found, err := m.workspaceFromPreferredState(state); err != nil || found {
+		return ws, err
 	}
-	if strings.TrimSpace(state.ActiveSessionID) != "" {
-		meta, found, err := m.loadSessionMeta(state.ActiveSessionID)
-		if err != nil {
-			return workspace.Meta{}, err
-		}
-		if found && strings.TrimSpace(meta.WorkspaceID) != "" {
-			ws, found, err := workspace.LoadMeta(m.storage, meta.WorkspaceID)
-			if err != nil {
-				return workspace.Meta{}, err
-			}
-			if found {
-				return ws, nil
-			}
-		}
+	if ws, _, found, err := m.workspaceFromActiveSessionState(state); err != nil || found {
+		return ws, err
 	}
 	return workspace.Meta{}, fmt.Errorf("no workspace context available")
+}
+
+func (m *Manager) loadRequiredSessionMeta(sessionID, label string) (SessionMeta, error) {
+	meta, found, err := m.loadSessionMeta(sessionID)
+	if err != nil {
+		return SessionMeta{}, err
+	}
+	if !found {
+		return SessionMeta{}, fmt.Errorf("%s %s not found", label, sessionID)
+	}
+	return meta, nil
+}
+
+func (m *Manager) loadRequiredWorkspace(workspaceID string) (workspace.Meta, error) {
+	ws, found, err := workspace.LoadMeta(m.storage, workspaceID)
+	if err != nil {
+		return workspace.Meta{}, err
+	}
+	if !found {
+		return workspace.Meta{}, fmt.Errorf("workspace %s not found", workspaceID)
+	}
+	return ws, nil
+}
+
+func (m *Manager) workspaceFromPreferredState(state ChannelState) (workspace.Meta, bool, error) {
+	workspaceID := strings.TrimSpace(state.PreferredWorkspaceID)
+	if workspaceID == "" {
+		return workspace.Meta{}, false, nil
+	}
+	ws, found, err := workspace.LoadMeta(m.storage, workspaceID)
+	return ws, found, err
+}
+
+func (m *Manager) workspaceFromActiveSessionState(state ChannelState) (workspace.Meta, SessionMeta, bool, error) {
+	sessionID := strings.TrimSpace(state.ActiveSessionID)
+	if sessionID == "" {
+		return workspace.Meta{}, SessionMeta{}, false, nil
+	}
+	meta, found, err := m.loadSessionMeta(sessionID)
+	if err != nil || !found || strings.TrimSpace(meta.WorkspaceID) == "" {
+		return workspace.Meta{}, meta, false, err
+	}
+	ws, found, err := workspace.LoadMeta(m.storage, meta.WorkspaceID)
+	return ws, meta, found, err
 }
 
 func (m *Manager) currentWorkspaceEntry(state ChannelState, meta SessionMeta) (*middleware.WorkspaceEntry, error) {

@@ -1,6 +1,7 @@
 package sessioncleanup
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/Josepavese/matrix/internal/middleware"
@@ -12,6 +13,13 @@ const FailureAgentStartContextCancelledDuringCleanup = "agent_start_context_canc
 const NoReusableCachedAgentClient = "no reusable cached agent client"
 const WarningRemoteLifecycleSkippedNoReusableClient = "remote_lifecycle_skipped_no_reusable_cached_agent_client"
 const WarningRemoteCancelSessionNotFoundAfterProcessReap = "remote_cancel_session_not_found_after_process_reap"
+const WarningForkChildCleanupAlreadyMissing = "fork_child_cleanup_already_missing"
+const WarningRunRelatedSessionRetained = "run_related_session_retained"
+const WarningRunRelatedSessionCleanupFailed = "run_related_session_cleanup_failed"
+const WarningRunAgentClientReconcileFailed = "run_agent_client_reconcile_failed"
+const ReasonRunUnreferencedAgentClientReaped = "run_unreferenced_agent_client_reaped"
+const FailureRunRelatedSessionRetained = WarningRunRelatedSessionRetained
+const ForkChildUsesParentAgentClient = "fork child uses parent agent client"
 const WeakCleanupNoRemoteOrProcessProof = "cleanup_clean_without_remote_or_process_proof"
 const WeakCleanupProcessRetained = "process_retained"
 
@@ -113,6 +121,27 @@ func AppendErrorWithCode(existing, code, phase string, err error) (string, strin
 	return existing, code
 }
 
+func FailureError(cleanup *middleware.SessionCleanupResult, fallback string) error {
+	reason := FailureReason(cleanup)
+	if reason == "" {
+		reason = strings.TrimSpace(fallback)
+	}
+	if reason == "" {
+		reason = "not clean"
+	}
+	return errors.New("session cleanup failed: " + reason)
+}
+
+func FailureReason(cleanup *middleware.SessionCleanupResult) string {
+	if cleanup == nil {
+		return ""
+	}
+	if code := strings.TrimSpace(cleanup.FailureCode); code != "" {
+		return code
+	}
+	return strings.TrimSpace(cleanup.Error)
+}
+
 func AppendWarning(existing []string, warning string) []string {
 	warning = strings.TrimSpace(warning)
 	if warning == "" || HasWarning(existing, warning) {
@@ -176,21 +205,21 @@ func Strength(input CleanInput) string {
 	if !IsClean(input) {
 		return StrengthFailed
 	}
-	if HasStrongProof(input) {
-		return StrengthStrong
-	}
 	if input.ProcessRetained && input.ProcessRetentionAllowed {
 		return StrengthRetained
+	}
+	if HasStrongProof(input) {
+		return StrengthStrong
 	}
 	return StrengthWeak
 }
 
 func WeakReason(input CleanInput) string {
-	if HasStrongProof(input) {
-		return ""
-	}
 	if input.ProcessRetained {
 		return WeakCleanupProcessRetained
+	}
+	if HasStrongProof(input) {
+		return ""
 	}
 	return WeakCleanupNoRemoteOrProcessProof
 }
@@ -232,6 +261,9 @@ func Metadata(cleanup middleware.SessionCleanupResult) map[string]interface{} {
 		"process_retention_allowed": cleanup.ProcessRetentionAllowed,
 		"process_retention_reason":  cleanup.ProcessRetentionReason,
 		"local_forgotten":           cleanup.LocalForgotten,
+		"fork_children_cleaned":     cleanup.ForkChildrenCleaned,
+		"fork_children":             cleanup.ForkChildren,
+		"related_sessions":          cleanup.RelatedSessions,
 		"warnings":                  cleanup.Warnings,
 		"failure_code":              cleanup.FailureCode,
 		"error":                     cleanup.Error,

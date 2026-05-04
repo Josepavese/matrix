@@ -48,7 +48,7 @@ func ProfileV1() Profile {
 			{ID: "http:/v1/runs/{id}/events", Description: "Ordered run event read surface for live supervision and replayable observation.", Actions: []string{"read"}},
 			{ID: "http:/v1/runs/{id}/actions", Description: "Operational run control and live context surface.", Actions: []string{"cancel", "attach_context", "append_context"}},
 			{ID: "http:/v1/event-sinks", Description: "Generic external consumer registration for Matrix run events.", Actions: []string{"register"}},
-			{ID: "http:/v1/session-actions", Description: "Typed session lifecycle API.", Actions: []string{"status", "new", "name", "list", "switch", "cancel", "delete", "cleanup", "capabilities", "fork", "reconcile"}},
+			{ID: "http:/v1/session-actions", Description: "Typed session lifecycle API.", Actions: []string{"status", "new", "name", "list", "switch", "cancel", "delete", "cleanup", "capabilities", "fork", "fork_status", "reconcile"}},
 			{ID: "http:/v1/workspace-actions", Description: "Typed workspace control API.", Actions: []string{"list", "status", "switch", "bind", "snapshot"}},
 			{ID: "http:/v1/workspace-state", Description: "Typed workspace current-state read API.", Actions: []string{"state"}},
 			{ID: "http:/v1/workspace-timeline", Description: "Typed workspace timeline read API.", Actions: []string{"timeline"}},

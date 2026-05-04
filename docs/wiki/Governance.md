@@ -24,5 +24,6 @@ Primary docs:
 - [Product governance](../governance/product_governance.md)
 - [Architecture governance](../governance/architecture_governance.md)
 - [Protocol and channel governance](../governance/protocol_channel_governance.md)
+- [Zed ACP compliance](../matrix_zed_acp_compliance.md)
 - [Deploy governance](../governance/deploy_governance.md)
 - [Architecture guardrails](../governance/architecture_guardrails.md)

@@ -8,9 +8,11 @@ import (
 )
 
 type terminalCreateRequest struct {
-	Command string
-	Args    []string
-	WorkDir string
+	Command         string
+	Args            []string
+	Env             []string
+	WorkDir         string
+	OutputByteLimit int
 }
 
 func (h *defaultRequestHandler) parseTerminalCreateRequest(params json.RawMessage) (terminalCreateRequest, error) {
@@ -18,6 +20,11 @@ func (h *defaultRequestHandler) parseTerminalCreateRequest(params json.RawMessag
 		Command string   `json:"command"`
 		Args    []string `json:"args"`
 		Cwd     string   `json:"cwd"`
+		Env     []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"env"`
+		OutputByteLimit int `json:"outputByteLimit"`
 	}
 	if err := json.Unmarshal(params, &raw); err != nil {
 		return terminalCreateRequest{}, fmt.Errorf("invalid terminal/create params: %w", err)
@@ -31,9 +38,22 @@ func (h *defaultRequestHandler) parseTerminalCreateRequest(params json.RawMessag
 			workDir = resolved
 		}
 	}
-	return terminalCreateRequest{Command: raw.Command, Args: raw.Args, WorkDir: workDir}, nil
+	env := make([]string, 0, len(raw.Env))
+	for _, item := range raw.Env {
+		if item.Name == "" {
+			continue
+		}
+		env = append(env, item.Name+"="+item.Value)
+	}
+	return terminalCreateRequest{
+		Command:         raw.Command,
+		Args:            raw.Args,
+		Env:             env,
+		WorkDir:         workDir,
+		OutputByteLimit: raw.OutputByteLimit,
+	}, nil
 }
 
 func (r terminalCreateRequest) commandSpec() middleware.CommandSpec {
-	return middleware.CommandSpec{Runner: r.Command, Args: r.Args, Dir: r.WorkDir}
+	return middleware.CommandSpec{Runner: r.Command, Args: r.Args, Env: r.Env, Dir: r.WorkDir}
 }

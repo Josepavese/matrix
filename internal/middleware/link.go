@@ -50,11 +50,14 @@ type RunContextAttachmentRequest struct {
 }
 
 type RunContextAttachmentResult struct {
-	Action      string `json:"action"`
-	Status      string `json:"status"`
-	DeliveryID  string `json:"delivery_id,omitempty"`
-	Message     string `json:"message,omitempty"`
-	Unsupported bool   `json:"unsupported,omitempty"`
+	Action                 string `json:"action"`
+	Status                 string `json:"status"`
+	DeliveryID             string `json:"delivery_id,omitempty"`
+	Message                string `json:"message,omitempty"`
+	DeliveryClass          string `json:"delivery_class,omitempty"`
+	LiveConsumptionProven  bool   `json:"live_consumption_proven,omitempty"`
+	ProviderActivityEvents int    `json:"provider_activity_events,omitempty"`
+	Unsupported            bool   `json:"unsupported,omitempty"`
 }
 
 type RunContextAttacher interface {
@@ -80,9 +83,13 @@ type SessionActionRequest struct {
 	Ephemeral        bool
 	CleanupPolicy    string
 	ForceForgetLocal bool
-	MakeActive       *bool
-	RestoreParent    bool
-	Input            string
+	// LocalOnly disables provider-side discovery for internal read paths that
+	// must not spawn or retain protocol clients.
+	LocalOnly     bool
+	MakeActive    *bool
+	RestoreParent bool
+	Async         bool
+	Input         string
 	// Target carries the action operand when needed.
 	// Examples:
 	// - switch/delete/cancel/cleanup: local or remote session selector
@@ -136,32 +143,35 @@ type SessionEntry struct {
 // It is protocol-neutral and intentionally distinguishes remote provider state
 // from the local Matrix mirror.
 type SessionCleanupResult struct {
-	LogicalSessionID        string   `json:"logical_session_id,omitempty"`
-	RemoteSessionID         string   `json:"remote_session_id,omitempty"`
-	AgentID                 string   `json:"agent_id,omitempty"`
-	ProtocolKind            string   `json:"protocol_kind,omitempty"`
-	CleanupPolicy           string   `json:"cleanup_policy,omitempty"`
-	Clean                   bool     `json:"clean"`
-	StrongCleanup           bool     `json:"strong_cleanup"`
-	CleanupStrength         string   `json:"cleanup_strength,omitempty"`
-	WeakCleanupReason       string   `json:"weak_cleanup_reason,omitempty"`
-	RemoteDeleteAttempted   bool     `json:"remote_delete_attempted"`
-	RemoteDeleted           bool     `json:"remote_deleted"`
-	RemoteDeleteUnsupported bool     `json:"remote_delete_unsupported,omitempty"`
-	RemoteCloseAttempted    bool     `json:"remote_close_attempted"`
-	RemoteClosed            bool     `json:"remote_closed"`
-	RemoteCloseUnsupported  bool     `json:"remote_close_unsupported,omitempty"`
-	RemoteCancelAttempted   bool     `json:"remote_cancel_attempted"`
-	RemoteCanceled          bool     `json:"remote_canceled"`
-	ProcessReapAttempted    bool     `json:"process_reap_attempted"`
-	ProcessReaped           bool     `json:"process_reaped"`
-	ProcessRetained         bool     `json:"process_retained,omitempty"`
-	ProcessRetentionAllowed bool     `json:"process_retention_allowed,omitempty"`
-	ProcessRetentionReason  string   `json:"process_retention_reason,omitempty"`
-	LocalForgotten          bool     `json:"local_forgotten"`
-	Warnings                []string `json:"warnings,omitempty"`
-	FailureCode             string   `json:"failure_code,omitempty"`
-	Error                   string   `json:"error,omitempty"`
+	LogicalSessionID        string                         `json:"logical_session_id,omitempty"`
+	RemoteSessionID         string                         `json:"remote_session_id,omitempty"`
+	AgentID                 string                         `json:"agent_id,omitempty"`
+	ProtocolKind            string                         `json:"protocol_kind,omitempty"`
+	CleanupPolicy           string                         `json:"cleanup_policy,omitempty"`
+	Clean                   bool                           `json:"clean"`
+	StrongCleanup           bool                           `json:"strong_cleanup"`
+	CleanupStrength         string                         `json:"cleanup_strength,omitempty"`
+	WeakCleanupReason       string                         `json:"weak_cleanup_reason,omitempty"`
+	RemoteDeleteAttempted   bool                           `json:"remote_delete_attempted"`
+	RemoteDeleted           bool                           `json:"remote_deleted"`
+	RemoteDeleteUnsupported bool                           `json:"remote_delete_unsupported,omitempty"`
+	RemoteCloseAttempted    bool                           `json:"remote_close_attempted"`
+	RemoteClosed            bool                           `json:"remote_closed"`
+	RemoteCloseUnsupported  bool                           `json:"remote_close_unsupported,omitempty"`
+	RemoteCancelAttempted   bool                           `json:"remote_cancel_attempted"`
+	RemoteCanceled          bool                           `json:"remote_canceled"`
+	ProcessReapAttempted    bool                           `json:"process_reap_attempted"`
+	ProcessReaped           bool                           `json:"process_reaped"`
+	ProcessRetained         bool                           `json:"process_retained,omitempty"`
+	ProcessRetentionAllowed bool                           `json:"process_retention_allowed,omitempty"`
+	ProcessRetentionReason  string                         `json:"process_retention_reason,omitempty"`
+	LocalForgotten          bool                           `json:"local_forgotten"`
+	ForkChildrenCleaned     int                            `json:"fork_children_cleaned,omitempty"`
+	ForkChildren            []SessionCleanupResult         `json:"fork_children,omitempty"`
+	RelatedSessions         []SessionCleanupRelatedSession `json:"related_sessions,omitempty"`
+	Warnings                []string                       `json:"warnings,omitempty"`
+	FailureCode             string                         `json:"failure_code,omitempty"`
+	Error                   string                         `json:"error,omitempty"`
 }
 
 type SessionActionError struct {
