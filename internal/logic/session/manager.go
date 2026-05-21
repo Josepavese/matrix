@@ -38,6 +38,7 @@ type SessionMeta struct {
 	Mode             string                    `json:"mode,omitempty"`
 	Ephemeral        bool                      `json:"ephemeral,omitempty"`
 	CleanupPolicy    string                    `json:"cleanup_policy,omitempty"`
+	OwnerRunID       string                    `json:"owner_run_id,omitempty"`
 	ParentSessionID  string                    `json:"parent_session_id,omitempty"`
 	ParentRemoteID   string                    `json:"parent_remote_id,omitempty"`
 	PendingHandoff   *middleware.HandoffPacket `json:"pending_handoff,omitempty"`
@@ -228,6 +229,7 @@ func (m *Manager) handleSessionCoreAction(ctx context.Context, req middleware.Se
 			ChannelID:     req.ChannelID,
 			Lang:          lang,
 			AgentID:       req.Target,
+			OwnerRunID:    req.OwnerRunID,
 			WorkspaceID:   req.WorkspaceID,
 			WorkspacePath: req.WorkspacePath,
 			Ephemeral:     req.Ephemeral,

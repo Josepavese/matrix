@@ -41,19 +41,21 @@ func recordAgentClientReapResult(reaped bool, err error, result *middleware.Sess
 		result.ProcessReaped = true
 		return
 	}
+	result.ProcessAbsent = true
+	result.ProcessAbsenceReason = sessioncleanup.NoMatchingCachedAgentClient
 	result.ProcessRetentionReason = sessioncleanup.NoMatchingCachedAgentClient
 }
 
 func (m *Manager) allowProcessRetention(meta SessionMeta, result *middleware.SessionCleanupResult) bool {
 	if meta.Ephemeral && strings.TrimSpace(meta.ParentSessionID) == "" {
-		hasReferences, err := m.hasForkChildAgentClientReferences(meta)
+		references, err := m.forkChildAgentClientReferences(meta)
 		if err != nil {
 			result.ProcessRetained = true
 			result.ProcessRetentionReason = err.Error()
 			result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "process_reap_refs", err)
 			return true
 		}
-		if !hasReferences {
+		if len(references) == 0 {
 			return false
 		}
 		result.ProcessRetained = true
@@ -67,15 +69,19 @@ func (m *Manager) allowProcessRetention(meta SessionMeta, result *middleware.Ses
 		result.ProcessRetentionReason = sessioncleanup.ForkChildUsesParentAgentClient
 		return true
 	}
-	hasReferences, err := m.hasOtherAgentClientReferences(meta)
+	references, err := m.otherAgentClientReferences(meta)
 	if err != nil {
 		result.ProcessRetained = true
 		result.ProcessRetentionReason = err.Error()
 		result.Error, result.FailureCode = sessioncleanup.AppendErrorWithCode(result.Error, result.FailureCode, "process_reap_refs", err)
 		return true
 	}
-	if !hasReferences {
+	if len(references) == 0 {
 		return false
+	}
+	if cleanupHasRemoteTargetProof(result) {
+		m.appendSharedAgentClientOwners(result, references)
+		return true
 	}
 	result.ProcessRetained = true
 	result.ProcessRetentionAllowed = true
@@ -83,16 +89,16 @@ func (m *Manager) allowProcessRetention(meta SessionMeta, result *middleware.Ses
 	return true
 }
 
-func (m *Manager) hasOtherAgentClientReferences(meta SessionMeta) (bool, error) {
-	return m.hasAgentClientReferences(meta, func(_ SessionMeta) bool {
+func (m *Manager) otherAgentClientReferences(meta SessionMeta) ([]SessionMeta, error) {
+	return m.agentClientReferences(meta, func(_ SessionMeta) bool {
 		return true
 	})
 }
 
-func (m *Manager) hasForkChildAgentClientReferences(meta SessionMeta) (bool, error) {
+func (m *Manager) forkChildAgentClientReferences(meta SessionMeta) ([]SessionMeta, error) {
 	parentID := strings.TrimSpace(meta.ID)
 	parentRemoteID := strings.TrimSpace(meta.AgentSessionID)
-	return m.hasAgentClientReferences(meta, func(other SessionMeta) bool {
+	return m.agentClientReferences(meta, func(other SessionMeta) bool {
 		if strings.TrimSpace(other.ParentSessionID) == parentID {
 			return true
 		}
@@ -100,13 +106,14 @@ func (m *Manager) hasForkChildAgentClientReferences(meta SessionMeta) (bool, err
 	})
 }
 
-func (m *Manager) hasAgentClientReferences(meta SessionMeta, include func(SessionMeta) bool) (bool, error) {
+func (m *Manager) agentClientReferences(meta SessionMeta, include func(SessionMeta) bool) ([]SessionMeta, error) {
 	keys, err := m.storage.List("session.meta.")
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	targetAgent := strings.TrimSpace(meta.AgentID)
 	targetPath := cleanSessionWorkspacePath(meta.WorkspacePath)
+	references := []SessionMeta{}
 	for _, key := range keys {
 		raw, err := m.storage.Get(key)
 		if err != nil || len(raw) == 0 {
@@ -120,10 +127,75 @@ func (m *Manager) hasAgentClientReferences(meta SessionMeta, include func(Sessio
 			continue
 		}
 		if strings.TrimSpace(other.AgentID) == targetAgent && cleanSessionWorkspacePath(other.WorkspacePath) == targetPath {
-			return true, nil
+			references = append(references, other)
 		}
 	}
-	return false, nil
+	return references, nil
 }
 
 func cleanSessionWorkspacePath(path string) string { return filepath.Clean(strings.TrimSpace(path)) }
+
+func cleanupHasRemoteTargetProof(result *middleware.SessionCleanupResult) bool {
+	return result.RemoteDeleted || result.RemoteClosed || result.RemoteCanceled
+}
+
+func (m *Manager) appendSharedAgentClientOwners(result *middleware.SessionCleanupResult, references []SessionMeta) {
+	for _, ref := range references {
+		related := middleware.SessionCleanupRelatedSession{
+			LogicalSessionID: strings.TrimSpace(ref.ID),
+			RemoteSessionID:  strings.TrimSpace(ref.AgentSessionID),
+			AgentID:          strings.TrimSpace(ref.AgentID),
+			ProtocolKind:     strings.TrimSpace(ref.ProtocolKind),
+			WorkspaceID:      strings.TrimSpace(ref.WorkspaceID),
+			WorkspacePath:    strings.TrimSpace(ref.WorkspacePath),
+			ParentSessionID:  strings.TrimSpace(ref.ParentSessionID),
+			ParentRemoteID:   strings.TrimSpace(ref.ParentRemoteID),
+			Ephemeral:        ref.Ephemeral,
+			CleanupPolicy:    strings.TrimSpace(ref.CleanupPolicy),
+			Active:           m.sessionActiveInAnyChannel(ref.ID),
+			Retained:         false,
+			Reason:           sessioncleanup.ReasonSharedAgentClientOwner,
+		}
+		if cleanupRelatedSessionContains(result.RelatedSessions, related) {
+			continue
+		}
+		result.RelatedSessions = append(result.RelatedSessions, related)
+	}
+}
+
+func (m *Manager) sessionActiveInAnyChannel(sessionID string) bool {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return false
+	}
+	keys, err := m.storage.List("session.channel.")
+	if err != nil {
+		return false
+	}
+	for _, key := range keys {
+		raw, err := m.storage.Get(key)
+		if err != nil || len(raw) == 0 {
+			continue
+		}
+		var state ChannelState
+		if err := json.Unmarshal(raw, &state); err != nil {
+			continue
+		}
+		if strings.TrimSpace(state.ActiveSessionID) == sessionID {
+			return true
+		}
+	}
+	return false
+}
+
+func cleanupRelatedSessionContains(existing []middleware.SessionCleanupRelatedSession, candidate middleware.SessionCleanupRelatedSession) bool {
+	for _, related := range existing {
+		if strings.TrimSpace(related.LogicalSessionID) != "" && strings.TrimSpace(related.LogicalSessionID) == candidate.LogicalSessionID {
+			return true
+		}
+		if strings.TrimSpace(related.RemoteSessionID) != "" && strings.TrimSpace(related.RemoteSessionID) == candidate.RemoteSessionID {
+			return true
+		}
+	}
+	return false
+}

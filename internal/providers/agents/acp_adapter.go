@@ -70,6 +70,7 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		endpoint:            endpoint,
 		sessionCapabilities: caps,
 		loadedSessions:      map[string]bool{},
+		mcpServers:          toZedACPMCPServers(deps.McpServers),
 	}, nil
 }
 
@@ -79,6 +80,7 @@ type acpConversationClient struct {
 	cwd                 string
 	endpoint            middleware.ProtocolEndpoint
 	sessionCapabilities middleware.ConversationSessionCapabilities
+	mcpServers          []acpMcpServerConfig
 	mu                  sync.Mutex
 	loadedSessions      map[string]bool
 	activePrompts       map[string]chan struct{}
@@ -138,22 +140,26 @@ func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn
 	}
 	if !c.isLoadedSession(turn.RemoteSessionID) && c.sessionCapabilities.Resume {
 		if c.resumeACPRemoteSession(acpLoadRemoteSessionRequest{
-			Ctx:             ctx,
-			RemoteSessionID: turn.RemoteSessionID,
-			Cwd:             cwd,
-			Notifier:        turn.ThoughtNotifier,
-			Log:             log,
+			Ctx:                   ctx,
+			RemoteSessionID:       turn.RemoteSessionID,
+			Cwd:                   cwd,
+			AdditionalDirectories: turn.AdditionalDirectories,
+			McpServers:            c.turnMCPServers(turn.McpServers),
+			Notifier:              turn.ThoughtNotifier,
+			Log:                   log,
 		}) {
 			return turn.RemoteSessionID, nil
 		}
 	}
 	if !c.isLoadedSession(turn.RemoteSessionID) && c.sessionCapabilities.Load {
 		c.loadACPRemoteSession(acpLoadRemoteSessionRequest{
-			Ctx:             ctx,
-			RemoteSessionID: turn.RemoteSessionID,
-			Cwd:             cwd,
-			Notifier:        turn.ThoughtNotifier,
-			Log:             log,
+			Ctx:                   ctx,
+			RemoteSessionID:       turn.RemoteSessionID,
+			Cwd:                   cwd,
+			AdditionalDirectories: turn.AdditionalDirectories,
+			McpServers:            c.turnMCPServers(turn.McpServers),
+			Notifier:              turn.ThoughtNotifier,
+			Log:                   log,
 		})
 	}
 	return turn.RemoteSessionID, nil
@@ -182,9 +188,11 @@ func (c *acpConversationClient) unmarkLoadedSession(remoteSessionID string) {
 
 func (c *acpConversationClient) createAndConfigureACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) (string, error) {
 	newSessResp, err := c.createACPRemoteSession(ctx, middleware.SessionMaterializeRequest{
-		LogicalSessionID: turn.LogicalSessionID,
-		WorkspacePath:    cwd,
-		Tools:            turn.Tools,
+		LogicalSessionID:      turn.LogicalSessionID,
+		WorkspacePath:         cwd,
+		Tools:                 turn.Tools,
+		McpServers:            turn.McpServers,
+		AdditionalDirectories: turn.AdditionalDirectories,
 	})
 	if err != nil {
 		return "", err
@@ -216,18 +224,21 @@ func (c *acpConversationClient) setAutoApproveMode(ctx context.Context, resp *ac
 }
 
 type acpLoadRemoteSessionRequest struct {
-	Ctx             context.Context
-	RemoteSessionID string
-	Cwd             string
-	Notifier        middleware.ThoughtNotifier
-	Log             *slog.Logger
+	Ctx                   context.Context
+	RemoteSessionID       string
+	Cwd                   string
+	AdditionalDirectories []string
+	McpServers            []acpMcpServerConfig
+	Notifier              middleware.ThoughtNotifier
+	Log                   *slog.Logger
 }
 
 func (c *acpConversationClient) resumeACPRemoteSession(req acpLoadRemoteSessionRequest) bool {
 	resp, err := c.client.ResumeSession(req.Ctx, acpResumeSessionRequest{
-		SessionID:  req.RemoteSessionID,
-		Cwd:        req.Cwd,
-		McpServers: []acpMcpServerConfig{},
+		SessionID:             req.RemoteSessionID,
+		Cwd:                   req.Cwd,
+		AdditionalDirectories: c.additionalDirectories(req.AdditionalDirectories),
+		McpServers:            req.McpServers,
 	})
 	if err != nil {
 		req.Log.Warn("ACP session resume failed, will fall back to load/prompt flow", "agent_session", req.RemoteSessionID, "error", err)
@@ -248,7 +259,12 @@ func (c *acpConversationClient) resumeACPRemoteSession(req acpLoadRemoteSessionR
 
 func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionRequest) {
 	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: req.Notifier}
-	resp, err := c.client.LoadSession(req.Ctx, acpLoadSessionRequest{SessionID: req.RemoteSessionID, Cwd: req.Cwd, McpServers: []acpMcpServerConfig{}}, obs)
+	resp, err := c.client.LoadSession(req.Ctx, acpLoadSessionRequest{
+		SessionID:             req.RemoteSessionID,
+		Cwd:                   req.Cwd,
+		AdditionalDirectories: c.additionalDirectories(req.AdditionalDirectories),
+		McpServers:            req.McpServers,
+	}, obs)
 	if err != nil {
 		req.Log.Warn("ACP session load failed, will fall back to prompt/recreate flow", "agent_session", req.RemoteSessionID, "error", err)
 		return
@@ -279,22 +295,61 @@ func (c *acpConversationClient) promptACP(ctx context.Context, remoteSessionID s
 	promptText := sidecar.ProjectPrompt(turn.Message, turn.SidecarCapsules)
 	return c.client.Prompt(ctx, acpPromptRequest{
 		SessionID: remoteSessionID,
-		Prompt:    []acpContent{{Type: "text", Text: promptText}},
+		Prompt:    acpPromptContent(promptText, turn.ContentBlocks),
 		Meta:      sidecarprojection.ACPMeta(turn.SidecarCapsules),
 	}, obs)
 }
 
 func (c *acpConversationClient) retryTurnWithFreshSession(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
 	return c.ExecuteTurn(ctx, middleware.ConversationTurn{
-		AgentID:           turn.AgentID,
-		LogicalSessionID:  turn.LogicalSessionID,
-		WorkspacePath:     turn.WorkspacePath,
-		Message:           turn.Message,
-		SidecarCapsules:   turn.SidecarCapsules,
-		Tools:             turn.Tools,
-		ThoughtNotifier:   turn.ThoughtNotifier,
-		LiveContextAttach: turn.LiveContextAttach,
+		AgentID:               turn.AgentID,
+		LogicalSessionID:      turn.LogicalSessionID,
+		WorkspacePath:         turn.WorkspacePath,
+		Message:               turn.Message,
+		ContentBlocks:         turn.ContentBlocks,
+		SidecarCapsules:       turn.SidecarCapsules,
+		Tools:                 turn.Tools,
+		McpServers:            turn.McpServers,
+		AdditionalDirectories: turn.AdditionalDirectories,
+		ThoughtNotifier:       turn.ThoughtNotifier,
+		LiveContextAttach:     turn.LiveContextAttach,
 	})
+}
+
+func acpPromptContent(promptText string, blocks []middleware.Content) []acpContent {
+	out := make([]acpContent, 0, len(blocks)+1)
+	if strings.TrimSpace(promptText) != "" {
+		out = append(out, acpContent{Type: "text", Text: promptText})
+	}
+	for _, block := range blocks {
+		if converted, ok := toZedACPContent(block); ok {
+			out = append(out, converted)
+		}
+	}
+	if len(out) == 0 {
+		return []acpContent{{Type: "text", Text: ""}}
+	}
+	return out
+}
+
+func toZedACPContent(content middleware.Content) (acpContent, bool) {
+	if strings.TrimSpace(content.Type) == "" {
+		return acpContent{}, false
+	}
+	return acpContent{
+		Type:        content.Type,
+		Text:        content.Text,
+		Data:        content.Data,
+		MimeType:    content.MimeType,
+		URI:         content.URI,
+		Name:        content.Name,
+		Title:       content.Title,
+		Description: content.Description,
+		Size:        content.Size,
+		Resource:    content.Resource,
+		Annotations: content.Annotations,
+		Meta:        content.Meta,
+	}, true
 }
 
 func (c *acpConversationClient) turnCwd(turn middleware.ConversationTurn) string {
@@ -302,6 +357,36 @@ func (c *acpConversationClient) turnCwd(turn middleware.ConversationTurn) string
 		return strings.TrimSpace(turn.WorkspacePath)
 	}
 	return c.cwd
+}
+
+func (c *acpConversationClient) turnMCPServers(turnServers []middleware.McpServerConfig) []acpMcpServerConfig {
+	if len(turnServers) > 0 {
+		return toZedACPMCPServers(turnServers)
+	}
+	return cloneACPMCPServers(c.mcpServers)
+}
+
+func (c *acpConversationClient) additionalDirectories(values []string) []string {
+	if !c.sessionCapabilities.AdditionalDirectories || len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (c *acpConversationClient) SessionCapabilities() middleware.ConversationSessionCapabilities {
@@ -312,23 +397,34 @@ func (c *acpConversationClient) ListRemoteSessions(ctx context.Context) ([]middl
 	if !c.sessionCapabilities.List {
 		return nil, fmt.Errorf("ACP agent does not advertise session/list")
 	}
-	resp, err := c.client.ListSessions(ctx)
-	if err != nil {
-		return nil, err
+	var out []middleware.RemoteSessionInfo
+	cursor := ""
+	for page := 0; page < 100; page++ {
+		resp, err := c.client.ListSessionsWithRequest(ctx, acpListSessionsRequest{Cwd: c.cwd, Cursor: cursor})
+		if err != nil {
+			return nil, err
+		}
+		for _, session := range resp.Sessions {
+			out = append(out, c.remoteSessionInfo(session))
+		}
+		if strings.TrimSpace(resp.NextCursor) == "" {
+			return out, nil
+		}
+		cursor = resp.NextCursor
 	}
-	out := make([]middleware.RemoteSessionInfo, 0, len(resp.Sessions))
-	for _, session := range resp.Sessions {
-		out = append(out, middleware.RemoteSessionInfo{
-			RemoteSessionID: session.SessionID,
-			DisplayID:       session.SessionID,
-			Title:           session.Title,
-			UpdatedAt:       session.UpdatedAt,
-			ProtocolKind:    middleware.ProtocolKindACP,
-			CanResume:       c.sessionCapabilities.Load || c.sessionCapabilities.Resume,
-			CanDelete:       c.sessionCapabilities.Delete,
-		})
+	return nil, fmt.Errorf("ACP session/list pagination exceeded safety limit")
+}
+
+func (c *acpConversationClient) remoteSessionInfo(session acpSessionInfo) middleware.RemoteSessionInfo {
+	return middleware.RemoteSessionInfo{
+		RemoteSessionID: session.SessionID,
+		DisplayID:       session.SessionID,
+		Title:           session.Title,
+		UpdatedAt:       session.UpdatedAt,
+		ProtocolKind:    middleware.ProtocolKindACP,
+		CanResume:       c.sessionCapabilities.Load || c.sessionCapabilities.Resume,
+		CanDelete:       c.sessionCapabilities.Delete,
 	}
-	return out, nil
 }
 
 func (c *acpConversationClient) GetRemoteSession(ctx context.Context, remoteSessionID string) (middleware.RemoteSessionInfo, error) {
@@ -347,7 +443,7 @@ func (c *acpConversationClient) GetRemoteSession(ctx context.Context, remoteSess
 		if _, err := c.client.ResumeSession(ctx, acpResumeSessionRequest{
 			SessionID:  remoteSessionID,
 			Cwd:        c.cwd,
-			McpServers: []acpMcpServerConfig{},
+			McpServers: cloneACPMCPServers(c.mcpServers),
 		}); err == nil {
 			c.markLoadedSession(remoteSessionID)
 			return middleware.RemoteSessionInfo{
@@ -363,7 +459,7 @@ func (c *acpConversationClient) GetRemoteSession(ctx context.Context, remoteSess
 		if _, err := c.client.LoadSession(ctx, acpLoadSessionRequest{
 			SessionID:  remoteSessionID,
 			Cwd:        c.cwd,
-			McpServers: []acpMcpServerConfig{},
+			McpServers: cloneACPMCPServers(c.mcpServers),
 		}, nil); err == nil {
 			c.markLoadedSession(remoteSessionID)
 			return middleware.RemoteSessionInfo{
@@ -446,6 +542,66 @@ func toZedACPTools(tools []middleware.Tool) []acpTool {
 			Description: tool.Description,
 			InputSchema: tool.InputSchema,
 		})
+	}
+	return out
+}
+
+func toZedACPMCPServers(servers []middleware.McpServerConfig) []acpMcpServerConfig {
+	if len(servers) == 0 {
+		return []acpMcpServerConfig{}
+	}
+	out := make([]acpMcpServerConfig, 0, len(servers))
+	for _, server := range servers {
+		out = append(out, acpMcpServerConfig{
+			Name:    server.Name,
+			Type:    server.Type,
+			Command: server.Command,
+			Args:    append([]string(nil), server.Args...),
+			Env:     toZedACPEnvVars(server.Env),
+			URL:     server.URL,
+			Headers: toZedACPHeaders(server.Headers),
+		})
+	}
+	return out
+}
+
+func cloneACPMCPServers(servers []acpMcpServerConfig) []acpMcpServerConfig {
+	if len(servers) == 0 {
+		return []acpMcpServerConfig{}
+	}
+	out := make([]acpMcpServerConfig, 0, len(servers))
+	for _, server := range servers {
+		out = append(out, acpMcpServerConfig{
+			Name:    server.Name,
+			Type:    server.Type,
+			Command: server.Command,
+			Args:    append([]string(nil), server.Args...),
+			Env:     append([]zedacpEnvVar(nil), server.Env...),
+			URL:     server.URL,
+			Headers: append([]zedacpHeader(nil), server.Headers...),
+		})
+	}
+	return out
+}
+
+func toZedACPEnvVars(values []middleware.EnvVar) []zedacpEnvVar {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]zedacpEnvVar, 0, len(values))
+	for _, value := range values {
+		out = append(out, zedacpEnvVar{Name: value.Name, Value: value.Value})
+	}
+	return out
+}
+
+func toZedACPHeaders(values []middleware.Header) []zedacpHeader {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]zedacpHeader, 0, len(values))
+	for _, value := range values {
+		out = append(out, zedacpHeader{Name: value.Name, Value: value.Value})
 	}
 	return out
 }

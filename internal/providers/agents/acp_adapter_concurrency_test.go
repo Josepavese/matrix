@@ -48,6 +48,9 @@ func (c *blockingACPClient) ResumeSession(context.Context, acpResumeSessionReque
 func (c *blockingACPClient) ListSessions(context.Context) (*acpListSessionsResponse, error) {
 	return &acpListSessionsResponse{}, nil
 }
+func (c *blockingACPClient) ListSessionsWithRequest(context.Context, acpListSessionsRequest) (*acpListSessionsResponse, error) {
+	return &acpListSessionsResponse{}, nil
+}
 func (c *blockingACPClient) CancelSession(context.Context, string) error { return nil }
 func (c *blockingACPClient) CloseSession(context.Context, string) error  { return nil }
 func (c *blockingACPClient) DeleteSession(context.Context, string) error { return nil }
@@ -57,6 +60,12 @@ func (c *blockingACPClient) ForkSession(context.Context, acpForkSessionRequest) 
 func (c *blockingACPClient) SetMode(context.Context, string, string) error { return nil }
 func (c *blockingACPClient) SetConfigOption(context.Context, acpSetConfigOptionRequest) (*acpSetConfigOptionResponse, error) {
 	return &acpSetConfigOptionResponse{}, nil
+}
+func (c *blockingACPClient) ExtRequest(context.Context, string, interface{}, interface{}) error {
+	return nil
+}
+func (c *blockingACPClient) ExtNotification(context.Context, string, interface{}) error {
+	return nil
 }
 
 func (c *blockingACPClient) Prompt(ctx context.Context, _ acpPromptRequest, _ acpSessionObserver) (*acpPromptResponse, error) {

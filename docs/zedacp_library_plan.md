@@ -79,8 +79,8 @@ Reference pages:
 
 ## Current Compliance Snapshot
 
-Last reviewed against the official ACP docs and schema release v0.12.2 on
-2026-05-04.
+Last reviewed against the official ACP docs and schema release v0.13.2 on
+2026-05-21.
 
 Implemented in `pkg/zedacp` and the Matrix ACP adapter:
 
@@ -103,10 +103,11 @@ Implemented in `pkg/zedacp` and the Matrix ACP adapter:
 
 Newly tracked unstable/draft schema deltas:
 
-- `additionalDirectories` on new/load/fork/list request and session info shapes
+- `additionalDirectories` on new/load/resume/fork request and session info shapes
 - `messageId` / `userMessageId` on prompt request/response
-- `$/cancel_request` as generic JSON-RPC request cancellation
-- provider configuration and logout surfaces
+- typed `$/cancel_request` as generic JSON-RPC request cancellation
+- typed provider configuration, logout, and `session/set_model` package surfaces
+- current structured auth method shapes
 - NES/document event surfaces
 - elicitation surfaces
 
@@ -118,7 +119,7 @@ Important semantic conclusion:
 
 ## Compliance Work Still Open
 
-### additionalDirectories propagation
+### additionalDirectories policy
 
 Protocol value:
 
@@ -126,8 +127,12 @@ Protocol value:
 
 Matrix impact:
 
-- the package now models the fields, but Matrix still needs an end-to-end policy for when PAL/workspace roots should be forwarded
-- usage must stay gated on `sessionCapabilities.additionalDirectories`
+- the package and ACP adapter now model and propagate the field when callers
+  provide roots and the provider advertises support
+- Matrix still needs product policy for when PAL/workspace roots should be
+  forwarded automatically
+- usage must stay gated on `sessionCapabilities.additionalDirectories`; the
+  field must not be sent on `session/list`
 
 ### Generic request cancellation
 
@@ -137,10 +142,11 @@ Protocol value:
 
 Matrix impact:
 
-- could map Go `context.Context` cancellation to ACP request ids
+- `pkg/zedacp` can emit the notification; Matrix could map Go
+  `context.Context` cancellation to ACP request ids
 - should not replace `session/cancel` for prompt-turn semantics until the official protocol makes that transition
 
-### Provider configuration/logout/NES/elicitation
+### Provider configuration/logout/model/NES/elicitation
 
 Protocol value:
 
@@ -148,6 +154,8 @@ Protocol value:
 
 Matrix impact:
 
+- provider configuration, logout, and model selection have typed package calls,
+  but are not wired to Matrix runtime UX yet
 - useful for future channel UX, but not required for current Matrix production runtime
 - must remain optional and capability-gated
 
@@ -189,9 +197,9 @@ That means:
 ## Recommended Sequence
 
 1. keep Matrix consuming `pkg/zedacp` only through adapters
-2. propagate `additionalDirectories` only when the provider advertises support
+2. define product policy for when Matrix should supply `additionalDirectories`
 3. evaluate generic `$/cancel_request` below the existing prompt-turn cancellation layer
-4. evaluate provider configuration/logout only when a real agent requires them
+4. evaluate provider configuration/logout/model selection only when a real agent requires them
 5. evaluate NES/document events as editor-style context signals, not as Matrix sidecar replacement
 6. evaluate elicitation as a structured user-input surface for channels
 7. evaluate Streamable HTTP

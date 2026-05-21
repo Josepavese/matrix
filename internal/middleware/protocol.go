@@ -34,15 +34,18 @@ type ProtocolEndpoint struct {
 
 // ConversationTurn is the protocol-neutral representation of a single user turn.
 type ConversationTurn struct {
-	AgentID           string
-	LogicalSessionID  string
-	RemoteSessionID   string
-	WorkspacePath     string
-	Message           string
-	SidecarCapsules   []SidecarCapsule
-	Tools             []Tool
-	ThoughtNotifier   ThoughtNotifier
-	LiveContextAttach bool
+	AgentID               string
+	LogicalSessionID      string
+	RemoteSessionID       string
+	WorkspacePath         string
+	Message               string
+	ContentBlocks         []Content
+	SidecarCapsules       []SidecarCapsule
+	Tools                 []Tool
+	McpServers            []McpServerConfig
+	AdditionalDirectories []string
+	ThoughtNotifier       ThoughtNotifier
+	LiveContextAttach     bool
 }
 
 // ConversationResult is the protocol-neutral result of a single agent turn.
@@ -111,15 +114,16 @@ type ProviderCapabilityReport struct {
 // ConversationSessionCapabilities declares which session lifecycle features
 // a protocol adapter can provide for a live client.
 type ConversationSessionCapabilities struct {
-	List       bool
-	Load       bool
-	Cancel     bool
-	Close      bool
-	Delete     bool
-	InfoUpdate bool
-	Resume     bool
-	Fork       bool
-	Details    map[string]CapabilityDescriptor
+	List                  bool
+	Load                  bool
+	Cancel                bool
+	Close                 bool
+	Delete                bool
+	InfoUpdate            bool
+	Resume                bool
+	Fork                  bool
+	AdditionalDirectories bool
+	Details               map[string]CapabilityDescriptor
 }
 
 // ConversationSessionControl is an optional interface implemented by protocol clients
@@ -136,9 +140,11 @@ type ConversationSessionControl interface {
 // SessionMaterializeRequest asks a provider client to allocate a real remote
 // session without running an LLM turn.
 type SessionMaterializeRequest struct {
-	LogicalSessionID string
-	WorkspacePath    string
-	Tools            []Tool
+	LogicalSessionID      string
+	WorkspacePath         string
+	Tools                 []Tool
+	McpServers            []McpServerConfig
+	AdditionalDirectories []string
 }
 
 // ConversationSessionMaterializer is implemented by protocol clients that can
@@ -159,10 +165,11 @@ type ConversationFactory interface {
 
 // ConversationFactoryDeps bundles host capabilities exposed to protocol adapters.
 type ConversationFactoryDeps struct {
-	FS        FS
-	Cwd       string
-	Process   Process
-	TrustMode func() bool
+	FS         FS
+	Cwd        string
+	Process    Process
+	TrustMode  func() bool
+	McpServers []McpServerConfig
 }
 
 // AgentSessionController is an optional router capability for protocol-transparent
@@ -199,8 +206,9 @@ type AgentCapabilityReporter interface {
 // existing remote session. It is capability-gated because ACP session/fork is a
 // Draft RFD and not a production baseline.
 type SessionForkRequest struct {
-	RemoteSessionID string
-	WorkspacePath   string
+	RemoteSessionID       string
+	WorkspacePath         string
+	AdditionalDirectories []string
 }
 
 type SessionForkArtifact struct {
@@ -268,8 +276,12 @@ type AgentSessionClientReaper interface {
 
 // AgentClientRef identifies one cached provider client binding.
 type AgentClientRef struct {
-	AgentID       string `json:"agent_id,omitempty"`
-	WorkspacePath string `json:"workspace_path,omitempty"`
+	LogicalSessionID string `json:"logical_session_id,omitempty"`
+	RemoteSessionID  string `json:"remote_session_id,omitempty"`
+	AgentID          string `json:"agent_id,omitempty"`
+	ProtocolKind     string `json:"protocol_kind,omitempty"`
+	WorkspaceID      string `json:"workspace_id,omitempty"`
+	WorkspacePath    string `json:"workspace_path,omitempty"`
 }
 
 // AgentClientReconcileResult is the audit record for a cache reconciliation pass.

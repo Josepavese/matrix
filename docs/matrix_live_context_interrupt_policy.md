@@ -1,6 +1,6 @@
 # Matrix Live Context Interrupt Policy
 
-Last reviewed: 2026-05-04.
+Last reviewed: 2026-05-21.
 
 ## Decision
 
@@ -11,7 +11,7 @@ ACP guarantees a cancellation path for an active prompt turn. It does not define
 a standard "append this new prompt/context into the currently running turn and
 make the model consume it before final answer" operation.
 
-The latest ACP docs and schema release v0.12.2 also do not define a `side`,
+The latest ACP docs and schema release v0.13.2 also do not define a `side`,
 `session/side`, or equivalent inline side-channel primitive. The official
 branching primitive is draft `session/fork`; it creates a separate session and
 does not solve mid-turn live context injection by itself.
@@ -142,8 +142,11 @@ For cancel-and-restart / interrupt-resume flows, Matrix must expose cleanup
 proof before the resume run is trusted. The cancelled run must produce
 `session.cleanup clean=true strong_cleanup=true` with at least one remote/process
 cleanup proof such as `remote_deleted`, `remote_closed`, `remote_canceled`, or
-`process_reaped`. Cleanup runs under a bounded context detached from the
-canceled run context. If cleanup cannot complete, `failure_code` gives the
+`process_reaped`. `process_absent=true` is also valid proof only when no remote
+session id was materialized and `process_absence_reason=no matching cached agent
+client`; with a known remote session id it is diagnostic data, not remote
+lifecycle proof. Cleanup runs under a bounded context detached from the canceled
+run context. If cleanup cannot complete, `failure_code` gives the
 machine-readable class; `cleanup_clean_without_remote_or_process_proof` means
 Matrix only forgot local state and therefore refused to claim strong cleanup for
 an ephemeral flow. `agent_start_context_cancelled_during_cleanup` identifies the
@@ -153,14 +156,26 @@ already-canceled context.
 For local stdio ACP providers, Matrix treats the provider process as the owner
 of its workspace sessions. Cleanup must target the exact reusable workspace
 client; Matrix must not spawn a fresh ACP process just to send `session/cancel`
-for a session owned by a reaped process. If process reap already proves the old
+for a session owned by a reaped process. Cached provider clients are owned by the
+router lifecycle, not by one `/v1/runs` request context; canceling an active run
+must not cancel the cached ACP process before cleanup can prove ownership. If a
+turn context is cancelled while `session/prompt` is active, Matrix deliberately
+closes and evicts the exact workspace client and tombstones the known remote
+session id; this converts a potentially poisoned provider client into explicit
+process proof and guarantees the next same-agent request starts from a fresh
+client. If process reap already proves the old
 session unreachable, cleanup can remain `clean=true strong_cleanup=true` and
 carry typed warnings such as
 `remote_lifecycle_skipped_no_reusable_cached_agent_client` or
 `remote_cancel_session_not_found_after_process_reap`. If keepalive evicts the
 dead client before cleanup runs, Matrix keeps a short-lived tombstone bound to
 the agent, workspace, and tracked remote session ids; cleanup may consume it as
-process proof only for the matching target session.
+process proof only for the matching target session. Remote lifecycle lookup also
+evicts and tombstones a dead exact workspace client before returning
+`remote_lifecycle_skipped_no_reusable_cached_agent_client`, so the later process
+reap step can still produce strong proof. If no remote session exists yet and
+the workspace client is absent, Matrix records process absence instead of
+fabricating remote cancel/delete evidence.
 
 For shared non-ephemeral sessions, Matrix may retain a provider client when
 other local sessions still reference the same `agent_id + workspace_path`. That

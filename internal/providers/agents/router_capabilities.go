@@ -43,7 +43,7 @@ func (r *Router) ForkAgentSession(ctx context.Context, agentID string, req middl
 }
 
 func unsupportedSessionCapabilityDetails() map[string]middleware.CapabilityDescriptor {
-	names := []string{"list", "info_update", "load", "cancel", "close", "delete", "resume", "fork"}
+	names := []string{"list", "info_update", "load", "cancel", "close", "delete", "resume", "fork", "additional_directories"}
 	out := make(map[string]middleware.CapabilityDescriptor, len(names))
 	for _, name := range names {
 		out[name] = middleware.CapabilityDescriptor{
@@ -59,14 +59,15 @@ func unsupportedSessionCapabilityDetails() map[string]middleware.CapabilityDescr
 
 func capabilityDetailsFromBooleans(caps middleware.ConversationSessionCapabilities) map[string]middleware.CapabilityDescriptor {
 	values := map[string]bool{
-		"list":        caps.List,
-		"info_update": caps.InfoUpdate,
-		"load":        caps.Load,
-		"cancel":      caps.Cancel,
-		"close":       caps.Close,
-		"delete":      caps.Delete,
-		"resume":      caps.Resume,
-		"fork":        caps.Fork,
+		"list":                   caps.List,
+		"info_update":            caps.InfoUpdate,
+		"load":                   caps.Load,
+		"cancel":                 caps.Cancel,
+		"close":                  caps.Close,
+		"delete":                 caps.Delete,
+		"resume":                 caps.Resume,
+		"fork":                   caps.Fork,
+		"additional_directories": caps.AdditionalDirectories,
 	}
 	out := make(map[string]middleware.CapabilityDescriptor, len(values))
 	for name, supported := range values {

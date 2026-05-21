@@ -26,10 +26,14 @@ External references:
 
 Local findings:
 
-- `go list -m -versions github.com/coder/acp-go-sdk` currently returns published module versions through `v0.12.2`
-- the repository README on `main` advertises `v0.12.2`, matching the latest official ACP schema release
-- the published `v0.12.2` module exposes client and agent side connections and is useful for both ACP client and server implementations
-- the published `v0.12.2` module tracks stable `session/close` and `session/resume`; migration is now a realistic follow-up, but Matrix should still keep its ACP backend port so the transition remains reversible
+- 2026-05-21: `go list -m -versions github.com/coder/acp-go-sdk`
+  returns published module versions through `v0.13.0`
+- 2026-05-21: the repository README on `main` advertises `v0.13.0`
+- the published `v0.13.0` module should be re-evaluated against official ACP
+  release `v0.13.2` before any migration
+- the published SDK exposes client and agent side connections and is useful for
+  both ACP client and server implementations; Matrix should still keep its ACP
+  backend port so the transition remains reversible
 
 ## What `coder/acp-go-sdk` Gets Right
 
@@ -60,7 +64,7 @@ Matrix now relies or is preparing to rely on:
 - prompt `messageId` / `userMessageId` correlation
 - protocol-transparent remote session control in channel flows
 
-The published `coder/acp-go-sdk@v0.12.2` surface now covers substantially more
+The published `coder/acp-go-sdk@v0.13.0` surface should cover substantially more
 of this list than earlier versions. Before migration, Matrix still needs a
 small adapter spike proving that its generated types, connection lifecycle, and
 extension handling preserve Matrix's current behavior with OpenCode, Codex ACP,
@@ -68,9 +72,9 @@ and Gemini.
 
 ### 2. Dependency migration still needs a reversible seam
 
-The old release mismatch has been resolved for the current audit: `go list`,
-the repository README, and the latest GitHub release all point to `v0.12.2`.
-That improves confidence, but Matrix should still keep `pkg/zedacp` behind the
+The old release mismatch has mostly narrowed: `go list` and the repository
+README now point to `v0.13.0`, while the official ACP release checked for this
+Matrix review is `v0.13.2`. Matrix should still keep `pkg/zedacp` behind the
 ACP backend port until the community SDK has passed real-provider Matrix tests.
 
 ### 3. Matrix still has custom runtime concerns
@@ -184,13 +188,13 @@ Reasons:
 ## Final Recommendation
 
 Matrix should **not hard-switch immediately** to `coder/acp-go-sdk`, but it
-should treat `v0.12.2` as a serious migration candidate.
+should treat the `v0.13.x` line as a serious migration candidate.
 
 Matrix should:
 
 1. keep `pkg/zedacp` as the current ACP backend
 2. keep strengthening compliance against Zed ACP
 3. use the new ACP backend port as the stable seam for future migration
-4. run a follow-up adapter spike against `coder/acp-go-sdk@v0.12.2`
+4. run a follow-up adapter spike against `coder/acp-go-sdk@v0.13.0`
 5. migrate only if the adapter passes Matrix's real-provider smoke suite and
    keeps draft/unstable features capability-gated

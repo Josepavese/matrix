@@ -28,6 +28,7 @@ type ConversationRequest struct {
 	WorkspaceID      string
 	WorkspacePath    string
 	Input            string
+	ContentBlocks    []Content
 	SidecarCapsules  []SidecarCapsule
 	Notifier         ThoughtNotifier
 	NonInteractive   bool
@@ -78,6 +79,7 @@ const (
 type SessionActionRequest struct {
 	ChannelID        string
 	Action           string
+	OwnerRunID       string
 	WorkspaceID      string
 	WorkspacePath    string
 	Ephemeral        bool
@@ -162,6 +164,8 @@ type SessionCleanupResult struct {
 	RemoteCanceled          bool                           `json:"remote_canceled"`
 	ProcessReapAttempted    bool                           `json:"process_reap_attempted"`
 	ProcessReaped           bool                           `json:"process_reaped"`
+	ProcessAbsent           bool                           `json:"process_absent,omitempty"`
+	ProcessAbsenceReason    string                         `json:"process_absence_reason,omitempty"`
 	ProcessRetained         bool                           `json:"process_retained,omitempty"`
 	ProcessRetentionAllowed bool                           `json:"process_retention_allowed,omitempty"`
 	ProcessRetentionReason  string                         `json:"process_retention_reason,omitempty"`
@@ -198,9 +202,7 @@ type SessionActionResult struct {
 
 // WorkspaceActionRequest is the typed, channel-neutral request envelope for workspace control.
 type WorkspaceActionRequest struct {
-	ChannelID string
-	Action    string
-	Target    string
+	ChannelID, Action, Target string
 }
 
 // WorkspaceEntry is the typed representation of a configured workspace.

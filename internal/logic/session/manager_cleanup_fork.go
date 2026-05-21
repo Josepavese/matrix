@@ -18,17 +18,24 @@ func (m *Manager) cleanupForkChildren(ctx context.Context, req sessionCleanupExe
 	}
 	for _, child := range children {
 		childCleanup := m.cleanupSessionMirrorAndRemote(ctx, sessionCleanupExecution{
-			ChannelID:        req.ChannelID,
-			Meta:             child,
-			CleanupPolicy:    policy,
-			ForceForgetLocal: true,
+			ChannelID:                      req.ChannelID,
+			Meta:                           child,
+			CleanupPolicy:                  policy,
+			ForceForgetLocal:               true,
+			SuppressForkParentOwnerCleanup: true,
 		})
 		result.ForkChildren = append(result.ForkChildren, childCleanup)
 		result.ForkChildrenCleaned = len(result.ForkChildren)
+	}
+}
+
+func (m *Manager) markForkChildCleanupErrors(result *middleware.SessionCleanupResult) {
+	for _, childCleanup := range result.ForkChildren {
 		if childCleanup.Clean {
 			continue
 		}
-		err := fmt.Errorf("fork child %s cleanup failed", child.ID)
+		target := firstNonEmpty(childCleanup.LogicalSessionID, childCleanup.RemoteSessionID)
+		err := fmt.Errorf("fork child %s cleanup failed", target)
 		if strings.TrimSpace(childCleanup.Error) != "" {
 			err = fmt.Errorf("%w: %s", err, childCleanup.Error)
 		}

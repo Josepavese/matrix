@@ -27,16 +27,21 @@ type (
 	acpResumeSessionResponse   = zedacp.ResumeSessionResponse
 	acpForkSessionRequest      = zedacp.ForkSessionRequest
 	acpForkSessionResponse     = zedacp.ForkSessionResponse
+	acpListSessionsRequest     = zedacp.ListSessionsRequest
 	acpListSessionsResponse    = zedacp.ListSessionsResponse
+	acpSessionInfo             = zedacp.SessionInfo
 	acpSetConfigOptionRequest  = zedacp.SetSessionConfigOptionRequest
 	acpSetConfigOptionResponse = zedacp.SetSessionConfigOptionResponse
 	acpSessionModeState        = zedacp.SessionModeState
 	acpConfigOption            = zedacp.ConfigOption
 	acpMcpServerConfig         = zedacp.McpServerConfig
+	zedacpEnvVar               = zedacp.EnvVar
+	zedacpHeader               = zedacp.Header
 	acpTool                    = zedacp.Tool
 	acpPromptRequest           = zedacp.PromptRequest
 	acpPromptResponse          = zedacp.PromptResponse
 	acpToolCall                = zedacp.ToolCall
+	acpToolCallContent         = zedacp.ToolCallContent
 	acpContent                 = zedacp.Content
 )
 
@@ -50,6 +55,7 @@ type acpClient interface {
 	LoadSession(ctx context.Context, req acpLoadSessionRequest, observer acpSessionObserver) (*acpLoadSessionResponse, error)
 	ResumeSession(ctx context.Context, req acpResumeSessionRequest) (*acpResumeSessionResponse, error)
 	ListSessions(ctx context.Context) (*acpListSessionsResponse, error)
+	ListSessionsWithRequest(ctx context.Context, req acpListSessionsRequest) (*acpListSessionsResponse, error)
 	CancelSession(ctx context.Context, sessionID string) error
 	CloseSession(ctx context.Context, sessionID string) error
 	DeleteSession(ctx context.Context, sessionID string) error
@@ -57,6 +63,8 @@ type acpClient interface {
 	Prompt(ctx context.Context, req acpPromptRequest, observer acpSessionObserver) (*acpPromptResponse, error)
 	SetMode(ctx context.Context, sessionID, modeID string) error
 	SetConfigOption(ctx context.Context, req acpSetConfigOptionRequest) (*acpSetConfigOptionResponse, error)
+	ExtRequest(ctx context.Context, method string, params interface{}, result interface{}) error
+	ExtNotification(ctx context.Context, method string, params interface{}) error
 }
 
 type acpSDK interface {

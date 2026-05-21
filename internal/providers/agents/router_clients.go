@@ -30,11 +30,15 @@ func (r *Router) reapAgentClientByKey(key string, remoteSessionID string) (bool,
 	client, ok := r.clients[key]
 	if ok {
 		if remoteSessionID != "" && !clientTracksRemoteSession(client, remoteSessionID) {
+			if r.consumeClientTombstoneLocked(key, remoteSessionID) {
+				r.mu.Unlock()
+				return true, nil
+			}
 			r.mu.Unlock()
 			return false, nil
 		}
+		r.rememberClientTombstoneLocked(key, client)
 		delete(r.clients, key)
-		delete(r.clientTombstones, key)
 	} else if r.consumeClientTombstoneLocked(key, remoteSessionID) {
 		r.mu.Unlock()
 		return true, nil
@@ -75,7 +79,7 @@ func (r *Router) GetAgentSession(ctx context.Context, agentID string, remoteSess
 }
 
 func (r *Router) CancelAgentSession(ctx context.Context, agentID string, remoteSessionID string) error {
-	client, err := r.getOrCreateSessionControlClient(ctx, agentID)
+	client, err := r.getSessionLifecycleClient(ctx, agentID)
 	if err != nil {
 		return err
 	}
@@ -87,7 +91,7 @@ func (r *Router) CancelAgentSession(ctx context.Context, agentID string, remoteS
 }
 
 func (r *Router) CloseAgentSession(ctx context.Context, agentID string, remoteSessionID string) error {
-	client, err := r.getOrCreateSessionControlClient(ctx, agentID)
+	client, err := r.getSessionLifecycleClient(ctx, agentID)
 	if err != nil {
 		return err
 	}
@@ -123,7 +127,7 @@ func (r *Router) CloseAgentSessionForWorkspace(ctx context.Context, agentID stri
 }
 
 func (r *Router) DeleteAgentSession(ctx context.Context, agentID string, remoteSessionID string) error {
-	client, err := r.getOrCreateSessionControlClient(ctx, agentID)
+	client, err := r.getSessionLifecycleClient(ctx, agentID)
 	if err != nil {
 		return err
 	}
@@ -170,8 +174,10 @@ func (r *Router) getOrCreateClient(ctx context.Context, agentID string, cwd stri
 	if client, ok := r.lookupReusableClientLocked(key); ok {
 		return client, nil
 	}
+	if stale := r.clients[key]; stale != nil {
+		r.rememberClientTombstoneLocked(key, stale)
+	}
 	delete(r.clients, key)
-	delete(r.clientTombstones, key)
 	client, kind, err := r.createClient(ctx, agentID, cwd, log)
 	if err != nil {
 		return nil, err
@@ -195,15 +201,28 @@ func (r *Router) getOrCreateSessionControlClientForWorkspace(ctx context.Context
 	return r.getOrCreateClient(ctx, agentID, r.effectiveCwd(workspacePath))
 }
 
+func (r *Router) getSessionLifecycleClient(ctx context.Context, agentID string) (middleware.ConversationClient, error) {
+	if client, ok := r.lookupAnyReusableClientForAgent(agentID); ok {
+		return client, nil
+	}
+	cwd := r.effectiveCwd("")
+	r.evictDeadClientForLifecycle(clientCacheKey(agentID, cwd))
+	if r.canSpawnFreshLifecycleClient(agentID) {
+		return r.getOrCreateClient(ctx, agentID, cwd)
+	}
+	return nil, fmt.Errorf("%s: agent=%s workspace=%s", noReusableCachedAgentClient, agentID, cwd)
+}
+
 func (r *Router) getSessionLifecycleClientForWorkspace(ctx context.Context, agentID string, workspacePath string) (middleware.ConversationClient, error) {
 	if strings.TrimSpace(workspacePath) == "" {
-		return r.getOrCreateSessionControlClient(ctx, agentID)
+		return r.getSessionLifecycleClient(ctx, agentID)
 	}
 	cwd := r.effectiveCwd(workspacePath)
 	key := clientCacheKey(agentID, cwd)
 	if client, ok := r.lookupReusableClient(key); ok {
 		return client, nil
 	}
+	r.evictDeadClientForLifecycle(key)
 	if r.canSpawnFreshLifecycleClient(agentID) {
 		return r.getOrCreateClient(ctx, agentID, cwd)
 	}

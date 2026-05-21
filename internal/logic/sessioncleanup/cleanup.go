@@ -18,6 +18,8 @@ const WarningRunRelatedSessionRetained = "run_related_session_retained"
 const WarningRunRelatedSessionCleanupFailed = "run_related_session_cleanup_failed"
 const WarningRunAgentClientReconcileFailed = "run_agent_client_reconcile_failed"
 const ReasonRunUnreferencedAgentClientReaped = "run_unreferenced_agent_client_reaped"
+const ReasonForkParentAgentClientOwner = "fork_parent_agent_client_owner"
+const ReasonSharedAgentClientOwner = "shared_agent_client_owner"
 const FailureRunRelatedSessionRetained = WarningRunRelatedSessionRetained
 const ForkChildUsesParentAgentClient = "fork child uses parent agent client"
 const WeakCleanupNoRemoteOrProcessProof = "cleanup_clean_without_remote_or_process_proof"
@@ -39,6 +41,8 @@ type CleanInput struct {
 	RemoteCanceled          bool
 	ProcessReapRequired     bool
 	ProcessReaped           bool
+	ProcessAbsent           bool
+	ProcessAbsenceReason    string
 	ProcessRetained         bool
 	ProcessRetentionAllowed bool
 	ProcessRetentionReason  string
@@ -193,12 +197,24 @@ func remoteCleanupSatisfied(input CleanInput) bool {
 func processCleanupSatisfied(input CleanInput) bool {
 	return !input.ProcessReapRequired ||
 		input.ProcessReaped ||
+		input.ProcessAbsent ||
 		input.ProcessRetained && input.ProcessRetentionAllowed ||
 		!input.ProcessRetained && input.ProcessRetentionReason == NoMatchingCachedAgentClient
 }
 
 func HasStrongProof(input CleanInput) bool {
-	return input.RemoteDeleted || input.RemoteClosed || input.RemoteCanceled || input.ProcessReaped
+	return input.RemoteDeleted || input.RemoteClosed || input.RemoteCanceled || input.ProcessReaped || processAbsenceStrong(input)
+}
+
+func processAbsenceStrong(input CleanInput) bool {
+	if !input.ProcessAbsent || strings.TrimSpace(input.RemoteSessionID) != "" {
+		return false
+	}
+	reason := strings.TrimSpace(input.ProcessAbsenceReason)
+	if reason == "" {
+		reason = strings.TrimSpace(input.ProcessRetentionReason)
+	}
+	return reason == NoMatchingCachedAgentClient
 }
 
 func Strength(input CleanInput) string {
@@ -257,6 +273,8 @@ func Metadata(cleanup middleware.SessionCleanupResult) map[string]interface{} {
 		"remote_canceled":           cleanup.RemoteCanceled,
 		"process_reap_attempted":    cleanup.ProcessReapAttempted,
 		"process_reaped":            cleanup.ProcessReaped,
+		"process_absent":            cleanup.ProcessAbsent,
+		"process_absence_reason":    cleanup.ProcessAbsenceReason,
 		"process_retained":          cleanup.ProcessRetained,
 		"process_retention_allowed": cleanup.ProcessRetentionAllowed,
 		"process_retention_reason":  cleanup.ProcessRetentionReason,

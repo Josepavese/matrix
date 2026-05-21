@@ -112,7 +112,7 @@ func (m *Manager) activeAgentClientRefs() ([]middleware.AgentClientRef, error) {
 	if err != nil {
 		return nil, err
 	}
-	seen := map[string]struct{}{}
+	seen := map[string]middleware.AgentClientRef{}
 	out := []middleware.AgentClientRef{}
 	for _, key := range keys {
 		id := strings.TrimPrefix(key, "session.meta.")
@@ -121,7 +121,8 @@ func (m *Manager) activeAgentClientRefs() ([]middleware.AgentClientRef, error) {
 			continue
 		}
 		agentID := strings.TrimSpace(meta.AgentID)
-		if agentID == "" {
+		remoteSessionID := strings.TrimSpace(meta.AgentSessionID)
+		if agentID == "" || remoteSessionID == "" {
 			continue
 		}
 		workspacePath := strings.TrimSpace(meta.WorkspacePath)
@@ -130,11 +131,19 @@ func (m *Manager) activeAgentClientRefs() ([]middleware.AgentClientRef, error) {
 			dedupePath = cleanSessionWorkspacePath(dedupePath)
 		}
 		dedupe := agentID + "\x00" + dedupePath
+		ref := middleware.AgentClientRef{
+			LogicalSessionID: strings.TrimSpace(meta.ID),
+			RemoteSessionID:  remoteSessionID,
+			AgentID:          agentID,
+			ProtocolKind:     strings.TrimSpace(meta.ProtocolKind),
+			WorkspaceID:      strings.TrimSpace(meta.WorkspaceID),
+			WorkspacePath:    workspacePath,
+		}
 		if _, ok := seen[dedupe]; ok {
 			continue
 		}
-		seen[dedupe] = struct{}{}
-		out = append(out, middleware.AgentClientRef{AgentID: agentID, WorkspacePath: workspacePath})
+		seen[dedupe] = ref
+		out = append(out, ref)
 	}
 	return out, nil
 }

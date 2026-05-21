@@ -39,24 +39,27 @@ func acpSessionCapabilities(resp *acpInitializeResponse) middleware.Conversation
 	deleteSession := supportsSessionCapability(resp, "delete")
 	resume := supportsSessionCapability(resp, "resume")
 	fork := supportsSessionCapability(resp, "fork")
+	additionalDirectories := supportsSessionCapability(resp, "additionalDirectories")
 	return middleware.ConversationSessionCapabilities{
-		List:       list,
-		Load:       load,
-		Cancel:     true,
-		Close:      closeSession,
-		Delete:     deleteSession,
-		InfoUpdate: list,
-		Resume:     resume,
-		Fork:       fork,
+		List:                  list,
+		Load:                  load,
+		Cancel:                true,
+		Close:                 closeSession,
+		Delete:                deleteSession,
+		InfoUpdate:            list,
+		Resume:                resume,
+		Fork:                  fork,
+		AdditionalDirectories: additionalDirectories,
 		Details: map[string]middleware.CapabilityDescriptor{
-			"list":        acpCapability("list", list, "stable", "zed_acp_session_list_rfd"),
-			"info_update": acpCapability("info_update", list, "stable", "zed_acp_session_info_update"),
-			"load":        acpCapability("load", load, "stable", "zed_acp_schema_loadSession"),
-			"cancel":      acpCapability("cancel", true, "stable", "zed_acp_schema_session_cancel"),
-			"close":       acpCapability("close", closeSession, "stable", "zed_acp_schema_session_close"),
-			"delete":      acpCapability("delete", deleteSession, "draft", "zed_acp_rfd_session_delete"),
-			"resume":      acpCapability("resume", resume, "stable", "zed_acp_schema_session_resume"),
-			"fork":        acpForkCapability(fork),
+			"list":                   acpCapability("list", list, "stable", "zed_acp_session_list_rfd"),
+			"info_update":            acpCapability("info_update", list, "stable", "zed_acp_session_info_update"),
+			"load":                   acpCapability("load", load, "stable", "zed_acp_schema_loadSession"),
+			"cancel":                 acpCapability("cancel", true, "stable", "zed_acp_schema_session_cancel"),
+			"close":                  acpCapability("close", closeSession, "stable", "zed_acp_schema_session_close"),
+			"delete":                 acpCapability("delete", deleteSession, "draft", "zed_acp_rfd_session_delete"),
+			"resume":                 acpCapability("resume", resume, "stable", "zed_acp_schema_session_resume"),
+			"fork":                   acpForkCapability(fork),
+			"additional_directories": acpCapability("additional_directories", additionalDirectories, "draft", "zed_acp_rfd_additional_directories"),
 		},
 	}
 }

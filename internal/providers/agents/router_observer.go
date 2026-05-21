@@ -33,9 +33,9 @@ func (o *simpleObserver) handleStreamUpdate(log *slog.Logger, notif acpSessionNo
 	text := updateContentText(notif.Update)
 	switch notif.Update.SessionUpdate {
 	case "agent_message_chunk":
-		o.appendMessageChunk(text)
+		o.appendMessageChunk(text, streamUpdateMetadata(notif))
 	case "agent_thought_chunk":
-		o.forwardThought(middleware.ThoughtTypeThinking, text, "", nil)
+		o.forwardThought(middleware.ThoughtTypeThinking, text, "", streamUpdateMetadata(notif))
 	case "tool_call", "tool_call_update":
 		o.forwardToolUpdate(log, notif)
 	case "plan", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update", "usage_update":
@@ -43,11 +43,11 @@ func (o *simpleObserver) handleStreamUpdate(log *slog.Logger, notif acpSessionNo
 	}
 }
 
-func (o *simpleObserver) appendMessageChunk(text string) {
+func (o *simpleObserver) appendMessageChunk(text string, metadata map[string]interface{}) {
 	o.mu.Lock()
 	o.content += text
 	o.mu.Unlock()
-	o.forwardThought(middleware.ThoughtTypeThinking, text, "", nil)
+	o.forwardThought(middleware.ThoughtTypeThinking, text, "", metadata)
 	o.signalUpdate()
 }
 
@@ -189,28 +189,42 @@ func (o *simpleObserver) Metadata() middleware.ConversationMetadata {
 
 func toolUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
 	meta := make(map[string]interface{}, len(notif.Update.Meta)+4)
-	text := updateContentText(notif.Update)
 	meta["source_update_type"] = notif.Update.SessionUpdate
 	meta["content_type"] = notif.Update.Content.Type
 	meta["protocol"] = "acp"
 	meta["protocol_method"] = "session/update"
-	meta["acp"] = map[string]interface{}{
+	meta["acp"] = acpToolUpdateMeta(notif)
+	addOptionalToolMetadata(meta, notif)
+	addToolContentProjection(meta, notif.Update.ToolContents)
+	for k, v := range notif.Update.Meta {
+		meta[k] = v
+	}
+	return meta
+}
+
+func acpToolUpdateMeta(notif acpSessionNotification) map[string]interface{} {
+	return map[string]interface{}{
 		"session_id":     notif.SessionID,
 		"session_update": notif.Update.SessionUpdate,
 		"tool_call_id":   notif.Update.ToolCallID,
 		"tool_kind":      notif.Update.Kind,
 		"status":         notif.Update.Status,
 		"raw_input":      notif.Update.RawInput,
+		"raw_output":     notif.Update.RawOutput,
 		"locations":      notif.Update.Locations,
 		"content": map[string]interface{}{
 			"type": notif.Update.Content.Type,
-			"text": text,
+			"text": updateContentText(notif.Update),
 		},
 		"content_blocks": notif.Update.Contents,
+		"tool_contents":  notif.Update.ToolContents,
 		"title":          notif.Update.Title,
 		"updated_at":     notif.Update.UpdatedAt,
 		"_meta":          notif.Update.Meta,
 	}
+}
+
+func addOptionalToolMetadata(meta map[string]interface{}, notif acpSessionNotification) {
 	if strings.TrimSpace(notif.Update.Title) != "" {
 		meta["title"] = notif.Update.Title
 	}
@@ -230,8 +244,29 @@ func toolUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
 	if len(notif.Update.RawInput) > 0 {
 		meta["raw_input"] = notif.Update.RawInput
 	}
+	if notif.Update.RawOutput != nil {
+		meta["raw_output"] = notif.Update.RawOutput
+	}
 	if len(notif.Update.Locations) > 0 {
 		meta["locations"] = notif.Update.Locations
+	}
+}
+
+func streamUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
+	meta := map[string]interface{}{
+		"source_update_type": notif.Update.SessionUpdate,
+		"protocol":           "acp",
+		"protocol_method":    "session/update",
+		"acp": map[string]interface{}{
+			"session_id":     notif.SessionID,
+			"session_update": notif.Update.SessionUpdate,
+			"content":        notif.Update.Content,
+			"content_blocks": notif.Update.Contents,
+			"tool_contents":  notif.Update.ToolContents,
+			"title":          notif.Update.Title,
+			"updated_at":     notif.Update.UpdatedAt,
+			"_meta":          notif.Update.Meta,
+		},
 	}
 	for k, v := range notif.Update.Meta {
 		meta[k] = v
@@ -257,6 +292,27 @@ func structuralUpdateMetadata(notif acpSessionNotification) map[string]interface
 			"_meta":              notif.Update.Meta,
 		},
 	}
+	if len(notif.Update.Entries) > 0 {
+		meta["plan_entries"] = notif.Update.Entries
+	}
+	if len(notif.Update.AvailableCommands) > 0 {
+		meta["available_commands"] = notif.Update.AvailableCommands
+	}
+	if len(notif.Update.ConfigOptions) > 0 {
+		meta["config_options"] = notif.Update.ConfigOptions
+	}
+	if len(notif.Update.Usage) > 0 {
+		meta["usage"] = notif.Update.Usage
+	}
+	if strings.TrimSpace(notif.Update.CurrentModeID) != "" {
+		meta["current_mode_id"] = notif.Update.CurrentModeID
+	}
+	if strings.TrimSpace(notif.Update.Title) != "" {
+		meta["title"] = notif.Update.Title
+	}
+	if strings.TrimSpace(notif.Update.UpdatedAt) != "" {
+		meta["updated_at"] = notif.Update.UpdatedAt
+	}
 	for k, v := range notif.Update.Meta {
 		meta[k] = v
 	}
@@ -267,7 +323,7 @@ func updateContentText(update acpSessionUpdate) string {
 	if update.Content.Text != "" {
 		return update.Content.Text
 	}
-	if len(update.Contents) == 0 {
+	if len(update.Contents) == 0 && len(update.ToolContents) == 0 {
 		return ""
 	}
 	var b strings.Builder
@@ -277,7 +333,35 @@ func updateContentText(update acpSessionUpdate) string {
 		}
 		b.WriteString(content.Text)
 	}
+	for _, item := range update.ToolContents {
+		if item.Content == nil || strings.TrimSpace(item.Content.Text) == "" {
+			continue
+		}
+		b.WriteString(item.Content.Text)
+	}
 	return b.String()
+}
+
+func addToolContentProjection(meta map[string]interface{}, contents []acpToolCallContent) {
+	if len(contents) == 0 {
+		return
+	}
+	meta["tool_contents"] = contents
+	var types []string
+	for _, content := range contents {
+		if strings.TrimSpace(content.Type) != "" {
+			types = append(types, content.Type)
+		}
+		if strings.TrimSpace(content.Path) != "" && meta["path"] == nil {
+			meta["path"] = content.Path
+		}
+		if strings.TrimSpace(content.TerminalID) != "" {
+			meta["terminal_id"] = content.TerminalID
+		}
+	}
+	if len(types) > 0 {
+		meta["tool_content_types"] = types
+	}
 }
 
 func truncate(s string, maxLen int) string {

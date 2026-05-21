@@ -52,6 +52,8 @@ func cleanupResultInput(meta SessionMeta, result *middleware.SessionCleanupResul
 		RemoteCanceled:          result.RemoteCanceled,
 		ProcessReapRequired:     result.ProcessReapAttempted || result.ProcessRetained && !result.ProcessRetentionAllowed,
 		ProcessReaped:           result.ProcessReaped,
+		ProcessAbsent:           result.ProcessAbsent,
+		ProcessAbsenceReason:    result.ProcessAbsenceReason,
 		ProcessRetained:         result.ProcessRetained,
 		ProcessRetentionAllowed: result.ProcessRetentionAllowed,
 		ProcessRetentionReason:  result.ProcessRetentionReason,

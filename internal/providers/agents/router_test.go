@@ -90,3 +90,46 @@ func TestObserverForwardsMetadataOnlyToolUpdates(t *testing.T) {
 		t.Fatalf("expected ACP tool metadata, got %#v", notifier.updates[0].Metadata)
 	}
 }
+
+func TestObserverPreservesToolContentAndPlanMetadata(t *testing.T) {
+	notifier := &observerTestNotifier{}
+	obs := &simpleObserver{notifier: notifier}
+	oldText := "old"
+
+	obs.OnUpdate(acpSessionNotification{
+		SessionID: "remote-123",
+		Update: zedacp.SessionUpdate{
+			SessionUpdate: "tool_call_update",
+			ToolCallID:    "tool-123",
+			Kind:          "edit",
+			Status:        "completed",
+			ToolContents: []zedacp.ToolCallContent{
+				{Type: "content", Content: &zedacp.Content{Type: "text", Text: "done"}},
+				{Type: "diff", Path: "/tmp/matrix.go", OldText: &oldText, NewText: "new"},
+				{Type: "terminal", TerminalID: "terminal-1"},
+			},
+		},
+	})
+	obs.OnUpdate(acpSessionNotification{
+		SessionID: "remote-123",
+		Update: zedacp.SessionUpdate{
+			SessionUpdate: "plan",
+			Entries:       []zedacp.PlanEntry{{Content: "verify", Priority: "high", Status: "pending"}},
+		},
+	})
+
+	if len(notifier.updates) != 2 {
+		t.Fatalf("expected two forwarded updates, got %#v", notifier.updates)
+	}
+	toolMeta := notifier.updates[0].Metadata
+	if toolMeta["path"] != "/tmp/matrix.go" || toolMeta["terminal_id"] != "terminal-1" {
+		t.Fatalf("expected tool content projection, got %#v", toolMeta)
+	}
+	if notifier.updates[0].Content != "done" {
+		t.Fatalf("expected nested content text, got %q", notifier.updates[0].Content)
+	}
+	planMeta := notifier.updates[1].Metadata
+	if planMeta["source_update_type"] != "plan" || planMeta["plan_entries"] == nil {
+		t.Fatalf("expected plan metadata, got %#v", planMeta)
+	}
+}

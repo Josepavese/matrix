@@ -88,6 +88,7 @@ type mockRouter struct {
 	closeOK        bool
 	reaped         []string
 	reapedSession  []string
+	reapAbsent     bool
 	reapErr        error
 	capErr         error
 	capFork        *bool
@@ -172,6 +173,9 @@ func (m *mockRouter) ReapAgentClient(_ context.Context, agentID string, workspac
 	m.reaped = append(m.reaped, agentID+"|"+workspacePath)
 	if m.reapErr != nil {
 		return false, m.reapErr
+	}
+	if m.reapAbsent {
+		return false, nil
 	}
 	return true, nil
 }
@@ -1374,7 +1378,7 @@ func TestSessionManager_SessionDeleteRemovesMirrorAndCallsRemoteDelete(t *testin
 	}
 }
 
-func TestSessionManager_DeleteRetainsSharedAgentClient(t *testing.T) {
+func TestSessionManager_DeleteRecordsSharedAgentClientOwnerWithoutRetainingTarget(t *testing.T) {
 	storage := &mockStorage{data: make(map[string][]byte)}
 	if err := storage.Set("system.configured", []byte("true")); err != nil {
 		t.Fatalf("Failed to set configured flag: %v", err)
@@ -1418,14 +1422,23 @@ func TestSessionManager_DeleteRetainsSharedAgentClient(t *testing.T) {
 	if result.Cleanup == nil {
 		t.Fatalf("expected cleanup proof")
 	}
-	if !result.Cleanup.ProcessRetained || !result.Cleanup.ProcessRetentionAllowed {
-		t.Fatalf("expected allowed process retention for shared client, got %+v", result.Cleanup)
+	if result.Cleanup.ProcessRetained || result.Cleanup.ProcessRetentionAllowed ||
+		!result.Cleanup.StrongCleanup || result.Cleanup.CleanupStrength != sessioncleanup.StrengthStrong {
+		t.Fatalf("remote-proven cleanup must not expose unsafe target process retention, got %+v", result.Cleanup)
 	}
 	if result.Cleanup.ProcessReapAttempted || len(router.reaped) != 0 {
 		t.Fatalf("shared client must not be reaped, proof=%+v reaped=%+v", result.Cleanup, router.reaped)
 	}
 	if !result.Cleanup.Clean {
-		t.Fatalf("allowed shared retention should still be clean, got %+v", result.Cleanup)
+		t.Fatalf("remote-proven shared cleanup should be clean, got %+v", result.Cleanup)
+	}
+	if len(result.Cleanup.RelatedSessions) != 1 {
+		t.Fatalf("expected shared owner evidence, got %+v", result.Cleanup.RelatedSessions)
+	}
+	related := result.Cleanup.RelatedSessions[0]
+	if related.Retained || related.Reason != sessioncleanup.ReasonSharedAgentClientOwner ||
+		related.AgentID != "codex" || related.WorkspacePath != "/tmp/shared-ws" || !related.Active {
+		t.Fatalf("unexpected shared owner evidence: %+v", related)
 	}
 }
 
@@ -1662,11 +1675,21 @@ func TestSessionManager_ForkInputCanCleanupChildAndRestoreParent(t *testing.T) {
 	if result.Fork == nil || result.Fork.Artifact == nil || result.Fork.Artifact.Content != "Ok" {
 		t.Fatalf("expected child artifact, got %+v", result.Fork)
 	}
-	if result.Fork.Cleanup == nil || !result.Fork.Cleanup.Clean || result.Fork.Cleanup.StrongCleanup {
-		t.Fatalf("expected clean retained child cleanup proof, got %+v", result.Fork.Cleanup)
+	if result.Fork.Cleanup == nil || !result.Fork.Cleanup.Clean || !result.Fork.Cleanup.StrongCleanup {
+		t.Fatalf("expected strong child cleanup proof, got %+v", result.Fork.Cleanup)
 	}
-	if result.Fork.Cleanup.CleanupStrength != sessioncleanup.StrengthRetained || result.Fork.Cleanup.WeakCleanupReason != sessioncleanup.WeakCleanupProcessRetained {
-		t.Fatalf("expected retained child cleanup strength, got %+v", result.Fork.Cleanup)
+	if result.Fork.Cleanup.CleanupStrength != sessioncleanup.StrengthStrong || result.Fork.Cleanup.ProcessRetained {
+		t.Fatalf("expected non-retained child cleanup strength, got %+v", result.Fork.Cleanup)
+	}
+	if len(result.Fork.Cleanup.RelatedSessions) != 1 {
+		t.Fatalf("expected parent client-owner related session proof, got %+v", result.Fork.Cleanup.RelatedSessions)
+	}
+	related := result.Fork.Cleanup.RelatedSessions[0]
+	if related.LogicalSessionID != parentMeta.ID || related.RemoteSessionID != parentMeta.AgentSessionID || related.Retained {
+		t.Fatalf("expected non-retained parent owner proof, got %+v", related)
+	}
+	if related.Reason != sessioncleanup.ReasonForkParentAgentClientOwner {
+		t.Fatalf("expected parent owner reason, got %+v", related)
 	}
 	if result.ActiveSessionID != parentMeta.ID || !result.Fork.ParentRestored {
 		t.Fatalf("expected parent restored, got active=%q fork=%+v", result.ActiveSessionID, result.Fork)
@@ -2054,8 +2077,14 @@ func TestSessionManager_EphemeralParentCleanupCascadesToForkChild(t *testing.T) 
 	if result.Cleanup.ForkChildrenCleaned != 1 || len(result.Cleanup.ForkChildren) != 1 {
 		t.Fatalf("expected fork child cleanup evidence, got %+v", result.Cleanup)
 	}
-	if got := result.Cleanup.ForkChildren[0]; !got.Clean || !got.ProcessRetained || !got.ProcessRetentionAllowed {
-		t.Fatalf("expected child cleanup retained until parent reap, got %+v", got)
+	if got := result.Cleanup.ForkChildren[0]; !got.Clean || !got.StrongCleanup || got.ProcessRetained {
+		t.Fatalf("expected child cleanup proven strong by parent cleanup, got %+v", got)
+	}
+	if got := result.Cleanup.ForkChildren[0]; got.CleanupStrength != sessioncleanup.StrengthStrong {
+		t.Fatalf("expected strong child cleanup strength, got %+v", got)
+	}
+	if got := result.Cleanup.ForkChildren[0]; len(got.RelatedSessions) != 1 || got.RelatedSessions[0].Retained {
+		t.Fatalf("expected non-retained parent owner proof, got %+v", got.RelatedSessions)
 	}
 	if len(router.reaped) != 1 || router.reaped[0] != "opencode|/tmp/active-parent-ws" {
 		t.Fatalf("expected parent cleanup to reap final workspace client, got %+v", router.reaped)
@@ -2065,6 +2094,479 @@ func TestSessionManager_EphemeralParentCleanupCascadesToForkChild(t *testing.T) 
 	}
 	if _, found, err := mgr.loadSessionMeta(child.ID); err != nil || found {
 		t.Fatalf("fork child should be removed: err=%v found=%v", err, found)
+	}
+}
+
+func TestSessionManager_ParentCleanupProvesForkChildrenWithoutReusableRemoteClient(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{deleteErr: errors.New("no reusable cached agent client")}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent := SessionMeta{
+		ID:             "parent-no-reusable",
+		AgentID:        "opencode",
+		AgentSessionID: "parent-no-reusable-remote",
+		ProtocolKind:   "acp",
+		WorkspacePath:  "/tmp/active-parent-no-reusable-ws",
+		Ephemeral:      true,
+		CleanupPolicy:  middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	}
+	children := []SessionMeta{
+		{
+			ID:              "child-no-reusable-a",
+			AgentID:         "opencode",
+			AgentSessionID:  "child-no-reusable-remote-a",
+			ProtocolKind:    "acp",
+			WorkspacePath:   parent.WorkspacePath,
+			ParentSessionID: parent.ID,
+			ParentRemoteID:  parent.AgentSessionID,
+			Ephemeral:       true,
+			CleanupPolicy:   middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		},
+		{
+			ID:              "child-no-reusable-b",
+			AgentID:         "opencode",
+			AgentSessionID:  "child-no-reusable-remote-b",
+			ProtocolKind:    "acp",
+			WorkspacePath:   parent.WorkspacePath,
+			ParentSessionID: parent.ID,
+			ParentRemoteID:  parent.AgentSessionID,
+			Ephemeral:       true,
+			CleanupPolicy:   middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		},
+		{
+			ID:              "child-no-reusable-c",
+			AgentID:         "opencode",
+			AgentSessionID:  "child-no-reusable-remote-c",
+			ProtocolKind:    "acp",
+			WorkspacePath:   parent.WorkspacePath,
+			ParentSessionID: parent.ID,
+			ParentRemoteID:  parent.AgentSessionID,
+			Ephemeral:       true,
+			CleanupPolicy:   middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		},
+	}
+	if err := mgr.saveSessionMeta(parent); err != nil {
+		t.Fatalf("save parent: %v", err)
+	}
+	if err := mgr.updateChannelState("active-parent-no-reusable-ch", parent.ID); err != nil {
+		t.Fatalf("channel state: %v", err)
+	}
+	for _, child := range children {
+		if err := mgr.saveSessionMeta(child); err != nil {
+			t.Fatalf("save child: %v", err)
+		}
+		if err := mgr.appendInactiveChannelSession("active-parent-no-reusable-ch", child.ID); err != nil {
+			t.Fatalf("append child: %v", err)
+		}
+	}
+
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "active-parent-no-reusable-ch",
+		Action:           "cleanup",
+		Target:           parent.ID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup parent: %v", err)
+	}
+	if result.Cleanup == nil || !result.Cleanup.Clean || !result.Cleanup.StrongCleanup || !result.Cleanup.ProcessReaped {
+		t.Fatalf("expected strong parent cleanup from process reap, got %+v", result.Cleanup)
+	}
+	if result.Cleanup.ProcessRetained || result.Cleanup.FailureCode != "" || result.Cleanup.Error != "" {
+		t.Fatalf("expected no retained parent cleanup after child proof reconciliation, got %+v", result.Cleanup)
+	}
+	if result.Cleanup.ForkChildrenCleaned != len(children) || len(result.Cleanup.ForkChildren) != len(children) {
+		t.Fatalf("expected all fork children accounted, got %+v", result.Cleanup)
+	}
+	for _, child := range result.Cleanup.ForkChildren {
+		if !child.Clean || !child.StrongCleanup || child.ProcessRetained || child.FailureCode != "" {
+			t.Fatalf("expected fork child proven by provider lifecycle quiescence, got %+v", child)
+		}
+		if !child.ProcessReaped && !sessioncleanup.HasWarning(child.Warnings, sessioncleanup.WarningRemoteLifecycleSkippedNoReusableClient) {
+			t.Fatalf("expected fork child process reap or no-reusable provider proof, got %+v", child)
+		}
+		if len(child.RelatedSessions) != 1 || child.RelatedSessions[0].Retained ||
+			child.RelatedSessions[0].Reason != sessioncleanup.ReasonForkParentAgentClientOwner {
+			t.Fatalf("expected non-retained parent owner proof, got %+v", child.RelatedSessions)
+		}
+	}
+	if len(router.reaped) != 1 || router.reaped[0] != "opencode|/tmp/active-parent-no-reusable-ws" {
+		t.Fatalf("expected parent process reap once, got %+v", router.reaped)
+	}
+}
+
+func TestSessionManager_StandaloneForkChildCleanupPromotesLiveParentOwnerProof(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{deleteErr: errors.New("ACP agent does not advertise session/delete")}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent := SessionMeta{
+		ID:             "standalone-parent",
+		AgentID:        "opencode",
+		AgentSessionID: "standalone-parent-remote",
+		ProtocolKind:   "acp",
+		WorkspacePath:  "/tmp/standalone-fork-child-ws",
+	}
+	child := SessionMeta{
+		ID:              "standalone-child",
+		AgentID:         "opencode",
+		AgentSessionID:  "standalone-child-remote",
+		ProtocolKind:    "acp",
+		WorkspacePath:   parent.WorkspacePath,
+		ParentSessionID: parent.ID,
+		ParentRemoteID:  parent.AgentSessionID,
+		Ephemeral:       true,
+		CleanupPolicy:   middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	}
+	if err := mgr.saveSessionMeta(parent); err != nil {
+		t.Fatalf("save parent: %v", err)
+	}
+	if err := mgr.saveSessionMeta(child); err != nil {
+		t.Fatalf("save child: %v", err)
+	}
+	if err := mgr.updateChannelState("standalone-fork-child-ch", child.ID); err != nil {
+		t.Fatalf("channel state: %v", err)
+	}
+
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "standalone-fork-child-ch",
+		Action:           "cleanup",
+		Target:           child.ID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup child: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("standalone child cleanup should be proven by the live parent owner, got %+v", result.Error)
+	}
+	proof := result.Cleanup
+	if proof == nil || !proof.Clean || !proof.StrongCleanup || proof.CleanupStrength != sessioncleanup.StrengthStrong {
+		t.Fatalf("standalone child cleanup must be strong, got %+v", proof)
+	}
+	if !proof.RemoteCanceled || proof.ProcessRetained || proof.ProcessRetentionReason != "" || proof.FailureCode != "" {
+		t.Fatalf("expected non-retained parent-client proof with remote cancel, got %+v", proof)
+	}
+	if len(proof.RelatedSessions) != 1 || proof.RelatedSessions[0].Retained ||
+		proof.RelatedSessions[0].LogicalSessionID != parent.ID ||
+		proof.RelatedSessions[0].Reason != sessioncleanup.ReasonForkParentAgentClientOwner {
+		t.Fatalf("expected non-retained parent related-session proof, got %+v", proof.RelatedSessions)
+	}
+	if len(router.reaped) != 0 {
+		t.Fatalf("standalone child cleanup must not reap live parent client, got %+v", router.reaped)
+	}
+}
+
+func TestSessionManager_StandaloneForkChildCleanupFailsClosedWhenParentOwnerMissing(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{deleteErr: errors.New("ACP agent does not advertise session/delete")}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	child := SessionMeta{
+		ID:              "orphan-child",
+		AgentID:         "opencode",
+		AgentSessionID:  "orphan-child-remote",
+		ProtocolKind:    "acp",
+		WorkspacePath:   "/tmp/orphan-fork-child-ws",
+		ParentSessionID: "missing-parent",
+		ParentRemoteID:  "missing-parent-remote",
+		Ephemeral:       true,
+		CleanupPolicy:   middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	}
+	if err := mgr.saveSessionMeta(child); err != nil {
+		t.Fatalf("save child: %v", err)
+	}
+	if err := mgr.updateChannelState("orphan-fork-child-ch", child.ID); err != nil {
+		t.Fatalf("channel state: %v", err)
+	}
+
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "orphan-fork-child-ch",
+		Action:           "cleanup",
+		Target:           child.ID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup child: %v", err)
+	}
+	if result.Error == nil || result.Error.Code != sessioncleanup.FailureRunRelatedSessionRetained {
+		t.Fatalf("orphan fork child cleanup must be typed failure, got %+v", result)
+	}
+	proof := result.Cleanup
+	if proof == nil || proof.Clean || proof.StrongCleanup || proof.CleanupStrength != sessioncleanup.StrengthFailed {
+		t.Fatalf("orphan fork child cleanup must fail closed, got %+v", proof)
+	}
+	if !proof.RemoteCanceled || !proof.ProcessRetained {
+		t.Fatalf("expected retained parent-client proof with remote cancel, got %+v", proof)
+	}
+	if len(proof.RelatedSessions) != 1 || !proof.RelatedSessions[0].Retained {
+		t.Fatalf("expected retained missing-parent proof, got %+v", proof.RelatedSessions)
+	}
+}
+
+func TestSessionManager_StandaloneForkChildCleanupPromotesNoReusableParentOwnerProof(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{deleteErr: errors.New("no reusable cached agent client owns workspace session")}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent := SessionMeta{
+		ID:             "no-reusable-parent",
+		AgentID:        "opencode",
+		AgentSessionID: "no-reusable-parent-remote",
+		ProtocolKind:   "acp",
+		WorkspacePath:  "/tmp/no-reusable-fork-child-ws",
+	}
+	child := SessionMeta{
+		ID:              "no-reusable-child",
+		AgentID:         "opencode",
+		AgentSessionID:  "no-reusable-child-remote",
+		ProtocolKind:    "acp",
+		WorkspacePath:   parent.WorkspacePath,
+		ParentSessionID: parent.ID,
+		ParentRemoteID:  parent.AgentSessionID,
+		Ephemeral:       true,
+		CleanupPolicy:   middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	}
+	if err := mgr.saveSessionMeta(parent); err != nil {
+		t.Fatalf("save parent: %v", err)
+	}
+	if err := mgr.saveSessionMeta(child); err != nil {
+		t.Fatalf("save child: %v", err)
+	}
+	if err := mgr.updateChannelState("no-reusable-fork-child-ch", child.ID); err != nil {
+		t.Fatalf("channel state: %v", err)
+	}
+
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "no-reusable-fork-child-ch",
+		Action:           "cleanup",
+		Target:           child.ID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup child: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("no-reusable child cleanup should be proven by parent-owner quiescence, got %+v", result.Error)
+	}
+	proof := result.Cleanup
+	if proof == nil || !proof.Clean || !proof.StrongCleanup || proof.CleanupStrength != sessioncleanup.StrengthStrong {
+		t.Fatalf("expected strong no-reusable parent-owner proof, got %+v", proof)
+	}
+	if proof.RemoteCanceled || proof.ProcessRetained || proof.FailureCode != "" {
+		t.Fatalf("expected no remote cancel but no retained process failure, got %+v", proof)
+	}
+	if !sessioncleanup.HasWarning(proof.Warnings, sessioncleanup.WarningRemoteLifecycleSkippedNoReusableClient) {
+		t.Fatalf("expected no-reusable provider lifecycle warning, got %+v", proof.Warnings)
+	}
+	if len(proof.RelatedSessions) != 1 || proof.RelatedSessions[0].Retained ||
+		proof.RelatedSessions[0].LogicalSessionID != parent.ID {
+		t.Fatalf("expected non-retained parent owner proof, got %+v", proof.RelatedSessions)
+	}
+}
+
+func TestSessionManager_RunOwnedStandaloneForkChildCleanupPromotesParentOwnerProof(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{deleteErr: errors.New("ACP agent does not advertise session/delete")}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent := SessionMeta{
+		ID:             "run-owned-parent",
+		AgentID:        "opencode",
+		AgentSessionID: "run-owned-parent-remote",
+		ProtocolKind:   "acp",
+		WorkspacePath:  "/tmp/run-owned-fork-child-ws",
+		Ephemeral:      true,
+		CleanupPolicy:  middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		OwnerRunID:     "run-owned-parent-cleanup",
+	}
+	child := SessionMeta{
+		ID:              "run-owned-child",
+		AgentID:         "opencode",
+		AgentSessionID:  "run-owned-child-remote",
+		ProtocolKind:    "acp",
+		WorkspacePath:   parent.WorkspacePath,
+		ParentSessionID: parent.ID,
+		ParentRemoteID:  parent.AgentSessionID,
+		Ephemeral:       true,
+		CleanupPolicy:   middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	}
+	if err := mgr.saveSessionMeta(parent); err != nil {
+		t.Fatalf("save parent: %v", err)
+	}
+	if err := mgr.saveSessionMeta(child); err != nil {
+		t.Fatalf("save child: %v", err)
+	}
+	if err := mgr.updateChannelState("run-owned-fork-child-ch", child.ID); err != nil {
+		t.Fatalf("channel state: %v", err)
+	}
+
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "run-owned-fork-child-ch",
+		Action:           "cleanup",
+		Target:           child.ID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup child: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("run-owned child cleanup should be remediated by parent-owner proof, got %+v", result.Error)
+	}
+	proof := result.Cleanup
+	if proof == nil || !proof.Clean || !proof.StrongCleanup || proof.CleanupStrength != sessioncleanup.StrengthStrong {
+		t.Fatalf("expected strong remediated child cleanup, got %+v", proof)
+	}
+	if proof.ProcessRetained || proof.ProcessRetentionReason != "" {
+		t.Fatalf("parent owner process retention should be cleared, got %+v", proof)
+	}
+	if !proof.RemoteCanceled || proof.ProcessReapAttempted || proof.ProcessReaped {
+		t.Fatalf("expected child cancel proof without reaping live parent owner, got %+v", proof)
+	}
+	if len(proof.RelatedSessions) != 1 || proof.RelatedSessions[0].Retained ||
+		proof.RelatedSessions[0].LogicalSessionID != parent.ID ||
+		proof.RelatedSessions[0].Reason != sessioncleanup.ReasonForkParentAgentClientOwner {
+		t.Fatalf("expected non-retained parent owner proof, got %+v", proof.RelatedSessions)
+	}
+	if len(router.reaped) != 0 {
+		t.Fatalf("child cleanup must not reap live parent owner client, got %+v", router.reaped)
+	}
+	if _, found, err := mgr.loadSessionMeta(parent.ID); err != nil || !found {
+		t.Fatalf("parent owner should remain until run cleanup: err=%v found=%v", err, found)
+	}
+	if _, found, err := mgr.loadSessionMeta(child.ID); err != nil || found {
+		t.Fatalf("child should be removed by cleanup: err=%v found=%v", err, found)
+	}
+
+	parentCleanup, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "run-owned-fork-child-ch",
+		Action:           "cleanup",
+		Target:           parent.ID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup parent owner: %v", err)
+	}
+	if parentCleanup.Cleanup == nil || !parentCleanup.Cleanup.Clean || !parentCleanup.Cleanup.StrongCleanup ||
+		parentCleanup.Cleanup.ProcessRetained || !parentCleanup.Cleanup.ProcessReaped {
+		t.Fatalf("expected final parent owner cleanup to reap client strongly, got %+v", parentCleanup.Cleanup)
+	}
+	if len(router.reaped) != 1 || router.reaped[0] != "opencode|/tmp/run-owned-fork-child-ws" {
+		t.Fatalf("expected final parent owner client reap, got %+v", router.reaped)
+	}
+	if _, found, err := mgr.loadSessionMeta(parent.ID); err != nil || found {
+		t.Fatalf("parent should be removed by final owner cleanup: err=%v found=%v", err, found)
+	}
+}
+
+func TestSessionManager_RunOwnedForkInputCleanupRemediatesParentOwnerLikeActiveResume(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{deleteErr: errors.New("ACP agent does not advertise session/delete")}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+	parent, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "run-owned-fork-input-ch",
+		Action:        "new",
+		Target:        "opencode",
+		OwnerRunID:    "run-active-resume",
+		WorkspacePath: "/tmp/run-owned-fork-input-ws",
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("new parent: %v", err)
+	}
+	parentMeta, found, err := mgr.loadSessionMeta(parent.ActiveSessionID)
+	if err != nil || !found {
+		t.Fatalf("load parent: err=%v found=%v", err, found)
+	}
+	parentMeta.AgentSessionID = "run-owned-fork-input-parent-remote"
+	if err := mgr.saveSessionMeta(parentMeta); err != nil {
+		t.Fatalf("save parent: %v", err)
+	}
+	makeActive := false
+
+	result, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "run-owned-fork-input-ch",
+		Action:        "fork",
+		Target:        parentMeta.ID,
+		Input:         "render active-resume guidance artifact",
+		MakeActive:    &makeActive,
+		RestoreParent: true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("fork with input: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("run-owned fork input cleanup should be remediated, got %+v", result.Error)
+	}
+	if result.Fork == nil || result.Fork.Cleanup == nil {
+		t.Fatalf("expected fork cleanup proof, got %+v", result)
+	}
+	proof := result.Fork.Cleanup
+	if !proof.Clean || !proof.StrongCleanup || proof.CleanupStrength != sessioncleanup.StrengthStrong {
+		t.Fatalf("expected strong remediated fork input cleanup, got %+v", proof)
+	}
+	if proof.ProcessRetained || proof.FailureCode != "" || proof.Error != "" {
+		t.Fatalf("expected no retained/failure proof, got %+v", proof)
+	}
+	if proof.ProcessReapAttempted || proof.ProcessReaped {
+		t.Fatalf("fork child cleanup should not reap active parent owner, got %+v", proof)
+	}
+	if len(proof.RelatedSessions) != 1 || proof.RelatedSessions[0].Retained ||
+		proof.RelatedSessions[0].LogicalSessionID != parentMeta.ID ||
+		proof.RelatedSessions[0].Reason != sessioncleanup.ReasonForkParentAgentClientOwner {
+		t.Fatalf("expected non-retained parent owner related proof, got %+v", proof.RelatedSessions)
+	}
+	if result.ActiveSessionID != parentMeta.ID || !result.Fork.ParentRestored {
+		t.Fatalf("run-owned parent should be restored until final run cleanup, active=%q fork=%+v", result.ActiveSessionID, result.Fork)
+	}
+	if len(router.reaped) != 0 {
+		t.Fatalf("fork child cleanup should not reap parent owner client, got %+v", router.reaped)
+	}
+	if _, found, err := mgr.loadSessionMeta(parentMeta.ID); err != nil || !found {
+		t.Fatalf("parent should remain until final run cleanup: err=%v found=%v", err, found)
+	}
+	if _, found, err := mgr.loadSessionMeta(result.Fork.ChildLogicalSessionID); err != nil || found {
+		t.Fatalf("child should be removed by cleanup: err=%v found=%v", err, found)
+	}
+
+	parentCleanup, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "run-owned-fork-input-ch",
+		Action:           "cleanup",
+		Target:           parentMeta.ID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup parent owner: %v", err)
+	}
+	if parentCleanup.Cleanup == nil || !parentCleanup.Cleanup.Clean || !parentCleanup.Cleanup.StrongCleanup ||
+		parentCleanup.Cleanup.ProcessRetained || !parentCleanup.Cleanup.ProcessReaped {
+		t.Fatalf("expected final parent cleanup to reap owner client, got %+v", parentCleanup.Cleanup)
+	}
+	if len(router.reaped) != 1 || router.reaped[0] != "opencode|/tmp/run-owned-fork-input-ws" {
+		t.Fatalf("expected final parent owner client reap, got %+v", router.reaped)
 	}
 }
 
@@ -2251,6 +2753,60 @@ func TestSessionManager_CleanupFallsBackToCancelAndForgetsLocalMirror(t *testing
 		if id == meta.ID {
 			t.Fatalf("expected workspace index cleanup, got %+v", index)
 		}
+	}
+}
+
+func TestSessionManager_CleanupEphemeralUnmaterializedSessionProvesProcessAbsence(t *testing.T) {
+	storage := &mockStorage{data: make(map[string][]byte)}
+	if err := storage.Set("system.configured", []byte("true")); err != nil {
+		t.Fatalf("Failed to set configured flag: %v", err)
+	}
+	router := &mockRouter{reapAbsent: true}
+	mgr := NewManager(storage, router, newTestWizard(storage), nil)
+
+	newResult, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:     "eval-channel",
+		Action:        "new",
+		Target:        "opencode",
+		Ephemeral:     true,
+		CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+
+	cleanup, err := mgr.HandleSessionActionTyped(context.Background(), middleware.SessionActionRequest{
+		ChannelID:        "eval-channel",
+		Action:           "cleanup",
+		Target:           newResult.ActiveSessionID,
+		CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ForceForgetLocal: true,
+	})
+	if err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if cleanup.Error != nil {
+		t.Fatalf("unmaterialized cleanup should be accepted, got error=%+v cleanup=%+v", cleanup.Error, cleanup.Cleanup)
+	}
+	if cleanup.Cleanup == nil {
+		t.Fatalf("expected cleanup proof")
+	}
+	proof := cleanup.Cleanup
+	if !proof.Clean || !proof.StrongCleanup || proof.CleanupStrength != sessioncleanup.StrengthStrong || proof.FailureCode != "" {
+		t.Fatalf("expected strong clean process-absence proof, got %+v", proof)
+	}
+	if !proof.LocalForgotten || !proof.ProcessReapAttempted || !proof.ProcessAbsent || proof.ProcessAbsenceReason != sessioncleanup.NoMatchingCachedAgentClient {
+		t.Fatalf("expected explicit process absence proof, got %+v", proof)
+	}
+	if proof.ProcessReaped || proof.RemoteCancelAttempted || proof.RemoteDeleteAttempted || proof.RemoteCloseAttempted {
+		t.Fatalf("unmaterialized cleanup must not claim remote/process reap, got %+v", proof)
+	}
+	if len(router.reaped) != 1 || router.reaped[0] != "opencode|" {
+		t.Fatalf("expected process absence probe for exact workspace binding, got %+v", router.reaped)
+	}
+	raw, _ := storage.Get("session.meta." + newResult.ActiveSessionID)
+	if len(raw) != 0 {
+		t.Fatalf("expected local session meta removed, got %q", string(raw))
 	}
 }
 
@@ -2534,6 +3090,44 @@ func TestSessionManager_StopAliasCancelsRemoteTarget(t *testing.T) {
 	}
 	if len(router.canceled) != 1 || router.canceled[0] != "a2a-remote-stop-1" {
 		t.Fatalf("expected remote cancel for stop alias, got %+v", router.canceled)
+	}
+}
+
+func TestActiveAgentClientRefsRequireRemoteSessionAndPreserveOwnershipDetails(t *testing.T) {
+	storage := &mockStorage{}
+	mgr := NewManager(storage, &mockRouter{}, newTestWizard(storage), nil)
+	ready := SessionMeta{
+		ID:             "logical-ready",
+		AgentSessionID: "remote-ready",
+		AgentID:        "opencode",
+		ProtocolKind:   "acp",
+		WorkspaceID:    "workspace-1",
+		WorkspacePath:  "/tmp/workspace-1",
+	}
+	localOnly := SessionMeta{
+		ID:            "logical-local-only",
+		AgentID:       "opencode",
+		ProtocolKind:  "acp",
+		WorkspacePath: "/tmp/workspace-1",
+	}
+	if err := mgr.saveSessionMeta(ready); err != nil {
+		t.Fatalf("save ready meta: %v", err)
+	}
+	if err := mgr.saveSessionMeta(localOnly); err != nil {
+		t.Fatalf("save local-only meta: %v", err)
+	}
+
+	refs, err := mgr.activeAgentClientRefs()
+	if err != nil {
+		t.Fatalf("activeAgentClientRefs: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("expected only remote-backed active refs, got %+v", refs)
+	}
+	if refs[0].LogicalSessionID != ready.ID || refs[0].RemoteSessionID != ready.AgentSessionID ||
+		refs[0].ProtocolKind != ready.ProtocolKind || refs[0].WorkspaceID != ready.WorkspaceID ||
+		refs[0].WorkspacePath != ready.WorkspacePath {
+		t.Fatalf("expected full ownership details, got %+v", refs[0])
 	}
 }
 

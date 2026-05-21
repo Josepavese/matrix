@@ -104,6 +104,47 @@ func TestProcessReapIsStrongCleanupProofForEphemeralRemoteSession(t *testing.T) 
 	}
 }
 
+func TestProcessAbsenceIsStrongCleanupProofForEphemeralWithoutRemoteSession(t *testing.T) {
+	input := CleanInput{
+		Ephemeral:            true,
+		CleanupPolicy:        middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ProcessReapRequired:  true,
+		ProcessAbsent:        true,
+		ProcessAbsenceReason: NoMatchingCachedAgentClient,
+		LocalForgotten:       true,
+	}
+	if !IsClean(input) {
+		t.Fatalf("process absence should satisfy cleanup when no remote session was materialized")
+	}
+	if !HasStrongProof(input) {
+		t.Fatalf("process absence without a remote session should be strong proof")
+	}
+	if got := Strength(input); got != StrengthStrong {
+		t.Fatalf("unexpected strength: %q", got)
+	}
+}
+
+func TestProcessAbsenceIsNotStrongCleanupProofForKnownRemoteSession(t *testing.T) {
+	input := CleanInput{
+		Ephemeral:            true,
+		RemoteSessionID:      "remote-1",
+		CleanupPolicy:        middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+		ProcessReapRequired:  true,
+		ProcessAbsent:        true,
+		ProcessAbsenceReason: NoMatchingCachedAgentClient,
+		LocalForgotten:       true,
+	}
+	if IsClean(input) {
+		t.Fatalf("known remote session still requires remote cleanup or process reap proof")
+	}
+	if HasStrongProof(input) {
+		t.Fatalf("process absence alone must not prove a known remote session cleanup")
+	}
+	if got := Strength(input); got != StrengthFailed {
+		t.Fatalf("unexpected strength: %q", got)
+	}
+}
+
 func TestRetainedProcessIsExplicitWeakCleanup(t *testing.T) {
 	input := CleanInput{
 		RemoteSessionID:         "remote-1",

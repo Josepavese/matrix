@@ -3,6 +3,7 @@ package zedacp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -31,6 +32,47 @@ type jsonRPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    any    `json:"data,omitempty"`
+}
+
+const (
+	ErrCodeMethodNotFound = -32601
+	ErrCodeInternal       = -32603
+)
+
+// RPCError lets request handlers return protocol-correct JSON-RPC error codes.
+type RPCError struct {
+	Code    int
+	Message string
+	Data    any
+}
+
+func (e *RPCError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	return fmt.Sprintf("RPC error %d", e.Code)
+}
+
+func NewMethodNotFoundError(method string) error {
+	method = strings.TrimSpace(method)
+	if method == "" {
+		method = "<unknown>"
+	}
+	return &RPCError{Code: ErrCodeMethodNotFound, Message: "method not found: " + method}
+}
+
+func rpcErrorFromError(err error) *jsonRPCError {
+	if err == nil {
+		return nil
+	}
+	var rpcErr *RPCError
+	if errors.As(err, &rpcErr) && rpcErr != nil {
+		return &jsonRPCError{Code: rpcErr.Code, Message: rpcErr.Error(), Data: rpcErr.Data}
+	}
+	return &jsonRPCError{Code: ErrCodeInternal, Message: err.Error()}
 }
 
 // Client multiplexes JSON-RPC 2.0 messages over an ACP transport.
@@ -136,11 +178,11 @@ func (c *Client) handleIncomingRequest(req jsonRPCRequest) {
 
 	resp := jsonRPCResponse{JSONRPC: "2.0", ID: &req.ID}
 	if err != nil {
-		resp.Error = &jsonRPCError{Code: -32603, Message: err.Error()}
+		resp.Error = rpcErrorFromError(err)
 	} else {
 		resBytes, marshalErr := json.Marshal(result)
 		if marshalErr != nil {
-			resp.Error = &jsonRPCError{Code: -32603, Message: marshalErr.Error()}
+			resp.Error = rpcErrorFromError(marshalErr)
 		} else {
 			resp.Result = json.RawMessage(resBytes)
 		}
@@ -277,7 +319,8 @@ func (c *Client) NewSession(ctx context.Context, req NewSessionRequest) (*NewSes
 }
 
 func (c *Client) LoadSession(ctx context.Context, req LoadSessionRequest, observer SessionObserver) (*LoadSessionResponse, error) {
-	defer c.registerObserver(req.SessionID, observer)()
+	removeObserver := c.registerObserver(req.SessionID, observer)
+	defer removeObserver()
 	resp, err := c.doCall(ctx, "session/load", req)
 	if err != nil {
 		return nil, err
@@ -286,6 +329,7 @@ func (c *Client) LoadSession(ctx context.Context, req LoadSessionRequest, observ
 	if err := decodeOptionalResult(resp.Result, &res); err != nil {
 		return nil, fmt.Errorf("failed to decode session/load response: %w", err)
 	}
+	waitObserverIdle(ctx, observer)
 	return &res, nil
 }
 
@@ -318,7 +362,8 @@ func (c *Client) ListSessionsWithRequest(ctx context.Context, req ListSessionsRe
 }
 
 func (c *Client) Prompt(ctx context.Context, req PromptRequest, observer SessionObserver) (*PromptResponse, error) {
-	defer c.registerObserver(req.SessionID, observer)()
+	removeObserver := c.registerObserver(req.SessionID, observer)
+	defer removeObserver()
 	resp, err := c.doCall(ctx, "session/prompt", req)
 	if err != nil {
 		return nil, err
@@ -327,6 +372,7 @@ func (c *Client) Prompt(ctx context.Context, req PromptRequest, observer Session
 	if err := json.Unmarshal(resp.Result, &res); err != nil {
 		return nil, fmt.Errorf("failed to decode prompt response: %w", err)
 	}
+	waitObserverIdle(ctx, observer)
 	return &res, nil
 }
 
@@ -350,8 +396,24 @@ func (c *Client) SetConfigOption(ctx context.Context, req SetSessionConfigOption
 	return &res, nil
 }
 
+func (c *Client) SetSessionModel(ctx context.Context, req SetSessionModelRequest) (*SetSessionModelResponse, error) {
+	resp, err := c.doCall(ctx, "session/set_model", req)
+	if err != nil {
+		return nil, err
+	}
+	var res SetSessionModelResponse
+	if err := decodeOptionalResult(resp.Result, &res); err != nil {
+		return nil, fmt.Errorf("failed to decode session/set_model response: %w", err)
+	}
+	return &res, nil
+}
+
 func (c *Client) CancelSession(ctx context.Context, sessionID string) error {
 	return c.sendNotification(ctx, "session/cancel", map[string]interface{}{"sessionId": sessionID})
+}
+
+func (c *Client) CancelRequest(ctx context.Context, req CancelRequestNotification) error {
+	return c.sendNotification(ctx, "$/cancel_request", req)
 }
 
 func (c *Client) CloseSession(ctx context.Context, sessionID string) error {
@@ -374,6 +436,80 @@ func (c *Client) ForkSession(ctx context.Context, req ForkSessionRequest) (*Fork
 		return nil, fmt.Errorf("failed to decode session/fork response: %w", err)
 	}
 	return &res, nil
+}
+
+func (c *Client) ListProviders(ctx context.Context, req ListProvidersRequest) (*ListProvidersResponse, error) {
+	resp, err := c.doCall(ctx, "providers/list", req)
+	if err != nil {
+		return nil, err
+	}
+	var res ListProvidersResponse
+	if err := json.Unmarshal(resp.Result, &res); err != nil {
+		return nil, fmt.Errorf("failed to decode providers/list response: %w", err)
+	}
+	return &res, nil
+}
+
+func (c *Client) SetProvider(ctx context.Context, req SetProvidersRequest) (*SetProvidersResponse, error) {
+	resp, err := c.doCall(ctx, "providers/set", req)
+	if err != nil {
+		return nil, err
+	}
+	var res SetProvidersResponse
+	if err := decodeOptionalResult(resp.Result, &res); err != nil {
+		return nil, fmt.Errorf("failed to decode providers/set response: %w", err)
+	}
+	return &res, nil
+}
+
+func (c *Client) DisableProvider(ctx context.Context, req DisableProvidersRequest) (*DisableProvidersResponse, error) {
+	resp, err := c.doCall(ctx, "providers/disable", req)
+	if err != nil {
+		return nil, err
+	}
+	var res DisableProvidersResponse
+	if err := decodeOptionalResult(resp.Result, &res); err != nil {
+		return nil, fmt.Errorf("failed to decode providers/disable response: %w", err)
+	}
+	return &res, nil
+}
+
+func (c *Client) Logout(ctx context.Context, req LogoutRequest) (*LogoutResponse, error) {
+	resp, err := c.doCall(ctx, "logout", req)
+	if err != nil {
+		return nil, err
+	}
+	var res LogoutResponse
+	if err := decodeOptionalResult(resp.Result, &res); err != nil {
+		return nil, fmt.Errorf("failed to decode logout response: %w", err)
+	}
+	return &res, nil
+}
+
+func (c *Client) ExtRequest(ctx context.Context, method string, params interface{}, result interface{}) error {
+	method = strings.TrimSpace(method)
+	if method == "" {
+		return fmt.Errorf("ACP extension method is required")
+	}
+	resp, err := c.doCall(ctx, method, params)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return nil
+	}
+	if err := decodeOptionalResult(resp.Result, result); err != nil {
+		return fmt.Errorf("failed to decode ACP extension response for %s: %w", method, err)
+	}
+	return nil
+}
+
+func (c *Client) ExtNotification(ctx context.Context, method string, params interface{}) error {
+	method = strings.TrimSpace(method)
+	if method == "" {
+		return fmt.Errorf("ACP extension notification method is required")
+	}
+	return c.sendNotification(ctx, method, params)
 }
 
 func decodeOptionalResult(data json.RawMessage, target interface{}) error {

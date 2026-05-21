@@ -107,19 +107,25 @@ Every response includes:
 }
 ```
 
-`cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, process fields, `fork_children_cleaned`, nested `fork_children`, `related_sessions`, `warnings`, and `failure_code` instead of inferring cleanup from HTTP status alone. Cleanup after `/v1/runs/{run_id}/actions` `cancel` uses a bounded context detached from the canceled run context, so remote cleanup and process reap are not run under an already-canceled context.
+`cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, process fields, `fork_children_cleaned`, nested `fork_children`, `related_sessions`, `warnings`, and `failure_code` instead of inferring cleanup from HTTP status alone. Cleanup after `/v1/runs/{run_id}/actions` `cancel` uses a bounded context detached from the canceled run context, so remote cleanup and process reap are not run under an already-canceled context. Ephemeral run routing is explicitly bound to the prepared logical session. If a cancellation race still exposes a late-selected logical/remote session, the cleanup proof follows that selected remote target instead of reporting only the stale prepared id.
 
 Provider readiness failures are also projected into the run response and event
 stream. Matrix emits `provider.preflight.failed` with `code`, `agent_id`,
-`protocol`, `phase`, and safe adapter diagnostics when an adapter/provider
-failure prevents task execution. Typical codes are `provider_model_unavailable`,
-`provider_auth_mismatch`, and `agent_preflight_failed`.
+`protocol`, `phase`, `provider_error`, `failure_reason`, and safe adapter
+diagnostics when an adapter/provider failure prevents task execution. Typical
+codes are `provider_model_unavailable`, `provider_auth_mismatch`, and
+`agent_preflight_failed`. `failure_reason=provider_client_context_cancelled`
+means the cached provider client died or was cancelled before the requested ACP
+method completed; Matrix treats this as provider lifecycle evidence, not as a
+task-level model answer.
 
-`clean=true` means Matrix reached an operational cleanup state for that lifecycle. `strong_cleanup=true` means Matrix has hard evidence from the provider or OS process layer. For ephemeral interrupt/resume flows, Matrix requires strong proof; local-only forgetting fails with `failure_code=cleanup_clean_without_remote_or_process_proof`. For non-ephemeral shared sessions, retained clients are allowed but explicitly marked with `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`.
+`clean=true` means Matrix reached an operational cleanup state for that lifecycle. `strong_cleanup=true` means Matrix has hard evidence from the provider or OS process layer. For ephemeral interrupt/resume flows, Matrix requires strong proof; local-only forgetting fails with `failure_code=cleanup_clean_without_remote_or_process_proof`. If no remote session was ever materialized and the exact workspace-bound provider client is absent, Matrix records `process_absent=true` with `process_absence_reason=no matching cached agent client`; that is strong proof for the not-started/no-provider-process path. If a remote session id is known, process absence alone is not enough and cleanup still needs remote delete/close/cancel or process reap proof. If the target remote session is deleted, closed, or canceled while another local session still owns the workspace client, Matrix keeps the cleanup strong and lists that owner as non-retained `related_sessions[]` evidence with reason `shared_agent_client_owner`. For non-ephemeral shared sessions without strong target proof, retained clients are allowed but explicitly marked with `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`.
 
 Run-level cleanup also accounts for sessions touched during the run but not equal
-to the primary ephemeral policy session. New owned sessions are cleaned as
-supplemental targets and listed in `related_sessions`. Pre-existing or shared
+to the primary ephemeral policy session. Run-created same-agent sessions in the
+run channel are cleaned as supplemental targets and listed in
+`related_sessions`, even if they were created by a fork/resume workflow before
+their metadata carried an explicit ephemeral flag. Pre-existing or shared
 sessions are retained explicitly with `process_retained=true`,
 `failure_code=run_related_session_retained`, and reason
 `run_related_session_retained`; Matrix reports the run cleanup as
@@ -128,24 +134,64 @@ session remains alive. Non-ephemeral session cleanup may still use
 `cleanup_strength=retained` for safe shared-client reuse, but run-level
 ephemeral cleanup must fail rather than claim isolated success.
 
+No supervisor-facing cleanup proof is production-safe when
+`process_retained=true`. Matrix therefore fails standalone retained fork-child
+cleanup with `clean=false` and `failure_code=run_related_session_retained`
+unless the cleanup is converted to strong by explicit child provider proof or by
+parent subtree `process_reaped=true` proof.
+
+For run-owned ephemeral fork subtrees, Matrix performs that conversion from
+forced child cleanup when the child remote session has strong provider proof
+(`remote_deleted`, `remote_closed`, or `remote_canceled`) and the child mirror is
+forgotten. The shared parent owner is emitted as a non-retained related session,
+then the parent remains available for active-resume restore until final run
+cleanup closes or reaps the workspace client. If child provider proof is absent,
+Matrix may fall back to parent-owner subtree cleanup and only promotes the child
+when that parent cleanup proves the process is gone.
+
+For local stdio ACP providers, a fork child can also be promoted when cleanup
+reports `remote_lifecycle_skipped_no_reusable_cached_agent_client`. That warning
+means the child mirror was forgotten and no reusable provider client remains to
+cancel; Matrix must not start a fresh stdio ACP process solely for cleanup.
+
 Run-internal session snapshots are local-only. Matrix must not call provider
 remote discovery just to compute before/after cleanup state, because discovery
 can spawn local stdio ACP control clients that are unrelated to the run turn.
+Matrix also must not use mutating `status` lookups for run snapshots: an empty
+channel must remain empty, not gain a local-only ghost session that later looks
+like process retention.
 After ephemeral cleanup, Matrix also reconciles cached provider clients against
 vault session references. Unreferenced clients closed by that pass appear in
-`related_sessions` with reason `run_unreferenced_agent_client_reaped`; reconcile
-failure fails the cleanup with `failure_code=run_agent_client_reconcile_failed`.
+`related_sessions` with reason `run_unreferenced_agent_client_reaped` only when
+they match the run agent/workspace scope. Retained cached clients outside that
+scope do not fail the run cleanup proof, while retained in-scope clients fail
+with `failure_code=run_related_session_retained` and include logical session id,
+remote session id, protocol kind, workspace id, and workspace path when known.
+Reconcile failure itself fails the cleanup with
+`failure_code=run_agent_client_reconcile_failed`.
 
-The same rule applies inside fork cleanup proofs: a fork child may retain the
-shared parent workspace process with reason `fork child uses parent agent
-client`, but that proof is `cleanup_strength=retained`, not `strong`.
+The same rule applies inside fork cleanup proofs. A fork child never reaps the
+shared parent workspace process directly. If child remote cleanup has strong
+provider proof, or stdio ACP reports no reusable client to clean, and the child
+mirror is forgotten, Matrix reports the child cleanup as strong and records the
+parent as a non-retained related session with reason
+`fork_parent_agent_client_owner`. During parent subtree cleanup, parent
+`process_reaped=true` is also valid child proof when the child only retained the
+shared parent client and the child mirror was forgotten. If neither provider
+proof nor parent process proof exists, Matrix fails closed with structured
+retained related-session evidence instead of returning ambiguous retained
+cleanup.
 
-For local stdio ACP agents, Matrix does not spawn a fresh workspace client only to clean up a session owned by a now-dead process. If process reap proves the old agent is gone, cleanup remains strong and may include typed warnings such as `remote_lifecycle_skipped_no_reusable_cached_agent_client` and `remote_cancel_session_not_found_after_process_reap`. If keepalive observes and evicts a dead workspace client before cleanup runs, Matrix preserves a short-lived session-bound reap tombstone so the later cleanup can still report `process_reaped=true` only for the matching `remote_session_id`. Expected async cancellation is logged as `run_cancelled`, not as a generic `matrix async run bridge failed` error.
+For local stdio ACP agents, Matrix does not spawn a fresh workspace client only to clean up a session owned by a now-dead process. Provider clients are router-lifetime resources: the ACP process/client context is not tied to one `/v1/runs` request context, while each prompt/delete/cancel call still receives the per-turn context. If a turn is cancelled or reaches a request deadline while inside `session/prompt`, Matrix closes and evicts the exact workspace client, records a tombstone for the known `remote_session_id`, and forces the next same-agent request to create a fresh provider client. The cancellation may still be reported as `agent_preflight_failed` for the cancelled run, but it must not poison the next judge/follow-up run. If process reap proves the old agent is gone, cleanup remains strong and may include typed warnings such as `remote_lifecycle_skipped_no_reusable_cached_agent_client` and `remote_cancel_session_not_found_after_process_reap`. If no remote session id exists and the workspace client is absent, Matrix reports `process_absent=true` rather than pretending that remote cancel/delete occurred. If a cleanup has explicit target remote proof but the workspace client is still owned by another local session, Matrix does not kill the shared provider process and does not mark the target as retained; it records the owner as `shared_agent_client_owner`. If keepalive observes and evicts a dead workspace client before cleanup runs, if remote lifecycle lookup observes a dead exact workspace client, if cleanup reaps a shared client through one child remote session, if a turn-failure eviction closes the client, or if a later request replaces the dead client, Matrix preserves a short-lived session-bound reap tombstone so later cleanup can still report `process_reaped=true` only for matching `remote_session_id` values. A generic workspace cleanup with no `remote_session_id` cannot consume a tombstone that belongs to an explicit remote session. Expected async cancellation is logged as `run_cancelled`, not as a generic `matrix async run bridge failed` error.
 
 Fork cleanup is subtree-based. If the target session owns mirrored fork
 children, Matrix records child cleanup proofs under `fork_children` before
-finalizing the parent cleanup. Async fork jobs that discover their child was
-already cleaned by parent teardown record
+finalizing the parent cleanup, then reconciles those child proofs with the
+parent process proof. `/v1/runs` related-session accounting treats a clean child
+already covered by the parent cleanup as `run_related_session_cleaned` and does
+not issue a second cleanup request for that child. The same accounting applies
+when child cleanup already covered a related parent owner as non-retained. Async
+fork jobs that discover their child was already cleaned by parent teardown record
 `fork_child_cleanup_already_missing` as a warning rather than leaving a provider
 process unaccounted.
 
@@ -426,10 +472,23 @@ Captured event sources:
 - Matrix run lifecycle: `run.started`, `run.completed`, `run.failed`, `run.cancelled`.
 - Matrix routing: `routing.decision`.
 - Matrix prompt dispatch: `agent.prompt.sent`.
-- Provider streaming updates through `ThoughtNotifier`: `agent.message.delta`.
-- Provider tool updates through `ThoughtNotifier`: `tool.call.requested`, `tool.result.received`.
+- Provider streaming updates through `ThoughtNotifier`: `agent.message.delta`
+  and `agent.thought.delta`.
+- Provider plan/config/runtime updates through `ThoughtNotifier`:
+  `agent.plan.updated`, `agent.commands.updated`,
+  `agent.session.config.updated`, `agent.session.info.updated`, and
+  `agent.usage.updated`.
+- Provider tool updates through `ThoughtNotifier`: `tool.call.requested`,
+  `tool.result.received`, with ACP `content`, `diff`, and `terminal` payloads
+  preserved in protocol metadata.
 - Session status enrichment after route completion: `session.created` or `session.resumed`.
 - Session isolation and cleanup: `session.policy.applied` and `session.cleanup`.
+
+For ACP providers, Matrix treats `session/update` notifications as the source of
+streamed output and drains the observer briefly after `session/prompt` returns.
+Some real providers can send the final `agent_message_chunk` just after the
+JSON-RPC response; Matrix must not convert that ordering race into an empty run
+output or a false processing failure.
 
 Run enrichment:
 

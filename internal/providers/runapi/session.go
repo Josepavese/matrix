@@ -36,15 +36,7 @@ type sessionEnrichmentRequest struct {
 }
 
 func (s *Server) sessionSnapshot(ctx context.Context, channelID, workspaceID string) sessionSnapshot {
-	result, err := s.router.HandleSessionActionTyped(ctx, middleware.SessionActionRequest{
-		ChannelID:   channelID,
-		Action:      "status",
-		WorkspaceID: workspaceID,
-	})
-	if err != nil || result.Session == nil {
-		return sessionSnapshot{}
-	}
-	return sessionSnapshotFromEntry(*result.Session)
+	return activeSessionSnapshot(s.sessionListSnapshot(ctx, channelID, workspaceID))
 }
 
 func (s *Server) sessionListSnapshot(ctx context.Context, channelID, workspaceID string) []sessionSnapshot {
@@ -62,6 +54,15 @@ func (s *Server) sessionListSnapshot(ctx context.Context, channelID, workspaceID
 		snapshots = append(snapshots, sessionSnapshotFromEntry(entry))
 	}
 	return snapshots
+}
+
+func activeSessionSnapshot(snapshots []sessionSnapshot) sessionSnapshot {
+	for _, snapshot := range snapshots {
+		if snapshot.Active {
+			return snapshot
+		}
+	}
+	return sessionSnapshot{}
 }
 
 func (s *Server) enrichRunFromSession(ctx context.Context, req sessionEnrichmentRequest) sessionSnapshot {
@@ -150,6 +151,7 @@ func (s *Server) prepareSessionForRun(ctx context.Context, exec runExecution) (s
 	result, err := s.router.HandleSessionActionTyped(ctx, middleware.SessionActionRequest{
 		ChannelID:     exec.req.ChannelID,
 		Action:        "new",
+		OwnerRunID:    exec.runID,
 		Target:        exec.agentID,
 		WorkspaceID:   exec.req.WorkspaceID,
 		WorkspacePath: exec.req.WorkspacePath,

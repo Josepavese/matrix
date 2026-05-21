@@ -49,7 +49,7 @@ func (n *Notifier) OnThought(update middleware.ThoughtUpdate) {
 	case middleware.ThoughtTypePermission:
 		n.appendPermission(update)
 	default:
-		n.append("agent.message.delta", n.agentID, "streaming", update.Content)
+		n.appendAgentProgress(update)
 	}
 }
 
@@ -119,6 +119,84 @@ func (n *Notifier) append(kind, actor, status, content string) {
 	_, _ = n.store.AppendEvent(event)
 }
 
+func (n *Notifier) appendAgentProgress(update middleware.ThoughtUpdate) {
+	source := frontendevents.SourceUpdateType(update.Metadata, "")
+	switch source {
+	case "agent_thought_chunk":
+		n.appendStructuredProgress("agent.thought.delta", update, "streaming")
+	case "plan":
+		n.appendPlan(update)
+	case "usage_update":
+		n.appendUsage(update)
+	case "available_commands_update":
+		n.appendStructuredProgress("agent.commands.updated", update, runtrace.StatusCompleted)
+	case "current_mode_update", "config_option_update":
+		n.appendStructuredProgress("agent.session.config.updated", update, runtrace.StatusCompleted)
+	case "session_info_update":
+		n.appendStructuredProgress("agent.session.info.updated", update, runtrace.StatusCompleted)
+	case "agent_message_chunk", "user_message_chunk":
+		n.appendMessageDelta(update)
+	default:
+		n.append("agent.message.delta", n.agentID, "streaming", update.Content)
+	}
+}
+
+func (n *Notifier) appendMessageDelta(update middleware.ThoughtUpdate) {
+	content := strings.TrimSpace(update.Content)
+	event := n.baseEvent("agent.message.delta", n.agentID, "streaming", content)
+	event.ContentRef = "matrix://runs/" + n.runID + "/messages/delta"
+	event.ProtocolMethod = "session/update"
+	event.Metadata = frontendevents.Merge(event.Metadata, map[string]interface{}{
+		"source_update_type": frontendevents.SourceUpdateType(update.Metadata, "agent_message_chunk"),
+	})
+	event.ProtocolMeta = frontendevents.ProtocolMeta(update.Metadata)
+	_, _ = n.store.AppendEvent(event)
+}
+
+func (n *Notifier) appendStructuredProgress(kind string, update middleware.ThoughtUpdate, status string) {
+	content := strings.TrimSpace(frontendevents.FirstNonEmpty(update.Content, update.Title))
+	event := n.baseEvent(kind, n.agentID, status, content)
+	event.ProtocolMethod = "session/update"
+	event.Summary = progressSummary(kind, update)
+	event.Metadata = frontendevents.Merge(event.Metadata, map[string]interface{}{
+		"source_update_type": frontendevents.SourceUpdateType(update.Metadata, ""),
+		"frontend_visible":   progressFrontendVisible(kind),
+	})
+	event.ProtocolMeta = frontendevents.ProtocolMeta(update.Metadata)
+	_, _ = n.store.AppendEvent(event)
+}
+
+func (n *Notifier) appendPlan(update middleware.ThoughtUpdate) {
+	event := n.baseEvent("agent.plan.updated", n.agentID, runtrace.StatusCompleted, update.Content)
+	event.ProtocolMethod = "session/update"
+	event.Summary = "Agent plan updated"
+	if entries, ok := update.Metadata["plan_entries"]; ok {
+		event.Outputs = map[string]interface{}{"entries": entries}
+	}
+	event.Metadata = frontendevents.Merge(event.Metadata, map[string]interface{}{
+		"source_update_type": "plan",
+		"frontend_visible":   true,
+	})
+	event.ProtocolMeta = frontendevents.ProtocolMeta(update.Metadata)
+	_, _ = n.store.AppendEvent(event)
+}
+
+func (n *Notifier) appendUsage(update middleware.ThoughtUpdate) {
+	event := n.baseEvent("agent.usage.updated", n.agentID, runtrace.StatusCompleted, update.Content)
+	event.ProtocolMethod = "session/update"
+	event.Summary = "Agent usage updated"
+	if usage, ok := update.Metadata["usage"]; ok {
+		event.Outputs = map[string]interface{}{"usage": usage}
+	}
+	event.Metadata = frontendevents.Merge(event.Metadata, map[string]interface{}{
+		"source_update_type": "usage_update",
+		"frontend_visible":   false,
+		"audit_visible":      true,
+	})
+	event.ProtocolMeta = frontendevents.ProtocolMeta(update.Metadata)
+	_, _ = n.store.AppendEvent(event)
+}
+
 func (n *Notifier) appendToolRequested(update middleware.ThoughtUpdate) {
 	content := strings.TrimSpace(frontendevents.FirstNonEmpty(update.Content, update.Title))
 	tool := frontendevents.NormalizeTool(content, update.Metadata, inferToolName(content))
@@ -155,6 +233,28 @@ func (n *Notifier) appendToolRequested(update middleware.ThoughtUpdate) {
 		Path:                     stringFromMap(tool.Inputs, "path"),
 		Operation:                stringFromMap(tool.Inputs, "operation"),
 	}
+}
+
+func progressSummary(kind string, update middleware.ThoughtUpdate) string {
+	if strings.TrimSpace(update.Title) != "" {
+		return strings.TrimSpace(update.Title)
+	}
+	switch kind {
+	case "agent.thought.delta":
+		return "Agent thinking"
+	case "agent.commands.updated":
+		return "Agent commands updated"
+	case "agent.session.config.updated":
+		return "Agent session configuration updated"
+	case "agent.session.info.updated":
+		return "Agent session info updated"
+	default:
+		return "Agent progress updated"
+	}
+}
+
+func progressFrontendVisible(kind string) bool {
+	return kind == "agent.thought.delta" || kind == "agent.commands.updated" || kind == "agent.session.config.updated"
 }
 
 func (n *Notifier) appendToolResult(update middleware.ThoughtUpdate) {
