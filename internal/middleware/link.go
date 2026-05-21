@@ -4,13 +4,14 @@ import "context"
 
 // ChannelMessage is the neutral ingress payload emitted by a channel gateway.
 type ChannelMessage struct {
-	ChannelID       string
-	DefaultAgentID  string
-	WorkspaceID     string
-	WorkspacePath   string
-	Input           string
-	SidecarCapsules []SidecarCapsule
-	Notifier        ThoughtNotifier
+	ChannelID             string
+	DefaultAgentID        string
+	WorkspaceID           string
+	WorkspacePath         string
+	Input                 string
+	SidecarCapsules       []SidecarCapsule
+	AdditionalDirectories []string
+	Notifier              ThoughtNotifier
 }
 
 // ChannelResponse is the neutral egress payload returned to a channel gateway.
@@ -22,32 +23,34 @@ type ChannelResponse struct {
 // workspace-aware callers. It keeps channel identity as ingress metadata while
 // letting the runtime resolve work context from workspace hints.
 type ConversationRequest struct {
-	ChannelID        string
-	AgentID          string
-	LogicalSessionID string
-	WorkspaceID      string
-	WorkspacePath    string
-	Input            string
-	ContentBlocks    []Content
-	SidecarCapsules  []SidecarCapsule
-	Notifier         ThoughtNotifier
-	NonInteractive   bool
+	ChannelID             string
+	AgentID               string
+	LogicalSessionID      string
+	WorkspaceID           string
+	WorkspacePath         string
+	Input                 string
+	ContentBlocks         []Content
+	SidecarCapsules       []SidecarCapsule
+	AdditionalDirectories []string
+	Notifier              ThoughtNotifier
+	NonInteractive        bool
 }
 
 // RunContextAttachmentRequest asks a runtime to inject provider-neutral sidecar
 // context into an already selected logical/remote session.
 type RunContextAttachmentRequest struct {
-	RunID            string
-	DeliveryID       string
-	ChannelID        string
-	AgentID          string
-	WorkspaceID      string
-	WorkspacePath    string
-	LogicalSessionID string
-	RemoteSessionID  string
-	Reason           string
-	SidecarCapsules  []SidecarCapsule
-	Notifier         ThoughtNotifier
+	RunID                 string
+	DeliveryID            string
+	ChannelID             string
+	AgentID               string
+	WorkspaceID           string
+	WorkspacePath         string
+	LogicalSessionID      string
+	RemoteSessionID       string
+	Reason                string
+	SidecarCapsules       []SidecarCapsule
+	AdditionalDirectories []string
+	Notifier              ThoughtNotifier
 }
 
 type RunContextAttachmentResult struct {
@@ -77,14 +80,15 @@ const (
 
 // SessionActionRequest is the typed, channel-neutral request envelope for session lifecycle operations.
 type SessionActionRequest struct {
-	ChannelID        string
-	Action           string
-	OwnerRunID       string
-	WorkspaceID      string
-	WorkspacePath    string
-	Ephemeral        bool
-	CleanupPolicy    string
-	ForceForgetLocal bool
+	ChannelID             string
+	Action                string
+	OwnerRunID            string
+	WorkspaceID           string
+	WorkspacePath         string
+	AdditionalDirectories []string
+	Ephemeral             bool
+	CleanupPolicy         string
+	ForceForgetLocal      bool
 	// LocalOnly disables provider-side discovery for internal read paths that
 	// must not spawn or retain protocol clients.
 	LocalOnly     bool

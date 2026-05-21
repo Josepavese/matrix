@@ -128,6 +128,29 @@ type AuthEnvVar struct {
 	Meta     map[string]interface{} `json:"_meta,omitempty"`
 }
 
+func (v *AuthEnvVar) UnmarshalJSON(data []byte) error {
+	type rawAuthEnvVar struct {
+		Name     string                 `json:"name"`
+		Label    string                 `json:"label,omitempty"`
+		Optional bool                   `json:"optional,omitempty"`
+		Secret   *bool                  `json:"secret,omitempty"`
+		Meta     map[string]interface{} `json:"_meta,omitempty"`
+	}
+	var raw rawAuthEnvVar
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	v.Name = raw.Name
+	v.Label = raw.Label
+	v.Optional = raw.Optional
+	v.Secret = true
+	if raw.Secret != nil {
+		v.Secret = *raw.Secret
+	}
+	v.Meta = raw.Meta
+	return nil
+}
+
 type NewSessionRequest struct {
 	ClientTitle           string                 `json:"clientTitle,omitempty"`
 	Cwd                   string                 `json:"cwd"`
@@ -168,7 +191,35 @@ type NewSessionResponse struct {
 	Modes         *SessionModeState      `json:"modes,omitempty"`
 	ConfigOptions []ConfigOption         `json:"configOptions,omitempty"`
 	Models        *SessionModelState     `json:"models,omitempty"`
+	RawModels     json.RawMessage        `json:"-"`
 	Meta          map[string]interface{} `json:"_meta,omitempty"`
+}
+
+func (r *NewSessionResponse) UnmarshalJSON(data []byte) error {
+	type rawResponse struct {
+		SessionID     string                 `json:"sessionId"`
+		Modes         *SessionModeState      `json:"modes,omitempty"`
+		ConfigOptions []ConfigOption         `json:"configOptions,omitempty"`
+		Models        json.RawMessage        `json:"models,omitempty"`
+		Meta          map[string]interface{} `json:"_meta,omitempty"`
+	}
+	var raw rawResponse
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	r.SessionID = raw.SessionID
+	r.Modes = raw.Modes
+	r.ConfigOptions = raw.ConfigOptions
+	r.RawModels = cloneRawMessage(raw.Models)
+	r.Models = nil
+	if len(raw.Models) > 0 && string(raw.Models) != "null" {
+		var models SessionModelState
+		if err := json.Unmarshal(raw.Models, &models); err == nil && looksLikeSessionModelState(models) {
+			r.Models = &models
+		}
+	}
+	r.Meta = raw.Meta
+	return nil
 }
 
 type LoadSessionRequest struct {
@@ -212,7 +263,35 @@ type ForkSessionResponse struct {
 	Modes         *SessionModeState      `json:"modes,omitempty"`
 	ConfigOptions []ConfigOption         `json:"configOptions,omitempty"`
 	Models        *SessionModelState     `json:"models,omitempty"`
+	RawModels     json.RawMessage        `json:"-"`
 	Meta          map[string]interface{} `json:"_meta,omitempty"`
+}
+
+func (r *ForkSessionResponse) UnmarshalJSON(data []byte) error {
+	type rawResponse struct {
+		SessionID     string                 `json:"sessionId"`
+		Modes         *SessionModeState      `json:"modes,omitempty"`
+		ConfigOptions []ConfigOption         `json:"configOptions,omitempty"`
+		Models        json.RawMessage        `json:"models,omitempty"`
+		Meta          map[string]interface{} `json:"_meta,omitempty"`
+	}
+	var raw rawResponse
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	r.SessionID = raw.SessionID
+	r.Modes = raw.Modes
+	r.ConfigOptions = raw.ConfigOptions
+	r.RawModels = cloneRawMessage(raw.Models)
+	r.Models = nil
+	if len(raw.Models) > 0 && string(raw.Models) != "null" {
+		var models SessionModelState
+		if err := json.Unmarshal(raw.Models, &models); err == nil && looksLikeSessionModelState(models) {
+			r.Models = &models
+		}
+	}
+	r.Meta = raw.Meta
+	return nil
 }
 
 type ListSessionsRequest struct {
@@ -258,6 +337,10 @@ type ModelInfo struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description,omitempty"`
 	Meta        map[string]interface{} `json:"_meta,omitempty"`
+}
+
+func looksLikeSessionModelState(state SessionModelState) bool {
+	return state.CurrentModelID != "" || len(state.AvailableModels) > 0
 }
 
 type ConfigOption struct {

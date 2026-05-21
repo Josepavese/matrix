@@ -49,6 +49,7 @@ type runRequest struct {
 	ActivityTimeoutSeconds int                         `json:"activity_timeout_seconds,omitempty"`
 	Context                []runtrace.ContextRef       `json:"context,omitempty"`
 	SidecarCapsules        []middleware.SidecarCapsule `json:"sidecar_capsules,omitempty"`
+	AdditionalDirectories  []string                    `json:"additional_directories,omitempty"`
 	ClientMeta             map[string]interface{}      `json:"client_meta,omitempty"`
 	TracePolicy            runtrace.TracePolicy        `json:"trace_policy,omitempty"`
 }

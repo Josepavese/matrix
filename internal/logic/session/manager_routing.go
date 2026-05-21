@@ -64,14 +64,15 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 		message = handoffPrompt + "\n\nUser request:\n" + input
 	}
 	responseTxt, newAgentSessionID, toolCalls, metadata, routeErr := m.router.Route(ctx, middleware.RouteRequest{
-		AgentID:          effectiveAgentID,
-		LogicalSessionID: sessionID,
-		AgentSessionID:   meta.AgentSessionID,
-		WorkspacePath:    meta.WorkspacePath,
-		Message:          message,
-		ContentBlocks:    req.ContentBlocks,
-		SidecarCapsules:  req.SidecarCapsules,
-		ThoughtNotifier:  notifier,
+		AgentID:               effectiveAgentID,
+		LogicalSessionID:      sessionID,
+		AgentSessionID:        meta.AgentSessionID,
+		WorkspacePath:         meta.WorkspacePath,
+		Message:               message,
+		ContentBlocks:         req.ContentBlocks,
+		SidecarCapsules:       req.SidecarCapsules,
+		AdditionalDirectories: req.AdditionalDirectories,
+		ThoughtNotifier:       notifier,
 	})
 	m.applyPendingHandoff(&meta, channelID, log, routeErr)
 

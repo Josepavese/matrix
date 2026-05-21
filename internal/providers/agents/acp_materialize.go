@@ -28,10 +28,14 @@ func (c *acpConversationClient) createACPRemoteSession(ctx context.Context, req 
 	if cwd == "" {
 		cwd = c.cwd
 	}
+	additionalDirectories, err := c.additionalDirectories(req.AdditionalDirectories)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.client.NewSession(ctx, acpNewSessionRequest{
 		ClientTitle:           strings.TrimSpace(req.LogicalSessionID),
 		Cwd:                   cwd,
-		AdditionalDirectories: c.additionalDirectories(req.AdditionalDirectories),
+		AdditionalDirectories: additionalDirectories,
 		McpServers:            c.materializeMCPServers(req.McpServers),
 		Tools:                 toZedACPTools(req.Tools),
 	})

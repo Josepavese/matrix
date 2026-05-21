@@ -102,6 +102,7 @@ Near-term goals:
 - `session/fork` is implemented as an optional draft method; callers should gate it on advertised `sessionCapabilities.fork`
 - `session/delete` is implemented as an optional draft method; callers should gate it on advertised `sessionCapabilities.delete`
 - `additionalDirectories` is modeled on current new/load/resume/fork requests and session info; `session/list` request intentionally does not carry it. Callers must gate actual usage on advertised `sessionCapabilities.additionalDirectories`
+- `authenticate` uses the current request shape (`methodId` only) when no legacy credentials are supplied; auth env-var descriptors default `secret` to true and preserve unknown model-state drafts through raw response metadata
 - `ExtRequest` and `ExtNotification` expose ACP extension methods without coupling Matrix to one vendor extension; unknown incoming methods should return JSON-RPC `-32601` unless an extension handler is explicitly installed
 - ACP has no official `side` or `session/side` primitive; Matrix `sidecar` context must be projected through ordinary prompt/meta channels, provider-specific live extensions, or true `session/fork`
 - generic `$/cancel_request`, provider configuration/logout, and `session/set_model` have typed package calls but remain unstable/draft product surfaces; NES/document events, elicitation, and full `usage_update` control remain tracked gaps. Stable Matrix behavior must remain capability-gated

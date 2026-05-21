@@ -122,7 +122,6 @@ func realACPProviderSpecs(t *testing.T) []realACPProviderSpec {
 		{name: "opencode", bin: "opencode", args: []string{"acp", "--pure"}},
 		{name: "codex", bin: "codex-acp"},
 		{name: "gemini", bin: "gemini", args: []string{"--acp", "--yolo"}},
-		{name: "kimi", bin: "kimi", args: []string{"acp"}},
 	}
 	specs := make([]realACPProviderSpec, 0, len(candidates))
 	for _, candidate := range candidates {

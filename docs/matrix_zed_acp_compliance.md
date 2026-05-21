@@ -109,6 +109,8 @@ outputs after a completed prompt.
 Matrix models the current unstable/draft fields needed for forward compatibility:
 
 - `additionalDirectories` on new/load/resume/fork requests and session info;
+- structured auth methods, including `env_var.vars[]`, terminal method
+  metadata, auth `_meta`, and `AuthEnvVar.secret` defaulting to `true`;
 - `messageId` on prompt requests;
 - `userMessageId`, `usage`, and `_meta` on prompt responses;
 - `nextCursor` and request filters on `session/list`.
@@ -122,7 +124,15 @@ Usage rules:
 
 - `additionalDirectories` must be sent only when the provider advertises
   `sessionCapabilities.additionalDirectories`; it must not be sent on
-  `session/list`.
+  `session/list`. Matrix ingress must reject relative
+  `additional_directories` values before an ACP lifecycle call is emitted.
+- current `authenticate` requests carry `methodId` only. Matrix omits legacy
+  credential payloads on the first call and retries with legacy credentials only
+  for older adapters that reject the current shape.
+- `terminal/create` capability is agent-first automation: Matrix advertises it
+  when a process backend is configured and can auto-approve according to trust
+  mode. `auth.terminal` is a human-interaction promise and is not advertised by
+  the autonomous runtime path until a frontend explicitly owns that login loop.
 - `messageId` is optional and should be generated only when Matrix needs
   explicit user-message correlation.
 - generic `$/cancel_request` is typed in `pkg/zedacp` but must not replace
@@ -152,7 +162,7 @@ Matrix should treat these as optional, capability-gated integrations:
 
 - provider configuration;
 - logout;
-- runtime use of structured auth methods;
+- terminal auth UX;
 - NES/document events;
 - elicitation;
 - Streamable HTTP.
@@ -188,6 +198,10 @@ go test ./tests/integration -run 'TestOpenCode.*Fork.*Cleanup' -v -count=1 -time
 
 Latest recorded evidence:
 
+- 2026-05-21: real ACP provider lifecycle smoke passed against OpenCode,
+  `codex-acp`, and Gemini with initialize, session discovery/load-or-resume,
+  prompt execution, permission auto-approval where requested, file/terminal
+  proof tokens, and transport cleanup.
 - 2026-05-04: real OpenCode ACP run-owned fork cleanup smoke passed with one
   parent session, two fork artifact child sessions, strong child cleanup proofs,
   strong final parent cleanup, and no new retained `opencode acp` process after

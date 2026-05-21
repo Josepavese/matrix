@@ -32,8 +32,9 @@ func (m *Manager) materializeForkParent(ctx context.Context, req middleware.Sess
 		return SessionMeta{}, &result, nil
 	}
 	remote, metadata, err := materializer.MaterializeAgentSession(ctx, meta.AgentID, middleware.SessionMaterializeRequest{
-		LogicalSessionID: meta.ID,
-		WorkspacePath:    firstNonEmpty(req.WorkspacePath, meta.WorkspacePath),
+		LogicalSessionID:      meta.ID,
+		WorkspacePath:         firstNonEmpty(req.WorkspacePath, meta.WorkspacePath),
+		AdditionalDirectories: req.AdditionalDirectories,
 	})
 	if err != nil {
 		result := materializeForkFailedResult(meta, err.Error())

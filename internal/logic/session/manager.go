@@ -113,13 +113,14 @@ func (m *Manager) HandleMessage(ctx context.Context, msg middleware.ChannelMessa
 		agentID = m.defaultAgent
 	}
 	output, err := m.RouteConversation(ctx, middleware.ConversationRequest{
-		ChannelID:       msg.ChannelID,
-		AgentID:         agentID,
-		WorkspaceID:     msg.WorkspaceID,
-		WorkspacePath:   msg.WorkspacePath,
-		Input:           msg.Input,
-		SidecarCapsules: msg.SidecarCapsules,
-		Notifier:        msg.Notifier,
+		ChannelID:             msg.ChannelID,
+		AgentID:               agentID,
+		WorkspaceID:           msg.WorkspaceID,
+		WorkspacePath:         msg.WorkspacePath,
+		Input:                 msg.Input,
+		SidecarCapsules:       msg.SidecarCapsules,
+		AdditionalDirectories: msg.AdditionalDirectories,
+		Notifier:              msg.Notifier,
 	})
 	if err != nil {
 		return middleware.ChannelResponse{}, err

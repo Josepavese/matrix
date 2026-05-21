@@ -259,12 +259,13 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 	server.RegisterRoutes(mux)
 
 	body, _ := json.Marshal(map[string]interface{}{
-		"channel_id":     "noema-eval-channel-random",
-		"agent_id":       "opencode",
-		"input":          "run eval",
-		"workspace_path": "/tmp/eval-ws",
-		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
-		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrForgetLocal,
+		"channel_id":             "noema-eval-channel-random",
+		"agent_id":               "opencode",
+		"input":                  "run eval",
+		"workspace_path":         "/tmp/eval-ws",
+		"additional_directories": []string{"/tmp/eval-lib", "/tmp/eval-lib"},
+		"session_policy":         middleware.SessionPolicyNewEphemeralDeleteAfterRun,
+		"cleanup_policy":         middleware.SessionCleanupPolicyDeleteRemoteOrForgetLocal,
 	})
 	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
@@ -275,6 +276,9 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 	}
 	if router.lastConversation.WorkspacePath != "/tmp/eval-ws" {
 		t.Fatalf("expected workspace path routed, got %q", router.lastConversation.WorkspacePath)
+	}
+	if got := router.lastConversation.AdditionalDirectories; len(got) != 1 || got[0] != "/tmp/eval-lib" {
+		t.Fatalf("expected normalized additional directories routed, got %#v", got)
 	}
 	if len(router.sessionActions) < 3 {
 		t.Fatalf("expected new/list/cleanup actions, got %+v", router.sessionActions)
@@ -290,6 +294,9 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 	newAction := firstSessionAction(router.sessionActions, "new")
 	if newAction == nil || !newAction.Ephemeral {
 		t.Fatalf("expected ephemeral new action, got %+v", router.sessionActions)
+	}
+	if got := newAction.AdditionalDirectories; len(got) != 1 || got[0] != "/tmp/eval-lib" {
+		t.Fatalf("expected additional directories on prepared session action, got %#v", got)
 	}
 	cleanupAction := lastSessionAction(router.sessionActions, "cleanup")
 	if cleanupAction == nil || !cleanupAction.ForceForgetLocal {
@@ -1287,6 +1294,29 @@ func TestHandleRuns_SidecarValidationRejectsInvisibleContentWithoutID(t *testing
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleRunsRejectsRelativeAdditionalDirectories(t *testing.T) {
+	router := &runTestRouter{}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":             "bad-additional-dirs",
+		"input":                  "task",
+		"additional_directories": []string{"relative"},
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "absolute") {
+		t.Fatalf("expected absolute path validation message, got %q", w.Body.String())
 	}
 }
 

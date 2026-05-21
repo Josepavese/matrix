@@ -2,9 +2,12 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/exec"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 func TestSupportsSessionCapabilityAcceptsZedObjectStyle(t *testing.T) {
@@ -112,9 +115,23 @@ func TestPickAutoApproveConfigOptionPrefersStableConfigSurface(t *testing.T) {
 	}
 }
 
+func TestACPClientCapabilitiesKeepTerminalAuthExplicit(t *testing.T) {
+	caps := acpClientCapabilitiesForDeps(middleware.ConversationFactoryDeps{Process: exec.NewProvider()})
+	if !caps.Terminal {
+		t.Fatalf("terminal tool capability should follow process backend availability: %#v", caps)
+	}
+	if caps.Auth == nil {
+		t.Fatalf("auth capabilities should be present for current ACP auth surface")
+	}
+	if caps.Auth.Terminal {
+		t.Fatalf("auth.terminal must not be advertised on the autonomous runtime path")
+	}
+}
+
 type pagedListACPClient struct {
 	ctx       context.Context
 	cursors   []string
+	listReqs  []acpListSessionsRequest
 	newReq    *acpNewSessionRequest
 	resumeReq *acpResumeSessionRequest
 	promptReq *acpPromptRequest
@@ -145,6 +162,7 @@ func (c *pagedListACPClient) ListSessions(context.Context) (*acpListSessionsResp
 }
 func (c *pagedListACPClient) ListSessionsWithRequest(_ context.Context, req acpListSessionsRequest) (*acpListSessionsResponse, error) {
 	c.cursors = append(c.cursors, req.Cursor)
+	c.listReqs = append(c.listReqs, req)
 	if req.Cursor == "" {
 		return &acpListSessionsResponse{
 			Sessions:   []acpSessionInfo{{SessionID: "one", Title: "One"}},
@@ -197,6 +215,9 @@ func TestListRemoteSessionsIteratesACPPagination(t *testing.T) {
 	}
 	if len(fake.cursors) != 2 || fake.cursors[0] != "" || fake.cursors[1] != "cursor-2" {
 		t.Fatalf("expected cursor pagination, got %#v", fake.cursors)
+	}
+	if len(fake.listReqs) == 0 || fake.listReqs[0].Cwd != "" {
+		t.Fatalf("remote session discovery should not force a cwd filter, got %#v", fake.listReqs)
 	}
 }
 
@@ -259,6 +280,114 @@ func TestExecuteTurnDoesNotSendAdditionalDirectoriesWithoutCapability(t *testing
 	}
 	if len(fake.newReq.AdditionalDirectories) != 0 {
 		t.Fatalf("additionalDirectories must be gated on provider capability, got %#v", fake.newReq.AdditionalDirectories)
+	}
+}
+
+func TestExecuteTurnRejectsRelativeAdditionalDirectoriesWhenAdvertised(t *testing.T) {
+	fake := &pagedListACPClient{ctx: context.Background()}
+	client := &acpConversationClient{
+		client: fake,
+		sessionCapabilities: middleware.ConversationSessionCapabilities{
+			AdditionalDirectories: true,
+		},
+		loadedSessions: map[string]bool{},
+	}
+
+	_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{
+		Message:               "hello",
+		AdditionalDirectories: []string{"relative/path"},
+	})
+	if err == nil {
+		t.Fatal("expected relative additionalDirectories path to be rejected")
+	}
+	if fake.newReq != nil {
+		t.Fatalf("invalid additionalDirectories must fail before session/new, got %#v", fake.newReq)
+	}
+}
+
+func TestACPEnvVarAuthUsesStructuredVars(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "secret")
+	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://example.test")
+
+	credentials, ok := acpEnvVarCredentials(acpAuthMethod{
+		Type: "env_var",
+		ID:   "openai",
+		Vars: []zedacp.AuthEnvVar{
+			{Name: "OPENAI_API_KEY"},
+			{Name: "AZURE_OPENAI_ENDPOINT", Optional: true},
+		},
+	})
+	if !ok {
+		t.Fatal("expected structured env vars to be usable from process environment")
+	}
+	if credentials["OPENAI_API_KEY"] != "secret" || credentials["AZURE_OPENAI_ENDPOINT"] != "https://example.test" {
+		t.Fatalf("unexpected credentials: %#v", credentials)
+	}
+}
+
+type recordingACPAuthenticator struct {
+	errs  []error
+	calls []recordedACPAuthCall
+}
+
+type recordedACPAuthCall struct {
+	methodID    string
+	credentials map[string]string
+}
+
+func (a *recordingACPAuthenticator) Authenticate(_ context.Context, methodID string, credentials map[string]string) error {
+	cloned := map[string]string(nil)
+	if credentials != nil {
+		cloned = make(map[string]string, len(credentials))
+		for key, value := range credentials {
+			cloned[key] = value
+		}
+	}
+	a.calls = append(a.calls, recordedACPAuthCall{methodID: methodID, credentials: cloned})
+	if len(a.errs) == 0 {
+		return nil
+	}
+	err := a.errs[0]
+	a.errs = a.errs[1:]
+	return err
+}
+
+func TestACPEnvVarAuthUsesCurrentAuthenticateShapeBeforeLegacyFallback(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "secret")
+	auth := &recordingACPAuthenticator{}
+
+	authenticateACPEnvVarFromEnvironment(context.Background(), auth, acpAuthMethod{
+		Type:   "env_var",
+		ID:     "openai",
+		EnvVar: "OPENAI_API_KEY",
+	})
+
+	if len(auth.calls) != 1 {
+		t.Fatalf("expected one authenticate call, got %#v", auth.calls)
+	}
+	if auth.calls[0].methodID != "openai" || auth.calls[0].credentials != nil {
+		t.Fatalf("current authenticate call should omit legacy credentials, got %#v", auth.calls[0])
+	}
+}
+
+func TestACPEnvVarAuthFallsBackToLegacyCredentials(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "secret")
+	auth := &recordingACPAuthenticator{errs: []error{errors.New("legacy agent requires credentials")}}
+
+	authenticateACPEnvVarFromEnvironment(context.Background(), auth, acpAuthMethod{
+		Type:   "env_var",
+		ID:     "openai",
+		EnvVar: "OPENAI_API_KEY",
+	})
+
+	if len(auth.calls) != 2 {
+		t.Fatalf("expected current call plus legacy fallback, got %#v", auth.calls)
+	}
+	if got := auth.calls[1].credentials["OPENAI_API_KEY"]; got != "secret" {
+		t.Fatalf("expected env var credential fallback, got %#v", auth.calls[1].credentials)
+	}
+	if got := auth.calls[1].credentials["api_key"]; got != "secret" {
+		t.Fatalf("expected single-var api_key compatibility fallback, got %#v", auth.calls[1].credentials)
 	}
 }
 

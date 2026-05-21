@@ -34,8 +34,8 @@ Upstream state:
 - Latest release delta from the local 2026-05-04 review: unstable
   `additionalDirectories` guidance update, unstable `session/delete`, unstable
   MCP-over-ACP message types, and v2 schema scaffolding.
-- Latest `main` commit seen: `a66de5b4e791` on 2026-05-21, docs-only registry
-  agent update.
+- Latest `main` commit seen: `4244a28b47aa` on 2026-05-21, CI-only feature
+  powerset gating update.
 - Zed now documents ACP Registry as the preferred install path for external
   agents starting from `v0.221.x`; Agent Server extensions remain supported but
   are on a deprecation path.
@@ -92,14 +92,20 @@ Implemented or partially implemented locally:
 
 - `session/fork`: implemented as optional draft, capability-gated.
 - `session/delete`: implemented as optional draft, capability-gated.
-- `additionalDirectories`: modeled on current lifecycle/session structs and
-  propagated by the ACP runtime only when
+- `additionalDirectories`: modeled on current lifecycle/session structs,
+  accepted by Matrix run/session ingress, normalized to unique absolute paths,
+  and propagated by the ACP runtime only when
   `sessionCapabilities.additionalDirectories` is advertised.
 - Prompt `messageId`, prompt response `userMessageId`, `usage`, and `_meta`.
 - `usage_update` decoded as audit/projection data.
 - ACP tool content variants: `content`, `diff`, `terminal`.
 - Structured current auth method shapes are decoded in `pkg/zedacp`
-  (`env_var.vars[]`, terminal args/env, auth `_meta`).
+  (`env_var.vars[]`, terminal args/env, auth `_meta`). Runtime env-var
+  auto-auth now uses `env_var.vars[]`, sends current `authenticate` requests
+  without legacy credentials, and falls back to legacy credential payloads for
+  older adapters.
+- `AuthEnvVar.secret` defaults to `true` when omitted, matching current
+  unstable schema metadata.
 - Typed unstable client surfaces exist for `$/cancel_request`,
   `providers/list`, `providers/set`, `providers/disable`, `logout`, and
   `session/set_model`.
@@ -128,10 +134,13 @@ Open gaps and corrections:
    Upstream logout RFD is Preview. `pkg/zedacp` has a typed call, but Matrix
    startup auth and local onboarding do not advertise/consume `auth.logout`.
 
-5. Auth method variants.
-   `pkg/zedacp` decodes current shapes. Runtime auto-auth still recognizes only
-   the legacy/simple env-var shape; it does not yet use `env_var.vars[]`,
-   terminal auth, or `clientCapabilities.auth.terminal`.
+5. Terminal auth.
+   `pkg/zedacp` decodes terminal auth method shapes. Matrix does not yet
+   advertise `clientCapabilities.auth.terminal` on the autonomous runtime path:
+   agent-to-agent execution must not block on an implicit TUI. Human onboarding
+   can still present terminal-auth instructions, and a Zed-compatible frontend
+   may advertise this only when it can complete the interactive flow explicitly.
+   Env-var auth is implemented for current `vars[]` plus legacy compatibility.
 
 6. Elicitation.
    Upstream draft adds `elicitation/create` and `elicitation/complete` for
@@ -168,8 +177,9 @@ Near term:
 
 Medium term:
 
-- Implement runtime use of current auth shapes enough to avoid silently
-  ignoring structured `env_var.vars[]` and `terminal` auth methods.
+- Keep terminal auth policy split by caller mode: automatic Matrix/A2A runtime
+  must prefer nonblocking env/config auth, while human Zed-compatible frontends
+  may opt into terminal auth only when they own the interaction loop.
 - If provider configuration is exposed, gate it on `agentCapabilities.providers`
   and keep Matrix config/env as the authority when the agent does not advertise
   that surface.
