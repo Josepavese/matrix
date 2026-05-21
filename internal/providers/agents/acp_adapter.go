@@ -81,6 +81,11 @@ type acpAuthenticator interface {
 	Authenticate(ctx context.Context, methodID string, credentials map[string]string) error
 }
 
+type acpEnvSpec struct {
+	name     string
+	optional bool
+}
+
 func authenticateACPEnvVarFromEnvironment(ctx context.Context, client acpAuthenticator, method acpAuthMethod) {
 	if method.Type != "env_var" || strings.TrimSpace(method.ID) == "" {
 		return
@@ -97,29 +102,43 @@ func authenticateACPEnvVarFromEnvironment(ctx context.Context, client acpAuthent
 }
 
 func acpEnvVarCredentials(method acpAuthMethod) (map[string]string, bool) {
-	type envSpec struct {
-		name     string
-		optional bool
-	}
-	var specs []envSpec
-	if name := strings.TrimSpace(method.EnvVar); name != "" {
-		specs = append(specs, envSpec{name: name})
-	}
-	seen := map[string]struct{}{}
-	for _, variable := range method.Vars {
-		name := strings.TrimSpace(variable.Name)
-		if name == "" {
-			continue
-		}
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		specs = append(specs, envSpec{name: name, optional: variable.Optional})
-	}
+	specs := acpEnvVarSpecs(method)
 	if len(specs) == 0 {
 		return nil, false
 	}
+	credentials, ok := lookupACPEnvVarCredentials(specs)
+	if !ok {
+		return nil, false
+	}
+	addLegacyACPAPIKeyCredential(credentials)
+	return credentials, true
+}
+
+func acpEnvVarSpecs(method acpAuthMethod) []acpEnvSpec {
+	var specs []acpEnvSpec
+	if name := strings.TrimSpace(method.EnvVar); name != "" {
+		specs = append(specs, acpEnvSpec{name: name})
+	}
+	seen := map[string]struct{}{}
+	for _, variable := range method.Vars {
+		specs = appendACPEnvSpec(specs, seen, variable.Name, variable.Optional)
+	}
+	return specs
+}
+
+func appendACPEnvSpec(specs []acpEnvSpec, seen map[string]struct{}, name string, optional bool) []acpEnvSpec {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return specs
+	}
+	if _, ok := seen[name]; ok {
+		return specs
+	}
+	seen[name] = struct{}{}
+	return append(specs, acpEnvSpec{name: name, optional: optional})
+}
+
+func lookupACPEnvVarCredentials(specs []acpEnvSpec) (map[string]string, bool) {
 	credentials := map[string]string{}
 	for _, spec := range specs {
 		value, ok := os.LookupEnv(spec.name)
@@ -134,12 +153,16 @@ func acpEnvVarCredentials(method acpAuthMethod) (map[string]string, bool) {
 	if len(credentials) == 0 {
 		return nil, false
 	}
-	if len(credentials) == 1 {
-		for _, value := range credentials {
-			credentials["api_key"] = value
-		}
-	}
 	return credentials, true
+}
+
+func addLegacyACPAPIKeyCredential(credentials map[string]string) {
+	if len(credentials) != 1 {
+		return
+	}
+	for _, value := range credentials {
+		credentials["api_key"] = value
+	}
 }
 
 type acpConversationClient struct {

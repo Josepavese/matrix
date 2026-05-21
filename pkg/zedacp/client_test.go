@@ -629,15 +629,6 @@ func (t *methodRecordingTransport) seenMethods() []string {
 	return append([]string(nil), t.seen...)
 }
 
-func (t *methodRecordingTransport) lastSent() []byte {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if len(t.sent) == 0 {
-		return nil
-	}
-	return append([]byte(nil), t.sent[len(t.sent)-1]...)
-}
-
 func (t *methodRecordingTransport) sentForMethod(method string) []byte {
 	t.mu.Lock()
 	defer t.mu.Unlock()
