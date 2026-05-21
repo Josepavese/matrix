@@ -34,7 +34,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # shared same-workspace provider owners are now explicit non-retained cleanup
 # evidence when the target remote session has strong provider proof.
 "internal/logic/session" = 5250
-"internal/middleware" = 930
+# 2026-05-21: ACP v0.13.2 alignment adds protocol-neutral
+# additional-directories propagation and current AuthEnvVar secret defaults.
+"internal/middleware" = 980
 # 2026-04-27: workspace timeline event recording split validation/persistence/state update.
 "internal/logic/workspace" = 910
 # 2026-05-04/05/08: Zed ACP v0.12.2 lifecycle plus session-bound tombstone
@@ -44,22 +46,25 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # provider-client lifetime from per-request contexts, tombstones dead exact
 # lifecycle clients before cleanup proof, and evicts poisoned workspace clients
 # after cancellable prompt failures so immediate follow-up runs cannot inherit
-# a cancelled ACP client.
-"internal/providers/agents" = 2987
+# a cancelled ACP client. 2026-05-21 adds current ACP auth/env-var fallback,
+# additionalDirectories validation, and agent-first terminal-auth policy.
+"internal/providers/agents" = 3160
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
 # 2026-05-08: cancel/session-create race cleanup binds ephemeral runs to the
 # prepared logical session and follows late-selected remote sessions when needed.
-"internal/providers/runapi" = 1230
+# 2026-05-21 accepts and validates ACP additional_directories on run ingress.
+"internal/providers/runapi" = 1270
 # 2026-05-04/05: Zed ACP schema v0.12.2 stable lifecycle/config surface plus
 # observer drain for providers that emit trailing session/update chunks after
-# session/prompt returns.
-"pkg/zedacp" = 1333
+# session/prompt returns. 2026-05-21: v0.13.2 auth defaults, current
+# authenticate request shape, and permissive draft model-state decoding.
+"pkg/zedacp" = 1570
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390
-"internal/middleware/link.go" = 310
+"internal/middleware/link.go" = 320
 "internal/logic/agentcatalog/service.go" = 330
 "internal/logic/agentdiscovery/discovery.go" = 430
 "internal/logic/onboarding/wizard.go" = 330
@@ -71,14 +76,15 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/logic/session/manager_workspace_reads.go" = 520
 "internal/logic/workspace/timeline.go" = 310
 "internal/logic/runnotifier/notifier.go" = 370
-"internal/providers/matrixapi/server.go" = 530
+"internal/providers/matrixapi/server.go" = 550
 "internal/providers/agents/a2a_adapter.go" = 320
-"internal/providers/agents/acp_adapter.go" = 560
+"internal/providers/agents/acp_adapter.go" = 680
 "internal/providers/agents/default_handler.go" = 520
 "internal/providers/agents/router.go" = 480
 "internal/providers/agents/router_observer.go" = 400
-"pkg/zedacp/client.go" = 450
-"pkg/zedacp/types.go" = 580
+"internal/providers/runapi/runs.go" = 300
+"pkg/zedacp/client.go" = 510
+"pkg/zedacp/types.go" = 740
 
 [function_overrides]
 "cmd/mock-agent/main.go::main" = 100
