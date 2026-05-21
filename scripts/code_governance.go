@@ -394,7 +394,7 @@ func printReport(cfg config, files []fileReport, funcs []funcReport, pkgs map[st
 		if file.Test {
 			continue
 		}
-		fmt.Printf("- %s: loc=%d\n", file.Path, file.LOC)
+		fmt.Printf("- %s lines=%d\n", file.Path, file.LOC)
 		fileCount++
 		if fileCount == 5 {
 			break
