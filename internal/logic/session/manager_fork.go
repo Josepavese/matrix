@@ -105,8 +105,9 @@ func (m *Manager) prepareFork(ctx context.Context, req middleware.SessionActionR
 		return forkPlan{}, unsupported, err
 	}
 	child, err := forker.ForkAgentSession(ctx, meta.AgentID, middleware.SessionForkRequest{
-		RemoteSessionID: meta.AgentSessionID,
-		WorkspacePath:   firstNonEmpty(req.WorkspacePath, meta.WorkspacePath),
+		RemoteSessionID:       meta.AgentSessionID,
+		WorkspacePath:         firstNonEmpty(req.WorkspacePath, meta.WorkspacePath),
+		AdditionalDirectories: req.AdditionalDirectories,
 	})
 	if err != nil {
 		result := unsupportedForkResult(meta, err.Error())

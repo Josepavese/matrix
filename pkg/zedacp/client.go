@@ -299,10 +299,11 @@ func (c *Client) Initialize(ctx context.Context, req InitializeRequest) (*Initia
 }
 
 func (c *Client) Authenticate(ctx context.Context, methodID string, credentials map[string]string) error {
-	_, err := c.doCall(ctx, "authenticate", map[string]interface{}{
-		"methodId":    methodID,
-		"credentials": credentials,
-	})
+	params := map[string]interface{}{"methodId": methodID}
+	if len(credentials) > 0 {
+		params["credentials"] = credentials
+	}
+	_, err := c.doCall(ctx, "authenticate", params)
 	return err
 }
 

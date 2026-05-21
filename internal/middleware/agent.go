@@ -186,6 +186,29 @@ type AuthEnvVar struct {
 	Meta     map[string]interface{} `json:"_meta,omitempty"`
 }
 
+func (v *AuthEnvVar) UnmarshalJSON(data []byte) error {
+	type rawAuthEnvVar struct {
+		Name     string                 `json:"name"`
+		Label    string                 `json:"label,omitempty"`
+		Optional bool                   `json:"optional,omitempty"`
+		Secret   *bool                  `json:"secret,omitempty"`
+		Meta     map[string]interface{} `json:"_meta,omitempty"`
+	}
+	var raw rawAuthEnvVar
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	v.Name = raw.Name
+	v.Label = raw.Label
+	v.Optional = raw.Optional
+	v.Secret = true
+	if raw.Secret != nil {
+		v.Secret = *raw.Secret
+	}
+	v.Meta = raw.Meta
+	return nil
+}
+
 // NewSessionRequest is the payload sent to create a new agent session.
 type NewSessionRequest struct {
 	ClientTitle           string                 `json:"clientTitle,omitempty"`

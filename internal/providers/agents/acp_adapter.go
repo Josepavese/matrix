@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -36,15 +37,9 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 	client.SetRequestHandler(handler)
 
 	initReq := acpInitializeRequest{
-		ProtocolVersion: 1,
-		ClientInfo:      map[string]interface{}{"name": "matrix", "version": "1.0"},
-		ClientCapabilities: &acpClientCapabilities{
-			Fs: &acpFsCapability{
-				ReadTextFile:  deps.FS != nil,
-				WriteTextFile: deps.FS != nil,
-			},
-			Terminal: deps.Process != nil,
-		},
+		ProtocolVersion:    1,
+		ClientInfo:         map[string]interface{}{"name": "matrix", "version": "1.0"},
+		ClientCapabilities: acpClientCapabilitiesForDeps(deps),
 	}
 	initResp, err := client.Initialize(ctx, initReq)
 	if err != nil {
@@ -52,14 +47,7 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		return nil, classifyProviderFailure("", endpoint, "initialize", fmt.Errorf("ACP initialize failed: %w", err))
 	}
 	for _, m := range initResp.AuthMethods {
-		if m.Type != "env_var" || m.EnvVar == "" {
-			continue
-		}
-		if val, ok := os.LookupEnv(m.EnvVar); ok {
-			if err := client.Authenticate(ctx, m.ID, map[string]string{"api_key": val}); err != nil {
-				slog.Warn("ACP authentication failed", "methodId", m.ID, "error", err)
-			}
-		}
+		authenticateACPEnvVarFromEnvironment(ctx, client, m)
 	}
 
 	caps := acpSessionCapabilities(initResp)
@@ -72,6 +60,86 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		loadedSessions:      map[string]bool{},
 		mcpServers:          toZedACPMCPServers(deps.McpServers),
 	}, nil
+}
+
+func acpClientCapabilitiesForDeps(deps middleware.ConversationFactoryDeps) *acpClientCapabilities {
+	return &acpClientCapabilities{
+		Fs: &acpFsCapability{
+			ReadTextFile:  deps.FS != nil,
+			WriteTextFile: deps.FS != nil,
+		},
+		Terminal: deps.Process != nil,
+		// terminal/create is safe for agent-first automation when a process
+		// backend is configured. ACP auth.terminal is different: it promises an
+		// interactive login flow, so Matrix keeps it opt-out on the autonomous
+		// runtime path until a human-facing frontend can complete it explicitly.
+		Auth: &acpAuthCapabilities{},
+	}
+}
+
+type acpAuthenticator interface {
+	Authenticate(ctx context.Context, methodID string, credentials map[string]string) error
+}
+
+func authenticateACPEnvVarFromEnvironment(ctx context.Context, client acpAuthenticator, method acpAuthMethod) {
+	if method.Type != "env_var" || strings.TrimSpace(method.ID) == "" {
+		return
+	}
+	credentials, ok := acpEnvVarCredentials(method)
+	if !ok {
+		return
+	}
+	if err := client.Authenticate(ctx, method.ID, nil); err == nil {
+		return
+	} else if fallbackErr := client.Authenticate(ctx, method.ID, credentials); fallbackErr != nil {
+		slog.Warn("ACP authentication failed", "methodId", method.ID, "error", fallbackErr, "initial_error", err)
+	}
+}
+
+func acpEnvVarCredentials(method acpAuthMethod) (map[string]string, bool) {
+	type envSpec struct {
+		name     string
+		optional bool
+	}
+	var specs []envSpec
+	if name := strings.TrimSpace(method.EnvVar); name != "" {
+		specs = append(specs, envSpec{name: name})
+	}
+	seen := map[string]struct{}{}
+	for _, variable := range method.Vars {
+		name := strings.TrimSpace(variable.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		specs = append(specs, envSpec{name: name, optional: variable.Optional})
+	}
+	if len(specs) == 0 {
+		return nil, false
+	}
+	credentials := map[string]string{}
+	for _, spec := range specs {
+		value, ok := os.LookupEnv(spec.name)
+		if !ok {
+			if spec.optional {
+				continue
+			}
+			return nil, false
+		}
+		credentials[spec.name] = value
+	}
+	if len(credentials) == 0 {
+		return nil, false
+	}
+	if len(credentials) == 1 {
+		for _, value := range credentials {
+			credentials["api_key"] = value
+		}
+	}
+	return credentials, true
 }
 
 type acpConversationClient struct {
@@ -139,20 +207,7 @@ func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn
 		return c.createAndConfigureACPRemoteSession(ctx, turn, cwd, log)
 	}
 	if !c.isLoadedSession(turn.RemoteSessionID) && c.sessionCapabilities.Resume {
-		if c.resumeACPRemoteSession(acpLoadRemoteSessionRequest{
-			Ctx:                   ctx,
-			RemoteSessionID:       turn.RemoteSessionID,
-			Cwd:                   cwd,
-			AdditionalDirectories: turn.AdditionalDirectories,
-			McpServers:            c.turnMCPServers(turn.McpServers),
-			Notifier:              turn.ThoughtNotifier,
-			Log:                   log,
-		}) {
-			return turn.RemoteSessionID, nil
-		}
-	}
-	if !c.isLoadedSession(turn.RemoteSessionID) && c.sessionCapabilities.Load {
-		c.loadACPRemoteSession(acpLoadRemoteSessionRequest{
+		resumed, err := c.resumeACPRemoteSession(acpLoadRemoteSessionRequest{
 			Ctx:                   ctx,
 			RemoteSessionID:       turn.RemoteSessionID,
 			Cwd:                   cwd,
@@ -161,6 +216,25 @@ func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn
 			Notifier:              turn.ThoughtNotifier,
 			Log:                   log,
 		})
+		if err != nil {
+			return "", err
+		}
+		if resumed {
+			return turn.RemoteSessionID, nil
+		}
+	}
+	if !c.isLoadedSession(turn.RemoteSessionID) && c.sessionCapabilities.Load {
+		if err := c.loadACPRemoteSession(acpLoadRemoteSessionRequest{
+			Ctx:                   ctx,
+			RemoteSessionID:       turn.RemoteSessionID,
+			Cwd:                   cwd,
+			AdditionalDirectories: turn.AdditionalDirectories,
+			McpServers:            c.turnMCPServers(turn.McpServers),
+			Notifier:              turn.ThoughtNotifier,
+			Log:                   log,
+		}); err != nil {
+			return "", err
+		}
 	}
 	return turn.RemoteSessionID, nil
 }
@@ -233,16 +307,20 @@ type acpLoadRemoteSessionRequest struct {
 	Log                   *slog.Logger
 }
 
-func (c *acpConversationClient) resumeACPRemoteSession(req acpLoadRemoteSessionRequest) bool {
+func (c *acpConversationClient) resumeACPRemoteSession(req acpLoadRemoteSessionRequest) (bool, error) {
+	additionalDirectories, err := c.additionalDirectories(req.AdditionalDirectories)
+	if err != nil {
+		return false, err
+	}
 	resp, err := c.client.ResumeSession(req.Ctx, acpResumeSessionRequest{
 		SessionID:             req.RemoteSessionID,
 		Cwd:                   req.Cwd,
-		AdditionalDirectories: c.additionalDirectories(req.AdditionalDirectories),
+		AdditionalDirectories: additionalDirectories,
 		McpServers:            req.McpServers,
 	})
 	if err != nil {
 		req.Log.Warn("ACP session resume failed, will fall back to load/prompt flow", "agent_session", req.RemoteSessionID, "error", err)
-		return false
+		return false, nil
 	}
 	c.markLoadedSession(req.RemoteSessionID)
 	if configID, value := pickAutoApproveConfigOption(fromZedACPResumeSession(resp)); configID != "" && value != "" {
@@ -254,20 +332,24 @@ func (c *acpConversationClient) resumeACPRemoteSession(req acpLoadRemoteSessionR
 			req.Log.Warn("failed to set ACP resumed config option", "config_id", configID, "value", value, "error", err)
 		}
 	}
-	return true
+	return true, nil
 }
 
-func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionRequest) {
+func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionRequest) error {
 	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: req.Notifier}
+	additionalDirectories, err := c.additionalDirectories(req.AdditionalDirectories)
+	if err != nil {
+		return err
+	}
 	resp, err := c.client.LoadSession(req.Ctx, acpLoadSessionRequest{
 		SessionID:             req.RemoteSessionID,
 		Cwd:                   req.Cwd,
-		AdditionalDirectories: c.additionalDirectories(req.AdditionalDirectories),
+		AdditionalDirectories: additionalDirectories,
 		McpServers:            req.McpServers,
 	}, obs)
 	if err != nil {
 		req.Log.Warn("ACP session load failed, will fall back to prompt/recreate flow", "agent_session", req.RemoteSessionID, "error", err)
-		return
+		return nil
 	}
 	c.markLoadedSession(req.RemoteSessionID)
 	if configID, value := pickAutoApproveConfigOption(fromZedACPLoadSession(resp)); configID != "" && value != "" {
@@ -280,6 +362,7 @@ func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionReq
 		}
 	}
 	obs.WaitIdle(req.Ctx, 150*time.Millisecond)
+	return nil
 }
 
 func (c *acpConversationClient) prepareTurnCallbacks(turn middleware.ConversationTurn, remoteSessionID string) {
@@ -366,9 +449,9 @@ func (c *acpConversationClient) turnMCPServers(turnServers []middleware.McpServe
 	return cloneACPMCPServers(c.mcpServers)
 }
 
-func (c *acpConversationClient) additionalDirectories(values []string) []string {
+func (c *acpConversationClient) additionalDirectories(values []string) ([]string, error) {
 	if !c.sessionCapabilities.AdditionalDirectories || len(values) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([]string, 0, len(values))
 	seen := map[string]struct{}{}
@@ -377,6 +460,9 @@ func (c *acpConversationClient) additionalDirectories(values []string) []string 
 		if value == "" {
 			continue
 		}
+		if !filepath.IsAbs(value) {
+			return nil, fmt.Errorf("ACP additionalDirectories path must be absolute: %s", value)
+		}
 		if _, ok := seen[value]; ok {
 			continue
 		}
@@ -384,9 +470,9 @@ func (c *acpConversationClient) additionalDirectories(values []string) []string 
 		out = append(out, value)
 	}
 	if len(out) == 0 {
-		return nil
+		return nil, nil
 	}
-	return out
+	return out, nil
 }
 
 func (c *acpConversationClient) SessionCapabilities() middleware.ConversationSessionCapabilities {
@@ -400,7 +486,7 @@ func (c *acpConversationClient) ListRemoteSessions(ctx context.Context) ([]middl
 	var out []middleware.RemoteSessionInfo
 	cursor := ""
 	for page := 0; page < 100; page++ {
-		resp, err := c.client.ListSessionsWithRequest(ctx, acpListSessionsRequest{Cwd: c.cwd, Cursor: cursor})
+		resp, err := c.client.ListSessionsWithRequest(ctx, acpListSessionsRequest{Cursor: cursor})
 		if err != nil {
 			return nil, err
 		}

@@ -31,15 +31,16 @@ func (m *Manager) AttachRunContext(ctx context.Context, req middleware.RunContex
 	}
 	agentID := firstNonEmpty(meta.AgentID, req.AgentID)
 	output, newRemoteID, _, metadata, routeErr := m.router.Route(ctx, middleware.RouteRequest{
-		AgentID:           agentID,
-		LogicalSessionID:  logicalID,
-		AgentSessionID:    remoteID,
-		WorkspacePath:     firstNonEmpty(meta.WorkspacePath, req.WorkspacePath),
-		Message:           "Matrix live context update for run " + strings.TrimSpace(req.RunID) + ". Reason: " + firstNonEmpty(req.Reason, "live_context") + ". Apply attached sidecar context conservatively.",
-		SidecarCapsules:   req.SidecarCapsules,
-		ThoughtNotifier:   req.Notifier,
-		StrictSession:     runRemoteID != "",
-		LiveContextAttach: true,
+		AgentID:               agentID,
+		LogicalSessionID:      logicalID,
+		AgentSessionID:        remoteID,
+		WorkspacePath:         firstNonEmpty(meta.WorkspacePath, req.WorkspacePath),
+		Message:               "Matrix live context update for run " + strings.TrimSpace(req.RunID) + ". Reason: " + firstNonEmpty(req.Reason, "live_context") + ". Apply attached sidecar context conservatively.",
+		SidecarCapsules:       req.SidecarCapsules,
+		AdditionalDirectories: req.AdditionalDirectories,
+		ThoughtNotifier:       req.Notifier,
+		StrictSession:         runRemoteID != "",
+		LiveContextAttach:     true,
 	})
 	if routeErr != nil {
 		if middleware.IsConversationTurnActive(routeErr) {

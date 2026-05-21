@@ -149,14 +149,15 @@ func (s *Server) prepareSessionForRun(ctx context.Context, exec runExecution) (s
 		return sessionSnapshot{}, nil
 	}
 	result, err := s.router.HandleSessionActionTyped(ctx, middleware.SessionActionRequest{
-		ChannelID:     exec.req.ChannelID,
-		Action:        "new",
-		OwnerRunID:    exec.runID,
-		Target:        exec.agentID,
-		WorkspaceID:   exec.req.WorkspaceID,
-		WorkspacePath: exec.req.WorkspacePath,
-		Ephemeral:     true,
-		CleanupPolicy: cleanupPolicyForRun(exec.req),
+		ChannelID:             exec.req.ChannelID,
+		Action:                "new",
+		OwnerRunID:            exec.runID,
+		Target:                exec.agentID,
+		WorkspaceID:           exec.req.WorkspaceID,
+		WorkspacePath:         exec.req.WorkspacePath,
+		AdditionalDirectories: exec.req.AdditionalDirectories,
+		Ephemeral:             true,
+		CleanupPolicy:         cleanupPolicyForRun(exec.req),
 	})
 	if err != nil {
 		return sessionSnapshot{}, err

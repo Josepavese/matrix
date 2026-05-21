@@ -26,6 +26,7 @@ type mockSessionRouter struct {
 	lastTarget           string
 	lastEphemeral        bool
 	lastCleanupPolicy    string
+	lastAdditionalDirs   []string
 	lastForceForgetLocal bool
 	lastMakeActive       *bool
 	lastRestoreParent    bool
@@ -85,6 +86,7 @@ func (m *mockSessionRouter) HandleSessionActionTyped(_ context.Context, req midd
 	}
 	m.lastEphemeral = req.Ephemeral
 	m.lastCleanupPolicy = req.CleanupPolicy
+	m.lastAdditionalDirs = append([]string(nil), req.AdditionalDirectories...)
 	m.lastForceForgetLocal = req.ForceForgetLocal
 	m.lastMakeActive = req.MakeActive
 	m.lastRestoreParent = req.RestoreParent
@@ -663,6 +665,26 @@ func TestHandleSessionActions_ForwardsWorkspaceID(t *testing.T) {
 	}
 }
 
+func TestHandleSessionActions_RejectsRelativeAdditionalDirectories(t *testing.T) {
+	router := &mockSessionRouter{typedResult: middleware.SessionActionResult{Action: "new"}}
+	_, mux := setupServer(router, "", "")
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":             "ch1",
+		"action":                 "new",
+		"target":                 "claude",
+		"additional_directories": []string{"relative-lib"},
+	})
+	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if router.lastAction != "" {
+		t.Fatalf("router should not be called for invalid additional_directories")
+	}
+}
+
 func TestHandleWorkspaceActions_Success(t *testing.T) {
 	router := &mockSessionRouter{workspaceTypedResult: middleware.WorkspaceActionResult{
 		Action:  "list",
@@ -985,12 +1007,13 @@ func TestHandleSessionActions_NewAndNamePassThrough(t *testing.T) {
 	_, mux := setupServer(router, "", "")
 
 	newBody, _ := json.Marshal(map[string]interface{}{
-		"channel_id":     "ch1",
-		"action":         "new",
-		"target":         "claude",
-		"workspace_path": "/tmp/eval-ws",
-		"ephemeral":      true,
-		"cleanup_policy": "delete_remote_or_forget_local",
+		"channel_id":             "ch1",
+		"action":                 "new",
+		"target":                 "claude",
+		"workspace_path":         "/tmp/eval-ws",
+		"additional_directories": []string{"/tmp/shared-lib", "/tmp/shared-lib"},
+		"ephemeral":              true,
+		"cleanup_policy":         "delete_remote_or_forget_local",
 	})
 	newReq := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(newBody))
 	newW := httptest.NewRecorder()
@@ -1004,6 +1027,9 @@ func TestHandleSessionActions_NewAndNamePassThrough(t *testing.T) {
 	}
 	if router.lastWorkspacePath != "/tmp/eval-ws" || !router.lastEphemeral || router.lastCleanupPolicy != "delete_remote_or_forget_local" {
 		t.Fatalf("expected ephemeral workspace path to pass through, path=%q ephemeral=%t cleanup=%q", router.lastWorkspacePath, router.lastEphemeral, router.lastCleanupPolicy)
+	}
+	if len(router.lastAdditionalDirs) != 1 || router.lastAdditionalDirs[0] != "/tmp/shared-lib" {
+		t.Fatalf("expected normalized additional directories, got %#v", router.lastAdditionalDirs)
 	}
 
 	router.typedResult = middleware.SessionActionResult{

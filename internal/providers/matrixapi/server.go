@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/orchestration"
 	"github.com/Josepavese/matrix/internal/middleware"
@@ -93,18 +95,19 @@ const (
 // - new: agent id
 // - name: alias
 type sessionActionRequest struct {
-	ChannelID        string `json:"channel_id"`
-	Action           string `json:"action"`
-	Target           string `json:"target,omitempty"`
-	WorkspaceID      string `json:"workspace_id,omitempty"`
-	WorkspacePath    string `json:"workspace_path,omitempty"`
-	Ephemeral        bool   `json:"ephemeral,omitempty"`
-	CleanupPolicy    string `json:"cleanup_policy,omitempty"`
-	ForceForgetLocal bool   `json:"force_forget_local,omitempty"`
-	MakeActive       *bool  `json:"make_active,omitempty"`
-	RestoreParent    bool   `json:"restore_parent,omitempty"`
-	Async            bool   `json:"async,omitempty"`
-	Input            string `json:"input,omitempty"`
+	ChannelID             string   `json:"channel_id"`
+	Action                string   `json:"action"`
+	Target                string   `json:"target,omitempty"`
+	WorkspaceID           string   `json:"workspace_id,omitempty"`
+	WorkspacePath         string   `json:"workspace_path,omitempty"`
+	Ephemeral             bool     `json:"ephemeral,omitempty"`
+	CleanupPolicy         string   `json:"cleanup_policy,omitempty"`
+	AdditionalDirectories []string `json:"additional_directories,omitempty"`
+	ForceForgetLocal      bool     `json:"force_forget_local,omitempty"`
+	MakeActive            *bool    `json:"make_active,omitempty"`
+	RestoreParent         bool     `json:"restore_parent,omitempty"`
+	Async                 bool     `json:"async,omitempty"`
+	Input                 string   `json:"input,omitempty"`
 }
 
 type workspaceActionRequest struct {
@@ -176,20 +179,26 @@ func (s *Server) HandleSessionActions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request: channel_id and action are required", http.StatusBadRequest)
 		return
 	}
+	additionalDirectories, err := normalizeAdditionalDirectories(req.AdditionalDirectories)
+	if err != nil {
+		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	result, err := s.router.HandleSessionActionTyped(r.Context(), middleware.SessionActionRequest{
-		ChannelID:        req.ChannelID,
-		Action:           req.Action,
-		Target:           req.Target,
-		WorkspaceID:      req.WorkspaceID,
-		WorkspacePath:    req.WorkspacePath,
-		Ephemeral:        req.Ephemeral,
-		CleanupPolicy:    req.CleanupPolicy,
-		ForceForgetLocal: req.ForceForgetLocal,
-		MakeActive:       req.MakeActive,
-		RestoreParent:    req.RestoreParent,
-		Async:            req.Async,
-		Input:            req.Input,
+		ChannelID:             req.ChannelID,
+		Action:                req.Action,
+		Target:                req.Target,
+		WorkspaceID:           req.WorkspaceID,
+		WorkspacePath:         req.WorkspacePath,
+		AdditionalDirectories: additionalDirectories,
+		Ephemeral:             req.Ephemeral,
+		CleanupPolicy:         req.CleanupPolicy,
+		ForceForgetLocal:      req.ForceForgetLocal,
+		MakeActive:            req.MakeActive,
+		RestoreParent:         req.RestoreParent,
+		Async:                 req.Async,
+		Input:                 req.Input,
 	})
 	if err != nil {
 		slog.Error("matrix session action failed", "error", err, "action", req.Action)
@@ -202,6 +211,29 @@ func (s *Server) HandleSessionActions(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		slog.Error("matrix session action failed to encode response", "error", err)
 	}
+}
+
+func normalizeAdditionalDirectories(values []string) ([]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		dir := strings.TrimSpace(value)
+		if dir == "" {
+			continue
+		}
+		if !filepath.IsAbs(dir) {
+			return nil, fmt.Errorf("additional_directories entries must be absolute paths")
+		}
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		out = append(out, dir)
+	}
+	return out, nil
 }
 
 func sessionActionHTTPStatus(result middleware.SessionActionResult) int {

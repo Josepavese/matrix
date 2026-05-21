@@ -315,6 +315,57 @@ func TestInitializeUnmarshalCurrentAuthMethodsAndModels(t *testing.T) {
 	}
 }
 
+func TestAuthEnvVarDefaultsSecretToTrue(t *testing.T) {
+	var variable AuthEnvVar
+	if err := json.Unmarshal([]byte(`{"name":"OPENAI_API_KEY"}`), &variable); err != nil {
+		t.Fatalf("unmarshal auth env var: %v", err)
+	}
+	if !variable.Secret {
+		t.Fatalf("auth env var secret must default to true: %#v", variable)
+	}
+	if err := json.Unmarshal([]byte(`{"name":"AZURE_OPENAI_ENDPOINT","secret":false}`), &variable); err != nil {
+		t.Fatalf("unmarshal non-secret auth env var: %v", err)
+	}
+	if variable.Secret {
+		t.Fatalf("explicit secret=false must be preserved: %#v", variable)
+	}
+}
+
+func TestSessionResponsePreservesUnknownDraftModels(t *testing.T) {
+	var resp NewSessionResponse
+	if err := json.Unmarshal([]byte(`{
+		"sessionId": "sess-1",
+		"models": {"current": "legacy-shape", "available": ["x"]}
+	}`), &resp); err != nil {
+		t.Fatalf("unmarshal permissive models response: %v", err)
+	}
+	if resp.Models != nil {
+		t.Fatalf("unknown draft models shape should not decode as typed state: %#v", resp.Models)
+	}
+	if !bytes.Contains(resp.RawModels, []byte(`"legacy-shape"`)) {
+		t.Fatalf("raw models should preserve unknown draft shape: %s", resp.RawModels)
+	}
+}
+
+func TestAuthenticateOmitsCredentialsWhenEmpty(t *testing.T) {
+	transport := newMethodRecordingTransport(t, map[string]json.RawMessage{
+		"authenticate": json.RawMessage(`{}`),
+	})
+	client := NewClient(context.Background(), transport)
+	defer client.Close()
+
+	if err := client.Authenticate(context.Background(), "env", nil); err != nil {
+		t.Fatalf("authenticate: %v", err)
+	}
+	var sent jsonRPCRequest
+	if err := json.Unmarshal(transport.sentForMethod("authenticate"), &sent); err != nil {
+		t.Fatalf("unmarshal authenticate request: %v", err)
+	}
+	if bytes.Contains(sent.Params, []byte(`"credentials"`)) {
+		t.Fatalf("current authenticate request must omit empty legacy credentials: %s", sent.Params)
+	}
+}
+
 func TestClientUnstableProviderModelLogoutAndCancelSurfaces(t *testing.T) {
 	transport := newMethodRecordingTransport(t, map[string]json.RawMessage{
 		"providers/list":    json.RawMessage(`{"providers":[{"id":"main","supported":["openai","anthropic"],"required":false,"current":{"apiType":"openai","baseUrl":"https://api.openai.com/v1"}}]}`),

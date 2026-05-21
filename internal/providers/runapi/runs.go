@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
@@ -63,7 +64,36 @@ func decodeRunRequest(w http.ResponseWriter, r *http.Request) (runRequest, bool)
 		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
 		return runRequest{}, false
 	}
+	additionalDirectories, err := normalizeAdditionalDirectories(req.AdditionalDirectories)
+	if err != nil {
+		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
+		return runRequest{}, false
+	}
+	req.AdditionalDirectories = additionalDirectories
 	return req, true
+}
+
+func normalizeAdditionalDirectories(values []string) ([]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if !filepath.IsAbs(value) {
+			return nil, errors.New("additional_directories entries must be absolute paths")
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out, nil
 }
 
 func (s *Server) startRun(req runRequest, agentID string) (runtrace.Run, error) {
@@ -215,15 +245,16 @@ func (s *Server) route(ctx context.Context, exec runExecution, prepared sessionS
 	req := exec.req
 	if richer, ok := s.router.(middleware.ConversationRequestRouter); ok {
 		return richer.RouteConversation(ctx, middleware.ConversationRequest{
-			ChannelID:        req.ChannelID,
-			AgentID:          exec.agentID,
-			LogicalSessionID: strings.TrimSpace(prepared.LogicalSessionID),
-			WorkspaceID:      req.WorkspaceID,
-			WorkspacePath:    req.WorkspacePath,
-			Input:            req.Input.String(),
-			SidecarCapsules:  req.SidecarCapsules,
-			Notifier:         notifier,
-			NonInteractive:   true,
+			ChannelID:             req.ChannelID,
+			AgentID:               exec.agentID,
+			LogicalSessionID:      strings.TrimSpace(prepared.LogicalSessionID),
+			WorkspaceID:           req.WorkspaceID,
+			WorkspacePath:         req.WorkspacePath,
+			Input:                 req.Input.String(),
+			SidecarCapsules:       req.SidecarCapsules,
+			AdditionalDirectories: req.AdditionalDirectories,
+			Notifier:              notifier,
+			NonInteractive:        true,
 		})
 	}
 	return s.router.Route(ctx, req.ChannelID, exec.agentID, sidecar.ProjectPrompt(req.Input.String(), req.SidecarCapsules), notifier)
