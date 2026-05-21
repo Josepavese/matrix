@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/exec"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 type recordingNotifier struct {
@@ -523,19 +525,36 @@ func TestTerminalMethods_UnknownTerminal(t *testing.T) {
 	}
 }
 
-func TestHandleRequest_DefaultAutoApprove(t *testing.T) {
+func TestHandleRequest_UnknownMethodReturnsMethodNotFound(t *testing.T) {
 	handler := newConfigurableRequestHandler(nil)
 
-	result, err := handler.HandleRequest(context.Background(), "some/unknown/method", json.RawMessage(`{}`))
+	_, err := handler.HandleRequest(context.Background(), "some/unknown/method", json.RawMessage(`{}`))
+	var rpcErr *zedacp.RPCError
+	if !errors.As(err, &rpcErr) {
+		t.Fatalf("expected RPCError for unknown method, got %T %[1]v", err)
+	}
+	if rpcErr.Code != zedacp.ErrCodeMethodNotFound {
+		t.Fatalf("expected method-not-found code, got %#v", rpcErr)
+	}
+}
+
+func TestHandleRequest_ExtensionHandler(t *testing.T) {
+	handler := newConfigurableRequestHandler(nil).WithExtensionHandler(func(_ context.Context, method string, params json.RawMessage) (interface{}, error) {
+		if method != "matrix/example" || string(params) != `{"x":1}` {
+			t.Fatalf("unexpected extension request: method=%s params=%s", method, params)
+		}
+		return map[string]interface{}{"accepted": true}, nil
+	})
+
+	result, err := handler.HandleRequest(context.Background(), "matrix/example", json.RawMessage(`{"x":1}`))
 	if err != nil {
-		t.Fatalf("unknown method: %v", err)
+		t.Fatalf("extension request: %v", err)
 	}
 	m, ok := result.(map[string]interface{})
 	if !ok {
 		t.Fatalf("result is not a map, got %T", result)
 	}
-	status, _ := m["status"].(string)
-	if status != "ok" {
-		t.Errorf("unknown method should auto-approve, got %v", m["status"])
+	if m["accepted"] != true {
+		t.Fatalf("unexpected extension response: %#v", m)
 	}
 }

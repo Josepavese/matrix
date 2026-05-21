@@ -1244,3 +1244,33 @@ func TestHandleSessionActions_TypedCleanupFailureIncludesProof(t *testing.T) {
 		t.Fatalf("expected cleanup proof, got %+v", resp.Cleanup)
 	}
 }
+
+func TestHandleSessionActions_RunRelatedSessionRetainedUses409(t *testing.T) {
+	router := &mockSessionRouter{typedResult: middleware.SessionActionResult{
+		Action: "cleanup",
+		Error: &middleware.SessionActionError{
+			Code:    "run_related_session_retained",
+			Message: "standalone fork child cleanup retained its parent agent client",
+			Target:  "child",
+		},
+		Cleanup: &middleware.SessionCleanupResult{
+			LogicalSessionID: "child",
+			ProcessRetained:  true,
+			CleanupStrength:  "failed",
+			FailureCode:      "run_related_session_retained",
+		},
+	}}
+	_, mux := setupServer(router, "", "")
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id": "ch1",
+		"action":     "cleanup",
+		"target":     "child",
+	})
+	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+}

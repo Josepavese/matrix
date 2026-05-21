@@ -14,6 +14,7 @@ type newSessionRequest struct {
 	ChannelID     string
 	Lang          string
 	AgentID       string
+	OwnerRunID    string
 	WorkspaceID   string
 	WorkspacePath string
 	Ephemeral     bool
@@ -28,6 +29,7 @@ func (m *Manager) handleSessionNewTyped(req newSessionRequest) (middleware.Sessi
 	sessionID, err := m.forceNewSessionWithWorkspacePolicy(newSessionPolicyRequest{
 		ChannelID:     req.ChannelID,
 		TargetAgent:   resolvedAgentID,
+		OwnerRunID:    req.OwnerRunID,
 		WorkspaceID:   req.WorkspaceID,
 		WorkspacePath: req.WorkspacePath,
 		Ephemeral:     req.Ephemeral,
@@ -57,6 +59,7 @@ func (m *Manager) forceNewSessionWithWorkspace(channelID, targetAgent, workspace
 type newSessionPolicyRequest struct {
 	ChannelID     string
 	TargetAgent   string
+	OwnerRunID    string
 	WorkspaceID   string
 	WorkspacePath string
 	Ephemeral     bool
@@ -77,6 +80,7 @@ func (m *Manager) forceNewSessionWithWorkspacePolicy(req newSessionPolicyRequest
 		MirrorStatus:  "pending",
 		Ephemeral:     req.Ephemeral,
 		CleanupPolicy: cleanupPolicy,
+		OwnerRunID:    strings.TrimSpace(req.OwnerRunID),
 	}
 	if err := m.bindSessionWorkspace(&meta, req.WorkspaceID, req.WorkspacePath); err != nil {
 		return "", fmt.Errorf("failed to bind workspace: %w", err)

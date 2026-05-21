@@ -46,16 +46,19 @@ type AgentRouter interface {
 
 // RouteRequest contains the parameters for routing a prompt to an agent.
 type RouteRequest struct {
-	AgentID           string
-	LogicalSessionID  string
-	AgentSessionID    string
-	WorkspacePath     string
-	Message           string
-	SidecarCapsules   []SidecarCapsule
-	Tools             []Tool
-	ThoughtNotifier   ThoughtNotifier // optional: receives real-time thought/tool updates during prompt
-	StrictSession     bool            // do not recover by creating a replacement remote session
-	LiveContextAttach bool            // true when this route is a best-effort live context injection
+	AgentID               string
+	LogicalSessionID      string
+	AgentSessionID        string
+	WorkspacePath         string
+	Message               string
+	ContentBlocks         []Content
+	SidecarCapsules       []SidecarCapsule
+	Tools                 []Tool
+	McpServers            []McpServerConfig
+	AdditionalDirectories []string
+	ThoughtNotifier       ThoughtNotifier // optional: receives real-time thought/tool updates during prompt
+	StrictSession         bool            // do not recover by creating a replacement remote session
+	LiveContextAttach     bool            // true when this route is a best-effort live context injection
 }
 
 // ThoughtUpdateType classifies the kind of intermediate update from an agent.
@@ -108,8 +111,18 @@ type InitializeRequest struct {
 // ClientCapabilities declares what the client supports per ACP spec.
 // Per spec: fs is an object {readTextFile, writeTextFile}, terminal is a boolean.
 type ClientCapabilities struct {
-	Fs       *FsCapability `json:"fs,omitempty"`
-	Terminal bool          `json:"terminal,omitempty"`
+	Fs                *FsCapability          `json:"fs,omitempty"`
+	Terminal          bool                   `json:"terminal,omitempty"`
+	Auth              *AuthCapabilities      `json:"auth,omitempty"`
+	Elicitation       map[string]interface{} `json:"elicitation,omitempty"`
+	Nes               map[string]interface{} `json:"nes,omitempty"`
+	PositionEncodings []string               `json:"positionEncodings,omitempty"`
+	Meta              map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type AuthCapabilities struct {
+	Terminal bool                   `json:"terminal,omitempty"`
+	Meta     map[string]interface{} `json:"_meta,omitempty"`
 }
 
 // FsCapability indicates the client can handle fs/read_text_file and fs/write_text_file.
@@ -153,18 +166,34 @@ func (r *InitializeResponse) UnmarshalJSON(data []byte) error {
 
 // AuthMethod describes an authentication method returned by the agent during initialize.
 type AuthMethod struct {
-	Type        string `json:"type"`
-	ID          string `json:"id,omitempty"`
-	Description string `json:"description,omitempty"`
-	EnvVar      string `json:"envVar,omitempty"`
+	Type        string                 `json:"type,omitempty"`
+	ID          string                 `json:"id,omitempty"`
+	Name        string                 `json:"name,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Link        string                 `json:"link,omitempty"`
+	Vars        []AuthEnvVar           `json:"vars,omitempty"`
+	Args        []string               `json:"args,omitempty"`
+	Env         map[string]string      `json:"env,omitempty"`
+	EnvVar      string                 `json:"envVar,omitempty"`
+	Meta        map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type AuthEnvVar struct {
+	Name     string                 `json:"name"`
+	Label    string                 `json:"label,omitempty"`
+	Optional bool                   `json:"optional,omitempty"`
+	Secret   bool                   `json:"secret,omitempty"`
+	Meta     map[string]interface{} `json:"_meta,omitempty"`
 }
 
 // NewSessionRequest is the payload sent to create a new agent session.
 type NewSessionRequest struct {
-	ClientTitle string            `json:"clientTitle,omitempty"`
-	Cwd         string            `json:"cwd"`
-	McpServers  []McpServerConfig `json:"mcpServers"`
-	Tools       []Tool            `json:"tools,omitempty"`
+	ClientTitle           string                 `json:"clientTitle,omitempty"`
+	Cwd                   string                 `json:"cwd"`
+	AdditionalDirectories []string               `json:"additionalDirectories,omitempty"`
+	McpServers            []McpServerConfig      `json:"mcpServers"`
+	Tools                 []Tool                 `json:"tools,omitempty"`
+	Meta                  map[string]interface{} `json:"_meta,omitempty"`
 }
 
 // McpServerConfig describes an MCP server connection for session/new per ACP spec.
@@ -280,8 +309,18 @@ type Message struct {
 
 // Content is a single content block within a message.
 type Content struct {
-	Type string `json:"type"` // "text"
-	Text string `json:"text"`
+	Type        string                 `json:"type"`
+	Text        string                 `json:"text,omitempty"`
+	Data        string                 `json:"data,omitempty"`
+	MimeType    string                 `json:"mimeType,omitempty"`
+	URI         string                 `json:"uri,omitempty"`
+	Name        string                 `json:"name,omitempty"`
+	Title       string                 `json:"title,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Size        *int64                 `json:"size,omitempty"`
+	Resource    map[string]interface{} `json:"resource,omitempty"`
+	Annotations map[string]interface{} `json:"annotations,omitempty"`
+	Meta        map[string]interface{} `json:"_meta,omitempty"`
 }
 
 // SessionEventType classifies the kind of event emitted during a prompt turn.

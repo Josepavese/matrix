@@ -27,6 +27,7 @@ type runTestRouter struct {
 	newSessionID     string
 	statusQueue      []middleware.SessionEntry
 	listQueue        [][]middleware.SessionEntry
+	cleanupByTarget  map[string]middleware.SessionCleanupResult
 	attachMu         sync.Mutex
 	attachRequests   []middleware.RunContextAttachmentRequest
 	routeThoughts    []middleware.ThoughtUpdate
@@ -142,6 +143,22 @@ func (r *runTestRouter) HandleSessionActionTyped(ctx context.Context, req middle
 		if r.cleanupCtxErr != nil {
 			r.cleanupCtxErr <- ctx.Err()
 		}
+		if cleanup, ok := r.cleanupByTarget[req.Target]; ok {
+			cleanup = cloneSessionCleanupResult(cleanup)
+			if cleanup.LogicalSessionID == "" {
+				cleanup.LogicalSessionID = req.Target
+			}
+			if cleanup.AgentID == "" {
+				cleanup.AgentID = "opencode"
+			}
+			if cleanup.ProtocolKind == "" {
+				cleanup.ProtocolKind = "acp"
+			}
+			if cleanup.CleanupPolicy == "" {
+				cleanup.CleanupPolicy = req.CleanupPolicy
+			}
+			return middleware.SessionActionResult{Action: "cleanup", Cleanup: &cleanup}, nil
+		}
 		return middleware.SessionActionResult{
 			Action: "cleanup",
 			Cleanup: &middleware.SessionCleanupResult{
@@ -151,6 +168,8 @@ func (r *runTestRouter) HandleSessionActionTyped(ctx context.Context, req middle
 				ProtocolKind:            "acp",
 				CleanupPolicy:           req.CleanupPolicy,
 				Clean:                   true,
+				StrongCleanup:           true,
+				CleanupStrength:         sessioncleanup.StrengthStrong,
 				RemoteDeleteAttempted:   true,
 				RemoteDeleteUnsupported: true,
 				RemoteCancelAttempted:   true,
@@ -171,6 +190,23 @@ func (r *runTestRouter) HandleSessionActionTyped(ctx context.Context, req middle
 	default:
 		return middleware.SessionActionResult{Action: req.Action}, nil
 	}
+}
+
+func cloneSessionCleanupResult(in middleware.SessionCleanupResult) middleware.SessionCleanupResult {
+	out := in
+	if in.ForkChildren != nil {
+		out.ForkChildren = make([]middleware.SessionCleanupResult, len(in.ForkChildren))
+		for i, child := range in.ForkChildren {
+			out.ForkChildren[i] = cloneSessionCleanupResult(child)
+		}
+	}
+	if in.RelatedSessions != nil {
+		out.RelatedSessions = append([]middleware.SessionCleanupRelatedSession(nil), in.RelatedSessions...)
+	}
+	if in.Warnings != nil {
+		out.Warnings = append([]string(nil), in.Warnings...)
+	}
+	return out
 }
 
 func (r *runTestRouter) HandleWorkspaceAction(context.Context, string, string, string) (string, error) {
@@ -215,7 +251,7 @@ func (r *runTestRouter) AttachRunContext(_ context.Context, req middleware.RunCo
 func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.T) {
 	router := &runTestRouter{
 		reconcile: &middleware.AgentClientReconcileResult{
-			Reaped: []middleware.AgentClientRef{{AgentID: "opencode", WorkspacePath: "/home/jose"}},
+			Reaped: []middleware.AgentClientRef{{AgentID: "opencode", WorkspacePath: "/tmp/eval-ws"}},
 		},
 	}
 	server := NewServer(router).WithTraceStorage(memstore.New())
@@ -241,10 +277,10 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 		t.Fatalf("expected workspace path routed, got %q", router.lastConversation.WorkspacePath)
 	}
 	if len(router.sessionActions) < 3 {
-		t.Fatalf("expected new/status/cleanup actions, got %+v", router.sessionActions)
+		t.Fatalf("expected new/list/cleanup actions, got %+v", router.sessionActions)
 	}
-	if router.sessionActions[0].Action != "status" {
-		t.Fatalf("expected initial status snapshot first, got %+v", router.sessionActions[0])
+	if router.sessionActions[0].Action != "list" || !router.sessionActions[0].LocalOnly {
+		t.Fatalf("expected initial local-only list snapshot first, got %+v", router.sessionActions[0])
 	}
 	for _, action := range router.sessionActions {
 		if action.Action == "list" && !action.LocalOnly {
@@ -264,6 +300,9 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
+	if newAction.OwnerRunID != resp.RunID {
+		t.Fatalf("ephemeral run session must carry owner run id, got %q want %q", newAction.OwnerRunID, resp.RunID)
+	}
 	if resp.Cleanup == nil || !resp.Cleanup.RemoteCanceled || !resp.Cleanup.LocalForgotten {
 		t.Fatalf("expected cleanup proof in response, got %+v", resp.Cleanup)
 	}
@@ -276,6 +315,63 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 	}
 	if !hasEventKind(events, "session.policy.applied") || !hasEventKind(events, "session.cleanup") {
 		t.Fatalf("expected policy and cleanup events, got %+v", events)
+	}
+}
+
+func TestHandleRuns_EphemeralCleanupFailsRetainedReconciledClient(t *testing.T) {
+	router := &runTestRouter{
+		reconcile: &middleware.AgentClientReconcileResult{
+			Retained: []middleware.AgentClientRef{{
+				LogicalSessionID: "retained-logical",
+				RemoteSessionID:  "retained-remote",
+				AgentID:          "opencode",
+				ProtocolKind:     "acp",
+				WorkspacePath:    "/tmp/eval-ws",
+			}},
+		},
+	}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "noema-eval-channel-retained-client",
+		"agent_id":       "opencode",
+		"input":          "run eval",
+		"workspace_path": "/tmp/eval-ws",
+		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
+		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected cleanup failure 500, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp runresponse.Error
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Cleanup == nil || resp.Cleanup.Clean || resp.Cleanup.CleanupStrength != sessioncleanup.StrengthFailed {
+		t.Fatalf("retained reconcile client must fail cleanup proof, got %+v", resp.Cleanup)
+	}
+	if resp.Cleanup.FailureCode != sessioncleanup.FailureRunRelatedSessionRetained {
+		t.Fatalf("expected retained reconcile failure code, got %+v", resp.Cleanup)
+	}
+	if len(resp.Cleanup.RelatedSessions) != 1 {
+		t.Fatalf("expected retained reconciled client in related sessions, got %+v", resp.Cleanup.RelatedSessions)
+	}
+	related := resp.Cleanup.RelatedSessions[0]
+	if !related.Retained || related.AgentID != "opencode" || related.WorkspacePath != "/tmp/eval-ws" {
+		t.Fatalf("expected retained opencode client proof, got %+v", related)
+	}
+	if related.LogicalSessionID != "retained-logical" || related.RemoteSessionID != "retained-remote" {
+		t.Fatalf("expected retained client ownership details, got %+v", related)
+	}
+	cleanupEvent := waitForEvent(t, server.Store(), resp.RunID, "session.cleanup", runtrace.StatusFailed)
+	if cleanupEvent.Metadata["failure_code"] != sessioncleanup.FailureRunRelatedSessionRetained {
+		t.Fatalf("cleanup trace must expose retained reconcile failure, got %+v", cleanupEvent.Metadata)
 	}
 }
 
@@ -352,12 +448,13 @@ func TestHandleRuns_ProjectsStructuralToolEventsFromRouteNotifier(t *testing.T) 
 	}
 }
 
-func TestHandleRuns_EphemeralCleanupTargetsPolicySessionWhenActiveChanges(t *testing.T) {
+func TestHandleRuns_EphemeralCleanupCleansRunCreatedActiveSessionWhenActiveChanges(t *testing.T) {
 	router := &runTestRouter{
 		newSessionID: "policy-session",
-		statusQueue: []middleware.SessionEntry{
-			{LogicalSessionID: "pre-existing", AgentID: "opencode", Active: true},
-			{LogicalSessionID: "active-after-route", AgentID: "opencode", Active: true},
+		listQueue: [][]middleware.SessionEntry{
+			{{LogicalSessionID: "pre-existing", AgentID: "opencode", Active: true}},
+			{{LogicalSessionID: "active-after-route", AgentID: "opencode", Active: true}},
+			{{LogicalSessionID: "active-after-route", AgentID: "opencode", Active: true}},
 		},
 	}
 	server := NewServer(router).WithTraceStorage(memstore.New())
@@ -366,6 +463,56 @@ func TestHandleRuns_EphemeralCleanupTargetsPolicySessionWhenActiveChanges(t *tes
 
 	body, _ := json.Marshal(map[string]interface{}{
 		"channel_id":     "noema-eval-channel-active-switch",
+		"agent_id":       "opencode",
+		"input":          "run eval",
+		"workspace_path": "/tmp/eval-ws",
+		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
+		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	cleanupTargets := []string{}
+	for _, action := range router.sessionActions {
+		if action.Action == "cleanup" {
+			cleanupTargets = append(cleanupTargets, action.Target)
+		}
+	}
+	if strings.Join(cleanupTargets, ",") != "policy-session,active-after-route" {
+		t.Fatalf("expected cleanup of policy and run-created active session, got %+v", cleanupTargets)
+	}
+	var resp runresponse.Success
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Cleanup == nil || !resp.Cleanup.Clean || resp.Cleanup.CleanupStrength != sessioncleanup.StrengthStrong {
+		t.Fatalf("run-created related session must be cleaned, got %+v", resp.Cleanup)
+	}
+	if len(resp.Cleanup.RelatedSessions) != 1 || resp.Cleanup.RelatedSessions[0].LogicalSessionID != "active-after-route" ||
+		resp.Cleanup.RelatedSessions[0].Retained {
+		t.Fatalf("expected non-retained related session cleanup proof, got %+v", resp.Cleanup.RelatedSessions)
+	}
+}
+
+func TestHandleRuns_EphemeralCleanupFailsPreExistingActiveSessionWhenActiveChanges(t *testing.T) {
+	router := &runTestRouter{
+		newSessionID: "policy-session",
+		listQueue: [][]middleware.SessionEntry{
+			{{LogicalSessionID: "pre-existing", AgentID: "opencode", Active: true}},
+			{{LogicalSessionID: "pre-existing", AgentID: "opencode", Active: true}},
+			{{LogicalSessionID: "pre-existing", AgentID: "opencode", Active: true}},
+		},
+	}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "noema-eval-channel-active-switch-preexisting",
 		"agent_id":       "opencode",
 		"input":          "run eval",
 		"workspace_path": "/tmp/eval-ws",
@@ -388,13 +535,13 @@ func TestHandleRuns_EphemeralCleanupTargetsPolicySessionWhenActiveChanges(t *tes
 		t.Fatalf("decode response: %v", err)
 	}
 	if resp.Cleanup == nil || resp.Cleanup.Clean || resp.Cleanup.CleanupStrength != "failed" || !resp.Cleanup.ProcessRetained {
-		t.Fatalf("retained related session must fail cleanup proof, got %+v", resp.Cleanup)
+		t.Fatalf("retained pre-existing related session must fail cleanup proof, got %+v", resp.Cleanup)
 	}
 	if resp.Cleanup.FailureCode != sessioncleanup.FailureRunRelatedSessionRetained {
 		t.Fatalf("expected retained-session failure code, got %+v", resp.Cleanup)
 	}
-	if len(resp.Cleanup.RelatedSessions) != 1 || resp.Cleanup.RelatedSessions[0].LogicalSessionID != "active-after-route" {
-		t.Fatalf("expected retained related session in cleanup proof, got %+v", resp.Cleanup.RelatedSessions)
+	if len(resp.Cleanup.RelatedSessions) != 1 || resp.Cleanup.RelatedSessions[0].LogicalSessionID != "pre-existing" {
+		t.Fatalf("expected retained pre-existing related session in cleanup proof, got %+v", resp.Cleanup.RelatedSessions)
 	}
 	cleanupEvent := waitForEvent(t, server.Store(), resp.RunID, "session.cleanup", runtrace.StatusFailed)
 	if cleanupEvent.Metadata["process_retained"] != true {
@@ -414,6 +561,7 @@ func TestHandleRuns_EphemeralCleanupIncludesNewOwnedRelatedSessions(t *testing.T
 		},
 		listQueue: [][]middleware.SessionEntry{
 			{{LogicalSessionID: "pre-existing", AgentID: "opencode", Active: true}},
+			{{LogicalSessionID: "policy-session", AgentID: "opencode", Ephemeral: true, CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal, Active: true}},
 			{
 				{LogicalSessionID: "pre-existing", AgentID: "opencode"},
 				{LogicalSessionID: "policy-session", AgentID: "opencode", Ephemeral: true, CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal, Active: true},
@@ -462,6 +610,200 @@ func TestHandleRuns_EphemeralCleanupIncludesNewOwnedRelatedSessions(t *testing.T
 	}
 }
 
+func TestHandleRuns_EphemeralCleanupDoesNotRecleanForkChildrenCoveredByParentCleanup(t *testing.T) {
+	router := &runTestRouter{
+		newSessionID: "policy-session",
+		statusQueue: []middleware.SessionEntry{
+			{LogicalSessionID: "pre-existing", AgentID: "opencode", Active: true},
+			{LogicalSessionID: "policy-session", AgentID: "opencode", Active: true},
+		},
+		listQueue: [][]middleware.SessionEntry{
+			{{LogicalSessionID: "pre-existing", AgentID: "opencode", Active: true}},
+			{{LogicalSessionID: "policy-session", AgentID: "opencode", Ephemeral: true, CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal, Active: true}},
+			{
+				{LogicalSessionID: "pre-existing", AgentID: "opencode"},
+				{LogicalSessionID: "policy-session", AgentID: "opencode", Ephemeral: true, CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal, Active: true},
+				{LogicalSessionID: "fork-child", RemoteSessionID: "fork-remote", AgentID: "opencode", Ephemeral: true, CleanupPolicy: middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal, ParentSessionID: "policy-session"},
+			},
+		},
+		cleanupByTarget: map[string]middleware.SessionCleanupResult{
+			"policy-session": {
+				LogicalSessionID:     "policy-session",
+				RemoteSessionID:      "policy-remote",
+				AgentID:              "opencode",
+				ProtocolKind:         "acp",
+				Clean:                true,
+				StrongCleanup:        true,
+				CleanupStrength:      sessioncleanup.StrengthStrong,
+				ProcessReapAttempted: true,
+				ProcessReaped:        true,
+				LocalForgotten:       true,
+				ForkChildrenCleaned:  1,
+				ForkChildren: []middleware.SessionCleanupResult{
+					{
+						LogicalSessionID: "fork-child",
+						RemoteSessionID:  "fork-remote",
+						AgentID:          "opencode",
+						ProtocolKind:     "acp",
+						Clean:            true,
+						StrongCleanup:    true,
+						CleanupStrength:  sessioncleanup.StrengthStrong,
+						ProcessReaped:    true,
+						LocalForgotten:   true,
+					},
+				},
+			},
+		},
+	}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "noema-eval-channel-fork-child-covered",
+		"agent_id":       "opencode",
+		"input":          "run eval",
+		"workspace_path": "/tmp/eval-ws",
+		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
+		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	cleanupTargets := []string{}
+	for _, action := range router.sessionActions {
+		if action.Action == "cleanup" {
+			cleanupTargets = append(cleanupTargets, action.Target)
+		}
+	}
+	if strings.Join(cleanupTargets, ",") != "policy-session" {
+		t.Fatalf("parent cleanup already covered fork child; got cleanup targets %+v", cleanupTargets)
+	}
+	var resp runresponse.Success
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Cleanup == nil || !resp.Cleanup.Clean || !resp.Cleanup.StrongCleanup {
+		t.Fatalf("expected strong cleanup response, got %+v", resp.Cleanup)
+	}
+	if len(resp.Cleanup.RelatedSessions) != 1 {
+		t.Fatalf("expected covered fork child related proof, got %+v", resp.Cleanup.RelatedSessions)
+	}
+	related := resp.Cleanup.RelatedSessions[0]
+	if related.LogicalSessionID != "fork-child" || related.Retained || related.Reason != "run_related_session_cleaned" {
+		t.Fatalf("expected non-retained covered fork child, got %+v", related)
+	}
+}
+
+func TestHandleRuns_EphemeralCleanupDoesNotRecleanRelatedParentCoveredByChildCleanup(t *testing.T) {
+	router := &runTestRouter{
+		newSessionID: "fork-child",
+		statusQueue: []middleware.SessionEntry{
+			{},
+			{LogicalSessionID: "fork-child", AgentID: "opencode", Active: true},
+		},
+		listQueue: [][]middleware.SessionEntry{
+			nil,
+			{
+				{
+					LogicalSessionID: "fork-child",
+					RemoteSessionID:  "fork-remote",
+					AgentID:          "opencode",
+					Ephemeral:        true,
+					CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+					ParentSessionID:  "fork-parent",
+					ParentRemoteID:   "parent-remote",
+					Active:           true,
+				},
+			},
+			{
+				{
+					LogicalSessionID: "fork-child",
+					RemoteSessionID:  "fork-remote",
+					AgentID:          "opencode",
+					Ephemeral:        true,
+					CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+					ParentSessionID:  "fork-parent",
+					ParentRemoteID:   "parent-remote",
+					Active:           true,
+				},
+				{
+					LogicalSessionID: "fork-parent",
+					RemoteSessionID:  "parent-remote",
+					AgentID:          "opencode",
+					Ephemeral:        true,
+					CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+				},
+			},
+		},
+		cleanupByTarget: map[string]middleware.SessionCleanupResult{
+			"fork-child": {
+				LogicalSessionID:     "fork-child",
+				RemoteSessionID:      "fork-remote",
+				AgentID:              "opencode",
+				ProtocolKind:         "acp",
+				Clean:                true,
+				StrongCleanup:        true,
+				CleanupStrength:      sessioncleanup.StrengthStrong,
+				RemoteCanceled:       true,
+				ProcessReapAttempted: true,
+				ProcessReaped:        true,
+				LocalForgotten:       true,
+				RelatedSessions: []middleware.SessionCleanupRelatedSession{
+					{
+						LogicalSessionID: "fork-parent",
+						RemoteSessionID:  "parent-remote",
+						AgentID:          "opencode",
+						Ephemeral:        true,
+						CleanupPolicy:    middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+						Retained:         false,
+						Reason:           sessioncleanup.ReasonForkParentAgentClientOwner,
+					},
+				},
+			},
+		},
+	}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "noema-eval-channel-covered-parent",
+		"agent_id":       "opencode",
+		"input":          "run eval",
+		"workspace_path": "/tmp/eval-ws",
+		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
+		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	cleanupTargets := []string{}
+	for _, action := range router.sessionActions {
+		if action.Action == "cleanup" {
+			cleanupTargets = append(cleanupTargets, action.Target)
+		}
+	}
+	if strings.Join(cleanupTargets, ",") != "fork-child" {
+		t.Fatalf("child cleanup already covered related parent; got cleanup targets %+v", cleanupTargets)
+	}
+	var resp runresponse.Success
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Cleanup == nil || !resp.Cleanup.Clean || !resp.Cleanup.StrongCleanup {
+		t.Fatalf("expected strong cleanup response, got %+v", resp.Cleanup)
+	}
+}
+
 func TestHandleRuns_NewEphemeralDeleteAfterRunCleansWhenRouteFails(t *testing.T) {
 	router := &runTestRouter{routeErr: errors.New("route failed")}
 	server := NewServer(router).WithTraceStorage(memstore.New())
@@ -491,6 +833,59 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCleansWhenRouteFails(t *testing.T)
 	}
 	if resp.Cleanup == nil || !resp.Cleanup.Clean || !resp.Cleanup.LocalForgotten {
 		t.Fatalf("expected cleanup proof in error response, got %+v", resp.Cleanup)
+	}
+}
+
+func TestHandleRuns_RouteFailureAcceptsUnmaterializedProcessAbsenceProof(t *testing.T) {
+	router := &runTestRouter{
+		routeErr: errors.New("strict guidance render failed"),
+		cleanupByTarget: map[string]middleware.SessionCleanupResult{
+			"logical-eval": {
+				LogicalSessionID:     "logical-eval",
+				AgentID:              "opencode",
+				ProtocolKind:         "acp",
+				Clean:                true,
+				StrongCleanup:        true,
+				CleanupStrength:      sessioncleanup.StrengthStrong,
+				ProcessReapAttempted: true,
+				ProcessAbsent:        true,
+				ProcessAbsenceReason: sessioncleanup.NoMatchingCachedAgentClient,
+				LocalForgotten:       true,
+			},
+		},
+	}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "eval-channel-route-fail-unmaterialized",
+		"agent_id":       "opencode",
+		"input":          "run eval",
+		"workspace_path": "/tmp/eval-ws",
+		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
+		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected route failure 500, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp runresponse.Error
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode error response: %v; body=%s", err, w.Body.String())
+	}
+	if resp.Cleanup == nil || !resp.Cleanup.Clean || !resp.Cleanup.StrongCleanup || !resp.Cleanup.ProcessAbsent {
+		t.Fatalf("expected strong process absence cleanup proof, got %+v", resp.Cleanup)
+	}
+	if resp.Cleanup.FailureCode != "" || resp.Cleanup.ProcessAbsenceReason != sessioncleanup.NoMatchingCachedAgentClient {
+		t.Fatalf("unexpected cleanup failure/absence reason: %+v", resp.Cleanup)
+	}
+	event := waitForEvent(t, server.Store(), resp.RunID, "session.cleanup", runtrace.StatusCompleted)
+	if event.Metadata["process_absent"] != true || event.Metadata["process_absence_reason"] != sessioncleanup.NoMatchingCachedAgentClient {
+		t.Fatalf("cleanup trace must expose process absence proof, got %+v", event.Metadata)
 	}
 }
 
@@ -680,6 +1075,115 @@ func TestHandleRunActionsCancelCleansEphemeralRunWithDetachedContext(t *testing.
 	waitForLog(t, &logs, "matrix async run cancelled")
 	if strings.Contains(logs.String(), "matrix async run bridge failed") {
 		t.Fatalf("expected async cancel to avoid generic bridge failure log, got %s", logs.String())
+	}
+}
+
+func TestHandleRunActionsCancelRaceCleanupTracksLateSelectedRemoteSession(t *testing.T) {
+	router := &runTestRouter{
+		newSessionID:    "requested-session",
+		routeWaitCancel: true,
+		routeStarted:    make(chan struct{}),
+		listQueue: [][]middleware.SessionEntry{
+			{},
+			{{
+				LogicalSessionID: "selected-session",
+				RemoteSessionID:  "remote-session",
+				AgentID:          "opencode",
+				ProtocolKind:     "acp",
+				WorkspacePath:    "/tmp/eval-ws",
+				Status:           "active",
+				Active:           true,
+			}},
+			{{
+				LogicalSessionID: "selected-session",
+				RemoteSessionID:  "remote-session",
+				AgentID:          "opencode",
+				ProtocolKind:     "acp",
+				WorkspacePath:    "/tmp/eval-ws",
+				Status:           "active",
+				Active:           true,
+			}},
+		},
+		cleanupByTarget: map[string]middleware.SessionCleanupResult{
+			"requested-session": {
+				LogicalSessionID:        "requested-session",
+				AgentID:                 "opencode",
+				ProtocolKind:            "acp",
+				Clean:                   true,
+				CleanupStrength:         sessioncleanup.StrengthRetained,
+				ProcessRetained:         true,
+				ProcessRetentionAllowed: true,
+				ProcessRetentionReason:  sessioncleanup.OtherLocalSessionsStillReferenceAgentClient,
+				LocalForgotten:          true,
+			},
+			"selected-session": {
+				LogicalSessionID:      "selected-session",
+				RemoteSessionID:       "remote-session",
+				AgentID:               "opencode",
+				ProtocolKind:          "acp",
+				Clean:                 true,
+				StrongCleanup:         true,
+				CleanupStrength:       sessioncleanup.StrengthStrong,
+				RemoteCancelAttempted: true,
+				RemoteCanceled:        true,
+				ProcessReapAttempted:  true,
+				ProcessReaped:         true,
+				LocalForgotten:        true,
+			},
+		},
+	}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "eval-cancel-create-race",
+		"agent_id":       "opencode",
+		"execution_mode": "async",
+		"input":          "run until cancelled",
+		"workspace_path": "/tmp/eval-ws",
+		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
+		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 async run, got %d: %s", w.Code, w.Body.String())
+	}
+	var runResp runresponse.Success
+	if err := json.Unmarshal(w.Body.Bytes(), &runResp); err != nil {
+		t.Fatalf("decode run response: %v", err)
+	}
+	select {
+	case <-router.routeStarted:
+	case <-time.After(time.Second):
+		t.Fatalf("route did not start")
+	}
+	if router.lastConversation.LogicalSessionID != "requested-session" {
+		t.Fatalf("run route must bind the prepared ephemeral session, got %+v", router.lastConversation)
+	}
+
+	actionBody, _ := json.Marshal(map[string]interface{}{"action": "cancel", "reason": "test_create_race"})
+	actionReq := httptest.NewRequest(http.MethodPost, RunResourcePrefixV1+runResp.RunID+"/actions", bytes.NewReader(actionBody))
+	actionW := httptest.NewRecorder()
+	mux.ServeHTTP(actionW, actionReq)
+	if actionW.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 cancel, got %d: %s", actionW.Code, actionW.Body.String())
+	}
+
+	cleanupEvent := waitForEvent(t, server.Store(), runResp.RunID, "session.cleanup", runtrace.StatusCompleted)
+	if cleanupEvent.Metadata["logical_session_id"] != "selected-session" ||
+		cleanupEvent.Metadata["remote_session_id"] != "remote-session" ||
+		cleanupEvent.Metadata["strong_cleanup"] != true ||
+		cleanupEvent.Metadata["cleanup_strength"] != sessioncleanup.StrengthStrong ||
+		cleanupEvent.Metadata["process_retained"] == true {
+		t.Fatalf("cleanup must target late selected remote session strongly, got %+v", cleanupEvent.Metadata)
+	}
+	for _, action := range router.sessionActions {
+		if action.Action == "cleanup" && action.Target == "requested-session" {
+			t.Fatalf("cancel race cleanup must not target stale requested session: %+v", router.sessionActions)
+		}
 	}
 }
 

@@ -46,9 +46,11 @@ const clientReapTombstoneTTL = 5 * time.Minute
 type Router struct {
 	resolver middleware.AgentEndpointResolver
 
-	mu      sync.RWMutex
-	clients map[string]middleware.ConversationClient
-	factory map[middleware.ProtocolKind]middleware.ConversationFactory
+	mu           sync.RWMutex
+	clients      map[string]middleware.ConversationClient
+	factory      map[middleware.ProtocolKind]middleware.ConversationFactory
+	clientCtx    context.Context
+	clientCancel context.CancelFunc
 
 	// Tombstones preserve short-lived OS/process cleanup proof when a dead
 	// stdio client is evicted by keepalive before strict session cleanup runs.
@@ -75,9 +77,12 @@ type Router struct {
 
 // NewRouter creates a new agent Router with the given endpoint resolver.
 func NewRouter(resolver middleware.AgentEndpointResolver) *Router {
+	clientCtx, clientCancel := context.WithCancel(context.Background())
 	return &Router{
 		resolver:         resolver,
 		clients:          make(map[string]middleware.ConversationClient),
+		clientCtx:        clientCtx,
+		clientCancel:     clientCancel,
 		clientTombstones: make(map[string]agentClientTombstone),
 		factory: map[middleware.ProtocolKind]middleware.ConversationFactory{
 			middleware.ProtocolKindACP: &acpConversationFactory{},
@@ -131,6 +136,9 @@ func (r *Router) Close() {
 	r.StopKeepalive()
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.clientCancel != nil {
+		r.clientCancel()
+	}
 	for id, client := range r.clients {
 		_ = client.Close()
 		delete(r.clients, id)
@@ -226,11 +234,17 @@ func (r *Router) preWarm(ctx context.Context, agentID string, cwd string) error 
 
 // Route finds the matching Agent Endpoint, connects a JSON-RPC struct, and executes the Prompt.
 func (r *Router) Route(ctx context.Context, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
-	client, err := r.getOrCreateClient(ctx, req.AgentID, r.effectiveCwd(req.WorkspacePath))
+	cwd := r.effectiveCwd(req.WorkspacePath)
+	key := clientCacheKey(req.AgentID, cwd)
+	client, err := r.getOrCreateClient(ctx, req.AgentID, cwd)
 	if err != nil {
 		return "", "", nil, middleware.ConversationMetadata{}, err
 	}
-	return r.executePrompt(ctx, client, req)
+	output, remoteSessionID, tools, metadata, err := r.executePrompt(ctx, client, req)
+	if err != nil {
+		r.evictClientAfterTurnFailure(key, client, remoteSessionID, err)
+	}
+	return output, remoteSessionID, tools, metadata, err
 }
 
 func (r *Router) createClient(ctx context.Context, agentID string, cwd string, log *slog.Logger) (middleware.ConversationClient, middleware.ProtocolKind, error) {
@@ -244,7 +258,7 @@ func (r *Router) createClient(ctx context.Context, agentID string, cwd string, l
 	if !ok {
 		return nil, "", fmt.Errorf("unsupported protocol kind: %s", endpoint.Kind)
 	}
-	client, err := factory.NewClient(ctx, endpoint, middleware.ConversationFactoryDeps{
+	client, err := factory.NewClient(r.providerClientContext(ctx), endpoint, middleware.ConversationFactoryDeps{
 		FS:        r.fs,
 		Cwd:       cwd,
 		Process:   r.proc,
@@ -254,6 +268,14 @@ func (r *Router) createClient(ctx context.Context, agentID string, cwd string, l
 		return nil, "", annotateProviderFailureAgent(err, agentID)
 	}
 	return client, endpoint.Kind, nil
+}
+
+func (r *Router) providerClientContext(fallback context.Context) context.Context {
+	ctx := r.clientCtx
+	if ctx != nil && ctx.Err() == nil {
+		return ctx
+	}
+	return fallback
 }
 
 // ----------------------------------------------------------------------------
@@ -339,15 +361,18 @@ func pickPreferredID(available []string) string {
 //  4. Collect final response and return
 func (r *Router) executePrompt(ctx context.Context, client middleware.ConversationClient, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
 	turn := middleware.ConversationTurn{
-		AgentID:           req.AgentID,
-		LogicalSessionID:  req.LogicalSessionID,
-		RemoteSessionID:   req.AgentSessionID,
-		WorkspacePath:     req.WorkspacePath,
-		Message:           req.Message,
-		SidecarCapsules:   req.SidecarCapsules,
-		Tools:             req.Tools,
-		ThoughtNotifier:   req.ThoughtNotifier,
-		LiveContextAttach: req.LiveContextAttach,
+		AgentID:               req.AgentID,
+		LogicalSessionID:      req.LogicalSessionID,
+		RemoteSessionID:       req.AgentSessionID,
+		WorkspacePath:         req.WorkspacePath,
+		Message:               req.Message,
+		ContentBlocks:         req.ContentBlocks,
+		SidecarCapsules:       req.SidecarCapsules,
+		Tools:                 req.Tools,
+		McpServers:            req.McpServers,
+		AdditionalDirectories: req.AdditionalDirectories,
+		ThoughtNotifier:       req.ThoughtNotifier,
+		LiveContextAttach:     req.LiveContextAttach,
 	}
 	result, err := client.ExecuteTurn(ctx, turn)
 	if err != nil && turn.RemoteSessionID != "" && isSessionNotFoundError(err) && !req.StrictSession {

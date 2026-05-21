@@ -16,7 +16,7 @@ const forkCleanupTimeout = 30 * time.Second
 func (m *Manager) runForkChildWorkflow(ctx context.Context, req middleware.SessionActionRequest, childMeta SessionMeta, cleanupPolicy string) (*middleware.SessionForkArtifact, *middleware.SessionCleanupResult, error) {
 	artifact, err := m.runForkChildTurn(ctx, req, childMeta)
 	if err != nil {
-		cleanup, cleanupErr := m.cleanupForkChildIfRequested(ctx, req, childMeta.ID, cleanupPolicy)
+		cleanup, cleanupErr := m.cleanupForkChildIfRequested(ctx, req, childMeta, cleanupPolicy)
 		if cleanupErr != nil {
 			err = errors.Join(err, fmt.Errorf("fork child cleanup failed: %w", cleanupErr))
 		}
@@ -29,7 +29,7 @@ func (m *Manager) runForkChildWorkflow(ctx context.Context, req middleware.Sessi
 	if artifact == nil || !forkCleanupRequested(req) {
 		return artifact, nil, nil
 	}
-	cleanup, err := m.cleanupForkChild(ctx, req, childMeta.ID, cleanupPolicy)
+	cleanup, err := m.cleanupForkChild(ctx, req, childMeta, cleanupPolicy)
 	if err == nil {
 		return artifact, cleanup, nil
 	}
@@ -60,24 +60,34 @@ func (m *Manager) runForkChildTurn(ctx context.Context, req middleware.SessionAc
 	return &middleware.SessionForkArtifact{Kind: "child_turn_response", Content: output}, nil
 }
 
-func (m *Manager) cleanupForkChild(ctx context.Context, req middleware.SessionActionRequest, childID string, cleanupPolicy string) (*middleware.SessionCleanupResult, error) {
-	if _, found, err := m.loadSessionMeta(childID); err == nil && !found {
-		return alreadyCleanedForkChild(childID, cleanupPolicy), nil
+func (m *Manager) cleanupForkChild(ctx context.Context, req middleware.SessionActionRequest, childMeta SessionMeta, cleanupPolicy string) (*middleware.SessionCleanupResult, error) {
+	if _, found, err := m.loadSessionMeta(childMeta.ID); err == nil && !found {
+		return alreadyCleanedForkChild(childMeta.ID, cleanupPolicy), nil
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), forkCleanupTimeout)
 	defer cancel()
 	result, err := m.cleanupSessionTyped(cleanupCtx, sessionCleanupRequest{
-		ChannelID:        req.ChannelID,
-		Lang:             m.wizard.GetLanguage(req.ChannelID),
-		Target:           childID,
-		Action:           "cleanup",
-		CleanupPolicy:    cleanupPolicy,
-		ForceForgetLocal: true,
+		ChannelID:                      req.ChannelID,
+		Lang:                           m.wizard.GetLanguage(req.ChannelID),
+		Target:                         childMeta.ID,
+		Action:                         "cleanup",
+		CleanupPolicy:                  cleanupPolicy,
+		ForceForgetLocal:               true,
+		SuppressForkParentOwnerCleanup: !m.canRemediateForkParentOwner(childMeta, cleanupPolicy),
 	})
 	if err != nil {
 		return result.Cleanup, err
 	}
+	m.finalizeForkChildCleanupProof(childMeta, result.Cleanup)
+	if result.Cleanup != nil && !result.Cleanup.Clean {
+		return result.Cleanup, sessioncleanup.FailureError(result.Cleanup, "")
+	}
 	return result.Cleanup, nil
+}
+
+func (m *Manager) canRemediateForkParentOwner(childMeta SessionMeta, cleanupPolicy string) bool {
+	parent, found := m.loadForkParentMeta(childMeta)
+	return found && forkParentOwnerCleanupAllowed(childMeta, parent, cleanupPolicy)
 }
 
 func alreadyCleanedForkChild(childID string, cleanupPolicy string) *middleware.SessionCleanupResult {
@@ -96,11 +106,11 @@ func alreadyCleanedForkChild(childID string, cleanupPolicy string) *middleware.S
 	}
 }
 
-func (m *Manager) cleanupForkChildIfRequested(ctx context.Context, req middleware.SessionActionRequest, childID string, cleanupPolicy string) (*middleware.SessionCleanupResult, error) {
+func (m *Manager) cleanupForkChildIfRequested(ctx context.Context, req middleware.SessionActionRequest, childMeta SessionMeta, cleanupPolicy string) (*middleware.SessionCleanupResult, error) {
 	if !forkCleanupRequested(req) {
 		return nil, nil
 	}
-	return m.cleanupForkChild(ctx, req, childID, cleanupPolicy)
+	return m.cleanupForkChild(ctx, req, childMeta, cleanupPolicy)
 }
 
 func forkCleanupRequested(req middleware.SessionActionRequest) bool {

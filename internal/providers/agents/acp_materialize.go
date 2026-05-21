@@ -29,14 +29,22 @@ func (c *acpConversationClient) createACPRemoteSession(ctx context.Context, req 
 		cwd = c.cwd
 	}
 	resp, err := c.client.NewSession(ctx, acpNewSessionRequest{
-		ClientTitle: strings.TrimSpace(req.LogicalSessionID),
-		Cwd:         cwd,
-		McpServers:  []acpMcpServerConfig{},
-		Tools:       toZedACPTools(req.Tools),
+		ClientTitle:           strings.TrimSpace(req.LogicalSessionID),
+		Cwd:                   cwd,
+		AdditionalDirectories: c.additionalDirectories(req.AdditionalDirectories),
+		McpServers:            c.materializeMCPServers(req.McpServers),
+		Tools:                 toZedACPTools(req.Tools),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("ACP new session failed: %w", err)
 	}
 	c.markLoadedSession(resp.SessionID)
 	return resp, nil
+}
+
+func (c *acpConversationClient) materializeMCPServers(reqServers []middleware.McpServerConfig) []acpMcpServerConfig {
+	if len(reqServers) > 0 {
+		return toZedACPMCPServers(reqServers)
+	}
+	return cloneACPMCPServers(c.mcpServers)
 }

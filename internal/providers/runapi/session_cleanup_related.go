@@ -42,7 +42,10 @@ func (r *runRelatedSessionRecorder) record(snapshot sessionSnapshot, active bool
 	r.seen[key] = struct{}{}
 
 	_, existedBefore := r.beforeSet[key]
-	if !existedBefore && snapshotOwnedByRun(snapshot) {
+	if !existedBefore && r.snapshotOwnedByCurrentRun(snapshot) {
+		if r.recordIfCoveredByPrimaryCleanup(snapshot, active) {
+			return
+		}
 		r.cleanupOwned(snapshot, active)
 		return
 	}
@@ -66,6 +69,85 @@ func (r *runRelatedSessionRecorder) cleanupOwned(snapshot sessionSnapshot, activ
 	}
 	r.cleanup.Warnings = sessioncleanup.AppendWarning(r.cleanup.Warnings, sessioncleanup.WarningRunRelatedSessionCleanupFailed)
 	markRunRelatedSessionRetained(r.cleanup, snapshot, active, "run_related_session_cleanup_failed")
+}
+
+func (r *runRelatedSessionRecorder) recordIfCoveredByPrimaryCleanup(snapshot sessionSnapshot, active bool) bool {
+	if related, found := findCoveredRelatedSession(r.cleanup, snapshot); found {
+		if !related.Retained {
+			r.cleanup.RelatedSessions = append(r.cleanup.RelatedSessions, relatedSession(snapshot, active, false, "run_related_session_cleaned"))
+			return true
+		}
+		r.cleanup.Warnings = sessioncleanup.AppendWarning(r.cleanup.Warnings, sessioncleanup.WarningRunRelatedSessionCleanupFailed)
+		markRunRelatedSessionRetained(r.cleanup, snapshot, active, sessioncleanup.WarningRunRelatedSessionCleanupFailed)
+		if r.cleanupErr == nil {
+			r.cleanupErr = sessioncleanup.FailureError(r.cleanup, "")
+		}
+		return true
+	}
+	covered, found := findCoveredRelatedCleanup(r.cleanup, snapshot)
+	if !found {
+		return false
+	}
+	if covered.Clean {
+		r.cleanup.RelatedSessions = append(r.cleanup.RelatedSessions, relatedSession(snapshot, active, false, "run_related_session_cleaned"))
+		return true
+	}
+	r.cleanup.Warnings = sessioncleanup.AppendWarning(r.cleanup.Warnings, sessioncleanup.WarningRunRelatedSessionCleanupFailed)
+	markRunRelatedSessionRetained(r.cleanup, snapshot, active, sessioncleanup.WarningRunRelatedSessionCleanupFailed)
+	if r.cleanupErr == nil {
+		r.cleanupErr = sessioncleanup.FailureError(r.cleanup, "")
+	}
+	return true
+}
+
+func findCoveredRelatedSession(cleanup *middleware.SessionCleanupResult, snapshot sessionSnapshot) (middleware.SessionCleanupRelatedSession, bool) {
+	if cleanup == nil {
+		return middleware.SessionCleanupRelatedSession{}, false
+	}
+	for _, related := range cleanup.RelatedSessions {
+		if relatedSessionMatchesSnapshot(related, snapshot) {
+			return related, true
+		}
+	}
+	for _, child := range cleanup.ForkChildren {
+		if related, found := findCoveredRelatedSession(&child, snapshot); found {
+			return related, true
+		}
+	}
+	return middleware.SessionCleanupRelatedSession{}, false
+}
+
+func findCoveredRelatedCleanup(cleanup *middleware.SessionCleanupResult, snapshot sessionSnapshot) (middleware.SessionCleanupResult, bool) {
+	if cleanup == nil {
+		return middleware.SessionCleanupResult{}, false
+	}
+	for _, child := range cleanup.ForkChildren {
+		if cleanupMatchesSnapshot(child, snapshot) {
+			return child, true
+		}
+		if nested, found := findCoveredRelatedCleanup(&child, snapshot); found {
+			return nested, true
+		}
+	}
+	return middleware.SessionCleanupResult{}, false
+}
+
+func cleanupMatchesSnapshot(cleanup middleware.SessionCleanupResult, snapshot sessionSnapshot) bool {
+	logical := strings.TrimSpace(snapshot.LogicalSessionID)
+	if logical != "" && strings.TrimSpace(cleanup.LogicalSessionID) == logical {
+		return true
+	}
+	remote := strings.TrimSpace(snapshot.RemoteSessionID)
+	return remote != "" && strings.TrimSpace(cleanup.RemoteSessionID) == remote
+}
+
+func relatedSessionMatchesSnapshot(related middleware.SessionCleanupRelatedSession, snapshot sessionSnapshot) bool {
+	logical := strings.TrimSpace(snapshot.LogicalSessionID)
+	if logical != "" && strings.TrimSpace(related.LogicalSessionID) == logical {
+		return true
+	}
+	remote := strings.TrimSpace(snapshot.RemoteSessionID)
+	return remote != "" && strings.TrimSpace(related.RemoteSessionID) == remote
 }
 
 func sessionSnapshotSet(snapshots []sessionSnapshot) map[string]struct{} {
@@ -105,6 +187,14 @@ func sameSessionSnapshot(a, b sessionSnapshot) bool {
 
 func snapshotOwnedByRun(snapshot sessionSnapshot) bool {
 	return snapshot.Ephemeral || strings.TrimSpace(snapshot.CleanupPolicy) != ""
+}
+
+func (r *runRelatedSessionRecorder) snapshotOwnedByCurrentRun(snapshot sessionSnapshot) bool {
+	if snapshotOwnedByRun(snapshot) {
+		return true
+	}
+	return strings.TrimSpace(snapshot.AgentID) != "" &&
+		strings.TrimSpace(snapshot.AgentID) == strings.TrimSpace(r.scope.exec.agentID)
 }
 
 func markRunRelatedSessionRetained(cleanup *middleware.SessionCleanupResult, snapshot sessionSnapshot, active bool, reason string) {

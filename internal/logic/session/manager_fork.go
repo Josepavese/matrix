@@ -196,6 +196,16 @@ func (m *Manager) restoreForkParent(channelID string, plan forkPlan, childID str
 		if restoreID == "" {
 			return activeID, false, nil
 		}
+		if found, err := m.sessionMetaExists(restoreID); err != nil || !found {
+			if err != nil {
+				return "", false, err
+			}
+			state, stateErr := m.getChannelState(channelID)
+			if stateErr != nil {
+				return activeID, false, stateErr
+			}
+			return state.ActiveSessionID, false, nil
+		}
 		if err := m.updateChannelState(channelID, restoreID); err != nil {
 			return "", false, err
 		}
@@ -206,6 +216,11 @@ func (m *Manager) restoreForkParent(channelID string, plan forkPlan, childID str
 		parentRestored = plan.State.ActiveSessionID == plan.Parent.ID
 	}
 	return activeID, parentRestored, nil
+}
+
+func (m *Manager) sessionMetaExists(sessionID string) (bool, error) {
+	_, found, err := m.loadSessionMeta(sessionID)
+	return found, err
 }
 
 func forkActionResult(data forkResultData) middleware.SessionActionResult {

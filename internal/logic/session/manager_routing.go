@@ -69,6 +69,7 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 		AgentSessionID:   meta.AgentSessionID,
 		WorkspacePath:    meta.WorkspacePath,
 		Message:          message,
+		ContentBlocks:    req.ContentBlocks,
 		SidecarCapsules:  req.SidecarCapsules,
 		ThoughtNotifier:  notifier,
 	})

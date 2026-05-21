@@ -25,18 +25,37 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/logic/agentmgr" = 900
 "internal/logic/onboarding" = 1400
 "internal/logic/runtrace" = 830
-# 2026-04-27: complexity-warning cleanup split branch-heavy session logic into focused helpers.
-"internal/logic/session" = 4895
-"internal/middleware" = 900
+# 2026-05-04: fork subtree cleanup proof reconciles child records after parent
+# process reap; forced run-owned child cleanup can remediate parent-owner
+# retention without weakening inline parent-restore safety. Later same-day
+# active-resume hardening adds owner-run proof and real OpenCode fork cleanup
+# acceptance without adding quality warnings. The same-day HTTP standalone fork
+# cleanup regression adds provider-quiescence proof for stdio ACP. 2026-05-08:
+# shared same-workspace provider owners are now explicit non-retained cleanup
+# evidence when the target remote session has strong provider proof.
+"internal/logic/session" = 5250
+"internal/middleware" = 930
 # 2026-04-27: workspace timeline event recording split validation/persistence/state update.
 "internal/logic/workspace" = 910
-# 2026-05-04: Zed ACP v0.12.2 stable resume/close/config options plus
-# official terminal lifecycle and real-provider smoke support.
-"internal/providers/agents" = 2600
-# 2026-04-27: run-level cleanup proofs now account for related sessions/fork children.
-"internal/providers/runapi" = 1120
-# 2026-05-04: Zed ACP schema v0.12.2 stable lifecycle/config surface.
-"pkg/zedacp" = 1160
+# 2026-05-04/05/08: Zed ACP v0.12.2 lifecycle plus session-bound tombstone
+# proof for dead/replaced local ACP clients used by fork subtree cleanup. Final
+# resume cleanup adds scoped reconcile ownership details and no-fresh-stdio
+# lifecycle clients for cleanup-only paths. 2026-05-08 separates cached
+# provider-client lifetime from per-request contexts, tombstones dead exact
+# lifecycle clients before cleanup proof, and evicts poisoned workspace clients
+# after cancellable prompt failures so immediate follow-up runs cannot inherit
+# a cancelled ACP client.
+"internal/providers/agents" = 2987
+# 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
+# avoid double-cleaning related fork sessions already proven by child/parent
+# subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
+# 2026-05-08: cancel/session-create race cleanup binds ephemeral runs to the
+# prepared logical session and follows late-selected remote sessions when needed.
+"internal/providers/runapi" = 1230
+# 2026-05-04/05: Zed ACP schema v0.12.2 stable lifecycle/config surface plus
+# observer drain for providers that emit trailing session/update chunks after
+# session/prompt returns.
+"pkg/zedacp" = 1333
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390
@@ -51,14 +70,15 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/logic/session/manager_workspace_commands.go" = 320
 "internal/logic/session/manager_workspace_reads.go" = 520
 "internal/logic/workspace/timeline.go" = 310
+"internal/logic/runnotifier/notifier.go" = 370
 "internal/providers/matrixapi/server.go" = 530
 "internal/providers/agents/a2a_adapter.go" = 320
-"internal/providers/agents/acp_adapter.go" = 450
+"internal/providers/agents/acp_adapter.go" = 560
 "internal/providers/agents/default_handler.go" = 520
 "internal/providers/agents/router.go" = 480
-"internal/providers/agents/router_observer.go" = 330
-"pkg/zedacp/client.go" = 380
-"pkg/zedacp/types.go" = 480
+"internal/providers/agents/router_observer.go" = 400
+"pkg/zedacp/client.go" = 450
+"pkg/zedacp/types.go" = 580
 
 [function_overrides]
 "cmd/mock-agent/main.go::main" = 100

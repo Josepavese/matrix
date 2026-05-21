@@ -71,13 +71,14 @@ func (c *a2aConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 		resp, err := c.client.SendMessage(ctx, req)
 		if err != nil && turn.RemoteSessionID != "" && isA2ASessionNotFound(err) {
 			return c.ExecuteTurn(ctx, middleware.ConversationTurn{
-				AgentID:          turn.AgentID,
-				LogicalSessionID: turn.LogicalSessionID,
-				WorkspacePath:    turn.WorkspacePath,
-				Message:          turn.Message,
-				SidecarCapsules:  turn.SidecarCapsules,
-				Tools:            turn.Tools,
-				ThoughtNotifier:  turn.ThoughtNotifier,
+				AgentID:               turn.AgentID,
+				LogicalSessionID:      turn.LogicalSessionID,
+				WorkspacePath:         turn.WorkspacePath,
+				Message:               turn.Message,
+				SidecarCapsules:       turn.SidecarCapsules,
+				Tools:                 turn.Tools,
+				AdditionalDirectories: turn.AdditionalDirectories,
+				ThoughtNotifier:       turn.ThoughtNotifier,
 			})
 		}
 		if err != nil {
@@ -89,13 +90,14 @@ func (c *a2aConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 	output, nextState, err := c.streamA2A(ctx, req, turn)
 	if err != nil && turn.RemoteSessionID != "" && isA2ASessionNotFound(err) {
 		return c.ExecuteTurn(ctx, middleware.ConversationTurn{
-			AgentID:          turn.AgentID,
-			LogicalSessionID: turn.LogicalSessionID,
-			WorkspacePath:    turn.WorkspacePath,
-			Message:          turn.Message,
-			SidecarCapsules:  turn.SidecarCapsules,
-			Tools:            turn.Tools,
-			ThoughtNotifier:  turn.ThoughtNotifier,
+			AgentID:               turn.AgentID,
+			LogicalSessionID:      turn.LogicalSessionID,
+			WorkspacePath:         turn.WorkspacePath,
+			Message:               turn.Message,
+			SidecarCapsules:       turn.SidecarCapsules,
+			Tools:                 turn.Tools,
+			AdditionalDirectories: turn.AdditionalDirectories,
+			ThoughtNotifier:       turn.ThoughtNotifier,
 		})
 	}
 	if err != nil {

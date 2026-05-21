@@ -232,6 +232,7 @@ var sessionActionErrorStatus = map[string]int{
 	"remote_close":                      http.StatusBadGateway,
 	"remote_delete":                     http.StatusBadGateway,
 	"remote_session_materialize_failed": http.StatusBadGateway,
+	"run_related_session_retained":      http.StatusConflict,
 }
 
 // HandleWorkspaceActions is the typed HTTP handler for workspace control actions.

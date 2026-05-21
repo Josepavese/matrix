@@ -32,6 +32,7 @@ type ClientAPI interface {
 	ListSessions(ctx context.Context) (*ListSessionsResponse, error)
 	ListSessionsWithRequest(ctx context.Context, req ListSessionsRequest) (*ListSessionsResponse, error)
 	CancelSession(ctx context.Context, sessionID string) error
+	CancelRequest(ctx context.Context, req CancelRequestNotification) error
 	CloseSession(ctx context.Context, sessionID string) error
 	DeleteSession(ctx context.Context, sessionID string) error
 	ForkSession(ctx context.Context, req ForkSessionRequest) (*ForkSessionResponse, error)
@@ -39,6 +40,13 @@ type ClientAPI interface {
 	SetRequestHandler(handler RequestHandler)
 	SetMode(ctx context.Context, sessionID, modeID string) error
 	SetConfigOption(ctx context.Context, req SetSessionConfigOptionRequest) (*SetSessionConfigOptionResponse, error)
+	SetSessionModel(ctx context.Context, req SetSessionModelRequest) (*SetSessionModelResponse, error)
+	ListProviders(ctx context.Context, req ListProvidersRequest) (*ListProvidersResponse, error)
+	SetProvider(ctx context.Context, req SetProvidersRequest) (*SetProvidersResponse, error)
+	DisableProvider(ctx context.Context, req DisableProvidersRequest) (*DisableProvidersResponse, error)
+	Logout(ctx context.Context, req LogoutRequest) (*LogoutResponse, error)
+	ExtRequest(ctx context.Context, method string, params interface{}, result interface{}) error
+	ExtNotification(ctx context.Context, method string, params interface{}) error
 }
 
 type InitializeRequest struct {
@@ -48,8 +56,18 @@ type InitializeRequest struct {
 }
 
 type ClientCapabilities struct {
-	Fs       *FsCapability `json:"fs,omitempty"`
-	Terminal bool          `json:"terminal,omitempty"`
+	Fs                *FsCapability          `json:"fs,omitempty"`
+	Terminal          bool                   `json:"terminal,omitempty"`
+	Auth              *AuthCapabilities      `json:"auth,omitempty"`
+	Elicitation       map[string]interface{} `json:"elicitation,omitempty"`
+	Nes               map[string]interface{} `json:"nes,omitempty"`
+	PositionEncodings []string               `json:"positionEncodings,omitempty"`
+	Meta              map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type AuthCapabilities struct {
+	Terminal bool                   `json:"terminal,omitempty"`
+	Meta     map[string]interface{} `json:"_meta,omitempty"`
 }
 
 type FsCapability struct {
@@ -90,10 +108,24 @@ func (r *InitializeResponse) UnmarshalJSON(data []byte) error {
 }
 
 type AuthMethod struct {
-	Type        string `json:"type"`
-	ID          string `json:"id,omitempty"`
-	Description string `json:"description,omitempty"`
-	EnvVar      string `json:"envVar,omitempty"`
+	Type        string                 `json:"type,omitempty"`
+	ID          string                 `json:"id,omitempty"`
+	Name        string                 `json:"name,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Link        string                 `json:"link,omitempty"`
+	Vars        []AuthEnvVar           `json:"vars,omitempty"`
+	Args        []string               `json:"args,omitempty"`
+	Env         map[string]string      `json:"env,omitempty"`
+	EnvVar      string                 `json:"envVar,omitempty"`
+	Meta        map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type AuthEnvVar struct {
+	Name     string                 `json:"name"`
+	Label    string                 `json:"label,omitempty"`
+	Optional bool                   `json:"optional,omitempty"`
+	Secret   bool                   `json:"secret,omitempty"`
+	Meta     map[string]interface{} `json:"_meta,omitempty"`
 }
 
 type NewSessionRequest struct {
@@ -135,7 +167,7 @@ type NewSessionResponse struct {
 	SessionID     string                 `json:"sessionId"`
 	Modes         *SessionModeState      `json:"modes,omitempty"`
 	ConfigOptions []ConfigOption         `json:"configOptions,omitempty"`
-	Models        map[string]interface{} `json:"models,omitempty"`
+	Models        *SessionModelState     `json:"models,omitempty"`
 	Meta          map[string]interface{} `json:"_meta,omitempty"`
 }
 
@@ -154,10 +186,11 @@ type LoadSessionResponse struct {
 }
 
 type ResumeSessionRequest struct {
-	SessionID  string                 `json:"sessionId"`
-	Cwd        string                 `json:"cwd"`
-	McpServers []McpServerConfig      `json:"mcpServers"`
-	Meta       map[string]interface{} `json:"_meta,omitempty"`
+	SessionID             string                 `json:"sessionId"`
+	Cwd                   string                 `json:"cwd"`
+	AdditionalDirectories []string               `json:"additionalDirectories,omitempty"`
+	McpServers            []McpServerConfig      `json:"mcpServers"`
+	Meta                  map[string]interface{} `json:"_meta,omitempty"`
 }
 
 type ResumeSessionResponse struct {
@@ -178,15 +211,14 @@ type ForkSessionResponse struct {
 	SessionID     string                 `json:"sessionId"`
 	Modes         *SessionModeState      `json:"modes,omitempty"`
 	ConfigOptions []ConfigOption         `json:"configOptions,omitempty"`
-	Models        map[string]interface{} `json:"models,omitempty"`
+	Models        *SessionModelState     `json:"models,omitempty"`
 	Meta          map[string]interface{} `json:"_meta,omitempty"`
 }
 
 type ListSessionsRequest struct {
-	Cwd                   string                 `json:"cwd,omitempty"`
-	AdditionalDirectories []string               `json:"additionalDirectories,omitempty"`
-	Cursor                string                 `json:"cursor,omitempty"`
-	Meta                  map[string]interface{} `json:"_meta,omitempty"`
+	Cwd    string                 `json:"cwd,omitempty"`
+	Cursor string                 `json:"cursor,omitempty"`
+	Meta   map[string]interface{} `json:"_meta,omitempty"`
 }
 
 type ListSessionsResponse struct {
@@ -213,6 +245,19 @@ type SessionMode struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+}
+
+type SessionModelState struct {
+	CurrentModelID  string                 `json:"currentModelId"`
+	AvailableModels []ModelInfo            `json:"availableModels"`
+	Meta            map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type ModelInfo struct {
+	ModelID     string                 `json:"modelId"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description,omitempty"`
+	Meta        map[string]interface{} `json:"_meta,omitempty"`
 }
 
 type ConfigOption struct {
@@ -326,6 +371,72 @@ type SetSessionConfigOptionResponse struct {
 	Meta          map[string]interface{} `json:"_meta,omitempty"`
 }
 
+type SetSessionModelRequest struct {
+	SessionID string                 `json:"sessionId"`
+	ModelID   string                 `json:"modelId"`
+	Meta      map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type SetSessionModelResponse struct {
+	Meta map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type ListProvidersRequest struct {
+	Meta map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type ListProvidersResponse struct {
+	Providers []ProviderInfo         `json:"providers"`
+	Meta      map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type ProviderInfo struct {
+	ID        string                 `json:"id"`
+	Supported []string               `json:"supported"`
+	Required  bool                   `json:"required"`
+	Current   *ProviderCurrentConfig `json:"current,omitempty"`
+	Meta      map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type ProviderCurrentConfig struct {
+	APIType string `json:"apiType"`
+	BaseURL string `json:"baseUrl"`
+}
+
+type SetProvidersRequest struct {
+	ID      string                 `json:"id"`
+	APIType string                 `json:"apiType"`
+	BaseURL string                 `json:"baseUrl"`
+	Headers map[string]string      `json:"headers,omitempty"`
+	Meta    map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type SetProvidersResponse struct {
+	Meta map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type DisableProvidersRequest struct {
+	ID   string                 `json:"id"`
+	Meta map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type DisableProvidersResponse struct {
+	Meta map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type LogoutRequest struct {
+	Meta map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type LogoutResponse struct {
+	Meta map[string]interface{} `json:"_meta,omitempty"`
+}
+
+type CancelRequestNotification struct {
+	RequestID interface{}            `json:"requestId"`
+	Meta      map[string]interface{} `json:"_meta,omitempty"`
+}
+
 type PromptRequest struct {
 	SessionID string                 `json:"sessionId"`
 	Prompt    []Content              `json:"prompt"`
@@ -356,6 +467,8 @@ type SessionUpdate struct {
 	SessionUpdate     string                 `json:"sessionUpdate"`
 	Content           Content                `json:"-"`
 	Contents          []Content              `json:"-"`
+	ToolContents      []ToolCallContent      `json:"-"`
+	RawContent        json.RawMessage        `json:"-"`
 	Title             string                 `json:"title,omitempty"`
 	UpdatedAt         string                 `json:"updatedAt,omitempty"`
 	ToolCallID        string                 `json:"toolCallId,omitempty"`
@@ -410,7 +523,8 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 	u.ConfigOptions = raw.ConfigOptions
 	u.Usage = raw.Usage
 	u.Meta = raw.Meta
-	u.Content, u.Contents = decodeUpdateContent(raw.Content)
+	u.RawContent = cloneRawMessage(raw.Content)
+	u.Content, u.Contents, u.ToolContents = decodeUpdateContent(raw.Content)
 	return nil
 }
 
@@ -433,9 +547,10 @@ func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 		Usage             map[string]interface{} `json:"usage,omitempty"`
 		Meta              map[string]interface{} `json:"_meta,omitempty"`
 	}
+	content := encodeUpdateContent(u.Content, u.Contents, u.ToolContents, u.RawContent)
 	return json.Marshal(rawUpdate{
 		SessionUpdate:     u.SessionUpdate,
-		Content:           encodeUpdateContent(u.Content, u.Contents),
+		Content:           content,
 		Title:             u.Title,
 		UpdatedAt:         u.UpdatedAt,
 		ToolCallID:        u.ToolCallID,
@@ -453,30 +568,122 @@ func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func decodeUpdateContent(data json.RawMessage) (Content, []Content) {
+func cloneRawMessage(data json.RawMessage) json.RawMessage {
+	if len(data) == 0 {
+		return nil
+	}
+	return append(json.RawMessage(nil), data...)
+}
+
+func decodeUpdateContent(data json.RawMessage) (Content, []Content, []ToolCallContent) {
 	if len(data) == 0 || string(data) == "null" {
-		return Content{}, nil
+		return Content{}, nil, nil
 	}
 	var one Content
 	if err := json.Unmarshal(data, &one); err == nil && one.Type != "" {
-		return one, []Content{one}
+		if looksLikeContentBlock(one) {
+			return one, []Content{one}, nil
+		}
 	}
 	var many []Content
-	if err := json.Unmarshal(data, &many); err != nil || len(many) == 0 {
-		return Content{}, nil
+	if err := json.Unmarshal(data, &many); err == nil && looksLikeContentBlocks(many) {
+		return many[0], many, nil
 	}
-	return many[0], many
+	if toolContents := decodeToolCallContents(data); len(toolContents) > 0 {
+		contents := contentsFromToolCallContents(toolContents)
+		if len(contents) > 0 {
+			return contents[0], contents, toolContents
+		}
+		return Content{}, nil, toolContents
+	}
+	return Content{}, nil, nil
 }
 
-func encodeUpdateContent(one Content, many []Content) interface{} {
+func looksLikeContentBlock(content Content) bool {
+	switch content.Type {
+	case "text", "image", "audio", "resource", "resource_link":
+		return true
+	default:
+		return false
+	}
+}
+
+func looksLikeContentBlocks(contents []Content) bool {
+	if len(contents) == 0 {
+		return false
+	}
+	for _, content := range contents {
+		if !looksLikeContentBlock(content) {
+			return false
+		}
+	}
+	return true
+}
+
+func decodeToolCallContents(data json.RawMessage) []ToolCallContent {
+	var one ToolCallContent
+	if err := json.Unmarshal(data, &one); err == nil && one.Type != "" {
+		return []ToolCallContent{one}
+	}
+	var many []ToolCallContent
+	if err := json.Unmarshal(data, &many); err != nil || len(many) == 0 {
+		return nil
+	}
+	for _, content := range many {
+		if content.Type == "" {
+			return nil
+		}
+	}
+	return many
+}
+
+func contentsFromToolCallContents(toolContents []ToolCallContent) []Content {
+	if len(toolContents) == 0 {
+		return nil
+	}
+	contents := make([]Content, 0, len(toolContents))
+	for _, item := range toolContents {
+		if item.Type == "content" && item.Content != nil && item.Content.Type != "" {
+			contents = append(contents, *item.Content)
+		}
+	}
+	return contents
+}
+
+func encodeUpdateContent(one Content, many []Content, toolContents []ToolCallContent, raw json.RawMessage) interface{} {
+	if len(toolContents) > 0 {
+		return oneOrManyToolContents(toolContents)
+	}
 	if len(many) > 1 {
 		return many
 	}
-	if one.Type != "" || one.Text != "" || one.Resource != nil || one.URI != "" {
+	if hasContentValue(one) {
 		return one
 	}
 	if len(many) == 1 {
 		return many[0]
+	}
+	return decodeRawContent(raw)
+}
+
+func oneOrManyToolContents(contents []ToolCallContent) interface{} {
+	if len(contents) == 1 {
+		return contents[0]
+	}
+	return contents
+}
+
+func hasContentValue(content Content) bool {
+	return content.Type != "" || content.Text != "" || content.Resource != nil || content.URI != ""
+}
+
+func decodeRawContent(raw json.RawMessage) interface{} {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var decoded interface{}
+	if err := json.Unmarshal(raw, &decoded); err == nil {
+		return decoded
 	}
 	return nil
 }
@@ -514,7 +721,20 @@ type Content struct {
 	Name        string                 `json:"name,omitempty"`
 	Title       string                 `json:"title,omitempty"`
 	Description string                 `json:"description,omitempty"`
+	Size        *int64                 `json:"size,omitempty"`
 	Resource    map[string]interface{} `json:"resource,omitempty"`
 	Annotations map[string]interface{} `json:"annotations,omitempty"`
 	Meta        map[string]interface{} `json:"_meta,omitempty"`
+}
+
+// ToolCallContent preserves ACP tool-call payload variants losslessly enough for
+// Matrix projections while keeping the public package independent from codegen.
+type ToolCallContent struct {
+	Type       string                 `json:"type"`
+	Content    *Content               `json:"content,omitempty"`
+	Path       string                 `json:"path,omitempty"`
+	OldText    *string                `json:"oldText,omitempty"`
+	NewText    string                 `json:"newText,omitempty"`
+	TerminalID string                 `json:"terminalId,omitempty"`
+	Meta       map[string]interface{} `json:"_meta,omitempty"`
 }

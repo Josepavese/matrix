@@ -26,8 +26,8 @@ type runSessionContext struct {
 }
 
 func (s *Server) prepareRunSessionContext(ctx context.Context, exec runExecution) (runSessionContext, error) {
-	before := s.sessionSnapshot(ctx, exec.req.ChannelID, exec.req.WorkspaceID)
 	beforeList := s.sessionListSnapshot(ctx, exec.req.ChannelID, exec.req.WorkspaceID)
+	before := activeSessionSnapshot(beforeList)
 	prepared, err := s.prepareSessionForRun(ctx, exec)
 	return runSessionContext{before: before, beforeList: beforeList, prepared: prepared}, err
 }
@@ -48,7 +48,7 @@ func (s *Server) cleanupRunSessionContext(ctx context.Context, exec runExecution
 }
 
 func (s *Server) cleanupRunSessions(ctx context.Context, scope runCleanupScope) (*middleware.SessionCleanupResult, error) {
-	target := cleanupTargetSnapshot(scope.prepared, scope.after)
+	target := cleanupTargetSnapshot(scope)
 	cleanup, err := s.cleanupRunSession(ctx, scope.exec, target)
 	if cleanup == nil {
 		return nil, err
@@ -56,18 +56,41 @@ func (s *Server) cleanupRunSessions(ctx context.Context, scope runCleanupScope) 
 	if relatedErr := s.accountRunRelatedSessions(ctx, scope, cleanup, target); err == nil {
 		err = relatedErr
 	}
-	if reconcileErr := runreconcile.Apply(ctx, runreconcile.Request{Timeout: runCleanupTimeout, Router: s.router, ChannelID: scope.exec.req.ChannelID, Cleanup: cleanup}); err == nil {
+	if reconcileErr := runreconcile.Apply(ctx, runreconcile.Request{
+		Timeout:       runCleanupTimeout,
+		Router:        s.router,
+		ChannelID:     scope.exec.req.ChannelID,
+		AgentID:       scope.exec.agentID,
+		WorkspacePath: scope.exec.req.WorkspacePath,
+		Cleanup:       cleanup,
+	}); err == nil {
 		err = reconcileErr
 	}
 	s.appendCleanupEvent(scope.exec.runID, scope.exec.agentID, *cleanup)
 	return cleanup, err
 }
 
-func cleanupTargetSnapshot(prepared, after sessionSnapshot) sessionSnapshot {
+func cleanupTargetSnapshot(scope runCleanupScope) sessionSnapshot {
+	prepared := scope.prepared
+	after := scope.after
+	if shouldPreferLateSelectedRunSession(prepared, after) {
+		return after
+	}
 	if strings.TrimSpace(prepared.LogicalSessionID) != "" || strings.TrimSpace(prepared.RemoteSessionID) != "" {
 		return prepared
 	}
 	return after
+}
+
+func shouldPreferLateSelectedRunSession(prepared, after sessionSnapshot) bool {
+	if strings.TrimSpace(after.RemoteSessionID) == "" {
+		return false
+	}
+	if sameSessionSnapshot(prepared, after) {
+		return false
+	}
+	return strings.TrimSpace(prepared.LogicalSessionID) != "" &&
+		strings.TrimSpace(prepared.RemoteSessionID) == ""
 }
 
 func (s *Server) cleanupRunSession(ctx context.Context, exec runExecution, snapshot sessionSnapshot) (*middleware.SessionCleanupResult, error) {

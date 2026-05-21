@@ -1,9 +1,17 @@
 package zedacp
 
 import (
+	"context"
 	"strings"
 	"sync/atomic"
+	"time"
 )
+
+const responseObserverDrainIdle = 250 * time.Millisecond
+
+type observerIdleWaiter interface {
+	WaitIdle(context.Context, time.Duration)
+}
 
 func (c *Client) registerObserver(sessionID string, observer SessionObserver) func() {
 	sessionID = strings.TrimSpace(sessionID)
@@ -45,4 +53,10 @@ func (c *Client) sessionObservers(sessionID string) []SessionObserver {
 		}
 	}
 	return observers
+}
+
+func waitObserverIdle(ctx context.Context, observer SessionObserver) {
+	if waiter, ok := observer.(observerIdleWaiter); ok && waiter != nil {
+		waiter.WaitIdle(ctx, responseObserverDrainIdle)
+	}
 }

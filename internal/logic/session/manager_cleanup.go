@@ -11,19 +11,14 @@ import (
 )
 
 type sessionCleanupRequest struct {
-	ChannelID        string
-	Lang             string
-	Target           string
-	Action           string
-	CleanupPolicy    string
-	ForceForgetLocal bool
+	ChannelID, Lang, Target, Action, CleanupPolicy   string
+	ForceForgetLocal, SuppressForkParentOwnerCleanup bool
 }
 
 type sessionCleanupExecution struct {
-	ChannelID        string
-	Meta             SessionMeta
-	CleanupPolicy    string
-	ForceForgetLocal bool
+	ChannelID, CleanupPolicy                         string
+	Meta                                             SessionMeta
+	ForceForgetLocal, SuppressForkParentOwnerCleanup bool
 }
 
 func (m *Manager) handleSessionDeleteTyped(ctx context.Context, req sessionCleanupRequest) (middleware.SessionActionResult, error) {
@@ -67,10 +62,11 @@ func (m *Manager) cleanupSessionTyped(ctx context.Context, req sessionCleanupReq
 		return m.cleanupMissingLocalSession(ctx, req.ChannelID, targetID)
 	}
 	cleanup := m.cleanupSessionMirrorAndRemote(ctx, sessionCleanupExecution{
-		ChannelID:        req.ChannelID,
-		Meta:             meta,
-		CleanupPolicy:    req.CleanupPolicy,
-		ForceForgetLocal: req.ForceForgetLocal,
+		ChannelID:                      req.ChannelID,
+		Meta:                           meta,
+		CleanupPolicy:                  req.CleanupPolicy,
+		ForceForgetLocal:               req.ForceForgetLocal,
+		SuppressForkParentOwnerCleanup: req.SuppressForkParentOwnerCleanup,
 	})
 	result := middleware.SessionActionResult{
 		Action:  req.Action,
@@ -141,7 +137,11 @@ func (m *Manager) cleanupSessionMirrorAndRemote(ctx context.Context, req session
 	m.cleanupRemoteSession(ctx, req.Meta, policy, &result)
 	m.cleanupLocalMirror(req, result.RemoteDeleted, &result)
 	m.reapAgentClientAfterLocalCleanup(ctx, req, &result)
+	m.finalizeForkChildrenAfterParentCleanup(req.Meta, &result)
+	m.markForkChildCleanupErrors(&result)
 	finalizeCleanupResult(req.Meta, &result)
+	m.cleanupRunOwnedForkParentOwnerFromStandaloneChild(ctx, req, policy, &result)
+	m.failStandaloneForkChildCleanupIfRetained(req.Meta, &result)
 	m.recordWorkspaceEvent(req.Meta, "session.cleanup", req.ChannelID, "Cleaned up session", "session-cleanup", sessioncleanup.Metadata(result))
 	return result
 }

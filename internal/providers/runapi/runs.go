@@ -168,7 +168,7 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 	notifier := runnotifier.New(s.runStore, exec.runID, exec.agentID, s.resolveProtocol(exec.agentID))
 	routeCtx, routeNotifier, activityState, stopActivityWatch := runactivity.WithTimeout(ctx, exec.activityTimeout, notifier)
 	defer stopActivityWatch()
-	res, err := s.route(routeCtx, exec.req, exec.agentID, routeNotifier)
+	res, err := s.route(routeCtx, exec, sessionCtx.prepared, routeNotifier)
 	if err != nil {
 		postCtx, postCancel := postRunContext(ctx)
 		defer postCancel()
@@ -211,20 +211,22 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 	return runExecutionResult{output: res, cleanup: cleanup}, err
 }
 
-func (s *Server) route(ctx context.Context, req runRequest, agentID string, notifier middleware.ThoughtNotifier) (string, error) {
+func (s *Server) route(ctx context.Context, exec runExecution, prepared sessionSnapshot, notifier middleware.ThoughtNotifier) (string, error) {
+	req := exec.req
 	if richer, ok := s.router.(middleware.ConversationRequestRouter); ok {
 		return richer.RouteConversation(ctx, middleware.ConversationRequest{
-			ChannelID:       req.ChannelID,
-			AgentID:         agentID,
-			WorkspaceID:     req.WorkspaceID,
-			WorkspacePath:   req.WorkspacePath,
-			Input:           req.Input.String(),
-			SidecarCapsules: req.SidecarCapsules,
-			Notifier:        notifier,
-			NonInteractive:  true,
+			ChannelID:        req.ChannelID,
+			AgentID:          exec.agentID,
+			LogicalSessionID: strings.TrimSpace(prepared.LogicalSessionID),
+			WorkspaceID:      req.WorkspaceID,
+			WorkspacePath:    req.WorkspacePath,
+			Input:            req.Input.String(),
+			SidecarCapsules:  req.SidecarCapsules,
+			Notifier:         notifier,
+			NonInteractive:   true,
 		})
 	}
-	return s.router.Route(ctx, req.ChannelID, agentID, sidecar.ProjectPrompt(req.Input.String(), req.SidecarCapsules), notifier)
+	return s.router.Route(ctx, req.ChannelID, exec.agentID, sidecar.ProjectPrompt(req.Input.String(), req.SidecarCapsules), notifier)
 }
 
 func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request, exec runExecution) {

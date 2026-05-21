@@ -28,6 +28,28 @@ func TestClassifyProviderFailureDetectsModelUnavailable(t *testing.T) {
 	if failure.Diagnostics["adapter"] != "codex-acp" {
 		t.Fatalf("expected adapter diagnostic, got %+v", failure.Diagnostics)
 	}
+	if failure.Diagnostics["provider_error"] == "" || failure.Diagnostics["failure_reason"] == "" {
+		t.Fatalf("expected provider error diagnostics, got %+v", failure.Diagnostics)
+	}
+}
+
+func TestClassifyProviderFailureClassifiesClientContextCancellation(t *testing.T) {
+	err := classifyProviderFailure("opencode", middleware.ProtocolEndpoint{
+		Kind:      middleware.ProtocolKindACP,
+		Transport: "stdio",
+		Command:   "/home/jose/.local/bin/opencode",
+	}, "session/new", errors.New("ACP new session failed: client context cancelled"))
+
+	var failure *providerfailure.Failure
+	if !errors.As(err, &failure) {
+		t.Fatalf("expected ProviderFailure, got %T %[1]v", err)
+	}
+	if failure.Diagnostics["failure_reason"] != "provider_client_context_cancelled" {
+		t.Fatalf("expected precise failure reason, got %+v", failure.Diagnostics)
+	}
+	if failure.Diagnostics["provider_error"] == "" {
+		t.Fatalf("expected underlying provider error, got %+v", failure.Diagnostics)
+	}
 }
 
 func TestAnnotateProviderFailureAgentKeepsExistingAgent(t *testing.T) {

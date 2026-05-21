@@ -17,6 +17,7 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/frontendevents"
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 // Compile-time check: middleware.File satisfies the write/close interface used in handleFSWrite.
@@ -36,6 +37,7 @@ type defaultRequestHandler struct {
 	cwd        string             // working directory for path validation
 	notifier   middleware.ThoughtNotifier
 	notifierMu sync.Mutex
+	extension  ExtensionRequestHandler
 
 	// terminalRegistry holds active terminal sessions for async terminal methods.
 	terminals      map[string]*terminalSession
@@ -58,6 +60,10 @@ type terminalSession struct {
 	handler         *defaultRequestHandler
 }
 
+// ExtensionRequestHandler handles negotiated ACP extension methods. Matrix does
+// not auto-approve unknown methods because that hides protocol drift.
+type ExtensionRequestHandler func(ctx context.Context, method string, params json.RawMessage) (interface{}, error)
+
 // newConfigurableRequestHandler creates a handler that consults the given
 // trustMode function for permission decisions and supports fs/terminal ACP methods.
 func newConfigurableRequestHandler(trustMode func() bool) *defaultRequestHandler {
@@ -79,6 +85,11 @@ func (h *defaultRequestHandler) WithFS(fs middleware.FS, cwd string) *defaultReq
 // WithProcess configures process execution for terminal/* ACP methods.
 func (h *defaultRequestHandler) WithProcess(proc middleware.Process) *defaultRequestHandler {
 	h.proc = proc
+	return h
+}
+
+func (h *defaultRequestHandler) WithExtensionHandler(handler ExtensionRequestHandler) *defaultRequestHandler {
+	h.extension = handler
 	return h
 }
 
@@ -118,8 +129,11 @@ func (h *defaultRequestHandler) HandleRequest(ctx context.Context, method string
 	case "terminal/release":
 		return h.handleTerminalRelease(ctx, log, params)
 	default:
-		log.Info("auto-approving agent request", "event", "request_approved", "method", method)
-		return map[string]interface{}{"status": "ok"}, nil
+		if h.extension != nil {
+			return h.extension(ctx, method, params)
+		}
+		log.Warn("unsupported agent request", "event", "request_unsupported", "method", method)
+		return nil, zedacp.NewMethodNotFoundError(method)
 	}
 }
 

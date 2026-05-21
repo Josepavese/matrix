@@ -8,9 +8,10 @@ import (
 )
 
 func (r *Router) ReconcileAgentClients(_ context.Context, active []middleware.AgentClientRef) (middleware.AgentClientReconcileResult, error) {
-	activeKeys := make(map[string]struct{}, len(active))
+	activeKeys := make(map[string][]middleware.AgentClientRef, len(active))
 	for _, ref := range active {
-		activeKeys[clientCacheKey(ref.AgentID, r.effectiveCwd(ref.WorkspacePath))] = struct{}{}
+		key := clientCacheKey(ref.AgentID, r.effectiveCwd(ref.WorkspacePath))
+		activeKeys[key] = append(activeKeys[key], ref)
 	}
 	var toClose []clientToClose
 	result := middleware.AgentClientReconcileResult{}
@@ -18,8 +19,8 @@ func (r *Router) ReconcileAgentClients(_ context.Context, active []middleware.Ag
 	for key, client := range r.clients {
 		agentID, cwd := splitClientCacheKey(key)
 		ref := middleware.AgentClientRef{AgentID: agentID, WorkspacePath: cwd}
-		if _, ok := activeKeys[key]; ok {
-			result.Retained = append(result.Retained, ref)
+		if retained, ok := retainedAgentClientRef(activeKeys[key], client); ok {
+			result.Retained = append(result.Retained, retained)
 			continue
 		}
 		delete(r.clients, key)
@@ -28,6 +29,15 @@ func (r *Router) ReconcileAgentClients(_ context.Context, active []middleware.Ag
 	}
 	r.mu.Unlock()
 	return result, closeReconciledClients(toClose)
+}
+
+func retainedAgentClientRef(active []middleware.AgentClientRef, client middleware.ConversationClient) (middleware.AgentClientRef, bool) {
+	for _, ref := range active {
+		if clientTracksRemoteSession(client, ref.RemoteSessionID) {
+			return ref, true
+		}
+	}
+	return middleware.AgentClientRef{}, false
 }
 
 type clientToClose struct {

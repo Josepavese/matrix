@@ -37,7 +37,7 @@ func classifyProviderFailure(agentID string, endpoint middleware.ProtocolEndpoin
 		Protocol:       string(endpoint.Kind),
 		Phase:          phase,
 		RequestedModel: model,
-		Diagnostics:    providerFailureDiagnostics(endpoint),
+		Diagnostics:    providerFailureDiagnostics(endpoint, err),
 		Err:            err,
 	}
 }
@@ -79,7 +79,7 @@ func extractBacktickModel(text string) string {
 	return rest[:end]
 }
 
-func providerFailureDiagnostics(endpoint middleware.ProtocolEndpoint) map[string]string {
+func providerFailureDiagnostics(endpoint middleware.ProtocolEndpoint, err error) map[string]string {
 	diagnostics := map[string]string{
 		"transport": endpoint.Transport,
 	}
@@ -93,5 +93,29 @@ func providerFailureDiagnostics(endpoint middleware.ProtocolEndpoint) map[string
 	if endpoint.ProtocolVersion != "" {
 		diagnostics["protocol_version"] = endpoint.ProtocolVersion
 	}
+	if err != nil {
+		diagnostics["provider_error"] = err.Error()
+		diagnostics["failure_reason"] = providerFailureReason(err.Error())
+	}
 	return diagnostics
+}
+
+func providerFailureReason(text string) string {
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, "client context cancelled") || strings.Contains(lower, "client context canceled"):
+		return "provider_client_context_cancelled"
+	case strings.Contains(lower, "context cancelled") || strings.Contains(lower, "context canceled"):
+		return "request_context_cancelled"
+	case strings.Contains(lower, "signal: killed"):
+		return "provider_process_killed"
+	case strings.Contains(lower, "exit status"):
+		return "provider_process_exit"
+	case strings.Contains(lower, "eof"):
+		return "provider_transport_eof"
+	case strings.Contains(lower, "broken pipe") || strings.Contains(lower, "file already closed"):
+		return "provider_transport_closed"
+	default:
+		return "provider_error"
+	}
 }

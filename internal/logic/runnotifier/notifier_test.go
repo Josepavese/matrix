@@ -42,6 +42,58 @@ func TestNotifierRecordsIntermediateEvents(t *testing.T) {
 	}
 }
 
+func TestNotifierProjectsACPPlanThoughtAndUsage(t *testing.T) {
+	store := runtrace.NewStore(memstore.New())
+	run, _, err := store.Start(runtrace.Run{AgentID: "opencode", Protocol: "acp", ChannelID: "http.test"})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	notifier := New(store, run.ID, "opencode", "acp")
+	notifier.OnThought(middleware.ThoughtUpdate{
+		Type:    middleware.ThoughtTypeThinking,
+		Content: "considering",
+		Metadata: map[string]interface{}{
+			"source_update_type": "agent_thought_chunk",
+		},
+	})
+	entries := []interface{}{map[string]interface{}{"content": "test", "status": "pending", "priority": "high"}}
+	notifier.OnThought(middleware.ThoughtUpdate{
+		Type: middleware.ThoughtTypeThinking,
+		Metadata: map[string]interface{}{
+			"source_update_type": "plan",
+			"plan_entries":       entries,
+		},
+	})
+	usage := map[string]interface{}{"inputTokens": 10}
+	notifier.OnThought(middleware.ThoughtUpdate{
+		Type: middleware.ThoughtTypeThinking,
+		Metadata: map[string]interface{}{
+			"source_update_type": "usage_update",
+			"usage":              usage,
+		},
+	})
+
+	events, err := store.LoadEvents(run.ID, 0)
+	if err != nil {
+		t.Fatalf("load events: %v", err)
+	}
+	byKind := map[string]runtrace.Event{}
+	for _, event := range events {
+		byKind[event.Kind] = event
+	}
+	if byKind["agent.thought.delta"].Summary != "Agent thinking" {
+		t.Fatalf("expected thought event, got %#v", byKind)
+	}
+	plan := byKind["agent.plan.updated"]
+	if plan.Outputs["entries"] == nil || plan.Metadata["frontend_visible"] != true {
+		t.Fatalf("expected structured plan event, got %#v", plan)
+	}
+	usageEvent := byKind["agent.usage.updated"]
+	if usageEvent.Outputs["usage"] == nil || usageEvent.Metadata["audit_visible"] != true {
+		t.Fatalf("expected structured usage event, got %#v", usageEvent)
+	}
+}
+
 func TestNotifierNormalizesFrontendToolEvents(t *testing.T) {
 	store := runtrace.NewStore(memstore.New())
 	run, _, err := store.Start(runtrace.Run{
