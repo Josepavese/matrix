@@ -2,11 +2,19 @@ package bolt
 
 import (
 	"bytes"
+	"encoding/base64"
 	"path/filepath"
 	"testing"
 )
 
+func setTestVaultKey(t *testing.T) {
+	t.Helper()
+	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
+	t.Setenv("MATRIX_VAULT_MASTER_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32)))
+}
+
 func TestProvider_SetAndGet(t *testing.T) {
+	setTestVaultKey(t)
 	// Create a temporary database file
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test_vault.db")
@@ -37,6 +45,7 @@ func TestProvider_SetAndGet(t *testing.T) {
 }
 
 func TestProvider_GetNonExistent(t *testing.T) {
+	setTestVaultKey(t)
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test_vault2.db")
 
@@ -55,7 +64,25 @@ func TestProvider_GetNonExistent(t *testing.T) {
 	}
 }
 
+func TestProvider_SetRequiresVaultKey(t *testing.T) {
+	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
+	t.Setenv("MATRIX_VAULT_MASTER_KEY", "")
+	t.Setenv("MATRIX_HOME", t.TempDir())
+
+	dbPath := filepath.Join(t.TempDir(), "test_vault_no_key.db")
+	provider, err := NewProvider(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create provider: %v", err)
+	}
+	defer func() { _ = provider.Close() }()
+
+	if err := provider.Set("test.key", []byte("value")); err == nil {
+		t.Fatalf("expected set without vault key to fail")
+	}
+}
+
 func TestProvider_ConcurrentAccess(t *testing.T) {
+	setTestVaultKey(t)
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test_vault3.db")
 

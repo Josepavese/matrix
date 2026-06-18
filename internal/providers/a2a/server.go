@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"mime"
 	"net/http"
 	"strings"
 
@@ -17,6 +18,7 @@ type Server struct {
 	router       middleware.ConversationRouter
 	baseURL      string
 	defaultAgent string
+	apiKey       string
 }
 
 // NewServer creates a new A2A server adapter.
@@ -31,14 +33,52 @@ func NewServer(router middleware.ConversationRouter, baseURL string, defaultAgen
 	}
 }
 
+func (s *Server) WithAPIKey(key string) *Server {
+	s.apiKey = strings.TrimSpace(key)
+	return s
+}
+
 // RegisterRoutes attaches the A2A JSON-RPC endpoint and agent card to the mux.
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	handler := a2asrv.NewHandler(&executor{
 		router:       s.router,
 		defaultAgent: s.defaultAgent,
 	})
-	mux.Handle("/a2a", a2asrv.NewJSONRPCHandler(handler))
+	mux.Handle("/a2a", s.authMiddleware(a2asrv.NewJSONRPCHandler(handler)))
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(s.agentCard()))
+}
+
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !requireJSONContentType(w, r) {
+			return
+		}
+		if s.apiKey != "" && requestAPIKey(r) != s.apiKey {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func requestAPIKey(r *http.Request) string {
+	if key := strings.TrimSpace(r.Header.Get("X-Matrix-Key")); key != "" {
+		return key
+	}
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+		return strings.TrimSpace(auth[len("bearer "):])
+	}
+	return ""
+}
+
+func requireJSONContentType(w http.ResponseWriter, r *http.Request) bool {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		http.Error(w, "Unsupported Media Type: application/json required", http.StatusUnsupportedMediaType)
+		return false
+	}
+	return true
 }
 
 func (s *Server) agentCard() *a2asdk.AgentCard {

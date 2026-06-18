@@ -128,10 +128,14 @@ func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifes
 		return "", err
 	}
 
-	agentDir := filepath.Join(inst.baseDir, manifest.ID)
-	tmpFile := filepath.Join(inst.fs.TempDir(), fmt.Sprintf("matrix-agent-%s-%s", manifest.ID, manifest.Version))
-
-	tmpFile += archiveExt(dist.Archive)
+	agentPath, err := agentDir(inst.baseDir, manifest.ID)
+	if err != nil {
+		return "", err
+	}
+	tmpFile, err := agentTempArchive(inst.fs.TempDir(), manifest.ID, manifest.Version, dist.Archive)
+	if err != nil {
+		return "", err
+	}
 
 	fmt.Printf("Downloading %s %s from %s...\n", manifest.ID, manifest.Version, dist.Archive)
 	if err := inst.net.Download(ctx, dist.Archive, tmpFile); err != nil {
@@ -139,17 +143,17 @@ func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifes
 	}
 	defer func() { _ = inst.fs.RemoveAll(tmpFile) }()
 
-	fmt.Printf("Extracting to %s...\n", agentDir)
-	if err := inst.fs.MkdirAll(agentDir, 0755); err != nil {
+	fmt.Printf("Extracting to %s...\n", agentPath)
+	if err := inst.fs.MkdirAll(agentPath, 0755); err != nil {
 		return "", err
 	}
-	if err := inst.archive.Extract(tmpFile, agentDir); err != nil {
+	if err := inst.archive.Extract(tmpFile, agentPath); err != nil {
 		return "", fmt.Errorf("extraction failed: %w", err)
 	}
 
 	binaryPath := dist.Cmd
 	if filepath.IsLocal(binaryPath) || (len(binaryPath) > 2 && binaryPath[:2] == "./") {
-		binaryPath = filepath.Join(agentDir, binaryPath)
+		binaryPath = filepath.Join(agentPath, binaryPath)
 	}
 
 	return binaryPath, nil
@@ -158,10 +162,13 @@ func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifes
 // Uninstall removes the agent's files and its registration from the Vault.
 func (inst *Installer) Uninstall(_ context.Context, agentID string) error {
 	// 1. Remove files
-	agentDir := filepath.Join(inst.baseDir, agentID)
-	if _, err := inst.fs.Stat(agentDir); err == nil {
-		fmt.Printf("Removing agent directory %s...\n", agentDir)
-		if err := inst.fs.RemoveAll(agentDir); err != nil {
+	agentPath, err := agentDir(inst.baseDir, agentID)
+	if err != nil {
+		return err
+	}
+	if _, err := inst.fs.Stat(agentPath); err == nil {
+		fmt.Printf("Removing agent directory %s...\n", agentPath)
+		if err := inst.fs.RemoveAll(agentPath); err != nil {
 			return fmt.Errorf("failed to remove agent directory: %w", err)
 		}
 	}
@@ -175,6 +182,48 @@ func (inst *Installer) Uninstall(_ context.Context, agentID string) error {
 		slog.Warn("failed to delete agent metadata", "agent", agentID, "error", err)
 	}
 	return nil
+}
+
+func agentDir(baseDir, agentID string) (string, error) {
+	agentID, err := safePathToken("agent id", agentID)
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(baseDir, agentID)
+	rel, err := filepath.Rel(baseDir, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("agent path escapes install directory")
+	}
+	return target, nil
+}
+
+func agentTempArchive(tempDir, agentID, version, archiveURL string) (string, error) {
+	tempDir = strings.TrimSpace(tempDir)
+	if tempDir == "" {
+		return "", fmt.Errorf("temporary directory is required")
+	}
+	agentID, err := safePathToken("agent id", agentID)
+	if err != nil {
+		return "", err
+	}
+	version, err = safePathToken("agent version", version)
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(tempDir, fmt.Sprintf("matrix-agent-%s-%s%s", agentID, version, archiveExt(archiveURL)))
+	rel, err := filepath.Rel(tempDir, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("temporary archive path escapes temp directory")
+	}
+	return target, nil
+}
+
+func safePathToken(label, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || filepath.IsAbs(value) || strings.ContainsAny(value, `/\`) || value == "." || value == ".." {
+		return "", fmt.Errorf("invalid %s %q", label, value)
+	}
+	return value, nil
 }
 
 // archiveExt derives the archive extension from a URL.

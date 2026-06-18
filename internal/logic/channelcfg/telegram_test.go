@@ -1,6 +1,8 @@
 package channelcfg
 
 import (
+	"bytes"
+	"encoding/base64"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -107,6 +109,8 @@ func (r testConfigReader) ReadConfig(path string) ([]byte, error) {
 
 func openTestConfigManager(t *testing.T) (*bolt.Provider, *config.Manager) {
 	t.Helper()
+	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
+	t.Setenv("MATRIX_VAULT_MASTER_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{6}, 32)))
 
 	dbPath := filepath.Join(t.TempDir(), "matrix-vault.db")
 	provider, err := bolt.NewProvider(dbPath)

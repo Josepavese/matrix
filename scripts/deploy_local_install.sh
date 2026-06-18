@@ -15,6 +15,8 @@ Environment:
   MATRIX_HOME      Override target PAL home.
   MATRIX_DIST_DIR  Override artifact directory. Default: ./dist
   MATRIX_VERSION   Optional artifact version prefix. Auto-detected when unset.
+  MATRIX_ALLOW_MISSING_CHECKSUM
+                  Allow a local smoke install without dist/checksums.txt.
   HOME             Override user home for isolated launcher/profile smoke tests.
 USAGE
 }
@@ -34,6 +36,7 @@ need() {
 }
 
 need uname
+need find
 need tar
 
 home_dir="${HOME:-}"
@@ -124,6 +127,53 @@ verify_checksum() {
   echo "Verified checksum for $asset_name"
 }
 
+validate_tar_archive() {
+  local archive_path="$1"
+  tar -tzf "$archive_path" | while IFS= read -r entry; do
+    case "$entry" in
+      ""|/*|../*|*/../*|..|*/..)
+        echo "unsafe archive entry: $entry" >&2
+        exit 1
+      ;;
+    esac
+  done
+  tar -tzvf "$archive_path" | while IFS= read -r entry; do
+    local type
+    type="$(printf '%s' "$entry" | cut -c1)"
+    case "$type" in
+      -|d) ;;
+      *)
+        echo "unsafe archive entry type: $entry" >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
+validate_extracted_tree() {
+  local root="$1"
+  local unsafe_link unsafe_hardlink
+  unsafe_link="$(find "$root" -type l -print -quit)"
+  if [[ -n "$unsafe_link" ]]; then
+    echo "unsafe extracted symlink: $unsafe_link" >&2
+    exit 1
+  fi
+  unsafe_hardlink="$(find "$root" -type f -links +1 -print -quit)"
+  if [[ -n "$unsafe_hardlink" ]]; then
+    echo "unsafe extracted hardlink: $unsafe_hardlink" >&2
+    exit 1
+  fi
+}
+
+prepare_pal_home() {
+  mkdir -p "$matrix_home"
+  chmod 0700 "$matrix_home"
+  for dir in bin configs data logs artifacts backups tmp; do
+    mkdir -p "$matrix_home/$dir"
+    chmod 0700 "$matrix_home/$dir"
+  done
+}
+
 tmp_dir="$(mktemp -d)"
 cleanup() {
   rm -rf "$tmp_dir"
@@ -134,15 +184,22 @@ checksum_file="$dist_dir/checksums.txt"
 if [[ -f "$checksum_file" ]]; then
   verify_checksum "$checksum_file" "$archive" "$(basename "$archive")"
 else
-  echo "No checksums.txt found in $dist_dir; skipping checksum verification."
+  if [[ "${MATRIX_ALLOW_MISSING_CHECKSUM:-}" == "1" || "${MATRIX_ALLOW_MISSING_CHECKSUM:-}" == "true" ]]; then
+    echo "No checksums.txt found in $dist_dir; continuing because MATRIX_ALLOW_MISSING_CHECKSUM=$MATRIX_ALLOW_MISSING_CHECKSUM."
+  else
+    echo "missing checksums.txt in $dist_dir" >&2
+    exit 1
+  fi
 fi
+validate_tar_archive "$archive"
 tar -xzf "$archive" -C "$tmp_dir"
-if [[ ! -f "$tmp_dir/matrix" ]]; then
+validate_extracted_tree "$tmp_dir"
+if [[ ! -f "$tmp_dir/matrix" || -L "$tmp_dir/matrix" ]]; then
   echo "local deploy artifact $(basename "$archive") does not contain the matrix binary at archive root" >&2
   exit 1
 fi
 
-mkdir -p "$matrix_home/bin" "$matrix_home/configs" "$matrix_home/data" "$matrix_home/logs" "$matrix_home/artifacts" "$matrix_home/backups" "$matrix_home/tmp"
+prepare_pal_home
 install -m 0755 "$tmp_dir/matrix" "$matrix_home/bin/matrix"
 
 user_bin="$home_dir/.local/bin"
@@ -187,10 +244,13 @@ if [[ -d "$tmp_dir/configs" ]]; then
     rel="${src#$tmp_dir/configs/}"
     dest="$matrix_home/configs/$rel"
     mkdir -p "$(dirname "$dest")"
+    chmod 0700 "$(dirname "$dest")"
     if [[ ! -e "$dest" ]]; then
       cp "$src" "$dest"
+      chmod 0600 "$dest"
     fi
   done < <(find "$tmp_dir/configs" -type f)
+  find "$matrix_home/configs" -type d -exec chmod 0700 {} +
 fi
 
 echo "Matrix local deploy install complete."

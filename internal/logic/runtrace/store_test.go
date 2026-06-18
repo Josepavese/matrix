@@ -189,6 +189,12 @@ func TestStoreRegisterSinkRequiresHTTPURL(t *testing.T) {
 	if _, err := store.RegisterSink(Sink{URL: "http://127.0.0.1:8080/events"}); err != nil {
 		t.Fatalf("expected http sink url to pass: %v", err)
 	}
+	if err := ValidatePublicSinkURL("http://127.0.0.1:8080/events"); err == nil {
+		t.Fatalf("expected public sink policy to reject loopback")
+	}
+	if err := ValidatePublicSinkURL("https://example.invalid/events"); err != nil {
+		t.Fatalf("expected public sink policy to accept public host syntax: %v", err)
+	}
 }
 
 func TestStoreCancelRun(t *testing.T) {

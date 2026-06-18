@@ -2,6 +2,8 @@ package daemon
 
 import "fmt"
 
+var ErrInvalidAPIKey = fmt.Errorf("invalid API key")
+
 // AuthService provides RPC-based authentication for the JSON-RPC daemon.
 // When enabled (via WithAPIKey), clients must call Auth.Authenticate with
 // the correct API key before invoking other RPC methods.
@@ -22,11 +24,11 @@ type AuthReply struct {
 
 // Authenticate validates the provided API key.
 func (s *AuthService) Authenticate(args *AuthArgs, reply *AuthReply) error {
-	if args.APIKey == s.apiKey {
+	if args != nil && args.APIKey == s.apiKey {
 		reply.Success = true
 		reply.Message = "authenticated"
 		return nil
 	}
 	reply.Success = false
-	return fmt.Errorf("invalid API key")
+	return ErrInvalidAPIKey
 }

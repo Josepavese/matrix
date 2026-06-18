@@ -21,8 +21,9 @@ roots = ["cmd", "internal", "pkg"]
 exclude_dirs = ["vendor", "tests/mocks"]
 
 [package_overrides]
-"cmd/matrix" = 3000
-"internal/logic/agentmgr" = 900
+# 2026-06-18: public-release hardening adds runtime endpoint auth coverage
+# and PAL/vault initialization checks.
+"cmd/matrix" = 3030
 "internal/logic/onboarding" = 1400
 "internal/logic/runtrace" = 830
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
@@ -39,6 +40,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/middleware" = 980
 # 2026-04-27: workspace timeline event recording split validation/persistence/state update.
 "internal/logic/workspace" = 910
+# 2026-06-18: public-release hardening adds agent-id path validation for
+# binary install/uninstall containment and temp archive path validation.
+"internal/logic/agentmgr" = 950
 # 2026-05-04/05/08: Zed ACP v0.12.2 lifecycle plus session-bound tombstone
 # proof for dead/replaced local ACP clients used by fork subtree cleanup. Final
 # resume cleanup adds scoped reconcile ownership details and no-fresh-stdio
@@ -48,14 +52,16 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # after cancellable prompt failures so immediate follow-up runs cannot inherit
 # a cancelled ACP client. 2026-05-21 adds current ACP auth/env-var fallback,
 # additionalDirectories validation, and agent-first terminal-auth policy.
-"internal/providers/agents" = 3160
+# 2026-06-18 adds deny-by-default tool enforcement and symlink escape checks.
+"internal/providers/agents" = 3230
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
 # 2026-05-08: cancel/session-create race cleanup binds ephemeral runs to the
 # prepared logical session and follows late-selected remote sessions when needed.
 # 2026-05-21 accepts and validates ACP additional_directories on run ingress.
-"internal/providers/runapi" = 1270
+# 2026-06-18 rejects event sink localhost/private targets at HTTP ingress.
+"internal/providers/runapi" = 1300
 # 2026-05-04/05: Zed ACP schema v0.12.2 stable lifecycle/config surface plus
 # observer drain for providers that emit trailing session/update chunks after
 # session/prompt returns. 2026-05-21: v0.13.2 auth defaults, current
@@ -79,7 +85,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/providers/matrixapi/server.go" = 550
 "internal/providers/agents/a2a_adapter.go" = 320
 "internal/providers/agents/acp_adapter.go" = 680
-"internal/providers/agents/default_handler.go" = 520
+"internal/providers/agents/default_handler.go" = 590
 "internal/providers/agents/router.go" = 480
 "internal/providers/agents/router_observer.go" = 400
 "internal/providers/runapi/runs.go" = 300

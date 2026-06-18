@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,14 @@ import (
 	"github.com/Josepavese/matrix/internal/middleware"
 	runresponse "github.com/Josepavese/matrix/internal/providers/runapi/response"
 )
+
+func newJSONRequest(method, target string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, target, body)
+	if method == http.MethodPost {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return req
+}
 
 type runTestRouter struct {
 	lastConversation middleware.ConversationRequest
@@ -248,6 +257,25 @@ func (r *runTestRouter) AttachRunContext(_ context.Context, req middleware.RunCo
 	}, nil
 }
 
+func TestHandleRunsRejectsNonJSONContentType(t *testing.T) {
+	router := &runTestRouter{}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPost, RunPathV1, strings.NewReader(`{"channel_id":"csrf","input":"run"}`))
+	req.Header.Set("Content-Type", "text/plain")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("expected 415 for non-JSON content type, got %d: %s", w.Code, w.Body.String())
+	}
+	if router.lastConversation.ChannelID != "" {
+		t.Fatalf("request should not have reached router: %#v", router.lastConversation)
+	}
+}
+
 func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.T) {
 	router := &runTestRouter{
 		reconcile: &middleware.AgentClientReconcileResult{
@@ -267,7 +295,7 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 		"session_policy":         middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 		"cleanup_policy":         middleware.SessionCleanupPolicyDeleteRemoteOrForgetLocal,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -349,7 +377,7 @@ func TestHandleRuns_EphemeralCleanupFailsRetainedReconciledClient(t *testing.T) 
 		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -423,7 +451,7 @@ func TestHandleRuns_ProjectsStructuralToolEventsFromRouteNotifier(t *testing.T) 
 		"agent_id":   "opencode",
 		"input":      "edit file",
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -476,7 +504,7 @@ func TestHandleRuns_EphemeralCleanupCleansRunCreatedActiveSessionWhenActiveChang
 		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -526,7 +554,7 @@ func TestHandleRuns_EphemeralCleanupFailsPreExistingActiveSessionWhenActiveChang
 		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -588,7 +616,7 @@ func TestHandleRuns_EphemeralCleanupIncludesNewOwnedRelatedSessions(t *testing.T
 		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -674,7 +702,7 @@ func TestHandleRuns_EphemeralCleanupDoesNotRecleanForkChildrenCoveredByParentCle
 		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -786,7 +814,7 @@ func TestHandleRuns_EphemeralCleanupDoesNotRecleanRelatedParentCoveredByChildCle
 		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -824,7 +852,7 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCleansWhenRouteFails(t *testing.T)
 		"workspace_path": "/tmp/eval-ws",
 		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -873,7 +901,7 @@ func TestHandleRuns_RouteFailureAcceptsUnmaterializedProcessAbsenceProof(t *test
 		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -920,7 +948,7 @@ func TestHandleRuns_ProviderFailureIsTyped(t *testing.T) {
 		"agent_id":   "codex",
 		"input":      "Respond with exactly OK",
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -958,7 +986,7 @@ func TestHandleRuns_CleanupPolicyAloneDoesNotCleanupActiveSession(t *testing.T) 
 		"input":          "regular run",
 		"cleanup_policy": middleware.SessionCleanupPolicyForgetLocal,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -982,7 +1010,7 @@ func TestHandleRuns_ActivityTimeoutIsExplicit(t *testing.T) {
 		"input":                    "wait for activity timeout",
 		"activity_timeout_seconds": 1,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	started := time.Now()
 	mux.ServeHTTP(w, req)
@@ -1033,7 +1061,7 @@ func TestHandleRunActionsCancelCleansEphemeralRunWithDetachedContext(t *testing.
 		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusAccepted {
@@ -1053,7 +1081,7 @@ func TestHandleRunActionsCancelCleansEphemeralRunWithDetachedContext(t *testing.
 		"action": "cancel",
 		"reason": "test_interrupt_resume",
 	})
-	actionReq := httptest.NewRequest(http.MethodPost, RunResourcePrefixV1+runResp.RunID+"/actions", bytes.NewReader(actionBody))
+	actionReq := newJSONRequest(http.MethodPost, RunResourcePrefixV1+runResp.RunID+"/actions", bytes.NewReader(actionBody))
 	actionW := httptest.NewRecorder()
 	mux.ServeHTTP(actionW, actionReq)
 	if actionW.Code != http.StatusAccepted {
@@ -1152,7 +1180,7 @@ func TestHandleRunActionsCancelRaceCleanupTracksLateSelectedRemoteSession(t *tes
 		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusAccepted {
@@ -1172,7 +1200,7 @@ func TestHandleRunActionsCancelRaceCleanupTracksLateSelectedRemoteSession(t *tes
 	}
 
 	actionBody, _ := json.Marshal(map[string]interface{}{"action": "cancel", "reason": "test_create_race"})
-	actionReq := httptest.NewRequest(http.MethodPost, RunResourcePrefixV1+runResp.RunID+"/actions", bytes.NewReader(actionBody))
+	actionReq := newJSONRequest(http.MethodPost, RunResourcePrefixV1+runResp.RunID+"/actions", bytes.NewReader(actionBody))
 	actionW := httptest.NewRecorder()
 	mux.ServeHTTP(actionW, actionReq)
 	if actionW.Code != http.StatusAccepted {
@@ -1225,7 +1253,7 @@ func TestHandleRuns_SidecarCapsulesAreNeutralAndTraced(t *testing.T) {
 			"include_protocol_meta": false,
 		},
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -1288,7 +1316,7 @@ func TestHandleRuns_SidecarValidationRejectsInvisibleContentWithoutID(t *testing
 			},
 		},
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -1308,7 +1336,7 @@ func TestHandleRunsRejectsRelativeAdditionalDirectories(t *testing.T) {
 		"input":                  "task",
 		"additional_directories": []string{"relative"},
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -1354,7 +1382,7 @@ func TestHandleRunActions_AttachContextDeliversToActiveRunSession(t *testing.T) 
 			},
 		},
 	})
-	req := httptest.NewRequest(http.MethodPost, RunResourcePrefixV1+run.ID+"/actions", bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunResourcePrefixV1+run.ID+"/actions", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -1406,7 +1434,7 @@ func TestHandleRunActions_AttachContextUnsupportedWhenSessionNotReady(t *testing
 			{"provider": "noema", "id": "sug_unsupported", "visibility": "trace_only"},
 		},
 	})
-	req := httptest.NewRequest(http.MethodPost, RunResourcePrefixV1+run.ID+"/actions", bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunResourcePrefixV1+run.ID+"/actions", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 

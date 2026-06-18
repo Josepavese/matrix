@@ -28,6 +28,10 @@ func (n *recordingNotifier) SetHeader(_, _ string) {}
 
 func (n *recordingNotifier) FormattedHeader() string { return "" }
 
+func newTrustedRequestHandler() *defaultRequestHandler {
+	return newConfigurableRequestHandler(func() bool { return true })
+}
+
 func startTerminalForTest(t *testing.T, handler *defaultRequestHandler, params json.RawMessage) string {
 	t.Helper()
 	result, err := handler.HandleRequest(context.Background(), "terminal/create", params)
@@ -74,7 +78,7 @@ func outputTerminalForTest(t *testing.T, handler *defaultRequestHandler, termina
 }
 
 func TestHandleTerminalCreate_Echo(t *testing.T) {
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithProcess(exec.NewProvider())
 
 	params, _ := json.Marshal(map[string]interface{}{
@@ -102,7 +106,7 @@ func TestHandleTerminalCreate_Echo(t *testing.T) {
 }
 
 func TestHandleTerminalCreate_InvalidJSON(t *testing.T) {
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithProcess(exec.NewProvider())
 
 	_, err := handler.HandleRequest(context.Background(), "terminal/create", json.RawMessage(`{invalid`))
@@ -112,7 +116,7 @@ func TestHandleTerminalCreate_InvalidJSON(t *testing.T) {
 }
 
 func TestHandleTerminalCreate_MissingCommand(t *testing.T) {
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithProcess(exec.NewProvider())
 
 	params, _ := json.Marshal(map[string]interface{}{
@@ -126,7 +130,7 @@ func TestHandleTerminalCreate_MissingCommand(t *testing.T) {
 }
 
 func TestHandleTerminalCreate_NoProcess(t *testing.T) {
-	handler := newConfigurableRequestHandler(nil)
+	handler := newTrustedRequestHandler()
 
 	params, _ := json.Marshal(map[string]interface{}{
 		"command": "echo",
@@ -140,7 +144,7 @@ func TestHandleTerminalCreate_NoProcess(t *testing.T) {
 }
 
 func TestHandleTerminalCreate_NonzeroExit(t *testing.T) {
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithProcess(exec.NewProvider())
 
 	params, _ := json.Marshal(map[string]interface{}{
@@ -169,7 +173,7 @@ func TestHandleTerminalCreate_CwdPropagation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithProcess(exec.NewProvider()).
 		WithFS(osfs.NewFSProvider(), tmpDir)
 
@@ -206,7 +210,7 @@ func TestHandleTerminalCreate_CwdFromRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithProcess(exec.NewProvider()).
 		WithFS(osfs.NewFSProvider(), outerDir)
 
@@ -239,7 +243,7 @@ func TestHandleFSRead_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithFS(osfs.NewFSProvider(), tmpDir)
 
 	params, _ := json.Marshal(map[string]interface{}{
@@ -268,7 +272,7 @@ func TestHandleFSRead_LineAndLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithFS(osfs.NewFSProvider(), tmpDir)
 
 	params, _ := json.Marshal(map[string]interface{}{
@@ -293,7 +297,7 @@ func TestHandleFSRead_LineAndLimit(t *testing.T) {
 func TestHandleFSWrite_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithFS(osfs.NewFSProvider(), tmpDir)
 
 	params, _ := json.Marshal(map[string]interface{}{
@@ -327,7 +331,7 @@ func TestHandleFSWrite_Success(t *testing.T) {
 func TestHandleFSWrite_EmitsStructuralToolEvents(t *testing.T) {
 	tmpDir := t.TempDir()
 	notifier := &recordingNotifier{}
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithFS(osfs.NewFSProvider(), tmpDir).
 		WithNotifier(notifier)
 
@@ -368,7 +372,7 @@ func TestHandleFSWrite_EmitsStructuralToolEvents(t *testing.T) {
 func TestHandleTerminalCreate_EmitsStructuralToolEvents(t *testing.T) {
 	tmpDir := t.TempDir()
 	notifier := &recordingNotifier{}
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithProcess(exec.NewProvider()).
 		WithFS(osfs.NewFSProvider(), tmpDir).
 		WithNotifier(notifier)
@@ -397,7 +401,7 @@ func TestHandleTerminalCreate_EmitsStructuralToolEvents(t *testing.T) {
 func TestHandleFSRead_PathTraversal(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	handler := newConfigurableRequestHandler(nil).
+	handler := newTrustedRequestHandler().
 		WithFS(osfs.NewFSProvider(), tmpDir)
 
 	params, _ := json.Marshal(map[string]interface{}{
@@ -410,8 +414,99 @@ func TestHandleFSRead_PathTraversal(t *testing.T) {
 	}
 }
 
+func TestToolMethodsRequireTrustMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	handler := newConfigurableRequestHandler(func() bool { return false }).
+		WithFS(osfs.NewFSProvider(), tmpDir).
+		WithProcess(exec.NewProvider())
+
+	tests := []struct {
+		method string
+		params map[string]interface{}
+	}{
+		{"fs/read_text_file", map[string]interface{}{"path": "test.txt"}},
+		{"fs/write_text_file", map[string]interface{}{"path": "test.txt", "content": "blocked"}},
+		{"terminal/create", map[string]interface{}{"command": "echo", "args": []string{"blocked"}}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.method, func(t *testing.T) {
+			params, _ := json.Marshal(tc.params)
+			_, err := handler.HandleRequest(context.Background(), tc.method, params)
+			if err == nil || !strings.Contains(err.Error(), "agent.trust_mode is false") {
+				t.Fatalf("expected trust-mode denial, got %v", err)
+			}
+		})
+	}
+}
+
+func TestDefaultRequestHandlerDeniesToolsByDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	handler := newConfigurableRequestHandler(nil).
+		WithFS(osfs.NewFSProvider(), tmpDir)
+
+	params, _ := json.Marshal(map[string]interface{}{"path": "test.txt"})
+	_, err := handler.HandleRequest(context.Background(), "fs/read_text_file", params)
+	if err == nil || !strings.Contains(err.Error(), "agent.trust_mode is false") {
+		t.Fatalf("expected default trust denial, got %v", err)
+	}
+}
+
+func TestTerminalLifecycleMethodsRequireTrustMode(t *testing.T) {
+	trusted := true
+	handler := newConfigurableRequestHandler(func() bool { return trusted }).
+		WithProcess(exec.NewProvider())
+
+	params, _ := json.Marshal(map[string]interface{}{
+		"command": "sh",
+		"args":    []string{"-c", "sleep 1"},
+	})
+	terminalID := startTerminalForTest(t, handler, params)
+	trusted = false
+
+	for _, method := range []string{"terminal/output", "terminal/wait_for_exit", "terminal/kill", "terminal/release"} {
+		t.Run(method, func(t *testing.T) {
+			params, _ := json.Marshal(map[string]interface{}{"terminalId": terminalID})
+			_, err := handler.HandleRequest(context.Background(), method, params)
+			if err == nil || !strings.Contains(err.Error(), "agent.trust_mode is false") {
+				t.Fatalf("expected trust-mode denial, got %v", err)
+			}
+		})
+	}
+	handler.CloseTerminals()
+}
+
+func TestResolvePathRejectsSymlinkEscape(t *testing.T) {
+	tmpDir := t.TempDir()
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "secret.txt")
+	if err := os.WriteFile(outsideFile, []byte("secret"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	fileLink := filepath.Join(tmpDir, "linked-secret.txt")
+	if err := os.Symlink(outsideFile, fileLink); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	dirLink := filepath.Join(tmpDir, "linked-dir")
+	if err := os.Symlink(outsideDir, dirLink); err != nil {
+		t.Skipf("directory symlink unavailable: %v", err)
+	}
+
+	handler := newTrustedRequestHandler().WithFS(osfs.NewFSProvider(), tmpDir)
+	if got := handler.resolvePath("linked-secret.txt"); got != "" {
+		t.Fatalf("file symlink escaped cwd: %q", got)
+	}
+	if got := handler.resolvePath("linked-dir/new.txt"); got != "" {
+		t.Fatalf("directory symlink escaped cwd: %q", got)
+	}
+	if got := handler.resolvePath("linked-dir/nested/pwn.txt"); got != "" {
+		t.Fatalf("nested directory symlink escaped cwd: %q", got)
+	}
+}
+
 func TestHandleFSRead_NoFS(t *testing.T) {
-	handler := newConfigurableRequestHandler(nil)
+	handler := newTrustedRequestHandler()
 
 	params, _ := json.Marshal(map[string]interface{}{
 		"path": "test.txt",
@@ -425,7 +520,7 @@ func TestHandleFSRead_NoFS(t *testing.T) {
 
 func TestResolvePath_BoundaryCases(t *testing.T) {
 	tmpDir := filepath.Clean(t.TempDir())
-	handler := newConfigurableRequestHandler(nil).WithFS(nil, tmpDir)
+	handler := newTrustedRequestHandler().WithFS(nil, tmpDir)
 
 	tests := []struct {
 		name  string
@@ -504,7 +599,7 @@ func TestPermissionRequest_TrustMode(t *testing.T) {
 }
 
 func TestTerminalMethods_MissingTerminalID(t *testing.T) {
-	handler := newConfigurableRequestHandler(nil)
+	handler := newTrustedRequestHandler()
 
 	for _, method := range []string{"terminal/output", "terminal/wait_for_exit", "terminal/kill", "terminal/release"} {
 		_, err := handler.HandleRequest(context.Background(), method, json.RawMessage(`{}`))
@@ -515,7 +610,7 @@ func TestTerminalMethods_MissingTerminalID(t *testing.T) {
 }
 
 func TestTerminalMethods_UnknownTerminal(t *testing.T) {
-	handler := newConfigurableRequestHandler(nil)
+	handler := newTrustedRequestHandler()
 
 	for _, method := range []string{"terminal/output", "terminal/wait_for_exit", "terminal/kill", "terminal/release"} {
 		_, err := handler.HandleRequest(context.Background(), method, json.RawMessage(`{"terminalId":"nonexistent"}`))
@@ -526,7 +621,7 @@ func TestTerminalMethods_UnknownTerminal(t *testing.T) {
 }
 
 func TestHandleRequest_UnknownMethodReturnsMethodNotFound(t *testing.T) {
-	handler := newConfigurableRequestHandler(nil)
+	handler := newTrustedRequestHandler()
 
 	_, err := handler.HandleRequest(context.Background(), "some/unknown/method", json.RawMessage(`{}`))
 	var rpcErr *zedacp.RPCError
@@ -539,7 +634,7 @@ func TestHandleRequest_UnknownMethodReturnsMethodNotFound(t *testing.T) {
 }
 
 func TestHandleRequest_ExtensionHandler(t *testing.T) {
-	handler := newConfigurableRequestHandler(nil).WithExtensionHandler(func(_ context.Context, method string, params json.RawMessage) (interface{}, error) {
+	handler := newTrustedRequestHandler().WithExtensionHandler(func(_ context.Context, method string, params json.RawMessage) (interface{}, error) {
 		if method != "matrix/example" || string(params) != `{"x":1}` {
 			t.Fatalf("unexpected extension request: method=%s params=%s", method, params)
 		}

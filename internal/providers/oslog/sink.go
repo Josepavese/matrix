@@ -51,12 +51,16 @@ type fileSink struct {
 }
 
 func newFileSink(path string, maxBytes int64, maxBackups int) (*fileSink, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open log file %s: %w", path, err)
+	}
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("failed to restrict log file permissions %s: %w", path, err)
 	}
 	info, err := f.Stat()
 	if err != nil {
@@ -122,9 +126,13 @@ func (s *fileSink) rotate() error {
 		}
 	}
 
-	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to reopen rotated log file %s: %w", s.path, err)
+	}
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("failed to restrict rotated log file permissions %s: %w", s.path, err)
 	}
 
 	s.file = f

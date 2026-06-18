@@ -66,8 +66,12 @@ func TestEnsureCreatesPALHomeLayout(t *testing.T) {
 		t.Fatalf("ensure: %v", err)
 	}
 	for _, dir := range []string{"bin", "configs", "data", "logs", "artifacts", "agents", "backups", "tmp"} {
-		if st, err := os.Stat(filepath.Join(home, dir)); err != nil || !st.IsDir() {
+		st, err := os.Stat(filepath.Join(home, dir))
+		if err != nil || !st.IsDir() {
 			t.Fatalf("expected directory %s, stat=%v err=%v", dir, st, err)
+		}
+		if runtime.GOOS != "windows" && st.Mode().Perm() != 0o700 {
+			t.Fatalf("expected directory %s mode 700, got %o", dir, st.Mode().Perm())
 		}
 	}
 }

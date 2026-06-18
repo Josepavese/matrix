@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -42,6 +43,9 @@ func (s *Service) resolve(delivery rundelivery.Delivery) (runtrace.Sink, runtrac
 }
 
 func Post(sink runtrace.Sink, event runtrace.Event) error {
+	if err := runtrace.ValidatePublicSinkURL(sink.URL); err != nil {
+		return err
+	}
 	payload, err := json.Marshal(map[string]interface{}{"sink_id": sink.ID, "event": event})
 	if err != nil {
 		return err
@@ -53,7 +57,7 @@ func Post(sink runtrace.Sink, event runtrace.Event) error {
 	req.Header.Set("Content-Type", "application/json")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	resp, err := http.DefaultClient.Do(req.WithContext(ctx))
+	resp, err := safeSinkHTTPClient().Do(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -62,6 +66,55 @@ func Post(sink runtrace.Sink, event runtrace.Event) error {
 		return fmt.Errorf("sink returned status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func safeSinkHTTPClient() *http.Client {
+	baseTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		baseTransport = &http.Transport{}
+	}
+	transport := baseTransport.Clone()
+	transport.Proxy = nil
+	dialer := &net.Dialer{Timeout: 3 * time.Second}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if len(addrs) == 0 {
+			return nil, fmt.Errorf("sink host %s has no resolved addresses", host)
+		}
+		for _, addr := range addrs {
+			if runtrace.UnsafeSinkIP(addr.IP) {
+				return nil, fmt.Errorf("sink host %s resolves to unsafe address", host)
+			}
+		}
+		var firstErr error
+		for _, addr := range addrs {
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(addr.IP.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+		return nil, firstErr
+	}
+	return &http.Client{
+		Transport: transport,
+		Timeout:   3 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			return runtrace.ValidatePublicSinkURL(req.URL.String())
+		},
+	}
 }
 
 func sinkAccepts(sink runtrace.Sink, kind string) bool {

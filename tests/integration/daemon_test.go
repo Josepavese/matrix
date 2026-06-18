@@ -1,7 +1,9 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"net/rpc/jsonrpc"
 	"path/filepath"
 	"testing"
@@ -14,6 +16,8 @@ import (
 )
 
 func TestDaemon_VaultRPC(t *testing.T) {
+	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
+	t.Setenv("MATRIX_VAULT_MASTER_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{5}, 32)))
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "integration_vault.db")
 

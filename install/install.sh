@@ -23,6 +23,7 @@ need() {
 }
 
 need curl
+need find
 need tar
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -59,19 +60,27 @@ if [ "$VERSION" != "latest" ]; then
 fi
 
 json="$(curl -fsSL "$api")"
-asset_url="$(printf '%s\n' "$json" \
+asset_urls="$(printf '%s\n' "$json" \
   | grep -Eo '"browser_download_url":[[:space:]]*"[^"]+"' \
   | cut -d '"' -f 4 \
-  | grep "_${goos}_${goarch}\\.tar\\.gz$" \
-  | head -n 1 || true)"
-checksum_url="$(printf '%s\n' "$json" \
-  | grep -Eo '"browser_download_url":[[:space:]]*"[^"]+"' \
-  | cut -d '"' -f 4 \
-  | grep '/checksums\.txt$' \
-  | head -n 1 || true)"
+  | grep "/matrix_[^/]*_${goos}_${goarch}\\.tar\\.gz$" || true)"
+asset_count="$(printf '%s\n' "$asset_urls" | sed '/^$/d' | wc -l | tr -d ' ')"
+if [ "$asset_count" -ne 1 ]; then
+  echo "expected exactly one Matrix release asset for ${goos}_${goarch} in $REPO $VERSION, found $asset_count" >&2
+  exit 1
+fi
+asset_url="$(printf '%s\n' "$asset_urls" | sed '/^$/d')"
 
-if [ -z "$asset_url" ]; then
-  echo "no Matrix release asset found for ${goos}_${goarch} in $REPO $VERSION" >&2
+checksum_urls="$(printf '%s\n' "$json" \
+  | grep -Eo '"browser_download_url":[[:space:]]*"[^"]+"' \
+  | cut -d '"' -f 4 \
+  | grep '/checksums\.txt$' || true)"
+checksum_count="$(printf '%s\n' "$checksum_urls" | sed '/^$/d' | wc -l | tr -d ' ')"
+checksum_url=""
+if [ "$checksum_count" -eq 1 ]; then
+  checksum_url="$(printf '%s\n' "$checksum_urls" | sed '/^$/d')"
+else
+  echo "expected exactly one checksums.txt release asset in $REPO $VERSION, found $checksum_count" >&2
   exit 1
 fi
 
@@ -105,6 +114,51 @@ verify_checksum() {
   echo "Verified checksum for $asset_name"
 }
 
+validate_tar_archive() {
+  archive_path="$1"
+  tar -tzf "$archive_path" | while IFS= read -r entry; do
+    case "$entry" in
+      ""|/*|../*|*/../*|..|*/..)
+        echo "unsafe archive entry: $entry" >&2
+        exit 1
+      ;;
+    esac
+  done
+  tar -tzvf "$archive_path" | while IFS= read -r entry; do
+    type="$(printf '%s' "$entry" | cut -c1)"
+    case "$type" in
+      -|d) ;;
+      *)
+        echo "unsafe archive entry type: $entry" >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
+validate_extracted_tree() {
+  root="$1"
+  unsafe_link="$(find "$root" -type l -print -quit)"
+  if [ -n "$unsafe_link" ]; then
+    echo "unsafe extracted symlink: $unsafe_link" >&2
+    exit 1
+  fi
+  unsafe_hardlink="$(find "$root" -type f -links +1 -print -quit)"
+  if [ -n "$unsafe_hardlink" ]; then
+    echo "unsafe extracted hardlink: $unsafe_hardlink" >&2
+    exit 1
+  fi
+}
+
+prepare_pal_home() {
+  mkdir -p "$matrix_home"
+  chmod 0700 "$matrix_home"
+  for dir in bin configs data logs artifacts backups tmp; do
+    mkdir -p "$matrix_home/$dir"
+    chmod 0700 "$matrix_home/$dir"
+  done
+}
+
 tmp_dir="$(mktemp -d)"
 cleanup() {
   rm -rf "$tmp_dir"
@@ -118,16 +172,16 @@ if [ -n "$checksum_url" ]; then
   checksum_file="$tmp_dir/checksums.txt"
   curl -fL "$checksum_url" -o "$checksum_file"
   verify_checksum "$checksum_file" "$archive" "$asset_name"
-else
-  echo "No checksums.txt release asset found; skipping checksum verification."
 fi
+validate_tar_archive "$archive"
 tar -xzf "$archive" -C "$tmp_dir"
-if [ ! -f "$tmp_dir/matrix" ]; then
+validate_extracted_tree "$tmp_dir"
+if [ ! -f "$tmp_dir/matrix" ] || [ -L "$tmp_dir/matrix" ]; then
   echo "release asset $asset_name does not contain the matrix binary at archive root" >&2
   exit 1
 fi
 
-mkdir -p "$matrix_home/bin" "$matrix_home/configs" "$matrix_home/data" "$matrix_home/logs" "$matrix_home/artifacts" "$matrix_home/backups" "$matrix_home/tmp"
+prepare_pal_home
 install -m 0755 "$tmp_dir/matrix" "$matrix_home/bin/matrix"
 
 user_bin="$HOME/.local/bin"
@@ -172,10 +226,13 @@ if [ -d "$tmp_dir/configs" ]; then
     rel="${src#$tmp_dir/configs/}"
     dest="$matrix_home/configs/$rel"
     mkdir -p "$(dirname "$dest")"
+    chmod 0700 "$(dirname "$dest")"
     if [ ! -e "$dest" ]; then
       cp "$src" "$dest"
+      chmod 0600 "$dest"
     fi
   done
+  find "$matrix_home/configs" -type d -exec chmod 0700 {} +
 fi
 
 echo "Matrix installed."

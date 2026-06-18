@@ -56,9 +56,9 @@ type Router struct {
 	// stdio client is evicted by keepalive before strict session cleanup runs.
 	clientTombstones map[string]agentClientTombstone
 
-	// trustMode returns true when auto-approve is enabled (default).
+	// trustMode returns true when auto-approve is enabled.
 	// When false, permission requests from agents are denied.
-	// If nil, defaults to true (trust mode on).
+	// If nil, defaults to false (trust mode off).
 	trustMode func() bool
 
 	// fs and cwd enable fs/* ACP methods (agent reads/writes files via protocol).
@@ -92,7 +92,7 @@ func NewRouter(resolver middleware.AgentEndpointResolver) *Router {
 }
 
 // SetTrustMode sets the function that determines whether agent permission
-// requests are auto-approved. Pass nil to always auto-approve (default).
+// requests are auto-approved. Pass nil to deny by default.
 func (r *Router) SetTrustMode(fn func() bool) {
 	r.trustMode = fn
 }

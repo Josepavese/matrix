@@ -29,16 +29,22 @@ if ($Version -ne "latest") {
 }
 
 $release = Invoke-RestMethod -Uri $api -Headers @{ "User-Agent" = "matrix-installer" }
-$asset = $release.assets | Where-Object {
-  $_.name -like "*_windows_$arch.zip"
-} | Select-Object -First 1
-$checksumAsset = $release.assets | Where-Object {
+$assets = @($release.assets | Where-Object {
+  $_.name -match "^matrix_.+_windows_$arch\.zip$"
+})
+$checksumAssets = @($release.assets | Where-Object {
   $_.name -eq "checksums.txt"
-} | Select-Object -First 1
+})
 
-if ($null -eq $asset) {
-  throw "No Matrix release asset found for windows_$arch in $Repo $Version"
+if ($assets.Count -ne 1) {
+  throw "Expected exactly one Matrix release asset for windows_$arch in $Repo $Version, found $($assets.Count)"
 }
+$asset = $assets[0]
+
+if ($checksumAssets.Count -ne 1) {
+  throw "Expected exactly one checksums.txt release asset in $Repo $Version, found $($checksumAssets.Count)"
+}
+$checksumAsset = $checksumAssets[0]
 
 function Test-MatrixChecksum {
   param(
@@ -67,20 +73,40 @@ function Test-MatrixChecksum {
   Write-Host "Verified checksum for $AssetName"
 }
 
+function Test-MatrixZipArchive {
+  param(
+    [string]$ArchivePath
+  )
+
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
+  try {
+    foreach ($entry in $zip.Entries) {
+      $name = $entry.FullName
+      $normalized = $name -replace "\\", "/"
+      if ([string]::IsNullOrWhiteSpace($normalized)) {
+        throw "unsafe archive entry: empty path"
+      }
+      if ($normalized.StartsWith("/") -or $normalized -match "^[A-Za-z]:" -or $normalized -match "(^|/)\.\.(/|$)") {
+        throw "unsafe archive entry: $name"
+      }
+    }
+  }
+  finally {
+    $zip.Dispose()
+  }
+}
+
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("matrix-install-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 
 try {
   $archive = Join-Path $tmp "matrix.zip"
   Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive
-  if ($null -ne $checksumAsset) {
-    $checksumFile = Join-Path $tmp "checksums.txt"
-    Invoke-WebRequest -Uri $checksumAsset.browser_download_url -OutFile $checksumFile
-    Test-MatrixChecksum -ChecksumFile $checksumFile -ArchivePath $archive -AssetName $asset.name
-  }
-  else {
-    Write-Host "No checksums.txt release asset found; skipping checksum verification."
-  }
+  $checksumFile = Join-Path $tmp "checksums.txt"
+  Invoke-WebRequest -Uri $checksumAsset.browser_download_url -OutFile $checksumFile
+  Test-MatrixChecksum -ChecksumFile $checksumFile -ArchivePath $archive -AssetName $asset.name
+  Test-MatrixZipArchive -ArchivePath $archive
   Expand-Archive -Path $archive -DestinationPath $tmp -Force
   $extractedBinary = Join-Path $tmp "matrix.exe"
   if (-not (Test-Path $extractedBinary)) {

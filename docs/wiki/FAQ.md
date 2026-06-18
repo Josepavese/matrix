@@ -29,7 +29,10 @@ No. Matrix runs entirely on your machine. All state is stored locally in an encr
 ### How do I install Matrix?
 
 ```bash
-curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | sh
+MATRIX_VERSION="$(curl -fsSL https://api.github.com/repos/Josepavese/matrix/releases/latest | sed -n 's/.*"tag_name": "\(v[^"]*\)".*/\1/p' | head -n 1)"
+curl -fsSLO "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh"
+less install.sh
+env MATRIX_VERSION="$MATRIX_VERSION" sh install.sh
 ```
 
 Then run `matrix bootstrap doctor` to set it up. See [Getting Started](Getting-Started.md) for details.
@@ -53,7 +56,11 @@ go build -o matrix ./cmd/matrix
 Yes. PowerShell install:
 
 ```powershell
-irm https://github.com/Josepavese/matrix/releases/latest/download/install.ps1 | iex
+$release = Invoke-RestMethod https://api.github.com/repos/Josepavese/matrix/releases/latest
+$env:MATRIX_VERSION = $release.tag_name
+Invoke-WebRequest "https://github.com/Josepavese/matrix/releases/download/$env:MATRIX_VERSION/install.ps1" -OutFile install.ps1
+notepad install.ps1
+.\install.ps1
 ```
 
 ---
@@ -212,7 +219,10 @@ Remove the PAL home directory and reinstall:
 
 ```bash
 rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/matrix"
-curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | sh
+MATRIX_VERSION="$(curl -fsSL https://api.github.com/repos/Josepavese/matrix/releases/latest | sed -n 's/.*"tag_name": "\(v[^"]*\)".*/\1/p' | head -n 1)"
+curl -fsSLO "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh"
+less install.sh
+env MATRIX_VERSION="$MATRIX_VERSION" sh install.sh
 ```
 
 ---

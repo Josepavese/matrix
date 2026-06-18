@@ -21,6 +21,10 @@ func securePermissions(mode os.FileMode) bool {
 	return mode.Perm() == 0o600
 }
 
+func securePathPermissions(_ string, mode os.FileMode) bool {
+	return securePermissions(mode)
+}
+
 func permissionsString(mode os.FileMode) string {
 	return mode.Perm().String()
 }

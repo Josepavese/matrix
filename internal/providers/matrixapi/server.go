@@ -163,11 +163,11 @@ func (s *Server) HandleSessionActions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.apiKey != "" {
-		if r.Header.Get("X-Matrix-Key") != s.apiKey {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
+	if !requireJSONContentType(w, r) {
+		return
+	}
+	if !requireAPIKey(w, r, s.apiKey) {
+		return
 	}
 
 	var req sessionActionRequest
@@ -273,8 +273,10 @@ func (s *Server) HandleWorkspaceActions(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.apiKey != "" && r.Header.Get("X-Matrix-Key") != s.apiKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !requireJSONContentType(w, r) {
+		return
+	}
+	if !requireAPIKey(w, r, s.apiKey) {
 		return
 	}
 	var req workspaceActionRequest
@@ -309,8 +311,7 @@ func (s *Server) HandleWorkspaceState(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.apiKey != "" && r.Header.Get("X-Matrix-Key") != s.apiKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !requireAPIKey(w, r, s.apiKey) {
 		return
 	}
 	channelID := r.URL.Query().Get("channel_id")
@@ -342,8 +343,7 @@ func (s *Server) HandleWorkspaceTimeline(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.apiKey != "" && r.Header.Get("X-Matrix-Key") != s.apiKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !requireAPIKey(w, r, s.apiKey) {
 		return
 	}
 	channelID := r.URL.Query().Get("channel_id")
@@ -382,8 +382,7 @@ func (s *Server) HandleWorkspaceDecisions(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.apiKey != "" && r.Header.Get("X-Matrix-Key") != s.apiKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !requireAPIKey(w, r, s.apiKey) {
 		return
 	}
 	channelID := r.URL.Query().Get("channel_id")
@@ -422,8 +421,7 @@ func (s *Server) HandleWorkspaceMemory(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.apiKey != "" && r.Header.Get("X-Matrix-Key") != s.apiKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !requireAPIKey(w, r, s.apiKey) {
 		return
 	}
 	channelID := r.URL.Query().Get("channel_id")
@@ -462,8 +460,7 @@ func (s *Server) HandleWorkspaceSnapshots(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.apiKey != "" && r.Header.Get("X-Matrix-Key") != s.apiKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !requireAPIKey(w, r, s.apiKey) {
 		return
 	}
 	channelID := r.URL.Query().Get("channel_id")
@@ -502,8 +499,10 @@ func (s *Server) HandleIntents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.apiKey != "" && r.Header.Get("X-Matrix-Key") != s.apiKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !requireJSONContentType(w, r) {
+		return
+	}
+	if !requireAPIKey(w, r, s.apiKey) {
 		return
 	}
 	var req intentActionRequest
@@ -541,8 +540,10 @@ func (s *Server) HandleModes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.apiKey != "" && r.Header.Get("X-Matrix-Key") != s.apiKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !requireJSONContentType(w, r) {
+		return
+	}
+	if !requireAPIKey(w, r, s.apiKey) {
 		return
 	}
 	var req modeActionRequest
@@ -577,8 +578,7 @@ func (s *Server) HandleOrchestrationCapabilities(w http.ResponseWriter, r *http.
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.apiKey != "" && r.Header.Get("X-Matrix-Key") != s.apiKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !requireAPIKey(w, r, s.apiKey) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

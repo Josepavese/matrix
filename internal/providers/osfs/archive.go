@@ -67,6 +67,9 @@ func extractZip(src, dest string) error {
 		}
 
 		if f.FileInfo().IsDir() {
+			if err := ensureSafeArchivePath(dest, fpath); err != nil {
+				return err
+			}
 			if err := mkdirArchiveDir(fpath); err != nil {
 				return err
 			}
@@ -78,15 +81,21 @@ func extractZip(src, dest string) error {
 			continue
 		}
 
-		if err := extractZipFile(f, fpath); err != nil {
+		if err := extractZipFile(f, dest, fpath); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func extractZipFile(f *zip.File, fpath string) error {
+func extractZipFile(f *zip.File, dest, fpath string) error {
+	if err := ensureSafeArchivePath(dest, filepath.Dir(fpath)); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(fpath), 0o755); err != nil {
+		return err
+	}
+	if err := ensureNoSymlink(fpath); err != nil {
 		return err
 	}
 
@@ -164,9 +173,18 @@ func extractTarEntry(dest string, header *tar.Header, tr *tar.Reader) error {
 
 	switch header.Typeflag {
 	case tar.TypeDir:
+		if err := ensureSafeArchivePath(dest, target); err != nil {
+			return err
+		}
 		return mkdirArchiveDir(target)
 	case tar.TypeReg, 0:
+		if err := ensureSafeArchivePath(dest, filepath.Dir(target)); err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		if err := ensureNoSymlink(target); err != nil {
 			return err
 		}
 		safeMode := safeArchiveFileMode(os.FileMode(header.Mode))
@@ -186,10 +204,91 @@ func extractTarEntry(dest string, header *tar.Header, tr *tar.Reader) error {
 }
 
 func mkdirArchiveDir(path string) error {
+	if err := ensureNoSymlink(path); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return err
 	}
 	return os.Chmod(path, 0o755)
+}
+
+func ensureSafeArchivePath(dest, target string) error {
+	realDest, rel, err := archivePathContext(dest, target)
+	if err != nil || rel == "." {
+		return err
+	}
+	return ensureArchiveComponentsSafe(realDest, rel)
+}
+
+func archivePathContext(dest, target string) (string, string, error) {
+	absDest, err := filepath.Abs(dest)
+	if err != nil {
+		return "", "", err
+	}
+	realDest, err := filepath.EvalSymlinks(absDest)
+	if err != nil {
+		return "", "", err
+	}
+	absTarget, err := filepath.Abs(target)
+	if err != nil {
+		return "", "", err
+	}
+	rel, err := filepath.Rel(absDest, absTarget)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("archive entry escapes destination")
+	}
+	return realDest, rel, nil
+}
+
+func ensureArchiveComponentsSafe(realDest, rel string) error {
+	current := realDest
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		current = filepath.Join(current, part)
+		realPath, exists, err := existingArchivePath(current)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
+		if !isResolvedArchivePathSafe(realDest, realPath) {
+			return fmt.Errorf("archive entry crosses symlink outside destination")
+		}
+		current = realPath
+	}
+	return nil
+}
+
+func existingArchivePath(path string) (string, bool, error) {
+	realPath, err := filepath.EvalSymlinks(path)
+	if os.IsNotExist(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return realPath, true, nil
+}
+
+func isResolvedArchivePathSafe(dest, candidate string) bool {
+	candidate = filepath.Clean(candidate)
+	dest = filepath.Clean(dest)
+	return candidate == dest || strings.HasPrefix(candidate, dest+string(filepath.Separator))
+}
+
+func ensureNoSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("archive destination is a symlink: %s", path)
+	}
+	return nil
 }
 
 func safeArchiveFileMode(mode os.FileMode) os.FileMode {

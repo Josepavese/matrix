@@ -46,20 +46,28 @@ matrix run
 Install latest release:
 
 ```bash
-curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | sh
+MATRIX_VERSION="$(curl -fsSL https://api.github.com/repos/Josepavese/matrix/releases/latest | sed -n 's/.*"tag_name": "\(v[^"]*\)".*/\1/p' | head -n 1)"
+curl -fsSLO "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh"
+less install.sh
+env MATRIX_VERSION="$MATRIX_VERSION" sh install.sh
 ```
 
 Install a specific release:
 
 ```bash
-MATRIX_VERSION=v0.1.17
-curl -fsSL "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh" | env MATRIX_VERSION="$MATRIX_VERSION" sh
+MATRIX_VERSION=vX.Y.Z
+curl -fsSLO "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh"
+less install.sh
+env MATRIX_VERSION="$MATRIX_VERSION" sh install.sh
 ```
 
 Custom PAL home:
 
 ```bash
-curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | env MATRIX_HOME="$HOME/.matrix-pal" sh
+MATRIX_VERSION="$(curl -fsSL https://api.github.com/repos/Josepavese/matrix/releases/latest | sed -n 's/.*"tag_name": "\(v[^"]*\)".*/\1/p' | head -n 1)"
+curl -fsSLO "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh"
+less install.sh
+env MATRIX_VERSION="$MATRIX_VERSION" MATRIX_HOME="$HOME/.matrix-pal" sh install.sh
 ```
 
 Run:
@@ -77,21 +85,31 @@ If the current shell cannot find `matrix`, open a new shell. The installer adds 
 Install latest release:
 
 ```powershell
-irm https://github.com/Josepavese/matrix/releases/latest/download/install.ps1 | iex
+$release = Invoke-RestMethod https://api.github.com/repos/Josepavese/matrix/releases/latest
+$env:MATRIX_VERSION = $release.tag_name
+Invoke-WebRequest "https://github.com/Josepavese/matrix/releases/download/$env:MATRIX_VERSION/install.ps1" -OutFile install.ps1
+notepad install.ps1
+.\install.ps1
 ```
 
 Install a specific release:
 
 ```powershell
-$env:MATRIX_VERSION = "v0.1.17"
-irm "https://github.com/Josepavese/matrix/releases/download/$env:MATRIX_VERSION/install.ps1" | iex
+$env:MATRIX_VERSION = "vX.Y.Z"
+Invoke-WebRequest "https://github.com/Josepavese/matrix/releases/download/$env:MATRIX_VERSION/install.ps1" -OutFile install.ps1
+notepad install.ps1
+.\install.ps1
 ```
 
 Custom PAL home:
 
 ```powershell
+$release = Invoke-RestMethod https://api.github.com/repos/Josepavese/matrix/releases/latest
+$env:MATRIX_VERSION = $release.tag_name
 $env:MATRIX_HOME = "$env:USERPROFILE\.matrix-pal"
-irm https://github.com/Josepavese/matrix/releases/latest/download/install.ps1 | iex
+Invoke-WebRequest "https://github.com/Josepavese/matrix/releases/download/$env:MATRIX_VERSION/install.ps1" -OutFile install.ps1
+notepad install.ps1
+.\install.ps1
 ```
 
 Run:
@@ -129,6 +147,7 @@ End users should not clone the repository for installation. Clone is only for de
 Installer behavior:
 
 - downloads only the matching release archive;
+- verifies the matching release archive against `checksums.txt`;
 - extracts into a temporary directory;
 - copies the executable into `MATRIX_HOME/bin`;
 - copies missing seed configs into `MATRIX_HOME/configs`;

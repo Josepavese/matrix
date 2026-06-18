@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/Josepavese/matrix/internal/logic/matrixhome"
+	"github.com/Josepavese/matrix/internal/logic/vaultsec"
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +23,9 @@ func configureMatrixHome() error {
 	home, err := matrixhome.Configure()
 	if err != nil {
 		return err
+	}
+	if _, err := vaultsec.EnsureDefaultMasterKey(nil); err != nil {
+		return fmt.Errorf("failed to initialize vault master key: %w", err)
 	}
 	activeMatrixHome = home
 	return nil
