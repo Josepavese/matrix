@@ -24,23 +24,9 @@ matrix workspace add my-project --path /home/user/my-project
 
 This creates a workspace named `my-project` bound to that path.
 
-### Chat
-
-```
-/workspace add my-project
-```
-
-### HTTP
-
-```bash
-curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "action": "add",
-    "workspace_id": "my-project",
-    "root_path": "/home/user/my-project"
-  }'
-```
+HTTP and chat workspace actions operate on existing workspaces. They support
+`list`, `status`, `switch`, `bind`, and `snapshot`; they do not create new
+workspace records.
 
 ## Listing Workspaces
 
@@ -227,12 +213,11 @@ When a message arrives, Matrix resolves the workspace in this order:
 | `matrix workspace add <id> --path <path>` | Create a workspace from a path |
 | `matrix workspace list` | List all workspaces |
 | `matrix workspace state <id>` | Show current workspace state |
-| `matrix workspace switch <name>` | Switch to a workspace |
+| `matrix workspace switch <id> --channel <channel-id>` | Switch a channel to a workspace |
 | `matrix workspace timeline <id>` | Show recent workspace events |
 | `matrix workspace snapshots <id>` | List snapshots |
 | `matrix workspace decisions <id>` | Show decision trace |
 | `matrix workspace memory <id>` | Show workspace memory |
-| `matrix workspace memory` | Show workspace memory |
 | `matrix workspace retention` | Manage retention policies |
 
 ## Next

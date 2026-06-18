@@ -1,6 +1,6 @@
 # Matrix Live Context Interrupt Policy
 
-Last reviewed: 2026-05-21.
+Last reviewed: 2026-06-18.
 
 ## Decision
 
@@ -11,10 +11,10 @@ ACP guarantees a cancellation path for an active prompt turn. It does not define
 a standard "append this new prompt/context into the currently running turn and
 make the model consume it before final answer" operation.
 
-The latest ACP docs and schema release v0.13.2 also do not define a `side`,
-`session/side`, or equivalent inline side-channel primitive. The official
-branching primitive is draft `session/fork`; it creates a separate session and
-does not solve mid-turn live context injection by itself.
+The latest ACP docs and Schema v1.13.7, published 2026-06-16, also do not define
+a `side`, `session/side`, or equivalent inline side-channel primitive. The
+official branching primitive is draft `session/fork`; it creates a separate
+session and does not solve mid-turn live context injection by itself.
 
 ACP `session/update` notifications are session-scoped, not request-scoped. A
 client receiving updates for `sessionId=s1` cannot prove which concurrent

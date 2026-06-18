@@ -239,6 +239,7 @@ Response model:
 - isolated `/v1/runs` success and error responses may include `cleanup`; traces record `session.policy.applied` and `session.cleanup`. A `session.cleanup` event with `status=failed` and `clean=false` is explicit evidence that provider/process cleanup was incomplete. When `session_policy=new_ephemeral_delete_after_run` creates a policy-owned session, routing is explicitly bound to that prepared logical session even if fork, judge, or sidecar workflows change the channel's active session before the run finishes. If cancellation races with provider startup and Matrix observes a different late-selected remote session, cleanup targets that selected logical/remote session so the proof does not lose the real provider target.
 - sidecar capsule traces expose `sidecar_provider`, `sidecar_id`, `sidecar_schema`, `sidecar_version`, `sidecar_carrier`, and `sidecar_visibility` as top-level event fields so redaction can hide raw content without losing audit evidence
 - synchronous `/v1/runs` returns structured HTTP `409` `SETUP_REQUIRED` instead of wizard text when `system.configured=false`
+- provisioned headless installs can mark setup complete with `matrix vault set system.configured true`
 - `GET /v1/runs/{run_id}/trace` returns `matrix.agent_communication_run_trace.v0`
 - `GET /v1/runs/{run_id}/events` returns ordered run events
 - tool and permission events expose provider-neutral frontend fields such as `sequence`, `tool_call_id`, `permission_id`, `tool_name`, `tool_kind`, `summary`, `inputs`, `outputs`, `artifact_refs`, and visibility metadata
@@ -295,9 +296,9 @@ Current behavior:
 - A2A remote tasks are enumerated through `ListTasks`, imported through `GetTask`, and deleted through `CancelTask`
 - channel users do not select ACP or A2A explicitly; Matrix resolves the provider from SSOT and the active session
 
-As of 2026-05-21, the current Zed ACP source of truth is the official
+As of 2026-06-18, the current Zed ACP source of truth is the official
 `agentclientprotocol.com` protocol docs plus the `agentclientprotocol` schema
-release `v0.13.2`.
+release `Schema v1.13.7`, published 2026-06-16.
 `session/list`, `session_info_update`, `session/resume`, `session/close`, and
 `session/set_config_option` are stable lifecycle/configuration operations with
 capability checks where applicable.

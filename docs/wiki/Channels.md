@@ -13,9 +13,10 @@ Telegram gives you a chat-based interface to your agents from any device.
 3. Configure Matrix:
 
 ```bash
-matrix channel set telegram.token "123456:ABC-DEF..."
-matrix channel set telegram.enabled true
-matrix channel set telegram.admins "your-telegram-user-id"
+matrix channel set telegram token "123456:ABC-DEF..."
+matrix channel set telegram enabled true
+matrix channel set telegram admins "your-telegram-user-id"
+matrix channel show telegram
 ```
 
 Or via environment variables:
@@ -229,18 +230,17 @@ matrix config set default_agent claude
 ### Logs
 
 ```bash
-matrix logs show
 matrix logs tail
+matrix logs show-config
 matrix logs doctor
 ```
 
 ### Vault
 
 ```bash
-matrix vault list
 matrix vault get session.meta.sess-123
 matrix vault backup
-matrix vault restore
+matrix vault restore ./backups/<backup-file>
 matrix vault doctor
 ```
 

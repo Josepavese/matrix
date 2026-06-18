@@ -64,11 +64,46 @@ asset_url="$(printf '%s\n' "$json" \
   | cut -d '"' -f 4 \
   | grep "_${goos}_${goarch}\\.tar\\.gz$" \
   | head -n 1 || true)"
+checksum_url="$(printf '%s\n' "$json" \
+  | grep -Eo '"browser_download_url":[[:space:]]*"[^"]+"' \
+  | cut -d '"' -f 4 \
+  | grep '/checksums\.txt$' \
+  | head -n 1 || true)"
 
 if [ -z "$asset_url" ]; then
   echo "no Matrix release asset found for ${goos}_${goarch} in $REPO $VERSION" >&2
   exit 1
 fi
+
+verify_checksum() {
+  checksum_file="$1"
+  archive_path="$2"
+  asset_name="$3"
+
+  expected="$(awk -v name="$asset_name" 'NF >= 2 { file=$2; sub(/^\*/, "", file); if (file == name) { print $1; exit } }' "$checksum_file")"
+  if [ -z "$expected" ]; then
+    echo "checksums.txt is available but has no entry for $asset_name" >&2
+    exit 1
+  fi
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$archive_path" | awk '{ print $1 }')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$archive_path" | awk '{ print $1 }')"
+  else
+    echo "checksums.txt is available but neither sha256sum nor shasum is installed" >&2
+    exit 1
+  fi
+
+  actual="$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')"
+  expected="$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')"
+  if [ "$actual" != "$expected" ]; then
+    echo "checksum verification failed for $asset_name" >&2
+    exit 1
+  fi
+
+  echo "Verified checksum for $asset_name"
+}
 
 tmp_dir="$(mktemp -d)"
 cleanup() {
@@ -77,8 +112,20 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 archive="$tmp_dir/matrix.tar.gz"
+asset_name="$(basename "$asset_url")"
 curl -fL "$asset_url" -o "$archive"
+if [ -n "$checksum_url" ]; then
+  checksum_file="$tmp_dir/checksums.txt"
+  curl -fL "$checksum_url" -o "$checksum_file"
+  verify_checksum "$checksum_file" "$archive" "$asset_name"
+else
+  echo "No checksums.txt release asset found; skipping checksum verification."
+fi
 tar -xzf "$archive" -C "$tmp_dir"
+if [ ! -f "$tmp_dir/matrix" ]; then
+  echo "release asset $asset_name does not contain the matrix binary at archive root" >&2
+  exit 1
+fi
 
 mkdir -p "$matrix_home/bin" "$matrix_home/configs" "$matrix_home/data" "$matrix_home/logs" "$matrix_home/artifacts" "$matrix_home/backups" "$matrix_home/tmp"
 install -m 0755 "$tmp_dir/matrix" "$matrix_home/bin/matrix"

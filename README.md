@@ -1,9 +1,6 @@
-<p align="center">
-  <strong>
-    <span style="color:#FACC15">⚠️ WARNING: Matrix is in an experimental testing phase.</span>
-  </strong><br/>
-  <span style="color:#FACC15">APIs, commands, and integrations may change. Great for evaluation and local workflows.</span>
-</p>
+> **Experimental warning:** Matrix is in an experimental testing phase. Public
+> APIs, commands, install behavior, and integrations may change between releases.
+> Use it for evaluation and local workflows, not as a stable production contract.
 
 <p align="center">
   <img src="docs/assets/readme/hero.png" alt="Matrix" width="1000" />
@@ -66,7 +63,7 @@ Install without cloning the repo.
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.sh | sh
+curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | sh
 matrix bootstrap doctor
 matrix run
 ```
@@ -74,7 +71,7 @@ matrix run
 **Windows PowerShell:**
 
 ```powershell
-irm https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.ps1 | iex
+irm https://github.com/Josepavese/matrix/releases/latest/download/install.ps1 | iex
 matrix bootstrap doctor
 matrix run
 ```
@@ -185,6 +182,12 @@ For contributors and those interested in the product direction:
 - [Governance](docs/governance/README.md)
 - [Threat model](docs/matrix_threat_model.md)
 - [Brand direction](docs/brand_direction.md)
+
+### Project Metadata
+
+- [License](LICENSE)
+- [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Built For
 

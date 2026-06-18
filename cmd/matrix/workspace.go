@@ -49,11 +49,16 @@ var (
 				exitf("workspace id is required")
 			}
 
+			rootPath, err := resolveOptionalInvocationPath(strings.TrimSpace(workspaceAddPath))
+			if err != nil {
+				exitf("failed to resolve workspace path: %v", err)
+			}
+
 			meta := workspace.Meta{
 				ID:              workspaceID,
 				Name:            workspaceID,
 				Kind:            workspaceAddKind,
-				RootPath:        strings.TrimSpace(workspaceAddPath),
+				RootPath:        rootPath,
 				DefaultAgentID:  strings.TrimSpace(workspaceAddDefaultAgent),
 				ReviewerAgentID: strings.TrimSpace(workspaceAddReviewerAgent),
 				DefaultMode:     strings.TrimSpace(workspaceAddDefaultMode),

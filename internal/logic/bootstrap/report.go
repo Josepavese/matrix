@@ -2,12 +2,12 @@
 package bootstrap
 
 import (
-	"encoding/json"
 	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/agentmgr"
 	"github.com/Josepavese/matrix/internal/logic/channelcfg"
 	"github.com/Josepavese/matrix/internal/logic/config"
+	"github.com/Josepavese/matrix/internal/logic/setupstate"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -35,7 +35,6 @@ func BuildReport(store middleware.Storage, cfgMgr *config.Manager, registry *age
 // BuildGuide returns setup guidance steps based on bootstrap state.
 func BuildGuide(systemConfigured, telegramEnabled, telegramConfigured bool, activeAgents []string) []string {
 	steps := []string{
-		"Build the binary with `go build -o matrix ./cmd/matrix` or use `go run ./cmd/matrix ...`.",
 		"Inspect the current bootstrap state with `matrix bootstrap doctor`.",
 	}
 	if len(activeAgents) == 0 {
@@ -50,7 +49,7 @@ func BuildGuide(systemConfigured, telegramEnabled, telegramConfigured bool, acti
 		steps = append(steps, "Telegram is optional; leave it disabled unless you want a chat gateway.")
 	}
 	if !systemConfigured {
-		steps = append(steps, "First-run onboarding is not complete yet: start `matrix run` and complete setup through an interactive channel before sending non-interactive `/v1/runs` traffic.")
+		steps = append(steps, "First-run onboarding is not complete yet: start `matrix run` and complete setup through an interactive channel, or for a headless provisioned install run `matrix vault set system.configured true` before sending non-interactive `/v1/runs` traffic.")
 	}
 	steps = append(steps,
 		"Run `matrix doctor` before starting the daemon if you want a full local health snapshot.",
@@ -65,8 +64,7 @@ func readConfigured(store middleware.Storage) bool {
 	if err != nil || len(data) == 0 {
 		return false
 	}
-	var configured bool
-	return json.Unmarshal(data, &configured) == nil && configured
+	return setupstate.Configured(data)
 }
 
 func activeAgentIDs(registry *agentmgr.Registry) []string {

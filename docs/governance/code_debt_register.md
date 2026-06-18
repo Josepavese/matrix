@@ -104,8 +104,8 @@ Latest budget realignment:
   documentation that ACP has no `side` primitive. This keeps the ACP package as
   a standalone protocol facade and avoids pushing protocol fields into Matrix
   runtime code.
-- 2026-05-21: ACP drift review updated the tracked schema baseline to
-  `agent-client-protocol` v0.13.2. `additionalDirectories` now matches the
+- 2026-06-18: ACP drift review updated the tracked schema baseline to
+  `agent-client-protocol` Schema v1.13.7. `additionalDirectories` now matches the
   current unstable schema (`new`/`load`/`resume`/`fork` plus `SessionInfo`,
   not `session/list`) and remains capability-gated in Matrix runtime.
 - 2026-05-04: ACP provider budgets were ratcheted to the real stable-surface

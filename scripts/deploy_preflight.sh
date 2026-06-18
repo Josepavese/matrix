@@ -20,7 +20,12 @@ go run ./scripts/governance_check --manifest governance/manifest.toml
 
 echo
 echo "== Go formatting =="
-gofmt -w cmd internal pkg scripts tests
+unformatted="$(gofmt -l cmd internal pkg scripts tests)"
+if [[ -n "$unformatted" ]]; then
+  echo "Go files need formatting. Format the listed files before deploying." >&2
+  printf '%s\n' "$unformatted" >&2
+  exit 1
+fi
 
 echo
 echo "== Code governance =="

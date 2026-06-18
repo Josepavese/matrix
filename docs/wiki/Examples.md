@@ -102,9 +102,10 @@ Set up Matrix as a Telegram bot so you can talk to your agents from your phone.
 ### Step 3: Configure Matrix
 
 ```bash
-matrix channel set telegram.token "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
-matrix channel set telegram.enabled true
-matrix channel set telegram.admins "123456789"
+matrix channel set telegram token "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+matrix channel set telegram enabled true
+matrix channel set telegram admins "123456789"
+matrix channel show telegram
 ```
 
 ### Step 4: Restart

@@ -14,6 +14,7 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/agentdiscovery"
 	"github.com/Josepavese/matrix/internal/logic/channelcfg"
 	"github.com/Josepavese/matrix/internal/logic/channelruntime"
+	"github.com/Josepavese/matrix/internal/logic/config"
 	"github.com/Josepavese/matrix/internal/logic/daemon"
 	"github.com/Josepavese/matrix/internal/logic/logging"
 	"github.com/Josepavese/matrix/internal/logic/onboarding"
@@ -31,7 +32,7 @@ import (
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Start the Matrix background daemon",
-	Run: func(_ *cobra.Command, _ []string) {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		ctx, cancel := signalContext()
 		defer cancel()
 
@@ -106,14 +107,24 @@ var runCmd = &cobra.Command{
 		// Configurable addresses with defaults
 		jsonrpcAddr := d.App.Config.GetWithDefault("jsonrpc_addr", DefaultJSONRPCAddr)
 		matrixHTTPAddr := d.App.Config.GetWithDefault("matrix_http_addr", DefaultMatrixHTTPAddr)
+		matrixAPIKey := d.App.Config.GetWithDefault("matrix_api_key", "")
+		daemonAPIKey := d.App.Config.GetWithDefault("daemon_api_key", "")
+		if err := runtimecheck.RequireAPIKeyForExternalBind(matrixHTTPAddr, matrixAPIKey, "matrix_http_addr", "matrix_api_key"); err != nil {
+			log.Error("refusing unsafe matrix http bind", "event", "matrix_http_unsafe_bind", "error", err)
+			return err
+		}
+		if err := runtimecheck.RequireAPIKeyForExternalBind(jsonrpcAddr, daemonAPIKey, "jsonrpc_addr", "daemon_api_key"); err != nil {
+			log.Error("refusing unsafe json-rpc bind", "event", "jsonrpc_unsafe_bind", "error", err)
+			return err
+		}
 
 		// Matrix HTTP API
 		matrixAPIServer := matrixapi.NewServer(sessionMgr)
 		matrixAPIServer.WithTraceStorage(d.App.Store)
 		matrixAPIServer.WithEndpointResolver(d.Supervisor)
 		matrixAPIServer.WithDefaultAgent(d.App.Config.GetWithDefault("default_agent", DefaultAgent))
-		if apiKey := d.App.Config.GetWithDefault("matrix_api_key", ""); apiKey != "" {
-			matrixAPIServer.WithAPIKey(apiKey)
+		if matrixAPIKey != "" {
+			matrixAPIServer.WithAPIKey(matrixAPIKey)
 			log.Info("matrix api key configured", "event", "matrix_apikey_set")
 		}
 		mux := http.NewServeMux()
@@ -127,7 +138,7 @@ var runCmd = &cobra.Command{
 				Registry:       d.Registry,
 				Process:        d.ExecProv,
 				ConfigManager:  d.App.Config,
-				ConfigReader:   d.ConfigMgr,
+				ConfigReader:   config.NewFirstRunConfigReader(d.ConfigMgr),
 				Net:            d.NetProv,
 				JSONRPCAddr:    jsonrpcAddr,
 				MatrixHTTPAddr: matrixHTTPAddr,
@@ -145,7 +156,7 @@ var runCmd = &cobra.Command{
 
 		// JSON-RPC Daemon
 		srv := daemon.NewServer(d.App.Vault, d.NetProv)
-		if daemonAPIKey := d.App.Config.GetWithDefault("daemon_api_key", ""); daemonAPIKey != "" {
+		if daemonAPIKey != "" {
 			srv.WithAPIKey(daemonAPIKey)
 			log.Info("daemon API key configured", "event", "daemon_apikey_set")
 		}
@@ -192,6 +203,7 @@ var runCmd = &cobra.Command{
 		}
 		log.Info("matrix daemon exited cleanly", "event", "daemon_exited")
 		cancel()
+		return nil
 	},
 }
 

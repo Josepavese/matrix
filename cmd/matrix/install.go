@@ -7,11 +7,8 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/agentcatalog"
 	"github.com/Josepavese/matrix/internal/logic/agentdiscovery"
-	"github.com/Josepavese/matrix/internal/logic/agentmgr"
 	"github.com/Josepavese/matrix/internal/middleware"
-	"github.com/Josepavese/matrix/internal/providers/bolt"
 	networkprovider "github.com/Josepavese/matrix/internal/providers/network"
-	"github.com/Josepavese/matrix/internal/providers/osfs"
 	"github.com/spf13/cobra"
 )
 
@@ -31,12 +28,12 @@ var installCmd = &cobra.Command{
 		netProv := networkprovider.NewProvider()
 
 		// 1. Setup Dependencies
-		provider, err := bolt.NewProvider(DefaultVaultPath)
+		ctx, cleanup, err := NewInstallerContext(DefaultVaultPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Vault error: %v\n", err)
 			os.Exit(1)
 		}
-		defer func() { _ = provider.Close() }()
+		defer cleanup()
 
 		if installA2AURL != "" || installA2ACardURL != "" {
 			if installA2AURL == "" {
@@ -63,7 +60,7 @@ var installCmd = &cobra.Command{
 				fmt.Fprintln(os.Stderr, "Error: unable to resolve an A2A endpoint address")
 				os.Exit(1)
 			}
-			if err := agentcatalog.RegisterRemote(provider, agentcatalog.Entry{
+			if err := agentcatalog.RegisterRemote(ctx.Store, agentcatalog.Entry{
 				ID:              agentID,
 				Name:            agentID,
 				Source:          agentdiscovery.SourceA2ACard,
@@ -84,25 +81,8 @@ var installCmd = &cobra.Command{
 			return
 		}
 
-		archiveProv := osfs.NewArchiveProvider()
-		regClient := agentmgr.NewCachingRegistryClient(netProv, "", provider)
-
-		installer, err := agentmgr.NewInstaller(agentmgr.InstallerConfig{
-			Net:      netProv,
-			Archive:  archiveProv,
-			Storage:  provider,
-			FS:       osfs.NewFSProvider(),
-			Registry: regClient,
-			BaseDir:  "",
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Installer init error: %v\n", err)
-			os.Exit(1)
-		}
-
 		// 2. Execute Install
-		ctx := context.Background()
-		if err := installer.Install(ctx, agentID); err != nil {
+		if err := ctx.Installer.Install(context.Background(), agentID); err != nil {
 			fmt.Fprintf(os.Stderr, "Installation failed: %v\n", err)
 			os.Exit(1)
 		}

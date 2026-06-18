@@ -22,7 +22,15 @@ var vaultRestoreCmd = &cobra.Command{
 			exitf("Refusing to restore while Matrix runtime is active on 127.0.0.1:9090/9091")
 		}
 		fsProv := osfs.NewFSProvider()
-		preBackup, err := vaultsec.RestoreBackup(fsProv, args[0], DefaultVaultPath, vaultRestoreBackupDir, time.Now())
+		sourcePath, err := resolveInvocationPath(args[0])
+		if err != nil {
+			exitf("Vault restore failed: invalid backup path: %v", err)
+		}
+		backupDir, err := resolveOptionalInvocationPath(vaultRestoreBackupDir)
+		if err != nil {
+			exitf("Vault restore failed: invalid pre-restore backup directory: %v", err)
+		}
+		preBackup, err := vaultsec.RestoreBackup(fsProv, sourcePath, DefaultVaultPath, backupDir, time.Now())
 		if err != nil {
 			exitf("Vault restore failed: %v", err)
 		}

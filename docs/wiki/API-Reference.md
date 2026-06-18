@@ -595,7 +595,8 @@ Cleanup proof fields distinguish provider state from Matrix mirror state: `clean
 
 ### `POST /v1/workspace-actions`
 
-Manage workspace lifecycle.
+Manage existing workspace context. Supported actions are `list`, `status`,
+`snapshot`, `switch`, and `bind`; workspace creation is a CLI operation.
 
 **List workspaces:**
 

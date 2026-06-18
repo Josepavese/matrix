@@ -46,19 +46,20 @@ matrix run
 Install latest release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.sh | sh
+curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | sh
 ```
 
 Install a specific release:
 
 ```bash
-MATRIX_VERSION=v0.1.0 curl -fsSL https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.sh | sh
+MATRIX_VERSION=v0.1.17
+curl -fsSL "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh" | env MATRIX_VERSION="$MATRIX_VERSION" sh
 ```
 
 Custom PAL home:
 
 ```bash
-MATRIX_HOME="$HOME/.matrix-pal" curl -fsSL https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.sh | sh
+curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | env MATRIX_HOME="$HOME/.matrix-pal" sh
 ```
 
 Run:
@@ -76,21 +77,21 @@ If the current shell cannot find `matrix`, open a new shell. The installer adds 
 Install latest release:
 
 ```powershell
-irm https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.ps1 | iex
+irm https://github.com/Josepavese/matrix/releases/latest/download/install.ps1 | iex
 ```
 
 Install a specific release:
 
 ```powershell
-$env:MATRIX_VERSION = "v0.1.0"
-irm https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.ps1 | iex
+$env:MATRIX_VERSION = "v0.1.17"
+irm "https://github.com/Josepavese/matrix/releases/download/$env:MATRIX_VERSION/install.ps1" | iex
 ```
 
 Custom PAL home:
 
 ```powershell
 $env:MATRIX_HOME = "$env:USERPROFILE\.matrix-pal"
-irm https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.ps1 | iex
+irm https://github.com/Josepavese/matrix/releases/latest/download/install.ps1 | iex
 ```
 
 Run:

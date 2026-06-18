@@ -1,6 +1,6 @@
 # Matrix Zed ACP Compliance Notes
 
-Last reviewed: 2026-05-21.
+Last reviewed: 2026-06-18.
 
 Matrix follows the Zed Agent Client Protocol documented at
 https://agentclientprotocol.com and the official SDK references.
@@ -8,7 +8,8 @@ https://agentclientprotocol.com and the official SDK references.
 Current source anchors:
 
 - Protocol docs: https://agentclientprotocol.com/protocol/overview
-- Latest schema release v0.13.2: https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/v0.13.2
+- Latest schema release, Schema v1.13.7, published 2026-06-16:
+  https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.13.7
 - Schema reference: https://agentclientprotocol.com/protocol/schema
 - Session config options: https://agentclientprotocol.com/protocol/session-config-options
 - Terminals: https://agentclientprotocol.com/protocol/terminals

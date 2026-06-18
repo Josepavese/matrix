@@ -1,6 +1,6 @@
 # Matrix Zed ACP Protocol Tracking
 
-Last checked: 2026-05-21.
+Last checked: 2026-06-18.
 
 Purpose: keep a fast comparison point between upstream Zed Agent Client Protocol
 development and Matrix's local ACP surface.
@@ -10,11 +10,11 @@ development and Matrix's local ACP surface.
 Official sources checked:
 
 - ACP overview: https://agentclientprotocol.com/protocol/overview
-- Stable schema metadata: https://raw.githubusercontent.com/agentclientprotocol/agent-client-protocol/main/schema/meta.json
-- Unstable schema: https://raw.githubusercontent.com/agentclientprotocol/agent-client-protocol/main/schema/schema.unstable.json
-- Unstable schema metadata: https://raw.githubusercontent.com/agentclientprotocol/agent-client-protocol/main/schema/meta.unstable.json
-- Changelog: https://raw.githubusercontent.com/agentclientprotocol/agent-client-protocol/main/CHANGELOG.md
-- Latest release: https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/v0.13.2
+- Stable schema: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/schema.json
+- Stable schema metadata: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/meta.json
+- Unstable schema: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/schema.unstable.json
+- Unstable schema metadata: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/meta.unstable.json
+- Latest release: https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.13.7
 - Additional directories RFD: https://agentclientprotocol.com/rfds/additional-directories
 - Request cancellation RFD: https://agentclientprotocol.com/rfds/request-cancellation
 - MCP-over-ACP RFD: https://agentclientprotocol.com/rfds/mcp-over-acp
@@ -30,12 +30,11 @@ Official sources checked:
 Upstream state:
 
 - ACP wire protocol remains `protocolVersion: 1`.
-- Latest GitHub release is `v0.13.2`, published 2026-05-17.
-- Latest release delta from the local 2026-05-04 review: unstable
-  `additionalDirectories` guidance update, unstable `session/delete`, unstable
-  MCP-over-ACP message types, and v2 schema scaffolding.
-- Latest `main` commit seen: `4244a28b47aa` on 2026-05-21, CI-only feature
-  powerset gating update.
+- Latest GitHub release is `Schema v1.13.7` (`schema-v1.13.7`),
+  published 2026-06-16.
+- Latest release notes include schema `_meta` fixes, Rust JSON key-order
+  preservation, schema release versioning fixes, and separate JSON Schema
+  publishes.
 - Zed now documents ACP Registry as the preferred install path for external
   agents starting from `v0.221.x`; Agent Server extensions remain supported but
   are on a deprecation path.
@@ -200,11 +199,11 @@ Long term:
 Use these commands for the next protocol-drift pass:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/agentclientprotocol/agent-client-protocol/main/schema/meta.json
-curl -fsSL https://raw.githubusercontent.com/agentclientprotocol/agent-client-protocol/main/schema/meta.unstable.json
-curl -fsSL https://raw.githubusercontent.com/agentclientprotocol/agent-client-protocol/main/CHANGELOG.md
-curl -fsSL https://api.github.com/repos/agentclientprotocol/agent-client-protocol/releases/latest
-curl -fsSL 'https://api.github.com/repos/agentclientprotocol/agent-client-protocol/commits?since=YYYY-MM-DDT00:00:00Z&per_page=30' | jq -r '.[] | [.commit.author.date, (.sha[0:12]), (.commit.message | split("\n")[0])] | @tsv'
+release_json="$(curl -fsSL https://api.github.com/repos/agentclientprotocol/agent-client-protocol/releases/latest)"
+printf '%s\n' "$release_json" | jq -r '.tag_name, .name, .published_at'
+printf '%s\n' "$release_json" | jq -r '.assets[] | select(.name | test("^(schema|meta)")) | .browser_download_url'
+curl -fsSL https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/schema.json
+curl -fsSL https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/schema.unstable.json
 ```
 
 Then compare:

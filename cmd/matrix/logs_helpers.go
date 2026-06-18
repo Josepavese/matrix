@@ -76,7 +76,7 @@ func buildRuntimeDoctorReport() (map[string]any, error) {
 	matrixHTTPAddr = cfgMgr.GetWithDefault("matrix_http_addr", matrixHTTPAddr)
 	a2aHTTPAddr = matrixHTTPAddr
 
-	cfgRdr := osfs.NewConfigProvider()
+	cfgRdr := config.NewFirstRunConfigReader(osfs.NewConfigProvider())
 	registry, err := agentmgr.NewRegistry(cfgRdr, provider)
 	if err != nil {
 		return runtimecheck.BuildLocalReport(runtimecheck.LocalInput{

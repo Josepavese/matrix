@@ -534,7 +534,7 @@ Headless setup behavior:
 - `/v1/runs` is treated as non-interactive machine ingress and returns a structured setup error instead of wizard text;
 - the structured response uses HTTP `409` and `code=SETUP_REQUIRED`;
 - `matrix bootstrap doctor` exposes `system_configured` so installers and sidecars can block traffic until setup is complete;
-- headless deployments must provision at least one active agent and complete setup before routing production `/v1/runs` traffic.
+- headless deployments must provision at least one active agent, then run `matrix vault set system.configured true` before routing production `/v1/runs` traffic.
 
 Concurrency and durability:
 
@@ -571,6 +571,7 @@ Operational notes:
 
 - a fresh Matrix daemon still routes interactive channel traffic through onboarding until `system.configured=true`;
 - non-interactive `/v1/runs` traffic fails with `SETUP_REQUIRED` until setup is complete, so external frontends never receive wizard prompts as fake agent answers;
+- provisioned headless installs can mark setup complete with `matrix vault set system.configured true`;
 - after onboarding, provider selection remains channel-neutral and resolves through the Matrix agent catalog/session layer;
 - real provider latency depends on the external agent, so run surfaces must be treated as asynchronous operational surfaces even when the caller chooses `sync`;
 - no absolute run timeout is applied by default; emergency wall-clock termination is opt-in through `emergency_kill_seconds`, and idle-progress termination is opt-in through `activity_timeout_seconds`.
