@@ -63,17 +63,42 @@ Install without cloning the repo.
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | sh
+MATRIX_VERSION="$(curl -fsSL https://api.github.com/repos/Josepavese/matrix/releases/latest | sed -n 's/.*"tag_name": "\(v[^"]*\)".*/\1/p' | head -n 1)"
+curl -fsSLO "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh"
+less install.sh
+env MATRIX_VERSION="$MATRIX_VERSION" sh install.sh
 matrix bootstrap doctor
 matrix run
+```
+
+For automation, pin the release explicitly:
+
+```bash
+MATRIX_VERSION=vX.Y.Z
+curl -fsSLO "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh"
+less install.sh
+env MATRIX_VERSION="$MATRIX_VERSION" sh install.sh
 ```
 
 **Windows PowerShell:**
 
 ```powershell
-irm https://github.com/Josepavese/matrix/releases/latest/download/install.ps1 | iex
+$release = Invoke-RestMethod https://api.github.com/repos/Josepavese/matrix/releases/latest
+$env:MATRIX_VERSION = $release.tag_name
+Invoke-WebRequest "https://github.com/Josepavese/matrix/releases/download/$env:MATRIX_VERSION/install.ps1" -OutFile install.ps1
+notepad install.ps1
+.\install.ps1
 matrix bootstrap doctor
 matrix run
+```
+
+Pinned install:
+
+```powershell
+$env:MATRIX_VERSION = "vX.Y.Z"
+Invoke-WebRequest "https://github.com/Josepavese/matrix/releases/download/$env:MATRIX_VERSION/install.ps1" -OutFile install.ps1
+notepad install.ps1
+.\install.ps1
 ```
 
 Prerequisites: at least one coding agent installed (OpenCode, Claude Code, or Gemini CLI). Matrix routes to your agents -- it does not replace them.

@@ -2,6 +2,7 @@ package a2a
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,14 @@ import (
 	a2asdk "github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 )
+
+func newJSONRequest(method, target string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, target, body)
+	if method == http.MethodPost {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return req
+}
 
 type stubSessionRouter struct {
 	channelID string
@@ -76,5 +85,50 @@ func TestServer_RegisterRoutesAndHandleMessage(t *testing.T) {
 	}
 	if router.input != "hello a2a" {
 		t.Fatalf("expected input hello a2a, got %q", router.input)
+	}
+}
+
+func TestServer_A2ARequiresAPIKeyWhenConfigured(t *testing.T) {
+	router := &stubSessionRouter{}
+	mux := http.NewServeMux()
+	NewServer(router, "http://127.0.0.1:0", "opencode").WithAPIKey("secret").RegisterRoutes(mux)
+
+	cardReq := newJSONRequest(http.MethodGet, "/.well-known/agent-card.json", nil)
+	cardResp := httptest.NewRecorder()
+	mux.ServeHTTP(cardResp, cardReq)
+	if cardResp.Code != http.StatusOK {
+		t.Fatalf("agent card should stay public, got %d", cardResp.Code)
+	}
+
+	req := newJSONRequest(http.MethodPost, "/a2a", strings.NewReader(`{}`))
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized without API key, got %d", resp.Code)
+	}
+
+	req = newJSONRequest(http.MethodPost, "/a2a", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer secret")
+	resp = httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+	if resp.Code == http.StatusUnauthorized {
+		t.Fatalf("bearer token was rejected")
+	}
+}
+
+func TestServer_A2ARejectsNonJSONContentTypeWithoutAPIKey(t *testing.T) {
+	router := &stubSessionRouter{}
+	mux := http.NewServeMux()
+	NewServer(router, "http://127.0.0.1:0", "opencode").RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "/a2a", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "text/plain")
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("expected unsupported media type, got %d", resp.Code)
+	}
+	if router.input != "" {
+		t.Fatalf("request should not have reached router, input=%q", router.input)
 	}
 }

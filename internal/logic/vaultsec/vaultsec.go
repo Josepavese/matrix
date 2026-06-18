@@ -55,8 +55,8 @@ func collectWarnings(_ middleware.FS, path string, info os.FileInfo, keyStatus K
 	report["exists"] = true
 	report["size_bytes"] = info.Size()
 	report["permissions"] = permissionsString(info.Mode())
-	report["permissions_secure"] = securePermissions(info.Mode())
-	if permissionsSupported() && !securePermissions(info.Mode()) {
+	report["permissions_secure"] = securePathPermissions(path, info.Mode())
+	if permissionsSupported() && !securePathPermissions(path, info.Mode()) {
 		warnings = append(warnings, "vault file permissions are broader than recommended")
 	}
 

@@ -59,8 +59,11 @@ func Ensure(home string) error {
 		if dir != "" {
 			path = filepath.Join(home, dir)
 		}
-		if err := os.MkdirAll(path, 0o755); err != nil {
+		if err := os.MkdirAll(path, 0o700); err != nil {
 			return fmt.Errorf("failed to create matrix home directory %s: %w", path, err)
+		}
+		if err := os.Chmod(path, 0o700); err != nil {
+			return fmt.Errorf("failed to secure matrix home directory %s: %w", path, err)
 		}
 	}
 	return nil

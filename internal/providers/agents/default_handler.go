@@ -27,11 +27,11 @@ var _ interface {
 } = (middleware.File)(nil)
 
 // defaultRequestHandler handles incoming JSON-RPC requests from agents.
-// When trustMode is true (default), it auto-approves all permission requests.
+// When trustMode is true, it auto-approves all permission requests.
 // When trustMode is false, it denies permission requests (deny-by-default).
 // It also handles fs/ and terminal/ ACP methods.
 type defaultRequestHandler struct {
-	trustMode  func() bool        // returns true if auto-approve is enabled; defaults to true if nil
+	trustMode  func() bool        // returns true if auto-approve is enabled; defaults to false if nil
 	fs         middleware.FS      // filesystem operations for fs/* methods
 	proc       middleware.Process // process execution for terminal/* methods
 	cwd        string             // working directory for path validation
@@ -102,9 +102,16 @@ func (h *defaultRequestHandler) WithNotifier(notifier middleware.ThoughtNotifier
 
 func (h *defaultRequestHandler) isTrustMode() bool {
 	if h.trustMode == nil {
-		return true
+		return false
 	}
 	return h.trustMode()
+}
+
+func (h *defaultRequestHandler) requireToolTrust(method string) error {
+	if h.isTrustMode() {
+		return nil
+	}
+	return fmt.Errorf("%s denied because agent.trust_mode is false", method)
 }
 
 func (h *defaultRequestHandler) HandleRequest(ctx context.Context, method string, params json.RawMessage) (interface{}, error) {
@@ -194,6 +201,9 @@ func (h *defaultRequestHandler) denyResponse() map[string]interface{} {
 // --- File system methods ---
 
 func (h *defaultRequestHandler) handleFSRead(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+	if err := h.requireToolTrust("fs/read_text_file"); err != nil {
+		return nil, err
+	}
 	if h.fs == nil {
 		log.Warn("fs handler not configured")
 		return nil, fmt.Errorf("filesystem access not available")
@@ -252,6 +262,9 @@ func sliceTextLines(content string, line, limit *int) string {
 }
 
 func (h *defaultRequestHandler) handleFSWrite(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+	if err := h.requireToolTrust("fs/write_text_file"); err != nil {
+		return nil, err
+	}
 	if h.fs == nil {
 		log.Warn("fs handler not configured")
 		return nil, fmt.Errorf("filesystem access not available")
@@ -304,6 +317,9 @@ func (h *defaultRequestHandler) resolvePath(p string) string {
 	}
 
 	cwd := filepath.Clean(h.cwd)
+	if realCwd, err := filepath.EvalSymlinks(cwd); err == nil {
+		cwd = filepath.Clean(realCwd)
+	}
 	absPath := filepath.Clean(p)
 	if !filepath.IsAbs(absPath) {
 		absPath = filepath.Clean(filepath.Join(cwd, p))
@@ -313,13 +329,57 @@ func (h *defaultRequestHandler) resolvePath(p string) string {
 	if absPath != cwd && !strings.HasPrefix(absPath, cwd+string(filepath.Separator)) {
 		return ""
 	}
+	resolved, ok := resolveWithinCwd(cwd, absPath)
+	if !ok {
+		return ""
+	}
 
-	return absPath
+	return resolved
+}
+
+func resolveWithinCwd(cwd, absPath string) (string, bool) {
+	rel, err := filepath.Rel(cwd, absPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	if rel == "." {
+		return cwd, true
+	}
+
+	current := cwd
+	parts := strings.Split(rel, string(filepath.Separator))
+	for i, part := range parts {
+		current = filepath.Join(current, part)
+		realPath, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			realPath = filepath.Clean(realPath)
+			if !pathWithin(cwd, realPath) {
+				return "", false
+			}
+			current = realPath
+			continue
+		}
+		if os.IsNotExist(err) {
+			if i+1 < len(parts) {
+				current = filepath.Join(append([]string{current}, parts[i+1:]...)...)
+			}
+			return filepath.Clean(current), true
+		}
+		return "", false
+	}
+	return filepath.Clean(current), true
+}
+
+func pathWithin(cwd, candidate string) bool {
+	return candidate == cwd || strings.HasPrefix(candidate, cwd+string(filepath.Separator))
 }
 
 // --- Terminal methods ---
 
 func (h *defaultRequestHandler) handleTerminalCreate(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+	if err := h.requireToolTrust("terminal/create"); err != nil {
+		return nil, err
+	}
 	if h.proc == nil {
 		log.Warn("terminal handler not configured")
 		return nil, fmt.Errorf("terminal access not available")
@@ -487,6 +547,9 @@ func (h *defaultRequestHandler) getTerminal(id string) (*terminalSession, error)
 }
 
 func (h *defaultRequestHandler) handleTerminalOutput(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+	if err := h.requireToolTrust("terminal/output"); err != nil {
+		return nil, err
+	}
 	id, err := terminalIDFromParams(params)
 	if err != nil {
 		return nil, err
@@ -512,6 +575,9 @@ func (h *defaultRequestHandler) handleTerminalOutput(_ context.Context, log *slo
 }
 
 func (h *defaultRequestHandler) handleTerminalWaitForExit(ctx context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+	if err := h.requireToolTrust("terminal/wait_for_exit"); err != nil {
+		return nil, err
+	}
 	id, err := terminalIDFromParams(params)
 	if err != nil {
 		return nil, err
@@ -538,6 +604,9 @@ func (h *defaultRequestHandler) handleTerminalWaitForExit(ctx context.Context, l
 }
 
 func (h *defaultRequestHandler) handleTerminalKill(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+	if err := h.requireToolTrust("terminal/kill"); err != nil {
+		return nil, err
+	}
 	id, err := terminalIDFromParams(params)
 	if err != nil {
 		return nil, err
@@ -557,6 +626,9 @@ func (h *defaultRequestHandler) handleTerminalKill(_ context.Context, log *slog.
 }
 
 func (h *defaultRequestHandler) handleTerminalRelease(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
+	if err := h.requireToolTrust("terminal/release"); err != nil {
+		return nil, err
+	}
 	id, err := terminalIDFromParams(params)
 	if err != nil {
 		return nil, err

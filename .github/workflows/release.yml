@@ -13,7 +13,7 @@ jobs:
   release-gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
       - name: Validate SemVer tag
@@ -27,9 +27,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tagged_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
-          success_run="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${tagged_commit}&status=completed&per_page=20" --jq '.workflow_runs[] | select(.conclusion == "success") | .id' | head -n 1)"
+          git fetch origin main --depth=1
+          if ! git merge-base --is-ancestor "$tagged_commit" origin/main; then
+            echo "Tagged commit $tagged_commit is not reachable from origin/main." >&2
+            exit 1
+          fi
+          success_run="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${tagged_commit}&status=completed&per_page=20" --jq '.workflow_runs[] | select(.conclusion == "success" and .event == "push" and .head_branch == "main") | .id' | head -n 1)"
           if [[ -z "$success_run" ]]; then
-            echo "No successful CI workflow run found for tagged commit $tagged_commit." >&2
+            echo "No successful main push CI workflow run found for tagged commit $tagged_commit." >&2
             echo "Create release tags only after CI is green on the exact commit being tagged." >&2
             gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${tagged_commit}&per_page=20" --jq '.workflow_runs[] | "\(.id)\t\(.status)\t\(.conclusion)\t\(.html_url)"' >&2 || true
             exit 1
@@ -42,15 +47,16 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: '1.24.4'
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
         with:
           distribution: goreleaser
           version: v2.15.3

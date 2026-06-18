@@ -64,6 +64,37 @@ func ResolveMasterKey(fs middleware.FS) ([]byte, KeyStatus, error) {
 	return nil, KeyStatus{Configured: false}, nil
 }
 
+// EnsureDefaultMasterKey creates the PAL-home master key file when no explicit
+// key is configured. It is intended for write-capable CLI startup paths.
+func EnsureDefaultMasterKey(fs middleware.FS) (KeyStatus, error) {
+	_, status, err := ResolveMasterKey(fs)
+	if err != nil {
+		return KeyStatus{}, err
+	}
+	if status.Configured {
+		return status, nil
+	}
+
+	filePath, ok := defaultMasterKeyFile()
+	if !ok {
+		return status, nil
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return KeyStatus{}, err
+	}
+	encoded := []byte(base64.StdEncoding.EncodeToString(key) + "\n")
+
+	if err := writeMasterKeyFile(fs, filePath, encoded); err != nil {
+		if os.IsExist(err) {
+			_, status, resolveErr := ResolveMasterKey(fs)
+			return status, resolveErr
+		}
+		return KeyStatus{}, err
+	}
+	return KeyStatus{Configured: true, Source: "matrix_home:" + defaultMasterKeyPath, Algorithm: "aes-256-gcm"}, nil
+}
+
 func defaultMasterKeyFile() (string, bool) {
 	home, err := matrixhome.Resolve()
 	if err != nil {
@@ -74,9 +105,70 @@ func defaultMasterKeyFile() (string, bool) {
 
 func readMasterKeyFile(fs middleware.FS, filePath string) ([]byte, error) {
 	if fs != nil {
+		if err := requireSecureMasterKeyPermissions(fs, filePath); err != nil {
+			return nil, err
+		}
 		return fs.ReadFile(filePath)
 	}
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if permissionsSupported() && !securePathPermissions(filePath, info.Mode()) {
+		return nil, fmt.Errorf("vault master key file permissions are broader than recommended")
+	}
 	return os.ReadFile(filePath)
+}
+
+func requireSecureMasterKeyPermissions(fs middleware.FS, filePath string) error {
+	info, err := fs.Stat(filePath)
+	if err != nil {
+		return err
+	}
+	if permissionsSupported() && !securePathPermissions(filePath, info.Mode()) {
+		return fmt.Errorf("vault master key file permissions are broader than recommended")
+	}
+	return nil
+}
+
+func writeMasterKeyFile(fs middleware.FS, filePath string, data []byte) error {
+	if fs != nil {
+		if err := fs.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
+			return err
+		}
+		f, err := fs.OpenFile(filePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			return err
+		}
+		if _, err := f.Write(data); err != nil {
+			_ = f.Close()
+			_ = fs.Remove(filePath)
+			return err
+		}
+		if err := f.Close(); err != nil {
+			_ = fs.Remove(filePath)
+			return err
+		}
+		return ApplySecurePermissions(filePath)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(filePath)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(filePath)
+		return err
+	}
+	return ApplySecurePermissions(filePath)
 }
 
 // EncryptBytes encrypts a byte slice using AES-GCM with the resolved master key.
@@ -86,7 +178,7 @@ func EncryptBytes(plain []byte) ([]byte, error) {
 		return nil, err
 	}
 	if len(key) == 0 {
-		return plain, nil
+		return nil, errors.New("vault master key is required to encrypt values")
 	}
 
 	block, err := aes.NewCipher(key)

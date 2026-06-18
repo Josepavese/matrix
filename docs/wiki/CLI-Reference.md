@@ -271,7 +271,7 @@ Common configuration keys:
 | `matrix_api_key` | HTTP API authentication key |
 | `jsonrpc_addr` | JSON-RPC daemon address |
 | `daemon_api_key` | JSON-RPC daemon authentication |
-| `agent.trust_mode` | Auto-approve tool requests (`auto` or `manual`) |
+| `agent.trust_mode` | Auto-approve tool requests (`true` or `false`, default: `false`) |
 
 ### `matrix config delete <key>`
 

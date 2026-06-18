@@ -85,7 +85,7 @@ var runCmd = &cobra.Command{
 		})
 		agentRouter := agents.NewRouter(d.Supervisor)
 		agentRouter.SetTrustMode(func() bool {
-			return d.App.Config.GetWithDefault("agent.trust_mode", "true") == "true"
+			return d.App.Config.GetWithDefault("agent.trust_mode", "false") == "true"
 		})
 		homeDir, err := d.App.FS.UserHomeDir()
 		if err != nil {
@@ -131,8 +131,14 @@ var runCmd = &cobra.Command{
 		matrixAPIServer.RegisterRoutes(mux)
 		go matrixAPIServer.StartRunSinkDeliveryWorker(ctx)
 		a2aServer := matrixa2a.NewServer(sessionMgr, "http://"+matrixHTTPAddr, d.App.Config.GetWithDefault("default_agent", DefaultAgent))
+		if matrixAPIKey != "" {
+			a2aServer.WithAPIKey(matrixAPIKey)
+		}
 		a2aServer.RegisterRoutes(mux)
-		mux.HandleFunc("/_matrix/runtime", func(w http.ResponseWriter, _ *http.Request) {
+		mux.HandleFunc("/_matrix/runtime", func(w http.ResponseWriter, r *http.Request) {
+			if !authorizeMatrixRuntimeRequest(w, r, matrixAPIKey) {
+				return
+			}
 			report, err := runtimecheck.BuildReport(runtimecheck.BuildInput{
 				Store:          d.App.Store,
 				Registry:       d.Registry,
@@ -223,6 +229,28 @@ func parseDiscoverySources(raw string) []agentdiscovery.Source {
 		return agentcatalog.DefaultSources()
 	}
 	return sources
+}
+
+func authorizeMatrixRuntimeRequest(w http.ResponseWriter, r *http.Request, apiKey string) bool {
+	if apiKey == "" {
+		return true
+	}
+	if requestMatrixAPIKey(r) != apiKey {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
+func requestMatrixAPIKey(r *http.Request) string {
+	if key := strings.TrimSpace(r.Header.Get("X-Matrix-Key")); key != "" {
+		return key
+	}
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+		return strings.TrimSpace(auth[len("bearer "):])
+	}
+	return ""
 }
 
 func splitCommaList(raw string) []string {

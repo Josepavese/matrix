@@ -17,6 +17,7 @@ Run:
 
 ```bash
 bash scripts/deploy_preflight.sh
+bash scripts/security_secret_scan.sh
 ```
 
 For the full local deploy path, run:
@@ -106,6 +107,7 @@ Matrix will refuse restore while the local runtime appears active on the default
 
 Minimum criteria for a local release candidate:
 
+- high-confidence secret scan passes on tracked files
 - governance manifest and architecture guardrails pass
 - CI is green on `main`
 - the `CI` workflow jobs `governance`, `lint`, `test`, `build`, and `release-dry-run` are green

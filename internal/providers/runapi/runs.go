@@ -25,8 +25,10 @@ func (s *Server) HandleRuns(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.apiKey != "" && r.Header.Get("X-Matrix-Key") != s.apiKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !requireJSONContentType(w, r) {
+		return
+	}
+	if !requireAPIKey(w, r, s.apiKey) {
 		return
 	}
 	req, ok := decodeRunRequest(w, r)

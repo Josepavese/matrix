@@ -227,13 +227,13 @@ Fields:
 Control whether agent tool requests are auto-approved:
 
 ```bash
-matrix config set agent.trust_mode auto
+matrix config set agent.trust_mode true
 ```
 
 Options:
 
-- `auto` -- auto-approve all tool requests
-- `manual` -- require explicit approval (default)
+- `true` -- auto-approve all tool requests
+- `false` -- deny direct agent tool requests by default
 
 ## Troubleshooting
 

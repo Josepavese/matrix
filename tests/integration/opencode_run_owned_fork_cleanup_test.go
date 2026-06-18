@@ -52,6 +52,7 @@ func TestOpenCode_RunTimeoutCleanupThenImmediateJudgeRun_DoesNotPreflightFail(t 
 		bin:      opencodePath,
 		args:     []string{"acp", "--pure"},
 	})
+	router.SetTrustMode(func() bool { return true })
 	router.SetProcess(execprov.NewProvider())
 	router.SetFS(osfs.NewFSProvider(), workspaceA)
 	mgr := session.NewManager(store, router, onboarding.NewWizard(onboarding.WizardDependencies{
@@ -134,6 +135,7 @@ func TestOpenCodeRunOwnedForkChildrenCleanupRemediatesParentOwnerLikeNoemaActive
 		bin:      opencodePath,
 		args:     []string{"acp", "--pure"},
 	})
+	router.SetTrustMode(func() bool { return true })
 	router.SetProcess(execprov.NewProvider())
 	router.SetFS(osfs.NewFSProvider(), workspace)
 
@@ -187,6 +189,7 @@ func TestOpenCodeHTTPStandaloneForkCleanupPromotesLiveParentOwnerLikeNoemaActive
 		bin:      opencodePath,
 		args:     []string{"acp", "--pure"},
 	})
+	router.SetTrustMode(func() bool { return true })
 	router.SetProcess(execprov.NewProvider())
 	router.SetFS(osfs.NewFSProvider(), workspace)
 	mgr := session.NewManager(store, router, onboarding.NewWizard(onboarding.WizardDependencies{
@@ -312,6 +315,7 @@ func TestOpenCode_SequentialRunOwnedForkResume_SecondInitialCleanupDoesNotRetain
 		bin:      opencodePath,
 		args:     []string{"acp", "--pure"},
 	})
+	router.SetTrustMode(func() bool { return true })
 	router.SetProcess(execprov.NewProvider())
 	router.SetFS(osfs.NewFSProvider(), workspaceA)
 	mgr := session.NewManager(store, router, onboarding.NewWizard(onboarding.WizardDependencies{
@@ -356,6 +360,7 @@ func TestOpenCode_CancelDuringSessionCreate_CleanupUsesSelectedSessionAndJudgeDo
 		bin:      opencodePath,
 		args:     []string{"acp", "--pure"},
 	})
+	router.SetTrustMode(func() bool { return true })
 	router.SetProcess(execprov.NewProvider())
 	router.SetFS(osfs.NewFSProvider(), workspace)
 	mgr := session.NewManager(store, router, onboarding.NewWizard(onboarding.WizardDependencies{
@@ -431,6 +436,7 @@ func runOpenCodeHTTPFinalRunCleanupScopesReconcileLikeNoemaResume(t *testing.T) 
 		bin:      opencodePath,
 		args:     []string{"acp", "--pure"},
 	})
+	router.SetTrustMode(func() bool { return true })
 	router.SetProcess(execprov.NewProvider())
 	router.SetFS(osfs.NewFSProvider(), parentWorkspace)
 	mgr := session.NewManager(store, router, onboarding.NewWizard(onboarding.WizardDependencies{

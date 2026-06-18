@@ -26,6 +26,26 @@ func TestExtractZipClampsRiskyModes(t *testing.T) {
 	assertNotExists(t, filepath.Join(dest, "link"))
 }
 
+func TestExtractZipRejectsExistingSymlinkEscape(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "payload.zip")
+	if err := writeZipFixture(src); err != nil {
+		t.Fatalf("write zip fixture: %v", err)
+	}
+
+	dest := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dest, "bin")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	if err := NewArchiveProvider().Extract(src, dest); err == nil {
+		t.Fatalf("expected extraction to reject symlink escape")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "run.sh")); !os.IsNotExist(err) {
+		t.Fatalf("archive wrote through symlink, err=%v", err)
+	}
+}
+
 func TestExtractTarGzClampsRiskyModes(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "payload.tar.gz")
 	if err := writeTarGzFixture(src); err != nil {
@@ -41,6 +61,26 @@ func TestExtractTarGzClampsRiskyModes(t *testing.T) {
 	assertPerm(t, filepath.Join(dest, "bin", "run.sh"), 0o755)
 	assertPerm(t, filepath.Join(dest, "data.txt"), 0o644)
 	assertNotExists(t, filepath.Join(dest, "link"))
+}
+
+func TestExtractTarGzRejectsExistingSymlinkEscape(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "payload.tar.gz")
+	if err := writeTarGzFixture(src); err != nil {
+		t.Fatalf("write tar fixture: %v", err)
+	}
+
+	dest := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dest, "bin")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	if err := NewArchiveProvider().Extract(src, dest); err == nil {
+		t.Fatalf("expected extraction to reject symlink escape")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "run.sh")); !os.IsNotExist(err) {
+		t.Fatalf("archive wrote through symlink, err=%v", err)
+	}
 }
 
 func writeZipFixture(path string) error {

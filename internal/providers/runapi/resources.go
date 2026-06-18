@@ -15,8 +15,7 @@ import (
 )
 
 func (s *Server) HandleRunResource(w http.ResponseWriter, r *http.Request) {
-	if s.apiKey != "" && r.Header.Get("X-Matrix-Key") != s.apiKey {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !requireAPIKey(w, r, s.apiKey) {
 		return
 	}
 	runID, resource, ok := parseRunResource(r.URL.Path)
@@ -144,6 +143,9 @@ func nextCursor(events []runtrace.Event) string {
 func (s *Server) handleRunActions(w http.ResponseWriter, r *http.Request, runID string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !requireJSONContentType(w, r) {
 		return
 	}
 	var req runaction.Request

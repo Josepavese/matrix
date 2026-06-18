@@ -42,7 +42,7 @@ func (s *Server) WithAPIKey(key string) *Server {
 func (s *Server) Start(ctx context.Context, addr string) error {
 	log := slog.With("component", "daemon")
 
-	vaultSvc := NewVaultService(s.vault)
+	vaultSvc := NewVaultService(s.vault, s.apiKey)
 	if err := s.rpcServer.RegisterName("Vault", vaultSvc); err != nil {
 		return err
 	}

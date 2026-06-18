@@ -17,20 +17,29 @@ Matrix does not replace your agents. It routes communication to them. You need t
 ### Linux and macOS
 
 ```bash
-curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | sh
+MATRIX_VERSION="$(curl -fsSL https://api.github.com/repos/Josepavese/matrix/releases/latest | sed -n 's/.*"tag_name": "\(v[^"]*\)".*/\1/p' | head -n 1)"
+curl -fsSLO "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh"
+less install.sh
+env MATRIX_VERSION="$MATRIX_VERSION" sh install.sh
 ```
 
 ### Windows PowerShell
 
 ```powershell
-irm https://github.com/Josepavese/matrix/releases/latest/download/install.ps1 | iex
+$release = Invoke-RestMethod https://api.github.com/repos/Josepavese/matrix/releases/latest
+$env:MATRIX_VERSION = $release.tag_name
+Invoke-WebRequest "https://github.com/Josepavese/matrix/releases/download/$env:MATRIX_VERSION/install.ps1" -OutFile install.ps1
+notepad install.ps1
+.\install.ps1
 ```
 
 ### Install a specific version
 
 ```bash
-MATRIX_VERSION=v0.1.17
-curl -fsSL "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh" | env MATRIX_VERSION="$MATRIX_VERSION" sh
+MATRIX_VERSION=vX.Y.Z
+curl -fsSLO "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh"
+less install.sh
+env MATRIX_VERSION="$MATRIX_VERSION" sh install.sh
 ```
 
 The installer downloads the right binary for your platform and sets up the `matrix` command. If your shell cannot find `matrix` after install, open a new terminal.

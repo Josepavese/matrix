@@ -5,16 +5,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/orchestration"
-	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
+
+func newJSONRequest(method, target string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, target, body)
+	if method == http.MethodPost {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return req
+}
 
 type mockSessionRouter struct {
 	lastChannelID        string
@@ -172,7 +178,7 @@ func setupServer(router *mockSessionRouter, apiKey string, defaultAgent string) 
 
 func TestHandleRuns_MethodNotAllowed(t *testing.T) {
 	_, mux := setupServer(&mockSessionRouter{}, "", "")
-	req := httptest.NewRequest(http.MethodGet, RunPathV1, nil)
+	req := newJSONRequest(http.MethodGet, RunPathV1, nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
@@ -182,7 +188,7 @@ func TestHandleRuns_MethodNotAllowed(t *testing.T) {
 
 func TestHandleRuns_InvalidJSON(t *testing.T) {
 	_, mux := setupServer(&mockSessionRouter{}, "", "")
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader([]byte("not json")))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader([]byte("not json")))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -193,7 +199,7 @@ func TestHandleRuns_InvalidJSON(t *testing.T) {
 func TestHandleRuns_MissingFields(t *testing.T) {
 	_, mux := setupServer(&mockSessionRouter{}, "", "")
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1"})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -206,7 +212,7 @@ func TestHandleRuns_Unauthorized(t *testing.T) {
 
 	// No API key
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "input": "hi"})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
@@ -214,7 +220,7 @@ func TestHandleRuns_Unauthorized(t *testing.T) {
 	}
 
 	// Wrong API key
-	req = httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req = newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	req.Header.Set("X-Matrix-Key", "wrong")
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -228,7 +234,7 @@ func TestHandleRuns_Success(t *testing.T) {
 	_, mux := setupServer(router, "secret-key", "")
 
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "input": "hello", "agent_id": "gemini", "workspace_id": "billing-api", "workspace_path": "/tmp/billing-api"})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	req.Header.Set("X-Matrix-Key", "secret-key")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -269,7 +275,7 @@ func TestHandleRuns_SetupRequiredIsStructuredConflict(t *testing.T) {
 	_, mux := setupServer(router, "", "")
 
 	body, _ := json.Marshal(map[string]string{"channel_id": "noema", "input": "hello", "agent_id": "opencode"})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -293,7 +299,7 @@ func TestHandleRunTraceAndEvents(t *testing.T) {
 	_, mux := setupServer(router, "", "")
 
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "input": "hello", "agent_id": "gemini"})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -304,7 +310,7 @@ func TestHandleRunTraceAndEvents(t *testing.T) {
 		t.Fatalf("response parse error: %v", err)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, created["trace_url"], nil)
+	req = newJSONRequest(http.MethodGet, created["trace_url"], nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -331,7 +337,7 @@ func TestHandleRunTraceAndEvents(t *testing.T) {
 		t.Fatalf("expected run events, got %d", len(trace.Events))
 	}
 
-	req = httptest.NewRequest(http.MethodGet, created["events_url"], nil)
+	req = newJSONRequest(http.MethodGet, created["events_url"], nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -353,7 +359,7 @@ func TestHandleRunTraceInlineFrontendProjection(t *testing.T) {
 			"include_protocol_meta": false,
 		},
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -364,7 +370,7 @@ func TestHandleRunTraceInlineFrontendProjection(t *testing.T) {
 		t.Fatalf("response parse error: %v", err)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, created["trace_url"], nil)
+	req = newJSONRequest(http.MethodGet, created["trace_url"], nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -410,7 +416,7 @@ func TestHandleRunActionsCancel(t *testing.T) {
 	_, mux := setupServer(router, "", "")
 
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "input": "hello", "execution_mode": "async"})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusAccepted {
@@ -422,7 +428,7 @@ func TestHandleRunActionsCancel(t *testing.T) {
 	}
 
 	actionBody, _ := json.Marshal(map[string]string{"action": "cancel", "reason": "consumer_policy"})
-	req = httptest.NewRequest(http.MethodPost, created["actions_url"], bytes.NewReader(actionBody))
+	req = newJSONRequest(http.MethodPost, created["actions_url"], bytes.NewReader(actionBody))
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusAccepted {
@@ -435,7 +441,7 @@ func TestHandleRunsNoDefaultHardTimeout(t *testing.T) {
 	_, mux := setupServer(router, "", "")
 
 	body, _ := json.Marshal(map[string]interface{}{"channel_id": "ch1", "input": "hello"})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -452,7 +458,7 @@ func TestHandleRunsEmergencyKillTimeoutIsExplicit(t *testing.T) {
 		"input":                  "hello",
 		"emergency_kill_seconds": 1,
 	})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusGatewayTimeout {
@@ -463,7 +469,7 @@ func TestHandleRunsEmergencyKillTimeoutIsExplicit(t *testing.T) {
 func TestHandleEventSinks(t *testing.T) {
 	_, mux := setupServer(&mockSessionRouter{}, "", "")
 	body, _ := json.Marshal(map[string]interface{}{"url": "https://example.invalid/matrix-events", "event_kinds": []string{"run.completed"}})
-	req := httptest.NewRequest(http.MethodPost, EventSinksPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, EventSinksPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -478,102 +484,28 @@ func TestHandleEventSinks(t *testing.T) {
 	}
 }
 
-func TestEventSinkReceivesRunEvents(t *testing.T) {
-	delivered := make(chan string, 1)
-	sinkServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var payload struct {
-			Event runtrace.Event `json:"event"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Errorf("decode sink payload: %v", err)
-		}
-		delivered <- payload.Event.Kind
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer sinkServer.Close()
+func TestHandleEventSinksRejectsLocalTargets(t *testing.T) {
+	_, mux := setupServer(&mockSessionRouter{}, "", "")
 
-	server, _ := setupServer(&mockSessionRouter{}, "", "")
-	if _, err := server.runs.Store().RegisterSink(runtrace.Sink{URL: sinkServer.URL, EventKinds: []string{"run.started"}}); err != nil {
-		t.Fatalf("register sink: %v", err)
-	}
-	run, _, err := server.runs.Store().Start(runtrace.Run{AgentID: "codex", ChannelID: "http.test"})
-	if err != nil {
-		t.Fatalf("start run: %v", err)
-	}
-	_ = run
-	select {
-	case kind := <-delivered:
-		if kind != "run.started" {
-			t.Fatalf("unexpected delivered kind: %s", kind)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for sink delivery")
+	for _, rawURL := range []string{"http://127.0.0.1/events", "http://localhost/events", "http://agent.localhost/events", "http://10.0.0.1/events"} {
+		t.Run(rawURL, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]interface{}{"url": rawURL, "event_kinds": []string{"run.completed"}})
+			req := newJSONRequest(http.MethodPost, EventSinksPathV1, bytes.NewReader(body))
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 for local sink target, got %d: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }
-
-func TestEventSinkRetriesPendingDelivery(t *testing.T) {
-	var calls atomic.Int32
-	delivered := make(chan string, 1)
-	sinkServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if calls.Add(1) == 1 {
-			http.Error(w, "temporary failure", http.StatusInternalServerError)
-			return
-		}
-		var payload struct {
-			Event runtrace.Event `json:"event"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Errorf("decode sink payload: %v", err)
-		}
-		delivered <- payload.Event.Kind
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer sinkServer.Close()
-
-	server, _ := setupServer(&mockSessionRouter{}, "", "")
-	sink, err := server.runs.Store().RegisterSink(runtrace.Sink{URL: sinkServer.URL, EventKinds: []string{"run.started"}})
-	if err != nil {
-		t.Fatalf("register sink: %v", err)
-	}
-	event := runtrace.Event{ID: "evt-test", RunID: "run-test", Kind: "run.started", Actor: "matrix"}
-	if _, err := server.runs.Store().AppendEvent(event); err != nil {
-		t.Fatalf("append event: %v", err)
-	}
-	delivery, err := server.runs.DeliveryStore().Enqueue(sink, event)
-	if err != nil {
-		t.Fatalf("enqueue delivery: %v", err)
-	}
-	if err := server.runs.DeliveryStore().MarkFailed(delivery.ID, errTemporary{}, 8); err != nil {
-		t.Fatalf("mark delivery failed: %v", err)
-	}
-	loaded, _, _ := server.runs.DeliveryStore().Load(delivery.ID)
-	loaded.NextAttemptAt = time.Now().Add(-time.Second)
-	if err := server.runs.DeliveryStore().Save(loaded); err != nil {
-		t.Fatalf("save delivery: %v", err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go server.runs.StartSinkDeliveryWorker(ctx)
-	select {
-	case kind := <-delivered:
-		if kind != "run.started" {
-			t.Fatalf("unexpected delivered kind: %s", kind)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for retry delivery")
-	}
-}
-
-type errTemporary struct{}
-
-func (errTemporary) Error() string { return "temporary" }
 
 func TestHandleRuns_DefaultAgent(t *testing.T) {
 	router := &mockSessionRouter{response: "ok"}
 	_, mux := setupServer(router, "", "gemini")
 
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "input": "test"})
-	req := httptest.NewRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -585,7 +517,7 @@ func TestHandleRuns_DefaultAgent(t *testing.T) {
 func TestHandleOpenRouterCallback_MissingParams(t *testing.T) {
 	_, mux := setupServer(&mockSessionRouter{}, "", "")
 
-	req := httptest.NewRequest(http.MethodGet, OpenRouterCallbackV1, nil)
+	req := newJSONRequest(http.MethodGet, OpenRouterCallbackV1, nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -595,7 +527,7 @@ func TestHandleOpenRouterCallback_MissingParams(t *testing.T) {
 
 func TestHandleOpenRouterCallback_MethodNotAllowed(t *testing.T) {
 	_, mux := setupServer(&mockSessionRouter{}, "", "")
-	req := httptest.NewRequest(http.MethodPost, OpenRouterCallbackV1+"?code=x&state=y", nil)
+	req := newJSONRequest(http.MethodPost, OpenRouterCallbackV1+"?code=x&state=y", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
@@ -607,7 +539,7 @@ func TestHandleOpenRouterCallback_Success(t *testing.T) {
 	router := &mockSessionRouter{authResponse: "Auth OK"}
 	_, mux := setupServer(router, "", "")
 
-	req := httptest.NewRequest(http.MethodGet, OpenRouterCallbackV1+"?code=abc123&state=ch1", nil)
+	req := newJSONRequest(http.MethodGet, OpenRouterCallbackV1+"?code=abc123&state=ch1", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -621,7 +553,7 @@ func TestHandleOpenRouterCallback_Success(t *testing.T) {
 
 func TestHandleSessionActions_MethodNotAllowed(t *testing.T) {
 	_, mux := setupServer(&mockSessionRouter{}, "", "")
-	req := httptest.NewRequest(http.MethodGet, SessionActionPathV1, nil)
+	req := newJSONRequest(http.MethodGet, SessionActionPathV1, nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
@@ -631,7 +563,7 @@ func TestHandleSessionActions_MethodNotAllowed(t *testing.T) {
 
 func TestHandleSessionActions_InvalidJSON(t *testing.T) {
 	_, mux := setupServer(&mockSessionRouter{}, "", "")
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader([]byte("not json")))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader([]byte("not json")))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -642,7 +574,7 @@ func TestHandleSessionActions_InvalidJSON(t *testing.T) {
 func TestHandleSessionActions_MissingFields(t *testing.T) {
 	_, mux := setupServer(&mockSessionRouter{}, "", "")
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1"})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -654,7 +586,7 @@ func TestHandleSessionActions_ForwardsWorkspaceID(t *testing.T) {
 	router := &mockSessionRouter{typedResult: middleware.SessionActionResult{Action: "status"}}
 	_, mux := setupServer(router, "", "")
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "status", "workspace_id": "billing-api"})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -674,7 +606,7 @@ func TestHandleSessionActions_RejectsRelativeAdditionalDirectories(t *testing.T)
 		"target":                 "claude",
 		"additional_directories": []string{"relative-lib"},
 	})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -695,7 +627,7 @@ func TestHandleWorkspaceActions_Success(t *testing.T) {
 	}}
 	_, mux := setupServer(router, "", "")
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "list"})
-	req := httptest.NewRequest(http.MethodPost, WorkspaceActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, WorkspaceActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -722,7 +654,7 @@ func TestHandleIntents_Success(t *testing.T) {
 	}}
 	_, mux := setupServer(router, "", "")
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "intent": "review", "target": "billing-api"})
-	req := httptest.NewRequest(http.MethodPost, IntentActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, IntentActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -746,7 +678,7 @@ func TestHandleIntents_HandoffPayload(t *testing.T) {
 		"agent_id":     "claude",
 		"note":         "Please review the current patch.",
 	})
-	req := httptest.NewRequest(http.MethodPost, IntentActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, IntentActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -771,7 +703,7 @@ func TestHandleWorkspaceState_Success(t *testing.T) {
 		},
 	}}
 	_, mux := setupServer(router, "", "")
-	req := httptest.NewRequest(http.MethodGet, WorkspaceStatePathV1+"?workspace_id=billing-api", nil)
+	req := newJSONRequest(http.MethodGet, WorkspaceStatePathV1+"?workspace_id=billing-api", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -790,7 +722,7 @@ func TestHandleWorkspaceTimeline_Success(t *testing.T) {
 		},
 	}}
 	_, mux := setupServer(router, "", "")
-	req := httptest.NewRequest(http.MethodGet, WorkspaceTimelinePathV1+"?channel_id=telegram.user123", nil)
+	req := newJSONRequest(http.MethodGet, WorkspaceTimelinePathV1+"?channel_id=telegram.user123", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -807,7 +739,7 @@ func TestHandleWorkspaceDecisions_Success(t *testing.T) {
 		Decisions: []middleware.WorkspaceDecisionTrace{{Kind: "resume-workspace-session", Explanation: "Resumed an existing workspace session."}},
 	}}
 	_, mux := setupServer(router, "", "")
-	req := httptest.NewRequest(http.MethodGet, WorkspaceDecisionsPathV1+"?workspace_id=billing-api&limit=5", nil)
+	req := newJSONRequest(http.MethodGet, WorkspaceDecisionsPathV1+"?workspace_id=billing-api&limit=5", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -824,7 +756,7 @@ func TestHandleWorkspaceMemory_Success(t *testing.T) {
 		Memory: []middleware.WorkspaceMemoryTurn{{Role: "user", WorkspaceID: "billing-api"}},
 	}}
 	_, mux := setupServer(router, "", "")
-	req := httptest.NewRequest(http.MethodGet, WorkspaceMemoryPathV1+"?workspace_id=billing-api&limit=5", nil)
+	req := newJSONRequest(http.MethodGet, WorkspaceMemoryPathV1+"?workspace_id=billing-api&limit=5", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -841,7 +773,7 @@ func TestHandleWorkspaceSnapshots_Success(t *testing.T) {
 		Snapshots: []middleware.WorkspaceSnapshotEntry{{WorkspaceID: "billing-api", Title: "snapshot"}},
 	}}
 	_, mux := setupServer(router, "", "")
-	req := httptest.NewRequest(http.MethodGet, WorkspaceSnapshotsPathV1+"?channel_id=telegram.user123", nil)
+	req := newJSONRequest(http.MethodGet, WorkspaceSnapshotsPathV1+"?channel_id=telegram.user123", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -859,7 +791,7 @@ func TestHandleModes_Success(t *testing.T) {
 	}}
 	_, mux := setupServer(router, "", "")
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "mode": "explain", "target": "billing-api"})
-	req := httptest.NewRequest(http.MethodPost, ModeActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, ModeActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -872,7 +804,7 @@ func TestHandleModes_Success(t *testing.T) {
 
 func TestHandleOrchestrationCapabilities_Success(t *testing.T) {
 	_, mux := setupServer(&mockSessionRouter{}, "", "")
-	req := httptest.NewRequest(http.MethodGet, OrchestrationProfileV1, nil)
+	req := newJSONRequest(http.MethodGet, OrchestrationProfileV1, nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -905,14 +837,14 @@ func TestHandleSessionActions_Unauthorized(t *testing.T) {
 	_, mux := setupServer(&mockSessionRouter{}, "secret-key", "")
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "status"})
 
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without key, got %d", w.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req = newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	req.Header.Set("X-Matrix-Key", "wrong")
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -926,7 +858,7 @@ func TestHandleSessionActions_Success(t *testing.T) {
 	_, mux := setupServer(router, "secret-key", "")
 
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "cancel", "target": "task-1"})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	req.Header.Set("X-Matrix-Key", "secret-key")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -951,7 +883,7 @@ func TestHandleSessionActions_ListSuccess(t *testing.T) {
 	_, mux := setupServer(router, "", "")
 
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "list"})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -979,7 +911,7 @@ func TestHandleSessionActions_StatusSuccess(t *testing.T) {
 	_, mux := setupServer(router, "", "")
 
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "status"})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -1015,7 +947,7 @@ func TestHandleSessionActions_NewAndNamePassThrough(t *testing.T) {
 		"ephemeral":              true,
 		"cleanup_policy":         "delete_remote_or_forget_local",
 	})
-	newReq := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(newBody))
+	newReq := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(newBody))
 	newW := httptest.NewRecorder()
 	mux.ServeHTTP(newW, newReq)
 
@@ -1039,7 +971,7 @@ func TestHandleSessionActions_NewAndNamePassThrough(t *testing.T) {
 		Session:         &middleware.SessionEntry{LogicalSessionID: "s2", AgentID: "claude", Alias: "bugfix", Active: true},
 	}
 	nameBody, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "name", "target": "bugfix"})
-	nameReq := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(nameBody))
+	nameReq := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(nameBody))
 	nameW := httptest.NewRecorder()
 	mux.ServeHTTP(nameW, nameReq)
 
@@ -1075,7 +1007,7 @@ func TestHandleSessionActions_CleanupPassesForceForget(t *testing.T) {
 		"cleanup_policy":     "delete_remote_or_forget_local",
 		"force_forget_local": true,
 	})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -1121,7 +1053,7 @@ func TestHandleSessionActions_ForkPassesSafetyFlags(t *testing.T) {
 		"ephemeral":      true,
 		"cleanup_policy": "delete_remote_or_cancel_and_forget_local",
 	})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -1148,7 +1080,7 @@ func TestHandleSessionActions_TypedAgentNotFoundUses404(t *testing.T) {
 	}}
 	_, mux := setupServer(router, "", "")
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "capabilities", "target": "codex-acp"})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -1181,7 +1113,7 @@ func TestHandleSessionActions_TypedMissingRemoteSessionUses409(t *testing.T) {
 	}}
 	_, mux := setupServer(router, "", "")
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "fork", "target": "logical-parent"})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -1213,7 +1145,7 @@ func TestHandleSessionActions_TypedForkChildTurnFailureUses502(t *testing.T) {
 	}}
 	_, mux := setupServer(router, "", "")
 	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "action": "fork", "target": "parent"})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -1252,7 +1184,7 @@ func TestHandleSessionActions_TypedCleanupFailureIncludesProof(t *testing.T) {
 		"target":         "parent",
 		"cleanup_policy": "delete_remote",
 	})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -1292,7 +1224,7 @@ func TestHandleSessionActions_RunRelatedSessionRetainedUses409(t *testing.T) {
 		"action":     "cleanup",
 		"target":     "child",
 	})
-	req := httptest.NewRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
+	req := newJSONRequest(http.MethodPost, SessionActionPathV1, bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 

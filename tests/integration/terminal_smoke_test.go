@@ -76,6 +76,7 @@ func TestSmoke_TerminalCreate_GeminiAgent(t *testing.T) {
 		args:     []string{"--acp"},
 	}
 	router := agents.NewRouter(resolver)
+	router.SetTrustMode(func() bool { return true })
 	router.SetProcess(exepprov.NewProvider())
 	router.SetFS(osfs.NewFSProvider(), tmpDir)
 	defer router.Close()
@@ -133,6 +134,7 @@ func TestSmoke_OpenCodeWS_ProjectsToolEvents(t *testing.T) {
 		resolver.args = []string{"acp"}
 	}
 	router := agents.NewRouter(resolver)
+	router.SetTrustMode(func() bool { return true })
 	router.SetProcess(exepprov.NewProvider())
 	router.SetFS(osfs.NewFSProvider(), tmpDir)
 	defer router.Close()
@@ -217,6 +219,7 @@ func TestSmoke_CwdCoherence_GeminiAgent(t *testing.T) {
 		args:     []string{"--acp"},
 	}
 	router := agents.NewRouter(resolver)
+	router.SetTrustMode(func() bool { return true })
 	router.SetProcess(exepprov.NewProvider())
 	router.SetFS(osfs.NewFSProvider(), tmpDir)
 	defer router.Close()

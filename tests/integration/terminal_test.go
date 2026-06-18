@@ -45,6 +45,7 @@ func TestTerminalCreate_MockAgentIntegration(t *testing.T) {
 
 	resolver := &mockResolver{binPath: mockBin}
 	router := agents.NewRouter(resolver)
+	router.SetTrustMode(func() bool { return true })
 	router.SetProcess(exepprov.NewProvider())
 	router.SetFS(osfs.NewFSProvider(), tmpDir)
 	defer router.Close()
@@ -77,6 +78,7 @@ func TestTerminalCreate_NormalThenTerminal(t *testing.T) {
 
 	resolver := &mockResolver{binPath: mockBin}
 	router := agents.NewRouter(resolver)
+	router.SetTrustMode(func() bool { return true })
 	router.SetProcess(exepprov.NewProvider())
 	router.SetFS(osfs.NewFSProvider(), tmpDir)
 	defer router.Close()
