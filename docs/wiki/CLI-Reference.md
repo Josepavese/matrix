@@ -285,29 +285,43 @@ matrix config delete matrix_api_key
 
 ## Channel Commands
 
-### `matrix channel`
+### `matrix channel list`
 
-Manage channel providers.
+List supported channel providers.
 
 ```bash
-# Show current channel configuration
-matrix channel
+matrix channel list
+```
 
-# Set a channel value
-matrix channel set telegram.token "123456:ABC..."
+### `matrix channel show <provider>`
+
+Show effective and override configuration for a channel provider.
+
+```bash
+matrix channel show telegram
+```
+
+### `matrix channel set <provider> <key> <value>`
+
+Set a channel override in the SSOT vault.
+
+```bash
+matrix channel set telegram token "123456:ABC..."
+matrix channel set telegram enabled true
+matrix channel set telegram admins "123456789"
+```
+
+### `matrix channel delete <provider> <key>`
+
+Delete a channel override from the SSOT vault.
+
+```bash
+matrix channel delete telegram token
 ```
 
 ---
 
 ## Vault Commands
-
-### `matrix vault list`
-
-List vault entries.
-
-```bash
-matrix vault list
-```
 
 ### `matrix vault get <key>`
 
@@ -325,14 +339,6 @@ Set a vault entry.
 matrix vault set config.custom-key my-value
 ```
 
-### `matrix vault delete <key>`
-
-Delete a vault entry.
-
-```bash
-matrix vault delete config.custom-key
-```
-
 ### `matrix vault backup`
 
 Create a vault backup.
@@ -341,12 +347,12 @@ Create a vault backup.
 matrix vault backup
 ```
 
-### `matrix vault restore`
+### `matrix vault restore <backup_path>`
 
 Restore from a vault backup.
 
 ```bash
-matrix vault restore
+matrix vault restore ./backups/<backup-file>
 ```
 
 ### `matrix vault migrate`
@@ -397,20 +403,20 @@ matrix uninstall claude
 
 ## Logs Commands
 
-### `matrix logs show`
-
-Show stored logs.
-
-```bash
-matrix logs show
-```
-
 ### `matrix logs tail`
 
 Tail live logs.
 
 ```bash
 matrix logs tail
+```
+
+### `matrix logs show-config`
+
+Show effective logging configuration.
+
+```bash
+matrix logs show-config
 ```
 
 ### `matrix logs doctor`
@@ -425,12 +431,12 @@ matrix logs doctor
 
 ## Other Commands
 
-### `matrix orchestration`
+### `matrix orchestration capabilities`
 
 View orchestration capabilities.
 
 ```bash
-matrix orchestration
+matrix orchestration capabilities
 ```
 
 ### `matrix fuse`

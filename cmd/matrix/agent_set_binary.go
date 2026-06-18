@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
-	"github.com/Josepavese/matrix/internal/providers/bolt"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +21,11 @@ var agentSetBinaryCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		agentID := args[0]
-		binaryPath := args[1]
+		binaryPath, err := resolveInvocationPath(args[1])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid binary path: %v\n", err)
+			os.Exit(1)
+		}
 
 		// 1. Verify path exists
 		if _, err := os.Stat(binaryPath); err != nil {
@@ -31,15 +34,15 @@ var agentSetBinaryCmd = &cobra.Command{
 		}
 
 		// 2. Setup Vault
-		provider, err := bolt.NewProvider(DefaultVaultPath)
+		ctx, cleanup, err := NewAgentStoreContext(DefaultVaultPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Vault error: %v\n", err)
 			os.Exit(1)
 		}
-		defer func() { _ = provider.Close() }()
+		defer cleanup()
 
 		// 3. Load or Create Entry
-		entry, err := agentcfg.LoadEntry(provider, agentID)
+		entry, err := agentcfg.LoadEntry(ctx.Store, agentID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error loading entry: %v\n", err)
 			os.Exit(1)
@@ -80,7 +83,7 @@ var agentSetBinaryCmd = &cobra.Command{
 		}
 
 		// 4. Save
-		if err := agentcfg.SaveEntry(provider, agentID, entry); err != nil {
+		if err := agentcfg.SaveEntry(ctx.Store, agentID, entry); err != nil {
 			fmt.Fprintf(os.Stderr, "Error saving entry: %v\n", err)
 			os.Exit(1)
 		}

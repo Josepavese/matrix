@@ -17,19 +17,20 @@ Matrix does not replace your agents. It routes communication to them. You need t
 ### Linux and macOS
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.sh | sh
+curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | sh
 ```
 
 ### Windows PowerShell
 
 ```powershell
-irm https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.ps1 | iex
+irm https://github.com/Josepavese/matrix/releases/latest/download/install.ps1 | iex
 ```
 
 ### Install a specific version
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.sh | MATRIX_VERSION=v0.1.2 sh
+MATRIX_VERSION=v0.1.17
+curl -fsSL "https://github.com/Josepavese/matrix/releases/download/${MATRIX_VERSION}/install.sh" | env MATRIX_VERSION="$MATRIX_VERSION" sh
 ```
 
 The installer downloads the right binary for your platform and sets up the `matrix` command. If your shell cannot find `matrix` after install, open a new terminal.

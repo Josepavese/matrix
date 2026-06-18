@@ -29,7 +29,7 @@ No. Matrix runs entirely on your machine. All state is stored locally in an encr
 ### How do I install Matrix?
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.sh | sh
+curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | sh
 ```
 
 Then run `matrix bootstrap doctor` to set it up. See [Getting Started](Getting-Started.md) for details.
@@ -53,7 +53,7 @@ go build -o matrix ./cmd/matrix
 Yes. PowerShell install:
 
 ```powershell
-irm https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.ps1 | iex
+irm https://github.com/Josepavese/matrix/releases/latest/download/install.ps1 | iex
 ```
 
 ---
@@ -96,9 +96,10 @@ See [Using Agents](Using-Agents.md) and [Handoff](Handoff.md).
 Configure the bot token and admin ID, then restart:
 
 ```bash
-matrix channel set telegram.token "your-bot-token"
-matrix channel set telegram.enabled true
-matrix channel set telegram.admins "your-user-id"
+matrix channel set telegram token "your-bot-token"
+matrix channel set telegram enabled true
+matrix channel set telegram admins "your-user-id"
+matrix channel show telegram
 matrix run
 ```
 
@@ -173,7 +174,7 @@ Check that the agent binary is in your PATH and the command is correct.
 
 ### Telegram bot not working
 
-1. Verify the token: `matrix channel`
+1. Verify the token and supported keys: `matrix channel show telegram`
 2. Check that `telegram.enabled` is `true`
 3. Make sure your Telegram user ID is in the admin list
 4. Restart Matrix: `matrix run`
@@ -187,7 +188,7 @@ matrix vault doctor
 If needed, restore from a backup:
 
 ```bash
-matrix vault restore
+matrix vault restore ./backups/<backup-file>
 ```
 
 ### Port already in use
@@ -201,8 +202,8 @@ matrix config set matrix_http_addr 127.0.0.1:9092
 ### How do I see logs?
 
 ```bash
-matrix logs show
 matrix logs tail    # live tail
+matrix logs show-config
 ```
 
 ### How do I reset everything?
@@ -211,7 +212,7 @@ Remove the PAL home directory and reinstall:
 
 ```bash
 rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/matrix"
-curl -fsSL https://raw.githubusercontent.com/Josepavese/matrix/main/install/install.sh | sh
+curl -fsSL https://github.com/Josepavese/matrix/releases/latest/download/install.sh | sh
 ```
 
 ---

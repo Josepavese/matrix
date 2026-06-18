@@ -18,7 +18,11 @@ var fuseMountCmd = &cobra.Command{
 		provider := fusefs.NewProvider()
 		mgr := filesystem.NewManager(provider)
 
-		dir := args[0]
+		dir, err := resolveInvocationPath(args[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Mount error: invalid mount directory: %v\n", err)
+			os.Exit(1)
+		}
 		if err := mgr.MountVirtualFS(dir); err != nil {
 			fmt.Fprintf(os.Stderr, "Mount error: %v\n", err)
 			os.Exit(1)

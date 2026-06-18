@@ -67,34 +67,48 @@ func extractZip(src, dest string) error {
 		}
 
 		if f.FileInfo().IsDir() {
-			_ = os.MkdirAll(fpath, os.ModePerm)
+			if err := mkdirArchiveDir(fpath); err != nil {
+				return err
+			}
 			continue
 		}
 
-		if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
-			return err
+		if !f.FileInfo().Mode().IsRegular() {
+			slog.Warn("unsupported zip entry type, skipping", "entry", f.Name, "mode", f.FileInfo().Mode().String())
+			continue
 		}
 
-		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		if err != nil {
-			return err
-		}
-
-		rc, err := f.Open()
-		if err != nil {
-			_ = outFile.Close()
-			return err
-		}
-
-		_, err = io.Copy(outFile, rc)
-		_ = outFile.Close()
-		_ = rc.Close()
-
-		if err != nil {
+		if err := extractZipFile(f, fpath); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func extractZipFile(f *zip.File, fpath string) error {
+	if err := os.MkdirAll(filepath.Dir(fpath), 0o755); err != nil {
+		return err
+	}
+
+	safeMode := safeArchiveFileMode(f.Mode())
+	outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, safeMode)
+	if err != nil {
+		return err
+	}
+
+	rc, err := f.Open()
+	if err != nil {
+		_ = outFile.Close()
+		return err
+	}
+
+	_, err = io.Copy(outFile, rc)
+	_ = outFile.Close()
+	_ = rc.Close()
+	if err != nil {
+		return err
+	}
+	return os.Chmod(fpath, safeMode)
 }
 
 func extractTarGz(src, dest string) error {
@@ -148,17 +162,15 @@ func extractTarEntry(dest string, header *tar.Header, tr *tar.Reader) error {
 		return nil
 	}
 
-	// Sanitize mode: strip setuid/setgid/sticky bits to prevent privilege escalation
-	safeMode := os.FileMode(header.Mode) &^ 0o7000
-
 	switch header.Typeflag {
 	case tar.TypeDir:
-		return os.MkdirAll(target, 0755)
-	case tar.TypeReg:
+		return mkdirArchiveDir(target)
+	case tar.TypeReg, 0:
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			return err
 		}
-		f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, safeMode)
+		safeMode := safeArchiveFileMode(os.FileMode(header.Mode))
+		f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, safeMode)
 		if err != nil {
 			return err
 		}
@@ -166,6 +178,25 @@ func extractTarEntry(dest string, header *tar.Header, tr *tar.Reader) error {
 		if _, err := io.Copy(f, tr); err != nil {
 			return err
 		}
+		return os.Chmod(target, safeMode)
+	default:
+		slog.Warn("unsupported tar entry type, skipping", "entry", header.Name, "type", header.Typeflag)
 	}
 	return nil
+}
+
+func mkdirArchiveDir(path string) error {
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o755)
+}
+
+func safeArchiveFileMode(mode os.FileMode) os.FileMode {
+	mode &^= 0o7000
+	mode &^= 0o022
+	if mode&0o111 != 0 {
+		return 0o755
+	}
+	return 0o644
 }

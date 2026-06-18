@@ -190,18 +190,16 @@ Once a session exists and is bound to a workspace, the workspace becomes part of
 
 ## 1. Create Workspace
 
-Possible sources:
+Current source:
 
 - explicit CLI command
-- HTTP typed action
-- channel command
-- auto-discovery from working directory in CLI-oriented surfaces
 
-Suggested commands:
+HTTP and channel workspace actions operate on existing workspace records; they
+support list/status/switch/bind/snapshot-style control, not creation.
 
-- `matrix workspace add <path>`
-- `matrix workspace create <name> --path <path>`
-- `/workspace add <name>`
+Command:
+
+- `matrix workspace add <workspace-id> --path <path>`
 
 ## 2. Bind Session To Workspace
 

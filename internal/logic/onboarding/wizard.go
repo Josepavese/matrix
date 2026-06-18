@@ -11,6 +11,7 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/agentcatalog"
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/logic/setupstate"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -122,13 +123,7 @@ func (w *Wizard) installedAgents() []AgentEntry {
 // IsConfigured checks the SSOT Vault to see if Matrix has completed First-Run.
 func (w *Wizard) IsConfigured() bool {
 	data, err := w.storage.Get("system.configured")
-	if err == nil && len(data) > 0 {
-		var configured bool
-		if err := json.Unmarshal(data, &configured); err == nil && configured {
-			return true
-		}
-	}
-	return false
+	return err == nil && setupstate.Configured(data)
 }
 
 // WizardStep defines the behavior for a single step in the onboarding process.

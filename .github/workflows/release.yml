@@ -3,14 +3,44 @@ name: Release
 on:
   push:
     tags:
-      - '*'
+      - 'v*'
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
 jobs:
-  goreleaser:
+  release-gate:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Validate SemVer tag
+        run: |
+          if ! printf '%s\n' "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "Release tags must look like vX.Y.Z, optionally with SemVer prerelease/build metadata." >&2
+            exit 1
+          fi
+      - name: Require successful CI on tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tagged_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          success_run="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${tagged_commit}&status=completed&per_page=20" --jq '.workflow_runs[] | select(.conclusion == "success") | .id' | head -n 1)"
+          if [[ -z "$success_run" ]]; then
+            echo "No successful CI workflow run found for tagged commit $tagged_commit." >&2
+            echo "Create release tags only after CI is green on the exact commit being tagged." >&2
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${tagged_commit}&per_page=20" --jq '.workflow_runs[] | "\(.id)\t\(.status)\t\(.conclusion)\t\(.html_url)"' >&2 || true
+            exit 1
+          fi
+          echo "Found successful CI workflow run $success_run for $tagged_commit."
+
+  goreleaser:
+    needs: release-gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
         with:

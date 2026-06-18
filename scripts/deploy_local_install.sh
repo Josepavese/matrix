@@ -15,6 +15,7 @@ Environment:
   MATRIX_HOME      Override target PAL home.
   MATRIX_DIST_DIR  Override artifact directory. Default: ./dist
   MATRIX_VERSION   Optional artifact version prefix. Auto-detected when unset.
+  HOME             Override user home for isolated launcher/profile smoke tests.
 USAGE
 }
 
@@ -34,6 +35,12 @@ need() {
 
 need uname
 need tar
+
+home_dir="${HOME:-}"
+if [[ -z "$home_dir" ]]; then
+  echo "HOME must be set; use an isolated HOME for smoke installs that should not touch your real profile." >&2
+  exit 1
+fi
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 case "$os" in
@@ -58,9 +65,9 @@ esac
 if [[ -n "${MATRIX_HOME:-}" ]]; then
   matrix_home="$MATRIX_HOME"
 elif [[ "$goos" == "darwin" ]]; then
-  matrix_home="$HOME/Library/Application Support/Matrix"
+  matrix_home="$home_dir/Library/Application Support/Matrix"
 else
-  matrix_home="${XDG_DATA_HOME:-$HOME/.local/share}/matrix"
+  matrix_home="${XDG_DATA_HOME:-$home_dir/.local/share}/matrix"
 fi
 
 if [[ -n "$version" ]]; then
@@ -86,18 +93,59 @@ if [[ ! -f "$archive" ]]; then
   exit 1
 fi
 
+verify_checksum() {
+  local checksum_file="$1"
+  local archive_path="$2"
+  local asset_name="$3"
+  local expected actual
+
+  expected="$(awk -v name="$asset_name" 'NF >= 2 { file=$2; sub(/^\*/, "", file); if (file == name) { print $1; exit } }' "$checksum_file")"
+  if [[ -z "$expected" ]]; then
+    echo "checksums.txt is available but has no entry for $asset_name" >&2
+    exit 1
+  fi
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$archive_path" | awk '{ print $1 }')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$archive_path" | awk '{ print $1 }')"
+  else
+    echo "checksums.txt is available but neither sha256sum nor shasum is installed" >&2
+    exit 1
+  fi
+
+  actual="$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')"
+  expected="$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "checksum verification failed for $asset_name" >&2
+    exit 1
+  fi
+
+  echo "Verified checksum for $asset_name"
+}
+
 tmp_dir="$(mktemp -d)"
 cleanup() {
   rm -rf "$tmp_dir"
 }
 trap cleanup EXIT INT TERM
 
+checksum_file="$dist_dir/checksums.txt"
+if [[ -f "$checksum_file" ]]; then
+  verify_checksum "$checksum_file" "$archive" "$(basename "$archive")"
+else
+  echo "No checksums.txt found in $dist_dir; skipping checksum verification."
+fi
 tar -xzf "$archive" -C "$tmp_dir"
+if [[ ! -f "$tmp_dir/matrix" ]]; then
+  echo "local deploy artifact $(basename "$archive") does not contain the matrix binary at archive root" >&2
+  exit 1
+fi
 
 mkdir -p "$matrix_home/bin" "$matrix_home/configs" "$matrix_home/data" "$matrix_home/logs" "$matrix_home/artifacts" "$matrix_home/backups" "$matrix_home/tmp"
 install -m 0755 "$tmp_dir/matrix" "$matrix_home/bin/matrix"
 
-user_bin="$HOME/.local/bin"
+user_bin="$home_dir/.local/bin"
 launcher="$user_bin/matrix"
 mkdir -p "$user_bin"
 if ln -sfn "$matrix_home/bin/matrix" "$launcher" 2>/dev/null; then
@@ -149,7 +197,28 @@ echo "Matrix local deploy install complete."
 echo "PAL home: $matrix_home"
 echo "Binary:   $matrix_home/bin/matrix"
 echo "Launcher: $launcher"
-MATRIX_HOME="$matrix_home" "$matrix_home/bin/matrix" home
+
+smoke_index=0
+run_smoke() {
+  smoke_index=$((smoke_index + 1))
+  smoke_log="$tmp_dir/smoke-$smoke_index.log"
+  echo "Smoke: matrix $*"
+  if ! MATRIX_HOME="$matrix_home" "$matrix_home/bin/matrix" "$@" >"$smoke_log" 2>&1; then
+    echo "smoke failed: matrix $*" >&2
+    cat "$smoke_log" >&2
+    exit 1
+  fi
+}
+
+echo
+echo "== Post-install smoke =="
+run_smoke home
+run_smoke vault migrate
+run_smoke bootstrap doctor
+run_smoke doctor
+run_smoke readiness
+echo "Post-install smoke OK: home, vault migrate, bootstrap doctor, doctor, readiness"
+
 if [[ "$path_ready" -eq 0 ]]; then
   echo "PATH was updated in your shell profile. Open a new shell if 'matrix' is not found in this one."
 fi

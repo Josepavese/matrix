@@ -45,10 +45,17 @@ var readinessCmd = &cobra.Command{
 		if err := cmdutil.PrintJSON(cmd, report); err != nil {
 			exitf("failed to print readiness report: %v", err)
 		}
-		if report["status"] == "not_ready" || (readinessStrict && report["status"] != "ready") {
-			os.Exit(2)
+		if code := readinessExitCode(report["status"], readinessStrict); code != 0 {
+			os.Exit(code)
 		}
 	},
+}
+
+func readinessExitCode(status any, strict bool) int {
+	if strict && status != "ready" {
+		return 2
+	}
+	return 0
 }
 
 func init() {

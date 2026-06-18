@@ -32,9 +32,39 @@ $release = Invoke-RestMethod -Uri $api -Headers @{ "User-Agent" = "matrix-instal
 $asset = $release.assets | Where-Object {
   $_.name -like "*_windows_$arch.zip"
 } | Select-Object -First 1
+$checksumAsset = $release.assets | Where-Object {
+  $_.name -eq "checksums.txt"
+} | Select-Object -First 1
 
 if ($null -eq $asset) {
   throw "No Matrix release asset found for windows_$arch in $Repo $Version"
+}
+
+function Test-MatrixChecksum {
+  param(
+    [string]$ChecksumFile,
+    [string]$ArchivePath,
+    [string]$AssetName
+  )
+
+  $expected = $null
+  foreach ($line in Get-Content -Path $ChecksumFile) {
+    $parts = $line.Trim() -split "\s+"
+    if ($parts.Count -ge 2 -and $parts[1].TrimStart([char]"*") -eq $AssetName) {
+      $expected = $parts[0]
+      break
+    }
+  }
+  if ([string]::IsNullOrWhiteSpace($expected)) {
+    throw "checksums.txt is available but has no entry for $AssetName"
+  }
+
+  $actual = (Get-FileHash -Algorithm SHA256 -Path $ArchivePath).Hash.ToLowerInvariant()
+  if ($actual -ne $expected.ToLowerInvariant()) {
+    throw "checksum verification failed for $AssetName"
+  }
+
+  Write-Host "Verified checksum for $AssetName"
 }
 
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("matrix-install-" + [guid]::NewGuid().ToString("N"))
@@ -43,7 +73,19 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 try {
   $archive = Join-Path $tmp "matrix.zip"
   Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive
+  if ($null -ne $checksumAsset) {
+    $checksumFile = Join-Path $tmp "checksums.txt"
+    Invoke-WebRequest -Uri $checksumAsset.browser_download_url -OutFile $checksumFile
+    Test-MatrixChecksum -ChecksumFile $checksumFile -ArchivePath $archive -AssetName $asset.name
+  }
+  else {
+    Write-Host "No checksums.txt release asset found; skipping checksum verification."
+  }
   Expand-Archive -Path $archive -DestinationPath $tmp -Force
+  $extractedBinary = Join-Path $tmp "matrix.exe"
+  if (-not (Test-Path $extractedBinary)) {
+    throw "release asset $($asset.name) does not contain matrix.exe at archive root"
+  }
 
   foreach ($dir in @("bin", "configs", "data", "logs", "artifacts", "backups", "tmp")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $MatrixHome $dir) | Out-Null
@@ -51,7 +93,7 @@ try {
 
   $binDir = Join-Path $MatrixHome "bin"
   $binary = Join-Path $binDir "matrix.exe"
-  Copy-Item -Path (Join-Path $tmp "matrix.exe") -Destination $binary -Force
+  Copy-Item -Path $extractedBinary -Destination $binary -Force
 
   $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
   if ([string]::IsNullOrWhiteSpace($userPath)) {

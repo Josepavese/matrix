@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -83,23 +84,32 @@ func NewReadOnlyAppContext(vaultPath string) (*AppContext, func(), error) {
 	}, closeFn, nil
 }
 
-// NewAgentContext opens read-only storage with agent registry.
+func seedDefaultAgents(store middleware.Storage, configRdr middleware.ConfigReader) error {
+	if err := agentmgr.SeedFromConfigFile(store, configRdr, "configs/agents.json"); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("agent seed error: %w", err)
+	}
+	return nil
+}
+
+// NewAgentContext opens storage with initialized schema and seeded agent registry.
 func NewAgentContext(vaultPath string) (*AgentContext, func(), error) {
-	provider, err := bolt.NewReadOnlyProvider(vaultPath)
+	provider, err := bolt.NewProvider(vaultPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vault error: %w", err)
 	}
 	closeFn := func() { _ = provider.Close() }
-	report, err := schema.LoadReport(provider)
-	if err != nil {
+	if _, err := schema.EnsureCurrent(provider); err != nil {
 		closeFn()
 		return nil, nil, fmt.Errorf("schema error: %w", err)
 	}
-	if report.Status != "current" {
-		closeFn()
-		return nil, nil, fmt.Errorf("schema error: vault schema is %s", report.Status)
-	}
 	configRdr := osfs.NewConfigProvider()
+	if err := seedDefaultAgents(provider, configRdr); err != nil {
+		closeFn()
+		return nil, nil, err
+	}
 	registry, err := agentmgr.NewRegistry(configRdr, provider)
 	if err != nil {
 		_ = provider.Close()
@@ -120,7 +130,15 @@ func NewAgentStoreContext(vaultPath string) (*AgentContext, func(), error) {
 		return nil, nil, fmt.Errorf("vault error: %w", err)
 	}
 	closeFn := func() { _ = provider.Close() }
+	if _, err := schema.EnsureCurrent(provider); err != nil {
+		closeFn()
+		return nil, nil, fmt.Errorf("schema error: %w", err)
+	}
 	configRdr := osfs.NewConfigProvider()
+	if err := seedDefaultAgents(provider, configRdr); err != nil {
+		closeFn()
+		return nil, nil, err
+	}
 	registry, err := agentmgr.NewRegistry(configRdr, provider)
 	if err != nil {
 		_ = provider.Close()
@@ -177,9 +195,9 @@ func NewDaemonContext(vaultPath string) (*DaemonContext, func(), error) {
 	netProv := networkprovider.NewProvider()
 
 	// Seed pre-installed agents from the release-safe config into vault.
-	if err := agentmgr.SeedFromConfigFile(app.Store, configMgr, "configs/agents.json"); err != nil {
+	if err := seedDefaultAgents(app.Store, configMgr); err != nil {
 		closeApp()
-		return nil, nil, fmt.Errorf("agent seed error: %w", err)
+		return nil, nil, err
 	}
 
 	registry, err := agentmgr.NewRegistry(configMgr, app.Store)

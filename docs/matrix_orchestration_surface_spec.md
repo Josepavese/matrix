@@ -46,7 +46,7 @@ matrix orchestration capabilities
 
 The profile is currently versioned as `v1` in code via:
 
-- [surface.go](internal/logic/orchestration/surface.go)
+- [surface.go](../internal/logic/orchestration/surface.go)
 
 ## Capability Model
 

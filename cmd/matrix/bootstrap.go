@@ -22,7 +22,8 @@ var bootstrapDoctorCmd = &cobra.Command{
 		}
 		defer cleanup()
 
-		report, err := bootstrap.BuildReport(ctx.Store, config.NewManager(vault.NewVault(ctx.Store)), ctx.Registry, osfs.NewConfigProvider())
+		cfgReader := config.NewFirstRunConfigReader(osfs.NewConfigProvider())
+		report, err := bootstrap.BuildReport(ctx.Store, config.NewManager(vault.NewVault(ctx.Store)), ctx.Registry, cfgReader)
 		if err != nil {
 			exitf("Error: %v", err)
 		}
