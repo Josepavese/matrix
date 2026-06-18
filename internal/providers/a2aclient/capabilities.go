@@ -9,9 +9,9 @@ func (c *a2aConversationClient) SessionCapabilities() middleware.ConversationSes
 		Cancel: true,
 		Delete: false,
 		Details: map[string]middleware.CapabilityDescriptor{
-			"list":   a2aCapability("list", true, "stable", "a2a_tasks/list"),
-			"load":   a2aCapability("load", true, "stable", "a2a_task_get"),
-			"cancel": a2aCapability("cancel", true, "stable", "a2a_tasks/cancel"),
+			"list":   a2aCapability("list", true, "stable", "A2A ListTasks"),
+			"load":   a2aCapability("load", true, "stable", "A2A GetTask"),
+			"cancel": a2aCapability("cancel", true, "stable", "A2A CancelTask"),
 			"delete": a2aCapability("delete", false, "unsupported", "a2a_no_delete_mapping"),
 			"close":  a2aCapability("close", false, "unsupported", "a2a_no_close_mapping"),
 			"resume": a2aCapability("resume", false, "unsupported", "a2a_task_state_mapping"),

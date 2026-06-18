@@ -51,7 +51,7 @@ required = [
   "go run ./scripts/code_governance.go --config code-governance.toml",
   "golangci-lint run",
   "go test -race -v ./...",
-  "go build ./cmd/matrix",
+  "go build -o \"$build_dir/matrix\" ./cmd/matrix",
   "goreleaser check"
 ]
 

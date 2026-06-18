@@ -13,6 +13,11 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
+const (
+	a2aMatrixAPIKeyScheme = "matrixApiKey"
+	a2aMatrixBearerScheme = "matrixBearer"
+)
+
 // Server exposes Matrix as an A2A-compatible JSON-RPC endpoint.
 type Server struct {
 	router       middleware.ConversationRouter
@@ -40,10 +45,11 @@ func (s *Server) WithAPIKey(key string) *Server {
 
 // RegisterRoutes attaches the A2A JSON-RPC endpoint and agent card to the mux.
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
+	capabilities := s.capabilities()
 	handler := a2asrv.NewHandler(&executor{
 		router:       s.router,
 		defaultAgent: s.defaultAgent,
-	})
+	}, a2asrv.WithCapabilityChecks(&capabilities))
 	mux.Handle("/a2a", s.authMiddleware(a2asrv.NewJSONRPCHandler(handler)))
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(s.agentCard()))
 }
@@ -74,21 +80,36 @@ func requestAPIKey(r *http.Request) string {
 
 func requireJSONContentType(w http.ResponseWriter, r *http.Request) bool {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
-		http.Error(w, "Unsupported Media Type: application/json required", http.StatusUnsupportedMediaType)
+	if err != nil || !isA2AJSONMediaType(mediaType) {
+		http.Error(w, "Unsupported Media Type: application/json or application/a2a+json required", http.StatusUnsupportedMediaType)
 		return false
 	}
 	return true
 }
 
+func isA2AJSONMediaType(mediaType string) bool {
+	switch strings.ToLower(mediaType) {
+	case "application/json", "application/a2a+json":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) capabilities() a2asdk.AgentCapabilities {
+	return a2asdk.AgentCapabilities{
+		Streaming:         false,
+		PushNotifications: false,
+		ExtendedAgentCard: false,
+	}
+}
+
 func (s *Server) agentCard() *a2asdk.AgentCard {
-	return &a2asdk.AgentCard{
-		Name:        "Matrix",
-		Description: "Protocol-neutral local-first orchestration runtime",
-		Version:     "2",
-		Capabilities: a2asdk.AgentCapabilities{
-			Streaming: true,
-		},
+	card := &a2asdk.AgentCard{
+		Name:               "Matrix",
+		Description:        "Protocol-neutral local-first orchestration runtime",
+		Version:            "2",
+		Capabilities:       s.capabilities(),
 		DefaultInputModes:  []string{"text/plain"},
 		DefaultOutputModes: []string{"text/plain"},
 		Skills: []a2asdk.AgentSkill{
@@ -103,6 +124,29 @@ func (s *Server) agentCard() *a2asdk.AgentCard {
 			a2asdk.NewAgentInterface(s.baseURL+"/a2a", a2asdk.TransportProtocolJSONRPC),
 		},
 	}
+	s.applySecurity(card)
+	return card
+}
+
+func (s *Server) applySecurity(card *a2asdk.AgentCard) {
+	if s.apiKey == "" {
+		return
+	}
+	card.SecuritySchemes = a2asdk.NamedSecuritySchemes{
+		a2aMatrixAPIKeyScheme: a2asdk.APIKeySecurityScheme{
+			Description: "Matrix local A2A API key",
+			Location:    a2asdk.APIKeySecuritySchemeLocationHeader,
+			Name:        "X-Matrix-Key",
+		},
+		a2aMatrixBearerScheme: a2asdk.HTTPAuthSecurityScheme{
+			Description: "Matrix local A2A bearer token",
+			Scheme:      "Bearer",
+		},
+	}
+	card.SecurityRequirements = a2asdk.SecurityRequirementsOptions{
+		a2asdk.SecurityRequirements{a2aMatrixAPIKeyScheme: {}},
+		a2asdk.SecurityRequirements{a2aMatrixBearerScheme: {}},
+	}
 }
 
 type executor struct {
@@ -112,7 +156,14 @@ type executor struct {
 
 func (e *executor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext) iter.Seq2[a2asdk.Event, error] {
 	return func(yield func(a2asdk.Event, error) bool) {
-		input := strings.TrimSpace(partsText(execCtx.Message.Parts))
+		input, unsupported := textInput(execCtx.Message.Parts)
+		if unsupported {
+			yield(nil, &a2asdk.Error{
+				Err:     a2asdk.ErrUnsupportedContentType,
+				Message: "Matrix A2A server currently accepts text/plain input only",
+			})
+			return
+		}
 		if input == "" {
 			yield(a2asdk.NewMessage(a2asdk.MessageRoleAgent, a2asdk.NewTextPart("empty message")), nil)
 			return
@@ -159,11 +210,25 @@ func messageAgentID(execCtx *a2asrv.ExecutorContext, fallback string) string {
 }
 
 func partsText(parts a2asdk.ContentParts) string {
+	text, _ := textInput(parts)
+	return text
+}
+
+func textInput(parts a2asdk.ContentParts) (string, bool) {
 	lines := make([]string, 0, len(parts))
 	for _, part := range parts {
+		if part == nil {
+			continue
+		}
+		if _, ok := part.Content.(a2asdk.Text); !ok {
+			if part.Content != nil {
+				return "", true
+			}
+			continue
+		}
 		if text := strings.TrimSpace(part.Text()); text != "" {
 			lines = append(lines, text)
 		}
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), false
 }

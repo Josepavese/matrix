@@ -298,10 +298,10 @@ Current behavior:
 
 As of 2026-06-18, the current Zed ACP source of truth is the official
 `agentclientprotocol.com` protocol docs plus the `agentclientprotocol` schema
-release `Schema v1.13.7`, published 2026-06-16.
-`session/list`, `session_info_update`, `session/resume`, `session/close`, and
-`session/set_config_option` are stable lifecycle/configuration operations with
-capability checks where applicable.
+release `Schema v1.14.0`, published 2026-06-18.
+`session/list`, `session_info_update`, `session/resume`, `session/close`,
+`session/delete`, `logout`, and `session/set_config_option` are stable
+lifecycle/configuration operations with capability checks where applicable.
 Matrix iterates `session/list` pagination through `nextCursor` and can propagate
 configured MCP servers into ACP session setup/resume/fork calls.
 ACP prompt projection supports additional content blocks supplied by channel or
@@ -311,13 +311,13 @@ ACP runtime updates are not collapsed into text-only streams: plan changes,
 thought chunks, usage updates, session config/info updates, commands, tool
 calls, diffs, and terminal references are projected into protocol-neutral run
 events while raw ACP payloads stay in protocol metadata.
-`session/fork`, `session/delete`, `additionalDirectories`, message ids,
-provider configuration, logout, NES/document events, elicitation,
-`session/set_model`, `usage_update`, and generic `$/cancel_request` remain
-RFD/unstable/draft surfaces unless the official docs move them to
-completed/stable. Matrix records this lifecycle state instead of collapsing it
-into booleans; `additionalDirectories` is currently propagated only when the
-agent advertises `sessionCapabilities.additionalDirectories`.
+`session/fork`, `additionalDirectories`, message ids, provider configuration,
+NES/document events, elicitation, `session/set_model`, `usage_update`, and
+generic `$/cancel_request` remain RFD/unstable/draft surfaces unless the
+official docs move them to completed/stable. Matrix records this lifecycle
+state instead of collapsing it into booleans; `additionalDirectories` is
+currently propagated only when the agent advertises
+`sessionCapabilities.additionalDirectories`.
 Unknown ACP agent-to-client methods are not treated as success. Matrix returns
 JSON-RPC `-32601 Method not found` unless an explicit extension handler has
 been registered for that method.
@@ -415,7 +415,8 @@ does not collapse the path into HTTP `500`.
 
 The A2A ingress is implemented with the official Go SDK:
 
-- module: `github.com/a2aproject/a2a-go/v2`
+- module: `github.com/a2aproject/a2a-go/v2` at `v2.3.1`, which exposes A2A
+  protocol version `1.0`
 
 ## Market State
 

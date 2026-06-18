@@ -51,6 +51,25 @@ func (e *captureSidecarA2AExecutor) Cancel(_ context.Context, execCtx *a2asrv.Ex
 	}
 }
 
+type recordingThoughtNotifier struct {
+	headerAgent string
+	headerID    string
+	updates     []middleware.ThoughtUpdate
+}
+
+func (n *recordingThoughtNotifier) OnThought(update middleware.ThoughtUpdate) {
+	n.updates = append(n.updates, update)
+}
+
+func (n *recordingThoughtNotifier) SetHeader(agentID, agentSessionID string) {
+	n.headerAgent = agentID
+	n.headerID = agentSessionID
+}
+
+func (n *recordingThoughtNotifier) FormattedHeader() string {
+	return ""
+}
+
 func TestA2AConversationClient_ExecuteTurn(t *testing.T) {
 	handler := a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(echoA2AExecutor{}))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -98,6 +117,46 @@ func TestA2AConversationClient_ExecuteTurn(t *testing.T) {
 	}
 	if second.RemoteSessionID == "" {
 		t.Fatal("expected non-empty remote session id on follow-up turn")
+	}
+}
+
+func TestA2AConversationClient_FallsBackWhenStreamingUnsupported(t *testing.T) {
+	caps := &a2asdk.AgentCapabilities{Streaming: false}
+	handler := a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(echoA2AExecutor{}, a2asrv.WithCapabilityChecks(caps)))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	factory := Factory{}
+	client, err := factory.NewClient(context.Background(), middleware.ProtocolEndpoint{
+		Kind:      middleware.ProtocolKindA2A,
+		Transport: "JSONRPC",
+		Address:   server.URL,
+	}, middleware.ConversationFactoryDeps{})
+	if err != nil {
+		t.Fatalf("NewClient failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	notifier := &recordingThoughtNotifier{}
+	result, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{
+		AgentID:          "echo-a2a",
+		LogicalSessionID: "logical-a2a",
+		Message:          "hello",
+		ThoughtNotifier:  notifier,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTurn failed: %v", err)
+	}
+	if strings.TrimSpace(result.Output) != "echo:hello" {
+		t.Fatalf("unexpected output: %q", result.Output)
+	}
+	if result.RemoteSessionID == "" || notifier.headerID == "" {
+		t.Fatalf("expected fallback to preserve remote session id, result=%#v notifier=%#v", result, notifier)
+	}
+	if len(notifier.updates) != 0 {
+		t.Fatalf("non-streaming fallback must not synthesize thought deltas, got %#v", notifier.updates)
 	}
 }
 

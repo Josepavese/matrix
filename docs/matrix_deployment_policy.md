@@ -14,6 +14,7 @@ No release should depend on memory, chat history, or one person remembering whic
 4. **Every release is reproducible from the repository root.**
 5. **Every warning is either accepted explicitly or fixed.**
 6. **Every generated release artifact is install-smoked before the deploy is considered done.**
+7. **Every disposable validation VM is reused or deleted; duplicate VMs are not acceptable release debris.**
 
 ## Required Gates
 
@@ -203,6 +204,14 @@ Use a custom PAL home for isolated deploy drills:
 ```bash
 MATRIX_HOME="$(mktemp -d)" scripts/deploy_local_install.sh
 ```
+
+### VM Hygiene For Clean-OS Validation
+
+Use Nido for clean Linux/Windows/macOS validation VMs. Before creating a VM,
+list existing Nido machines and reuse a suitable clean machine instead of
+creating a duplicate for the same OS and release role. Disposable VMs must be
+deleted after install/smoke evidence is recorded. A retained VM requires an
+explicit release-evidence entry with VM name, owner, reason, and expiry.
 
 ### 6. Tag Release
 

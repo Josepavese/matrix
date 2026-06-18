@@ -31,7 +31,7 @@ func (c *blockingACPClient) Context() context.Context            { return c.ctx 
 func (c *blockingACPClient) Close() error                        { return nil }
 func (c *blockingACPClient) SetRequestHandler(acpRequestHandler) {}
 func (c *blockingACPClient) Initialize(context.Context, acpInitializeRequest) (*acpInitializeResponse, error) {
-	return &acpInitializeResponse{}, nil
+	return &acpInitializeResponse{ProtocolVersion: supportedACPProtocolVersion}, nil
 }
 func (c *blockingACPClient) Authenticate(context.Context, string, map[string]string) error {
 	return nil

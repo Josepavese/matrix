@@ -563,6 +563,7 @@ func TestPermissionRequest_TrustMode(t *testing.T) {
 	params, _ := json.Marshal(map[string]interface{}{
 		"options": []map[string]interface{}{
 			{"optionId": "opt1", "kind": "allow_once"},
+			{"optionId": "reject1", "kind": "reject_once"},
 		},
 	})
 
@@ -593,8 +594,33 @@ func TestPermissionRequest_TrustMode(t *testing.T) {
 	}
 	outcome, _ = m["outcome"].(map[string]interface{})
 	outcomeStr2, _ := outcome["outcome"].(string)
-	if outcomeStr2 != "denied" {
+	if outcomeStr2 != "selected" {
 		t.Errorf("expected denied outcome, got %v", outcome["outcome"])
+	}
+	if outcome["optionId"] != "reject1" {
+		t.Errorf("expected reject option to be selected, got %#v", outcome)
+	}
+}
+
+func TestPermissionRequest_DenyFallsBackToCancelled(t *testing.T) {
+	handler := newConfigurableRequestHandler(func() bool { return false })
+	params, _ := json.Marshal(map[string]interface{}{
+		"options": []map[string]interface{}{
+			{"optionId": "opt1", "kind": "allow_once"},
+		},
+	})
+
+	result, err := handler.HandleRequest(context.Background(), "session/request_permission", params)
+	if err != nil {
+		t.Fatalf("permission request: %v", err)
+	}
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result is not a map: %T", result)
+	}
+	outcome, _ := m["outcome"].(map[string]interface{})
+	if outcome["outcome"] != "cancelled" {
+		t.Fatalf("expected cancelled fallback, got %#v", outcome)
 	}
 }
 
@@ -617,6 +643,20 @@ func TestTerminalMethods_UnknownTerminal(t *testing.T) {
 		if err == nil {
 			t.Errorf("%s: expected error for unknown terminalId", method)
 		}
+	}
+}
+
+func TestTerminalOutputLimitKeepsRecentUTF8Output(t *testing.T) {
+	ts := &terminalSession{outputByteLimit: 4, done: make(chan struct{})}
+	ts.appendOutput([]byte("abc"))
+	ts.appendOutput([]byte("déf"))
+
+	output, truncated, _, _, _ := ts.snapshot()
+	if !truncated {
+		t.Fatalf("expected output to be truncated")
+	}
+	if output != "déf" {
+		t.Fatalf("expected recent UTF-8 output, got %q", output)
 	}
 }
 

@@ -79,7 +79,7 @@ Reference pages:
 
 ## Current Compliance Snapshot
 
-Last reviewed against the official ACP docs and latest Schema v1.13.7 on
+Last reviewed against the official ACP docs and latest Schema v1.14.0 on
 2026-06-18.
 
 Implemented in `pkg/zedacp` and the Matrix ACP adapter:

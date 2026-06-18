@@ -46,7 +46,7 @@ func handleRequest(req jsonRPCRequest, scanner *bufio.Scanner) (jsonRPCResponse,
 	resp := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID}
 	switch req.Method {
 	case "initialize":
-		resp.Result = json.RawMessage(`{"capabilities": {"edit": {}}}`)
+		resp.Result = json.RawMessage(`{"protocolVersion": 1, "agentCapabilities": {}}`)
 	case "session/new":
 		resp.Result = json.RawMessage(`{"sessionId": "mock-session-id"}`)
 	case "session/prompt":

@@ -33,6 +33,12 @@ debug.log
 # Config overrides (generated)
 configs/agents.local.json
 configs/*.local.json
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Coverage / test artifacts
 coverage.out

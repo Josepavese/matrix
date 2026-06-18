@@ -56,7 +56,7 @@ func acpSessionCapabilities(resp *acpInitializeResponse) middleware.Conversation
 			"load":                   acpCapability("load", load, "stable", "zed_acp_schema_loadSession"),
 			"cancel":                 acpCapability("cancel", true, "stable", "zed_acp_schema_session_cancel"),
 			"close":                  acpCapability("close", closeSession, "stable", "zed_acp_schema_session_close"),
-			"delete":                 acpCapability("delete", deleteSession, "draft", "zed_acp_rfd_session_delete"),
+			"delete":                 acpCapability("delete", deleteSession, "stable", "zed_acp_schema_session_delete"),
 			"resume":                 acpCapability("resume", resume, "stable", "zed_acp_schema_session_resume"),
 			"fork":                   acpForkCapability(fork),
 			"additional_directories": acpCapability("additional_directories", additionalDirectories, "draft", "zed_acp_rfd_additional_directories"),

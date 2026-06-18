@@ -92,20 +92,20 @@ Near-term goals:
 
 ## Protocol Notes
 
-- Reviewed against the official ACP docs and latest release `v0.13.2` on 2026-05-21.
-- `session/list`, `session/load`, stable `session/resume`, and stable `session/close` are first-class and used by Matrix for protocol-transparent session lifecycle actions.
+- Reviewed against the official ACP docs and latest release `schema-v1.14.0` on 2026-06-18.
+- `session/list`, `session/load`, stable `session/resume`, stable `session/close`, and stable `session/delete` are first-class and used by Matrix for protocol-transparent session lifecycle actions.
 - `session/cancel` is emitted as an ACP notification, matching current Zed ACP semantics
 - `session/close` is implemented as an optional stable method; callers should gate it on advertised `sessionCapabilities.close`
 - `session_info_update` is accepted and surfaced so Matrix can mirror remote session metadata in the vault
 - `session/resume` is implemented as an optional stable method; Matrix prefers it when advertised and falls back to `session/load`
 - `session/set_config_option` is implemented as a stable request and decodes the complete returned `configOptions` state; Matrix prefers config options over legacy `modes`
 - `session/fork` is implemented as an optional draft method; callers should gate it on advertised `sessionCapabilities.fork`
-- `session/delete` is implemented as an optional draft method; callers should gate it on advertised `sessionCapabilities.delete`
+- `session/delete` is implemented as an optional stable method; callers should gate it on advertised `sessionCapabilities.delete`
 - `additionalDirectories` is modeled on current new/load/resume/fork requests and session info; `session/list` request intentionally does not carry it. Callers must gate actual usage on advertised `sessionCapabilities.additionalDirectories`
 - `authenticate` uses the current request shape (`methodId` only) when no legacy credentials are supplied; auth env-var descriptors default `secret` to true and preserve unknown model-state drafts through raw response metadata
 - `ExtRequest` and `ExtNotification` expose ACP extension methods without coupling Matrix to one vendor extension; unknown incoming methods should return JSON-RPC `-32601` unless an extension handler is explicitly installed
 - ACP has no official `side` or `session/side` primitive; Matrix `sidecar` context must be projected through ordinary prompt/meta channels, provider-specific live extensions, or true `session/fork`
-- generic `$/cancel_request`, provider configuration/logout, and `session/set_model` have typed package calls but remain unstable/draft product surfaces; NES/document events, elicitation, and full `usage_update` control remain tracked gaps. Stable Matrix behavior must remain capability-gated
+- generic `$/cancel_request`, provider configuration, and `session/set_model` have typed package calls but remain unstable/draft product surfaces; stable `logout` is typed but not exposed as a Matrix runtime action yet. NES/document events, elicitation, and full `usage_update` control remain tracked gaps. Stable Matrix behavior must remain capability-gated
 - ACP tool updates surface official `kind`, `status`, `toolCallId`, `rawInput`, `rawOutput`, `locations`, and `content` variants (`content`, `diff`, `terminal`) so higher layers can build structural tool traces without string parsing
 - ACP `plan`, `agent_thought_chunk`, `available_commands_update`, `current_mode_update`, `config_option_update`, `session_info_update`, and `usage_update` are decoded into typed update fields while preserving raw protocol metadata for audit
 - ACP terminal requests follow the official lifecycle: `terminal/create` returns a `terminalId`, `terminal/output` reports retained output and exit status, `terminal/wait_for_exit` blocks for completion, and `terminal/kill` / `terminal/release` manage process lifetime

@@ -142,6 +142,45 @@ func TestSessionLifecycleRequestsMarshalLatestUnstableFields(t *testing.T) {
 	}
 }
 
+func TestMCPServerConfigMarshalsRequiredEmptyArrays(t *testing.T) {
+	reqBytes, err := json.Marshal(NewSessionRequest{Cwd: "/workspace"})
+	if err != nil {
+		t.Fatalf("marshal new session request: %v", err)
+	}
+	if !bytes.Contains(reqBytes, []byte(`"mcpServers":[]`)) {
+		t.Fatalf("new session request must marshal empty mcpServers array: %s", reqBytes)
+	}
+
+	stdio, err := json.Marshal(McpServerConfig{Name: "repo", Command: "repo-mcp"})
+	if err != nil {
+		t.Fatalf("marshal stdio mcp server: %v", err)
+	}
+	for _, want := range [][]byte{
+		[]byte(`"args":[]`),
+		[]byte(`"env":[]`),
+	} {
+		if !bytes.Contains(stdio, want) {
+			t.Fatalf("expected %s in stdio mcp server: %s", want, stdio)
+		}
+	}
+	if bytes.Contains(stdio, []byte(`"headers"`)) {
+		t.Fatalf("stdio mcp server must not send headers: %s", stdio)
+	}
+
+	httpServer, err := json.Marshal(McpServerConfig{Name: "remote", Type: "http", URL: "https://mcp.example"})
+	if err != nil {
+		t.Fatalf("marshal http mcp server: %v", err)
+	}
+	for _, want := range [][]byte{
+		[]byte(`"type":"http"`),
+		[]byte(`"headers":[]`),
+	} {
+		if !bytes.Contains(httpServer, want) {
+			t.Fatalf("expected %s in http mcp server: %s", want, httpServer)
+		}
+	}
+}
+
 func TestPromptRequestMarshalMessageID(t *testing.T) {
 	req := PromptRequest{
 		SessionID: "sess_1",
@@ -266,6 +305,16 @@ func TestClientResumeAndSetConfigOptionUseStableMethods(t *testing.T) {
 	}
 	if !bytes.Contains(sent.Params, []byte(`"additionalDirectories":["/workspace/lib"]`)) {
 		t.Fatalf("expected additionalDirectories in resume params: %s", sent.Params)
+	}
+}
+
+func TestConfigOptionAcceptsExtensionScalarCurrentValue(t *testing.T) {
+	var opt ConfigOption
+	if err := json.Unmarshal([]byte(`{"id":"thinking","name":"Thinking","type":"boolean","currentValue":true}`), &opt); err != nil {
+		t.Fatalf("unmarshal boolean config option: %v", err)
+	}
+	if opt.Current != "true" {
+		t.Fatalf("expected boolean currentValue to become string, got %#v", opt.Current)
 	}
 }
 
@@ -550,7 +599,7 @@ func TestClientIncomingRequestUsesRPCErrorCode(t *testing.T) {
 		requestHandler: methodNotFoundHandler{},
 		ctx:            context.Background(),
 	}
-	client.handleIncomingRequest(jsonRPCRequest{JSONRPC: "2.0", ID: 7, Method: "matrix/unknown"})
+	client.handleIncomingRequest(jsonRPCRequest{JSONRPC: "2.0", ID: newJSONRPCID(7), Method: "matrix/unknown"})
 
 	var resp jsonRPCResponse
 	if err := json.Unmarshal(transport.lastSent(), &resp); err != nil {
@@ -561,10 +610,34 @@ func TestClientIncomingRequestUsesRPCErrorCode(t *testing.T) {
 	}
 }
 
+func TestClientIncomingRequestPreservesStringID(t *testing.T) {
+	transport := &responseCaptureTransport{}
+	client := &Client{
+		transport:      transport,
+		requestHandler: echoHandler{},
+		ctx:            context.Background(),
+	}
+	client.handleIncomingRequest(jsonRPCRequest{JSONRPC: "2.0", ID: json.RawMessage(`"req-1"`), Method: "matrix/echo"})
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(transport.lastSent(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp["id"] != "req-1" {
+		t.Fatalf("expected string id to round-trip, got %#v", resp["id"])
+	}
+}
+
 type methodNotFoundHandler struct{}
 
 func (methodNotFoundHandler) HandleRequest(context.Context, string, json.RawMessage) (interface{}, error) {
 	return nil, NewMethodNotFoundError("matrix/unknown")
+}
+
+type echoHandler struct{}
+
+func (echoHandler) HandleRequest(context.Context, string, json.RawMessage) (interface{}, error) {
+	return map[string]interface{}{"ok": true}, nil
 }
 
 type listSessionsTransport struct {
@@ -603,7 +676,7 @@ func (t *methodRecordingTransport) Send(_ context.Context, message []byte) error
 	if !ok {
 		t.t.Fatalf("unexpected method: %s", req.Method)
 	}
-	resp := jsonRPCResponse{JSONRPC: "2.0", ID: &req.ID, Result: result}
+	resp := jsonRPCResponse{JSONRPC: "2.0", ID: cloneRawMessage(req.ID), Result: result}
 	msg, err := json.Marshal(resp)
 	if err != nil {
 		t.t.Fatalf("marshal response: %v", err)
@@ -660,7 +733,7 @@ func (t *listSessionsTransport) Send(_ context.Context, message []byte) error {
 	}
 	resp := jsonRPCResponse{
 		JSONRPC: "2.0",
-		ID:      &req.ID,
+		ID:      cloneRawMessage(req.ID),
 		Result: []byte(`{
 			"sessions": [{
 				"sessionId": "sess-1",

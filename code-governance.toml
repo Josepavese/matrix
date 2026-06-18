@@ -66,7 +66,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # observer drain for providers that emit trailing session/update chunks after
 # session/prompt returns. 2026-05-21: v0.13.2 auth defaults, current
 # authenticate request shape, and permissive draft model-state decoding.
-"pkg/zedacp" = 1570
+# 2026-06-18: Schema v1.14.0 alignment adds raw JSON-RPC ids, required MCP
+# collection fields, stable session/delete/logout surface, terminal output
+# truncation semantics, and tolerant currentValue scalar decoding.
+"pkg/zedacp" = 1740
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390

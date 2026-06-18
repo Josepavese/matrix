@@ -105,9 +105,17 @@ Latest budget realignment:
   a standalone protocol facade and avoids pushing protocol fields into Matrix
   runtime code.
 - 2026-06-18: ACP drift review updated the tracked schema baseline to
-  `agent-client-protocol` Schema v1.13.7. `additionalDirectories` now matches the
+  `agent-client-protocol` Schema v1.14.0. `additionalDirectories` now matches the
   current unstable schema (`new`/`load`/`resume`/`fork` plus `SessionInfo`,
   not `session/list`) and remains capability-gated in Matrix runtime.
+- 2026-06-18: `pkg/zedacp` budget was raised to the measured ACP v1.14.0
+  baseline after splitting JSON-RPC transport helpers, MCP request shaping, and
+  read-loop dispatch out of the main client/types files. The increase covers
+  raw JSON-RPC request IDs, required non-null MCP collections, stable
+  `session/delete`/`logout`, terminal output truncation semantics, and tolerant
+  scalar `currentValue` decoding. File/function budgets and quality warning
+  ratchets remain unchanged; current governance reports 0 quality warnings and
+  maximum branch points stay at 10.
 - 2026-05-04: ACP provider budgets were ratcheted to the real stable-surface
   cost after implementation: stable `session/resume`, stable `session/close`,
   stable `session/set_config_option`, structured updates, official terminal

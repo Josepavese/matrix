@@ -30,7 +30,7 @@ Local findings:
   returns published module versions through `v0.13.0`
 - 2026-05-21: the repository README on `main` advertises `v0.13.0`
 - the published `v0.13.0` module should be re-evaluated against official ACP
-  Schema v1.13.7 before any migration
+  Schema v1.14.0 before any migration
 - the published SDK exposes client and agent side connections and is useful for
   both ACP client and server implementations; Matrix should still keep its ACP
   backend port so the transition remains reversible
@@ -57,7 +57,7 @@ Matrix now relies or is preparing to rely on:
 - stable `session/close` support when capability-gated
 - stable `session/resume` support when capability-gated
 - stable `session/set_config_option` support and complete `configOptions` state
-- `session/delete` draft support when capability-gated
+- stable `session/delete` support when capability-gated
 - `session_info_update`
 - `session/fork` draft support when capability-gated
 - `additionalDirectories` modeling for multi-root workspaces
@@ -74,7 +74,7 @@ and Gemini.
 
 The release mismatch needs a fresh check: `go list` and the repository README
 previously pointed to `v0.13.0`, while the current official ACP schema release
-checked for this Matrix review is Schema v1.13.7. Matrix should still keep
+checked for this Matrix review is Schema v1.14.0. Matrix should still keep
 `pkg/zedacp` behind the ACP backend port until the community SDK has passed
 real-provider Matrix tests.
 

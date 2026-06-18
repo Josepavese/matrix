@@ -24,7 +24,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
       with:
-        go-version: '1.24.4'
+        go-version: '1.25.0'
     - name: Governance manifest
       run: go run ./scripts/governance_check --manifest governance/manifest.toml
     - name: Code governance
@@ -37,7 +37,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
       with:
-        go-version: '1.24.4'
+        go-version: '1.25.0'
     - name: golangci-lint
       uses: golangci/golangci-lint-action@63c23d5020da8f97005b6de340504130bdbe42c7 # v9
       with:
@@ -50,7 +50,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
       with:
-        go-version: '1.24.4'
+        go-version: '1.25.0'
     - name: Test
       run: go test -race -v ./...
 
@@ -61,7 +61,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
       with:
-        go-version: '1.24.4'
+        go-version: '1.25.0'
     - name: Build matrix
       run: go build ./cmd/matrix
 
@@ -74,7 +74,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
       with:
-        go-version: '1.24.4'
+        go-version: '1.25.0'
     - name: GoReleaser snapshot
       uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
       with:

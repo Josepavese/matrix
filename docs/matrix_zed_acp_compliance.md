@@ -8,8 +8,8 @@ https://agentclientprotocol.com and the official SDK references.
 Current source anchors:
 
 - Protocol docs: https://agentclientprotocol.com/protocol/overview
-- Latest schema release, Schema v1.13.7, published 2026-06-16:
-  https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.13.7
+- Latest schema release, Schema v1.14.0, published 2026-06-18:
+  https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.14.0
 - Schema reference: https://agentclientprotocol.com/protocol/schema
 - Session config options: https://agentclientprotocol.com/protocol/session-config-options
 - Terminals: https://agentclientprotocol.com/protocol/terminals
@@ -71,6 +71,7 @@ Mapping:
 - `session/set_mode`
 - `session/fork`
 - `session/delete`
+- `logout` at the typed `pkg/zedacp` protocol layer
 - extension requests and notifications through explicit handlers only
 - `session_info_update`
 - `config_option_update`
@@ -118,8 +119,9 @@ Matrix models the current unstable/draft fields needed for forward compatibility
 - MCP server lists on `session/new`, `session/load`, `session/resume`, and
   `session/fork` when Matrix is configured to provide them.
 - typed package calls for current draft `$/cancel_request`,
-  `providers/list`, `providers/set`, `providers/disable`, `logout`, and
-  `session/set_model`.
+  `providers/list`, `providers/set`, `providers/disable`, and
+  `session/set_model`; stable `logout` is typed but not exposed as a Matrix
+  runtime action yet.
 
 Usage rules:
 
