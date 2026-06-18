@@ -65,12 +65,13 @@ func TestACPSessionCapabilitiesExposeLifecycleStability(t *testing.T) {
 				"list":                  map[string]interface{}{},
 				"resume":                map[string]interface{}{},
 				"fork":                  map[string]interface{}{},
+				"delete":                map[string]interface{}{},
 				"additionalDirectories": map[string]interface{}{},
 			},
 		},
 	}
 	caps := acpSessionCapabilities(resp)
-	if !caps.List || !caps.Load || !caps.Cancel || !caps.Resume || !caps.Fork || !caps.AdditionalDirectories {
+	if !caps.List || !caps.Load || !caps.Cancel || !caps.Resume || !caps.Fork || !caps.Delete || !caps.AdditionalDirectories {
 		t.Fatalf("expected advertised lifecycle support: %#v", caps)
 	}
 	if caps.Details["list"].Stability != "stable" {
@@ -78,6 +79,9 @@ func TestACPSessionCapabilitiesExposeLifecycleStability(t *testing.T) {
 	}
 	if caps.Details["resume"].Stability != "stable" {
 		t.Fatalf("resume should be stable: %#v", caps.Details["resume"])
+	}
+	if caps.Details["delete"].Stability != "stable" {
+		t.Fatalf("delete should be stable: %#v", caps.Details["delete"])
 	}
 	if caps.Details["fork"].Stability != "draft" {
 		t.Fatalf("fork should be draft: %#v", caps.Details["fork"])
@@ -141,7 +145,7 @@ func (c *pagedListACPClient) Context() context.Context            { return c.ctx
 func (c *pagedListACPClient) Close() error                        { return nil }
 func (c *pagedListACPClient) SetRequestHandler(acpRequestHandler) {}
 func (c *pagedListACPClient) Initialize(context.Context, acpInitializeRequest) (*acpInitializeResponse, error) {
-	return &acpInitializeResponse{}, nil
+	return &acpInitializeResponse{ProtocolVersion: supportedACPProtocolVersion}, nil
 }
 func (c *pagedListACPClient) Authenticate(context.Context, string, map[string]string) error {
 	return nil

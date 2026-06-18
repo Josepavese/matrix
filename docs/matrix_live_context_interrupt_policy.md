@@ -11,7 +11,7 @@ ACP guarantees a cancellation path for an active prompt turn. It does not define
 a standard "append this new prompt/context into the currently running turn and
 make the model consume it before final answer" operation.
 
-The latest ACP docs and Schema v1.13.7, published 2026-06-16, also do not define
+The latest ACP docs and Schema v1.14.0, published 2026-06-18, also do not define
 a `side`, `session/side`, or equivalent inline side-channel primitive. The
 official branching primitive is draft `session/fork`; it creates a separate
 session and does not solve mid-turn live context injection by itself.

@@ -65,6 +65,14 @@ Use this template for every production-oriented Matrix release.
 - Smoke result:
 - Cleanup evidence:
 
+## VM Evidence
+
+- Nido inventory checked before VM creation:
+- VMs reused:
+- VMs created:
+- VMs deleted:
+- Retained VM owner/reason/expiry:
+
 ## Warnings And Exceptions
 
 - Accepted warnings:

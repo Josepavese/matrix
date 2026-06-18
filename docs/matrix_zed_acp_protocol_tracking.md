@@ -10,11 +10,11 @@ development and Matrix's local ACP surface.
 Official sources checked:
 
 - ACP overview: https://agentclientprotocol.com/protocol/overview
-- Stable schema: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/schema.json
-- Stable schema metadata: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/meta.json
-- Unstable schema: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/schema.unstable.json
-- Unstable schema metadata: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/meta.unstable.json
-- Latest release: https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.13.7
+- Stable schema: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.14.0/schema.json
+- Stable schema metadata: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.14.0/meta.json
+- Unstable schema: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.14.0/schema.unstable.json
+- Unstable schema metadata: https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.14.0/meta.unstable.json
+- Latest release: https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.14.0
 - Additional directories RFD: https://agentclientprotocol.com/rfds/additional-directories
 - Request cancellation RFD: https://agentclientprotocol.com/rfds/request-cancellation
 - MCP-over-ACP RFD: https://agentclientprotocol.com/rfds/mcp-over-acp
@@ -30,11 +30,10 @@ Official sources checked:
 Upstream state:
 
 - ACP wire protocol remains `protocolVersion: 1`.
-- Latest GitHub release is `Schema v1.13.7` (`schema-v1.13.7`),
-  published 2026-06-16.
-- Latest release notes include schema `_meta` fixes, Rust JSON key-order
-  preservation, schema release versioning fixes, and separate JSON Schema
-  publishes.
+- Latest GitHub release checked here is `Schema v1.14.0`
+  (`schema-v1.14.0`), published 2026-06-18.
+- Stable `meta.json` includes `session/delete` and `logout` in the ACP
+  `protocolVersion: 1` method set.
 - Zed now documents ACP Registry as the preferred install path for external
   agents starting from `v0.221.x`; Agent Server extensions remain supported but
   are on a deprecation path.
@@ -66,7 +65,7 @@ Implemented locally:
 - Agent-side stable methods: `initialize`, `authenticate`, `session/new`,
   `session/load`, `session/list`, `session/resume`, `session/prompt`,
   `session/cancel`, `session/close`, `session/set_config_option`,
-  `session/set_mode`.
+  `session/set_mode`, `session/delete`, `logout`.
 - Client-side stable methods: `session/request_permission`,
   `fs/read_text_file`, `fs/write_text_file`, `terminal/create`,
   `terminal/output`, `terminal/wait_for_exit`, `terminal/kill`,
@@ -90,7 +89,6 @@ Stable gaps:
 Implemented or partially implemented locally:
 
 - `session/fork`: implemented as optional draft, capability-gated.
-- `session/delete`: implemented as optional draft, capability-gated.
 - `additionalDirectories`: modeled on current lifecycle/session structs,
   accepted by Matrix run/session ingress, normalized to unique absolute paths,
   and propagated by the ACP runtime only when
@@ -106,8 +104,9 @@ Implemented or partially implemented locally:
 - `AuthEnvVar.secret` defaults to `true` when omitted, matching current
   unstable schema metadata.
 - Typed unstable client surfaces exist for `$/cancel_request`,
-  `providers/list`, `providers/set`, `providers/disable`, `logout`, and
-  `session/set_model`.
+  `providers/list`, `providers/set`, `providers/disable`, and
+  `session/set_model`. Stable `logout` is typed in `pkg/zedacp`, but Matrix
+  does not expose it as a runtime user action yet.
 - Extension request/notification escape hatch.
 
 Open gaps and corrections:
@@ -130,7 +129,7 @@ Open gaps and corrections:
    driven and does not expose this ACP provider configuration surface.
 
 4. Logout.
-   Upstream logout RFD is Preview. `pkg/zedacp` has a typed call, but Matrix
+   Stable ACP includes `logout`. `pkg/zedacp` has a typed call, but Matrix
    startup auth and local onboarding do not advertise/consume `auth.logout`.
 
 5. Terminal auth.
@@ -202,8 +201,8 @@ Use these commands for the next protocol-drift pass:
 release_json="$(curl -fsSL https://api.github.com/repos/agentclientprotocol/agent-client-protocol/releases/latest)"
 printf '%s\n' "$release_json" | jq -r '.tag_name, .name, .published_at'
 printf '%s\n' "$release_json" | jq -r '.assets[] | select(.name | test("^(schema|meta)")) | .browser_download_url'
-curl -fsSL https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/schema.json
-curl -fsSL https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.13.7/schema.unstable.json
+curl -fsSL https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.14.0/schema.json
+curl -fsSL https://github.com/agentclientprotocol/agent-client-protocol/releases/download/schema-v1.14.0/schema.unstable.json
 ```
 
 Then compare:

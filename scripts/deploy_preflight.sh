@@ -41,7 +41,9 @@ go test -race -v ./...
 
 echo
 echo "== Build =="
-go build ./cmd/matrix
+build_dir="$(mktemp -d)"
+go build -o "$build_dir/matrix" ./cmd/matrix
+rm -rf "$build_dir"
 
 echo
 echo "== Orchestration profile =="

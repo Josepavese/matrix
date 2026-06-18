@@ -151,41 +151,6 @@ func (v *AuthEnvVar) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type NewSessionRequest struct {
-	ClientTitle           string                 `json:"clientTitle,omitempty"`
-	Cwd                   string                 `json:"cwd"`
-	AdditionalDirectories []string               `json:"additionalDirectories,omitempty"`
-	McpServers            []McpServerConfig      `json:"mcpServers"`
-	Tools                 []Tool                 `json:"tools,omitempty"`
-	Meta                  map[string]interface{} `json:"_meta,omitempty"`
-}
-
-type McpServerConfig struct {
-	Name    string   `json:"name"`
-	Type    string   `json:"type,omitempty"`
-	Command string   `json:"command,omitempty"`
-	Args    []string `json:"args,omitempty"`
-	Env     []EnvVar `json:"env,omitempty"`
-	URL     string   `json:"url,omitempty"`
-	Headers []Header `json:"headers,omitempty"`
-}
-
-type EnvVar struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
-type Header struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
-type Tool struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	InputSchema map[string]interface{} `json:"inputSchema"`
-}
-
 type NewSessionResponse struct {
 	SessionID     string                 `json:"sessionId"`
 	Modes         *SessionModeState      `json:"modes,omitempty"`
@@ -230,6 +195,13 @@ type LoadSessionRequest struct {
 	Meta                  map[string]interface{} `json:"_meta,omitempty"`
 }
 
+func (r LoadSessionRequest) MarshalJSON() ([]byte, error) {
+	type wireRequest LoadSessionRequest
+	out := wireRequest(r)
+	out.McpServers = nonNilMCPServers(r.McpServers)
+	return json.Marshal(out)
+}
+
 type LoadSessionResponse struct {
 	Modes         *SessionModeState      `json:"modes,omitempty"`
 	ConfigOptions []ConfigOption         `json:"configOptions,omitempty"`
@@ -244,6 +216,13 @@ type ResumeSessionRequest struct {
 	Meta                  map[string]interface{} `json:"_meta,omitempty"`
 }
 
+func (r ResumeSessionRequest) MarshalJSON() ([]byte, error) {
+	type wireRequest ResumeSessionRequest
+	out := wireRequest(r)
+	out.McpServers = nonNilMCPServers(r.McpServers)
+	return json.Marshal(out)
+}
+
 type ResumeSessionResponse struct {
 	Modes         *SessionModeState      `json:"modes,omitempty"`
 	ConfigOptions []ConfigOption         `json:"configOptions,omitempty"`
@@ -256,6 +235,13 @@ type ForkSessionRequest struct {
 	AdditionalDirectories []string               `json:"additionalDirectories,omitempty"`
 	McpServers            []McpServerConfig      `json:"mcpServers"`
 	Meta                  map[string]interface{} `json:"_meta,omitempty"`
+}
+
+func (r ForkSessionRequest) MarshalJSON() ([]byte, error) {
+	type wireRequest ForkSessionRequest
+	out := wireRequest(r)
+	out.McpServers = nonNilMCPServers(r.McpServers)
+	return json.Marshal(out)
 }
 
 type ForkSessionResponse struct {
@@ -369,8 +355,8 @@ func (o *ConfigOption) UnmarshalJSON(data []byte) error {
 		Category     string                 `json:"category,omitempty"`
 		Type         string                 `json:"type,omitempty"`
 		Options      json.RawMessage        `json:"options,omitempty"`
-		CurrentValue string                 `json:"currentValue,omitempty"`
-		Current      string                 `json:"current,omitempty"`
+		CurrentValue json.RawMessage        `json:"currentValue,omitempty"`
+		Current      json.RawMessage        `json:"current,omitempty"`
 		Meta         map[string]interface{} `json:"_meta,omitempty"`
 	}
 	var raw rawOption
@@ -382,13 +368,35 @@ func (o *ConfigOption) UnmarshalJSON(data []byte) error {
 	o.Description = raw.Description
 	o.Category = raw.Category
 	o.Type = raw.Type
-	o.Current = raw.CurrentValue
+	o.Current = configScalarString(raw.CurrentValue)
 	if o.Current == "" {
-		o.Current = raw.Current
+		o.Current = configScalarString(raw.Current)
 	}
 	o.Meta = raw.Meta
 	o.Options = decodeConfigOptions(raw.Options)
 	return nil
+}
+
+func configScalarString(data json.RawMessage) string {
+	if len(data) == 0 || string(data) == "null" {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		return text
+	}
+	var boolean bool
+	if err := json.Unmarshal(data, &boolean); err == nil {
+		if boolean {
+			return "true"
+		}
+		return "false"
+	}
+	var number json.Number
+	if err := json.Unmarshal(data, &number); err == nil {
+		return number.String()
+	}
+	return ""
 }
 
 func (v *ConfigOptionValue) UnmarshalJSON(data []byte) error {
@@ -649,13 +657,6 @@ func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 		Usage:             u.Usage,
 		Meta:              u.Meta,
 	})
-}
-
-func cloneRawMessage(data json.RawMessage) json.RawMessage {
-	if len(data) == 0 {
-		return nil
-	}
-	return append(json.RawMessage(nil), data...)
 }
 
 func decodeUpdateContent(data json.RawMessage) (Content, []Content, []ToolCallContent) {

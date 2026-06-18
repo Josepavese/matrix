@@ -46,6 +46,10 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		_ = transport.Close()
 		return nil, classifyProviderFailure("", endpoint, "initialize", fmt.Errorf("ACP initialize failed: %w", err))
 	}
+	if initResp.ProtocolVersion != supportedACPProtocolVersion {
+		_ = transport.Close()
+		return nil, classifyProviderFailure("", endpoint, "initialize", fmt.Errorf("ACP protocol version %d is not supported (matrix supports %d)", initResp.ProtocolVersion, supportedACPProtocolVersion))
+	}
 	for _, m := range initResp.AuthMethods {
 		authenticateACPEnvVarFromEnvironment(ctx, client, m)
 	}

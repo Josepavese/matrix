@@ -5,6 +5,11 @@ declare -A patterns=(
   [telegram_bot_token]='[0-9]{8,10}:[A-Za-z0-9_-]{35,}'
   [github_token]='gh[pousr]_[A-Za-z0-9_]{36,}'
   [openai_api_key]='(sk-[A-Za-z0-9]{32,}|sk-proj-[A-Za-z0-9_-]{40,})'
+  [anthropic_api_key]='sk-ant-[A-Za-z0-9_-]{32,}'
+  [google_api_key]='AIza[0-9A-Za-z_-]{35}'
+  [slack_token]='xox[baprs]-[0-9A-Za-z-]{20,}'
+  [stripe_secret_key]='sk_(live|test)_[0-9A-Za-z]{24,}'
+  [jwt_token]='eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}'
   [aws_access_key]='AKIA[0-9A-Z]{16}'
   [private_key]='-----BEGIN (RSA |EC |OPENSSH |DSA |)?PRIVATE KEY-----'
 )

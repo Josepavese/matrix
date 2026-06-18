@@ -59,47 +59,44 @@ func (c *a2aConversationClient) Close() error {
 }
 
 func (c *a2aConversationClient) ExecuteTurn(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
+	req := a2aSendMessageRequest(turn)
+	result, err := c.executeA2ATurn(ctx, req, turn)
+	if err != nil && turn.RemoteSessionID != "" && isA2ASessionNotFound(err) {
+		return c.ExecuteTurn(ctx, a2aTurnWithoutRemoteSession(turn))
+	}
+	return result, err
+}
+
+func a2aSendMessageRequest(turn middleware.ConversationTurn) *a2a.SendMessageRequest {
 	state := a2astate.Decode(turn.RemoteSessionID)
 	msg := a2a.NewMessage(a2a.MessageRoleUser, sidecarprojection.A2AMessageParts(turn)...)
 	msg.ContextID = state.ContextID
 	msg.TaskID = a2a.TaskID(state.TaskID)
 	sidecarprojection.ApplyA2AMetadata(msg, turn.SidecarCapsules)
+	return &a2a.SendMessageRequest{Message: msg, Metadata: sidecarprojection.A2ARequestMetadata(turn.SidecarCapsules)}
+}
 
-	req := &a2a.SendMessageRequest{Message: msg, Metadata: sidecarprojection.A2ARequestMetadata(turn.SidecarCapsules)}
-
+func (c *a2aConversationClient) executeA2ATurn(ctx context.Context, req *a2a.SendMessageRequest, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
 	if turn.ThoughtNotifier == nil {
-		resp, err := c.client.SendMessage(ctx, req)
-		if err != nil && turn.RemoteSessionID != "" && isA2ASessionNotFound(err) {
-			return c.ExecuteTurn(ctx, middleware.ConversationTurn{
-				AgentID:               turn.AgentID,
-				LogicalSessionID:      turn.LogicalSessionID,
-				WorkspacePath:         turn.WorkspacePath,
-				Message:               turn.Message,
-				SidecarCapsules:       turn.SidecarCapsules,
-				Tools:                 turn.Tools,
-				AdditionalDirectories: turn.AdditionalDirectories,
-				ThoughtNotifier:       turn.ThoughtNotifier,
-			})
-		}
-		if err != nil {
-			return middleware.ConversationResult{}, fmt.Errorf("A2A send message failed: %w", err)
-		}
-		return a2aResultFromSendMessage(resp), nil
+		return c.sendA2ANonStreaming(ctx, req, turn)
 	}
 
-	output, nextState, err := c.streamA2A(ctx, req, turn)
-	if err != nil && turn.RemoteSessionID != "" && isA2ASessionNotFound(err) {
-		return c.ExecuteTurn(ctx, middleware.ConversationTurn{
-			AgentID:               turn.AgentID,
-			LogicalSessionID:      turn.LogicalSessionID,
-			WorkspacePath:         turn.WorkspacePath,
-			Message:               turn.Message,
-			SidecarCapsules:       turn.SidecarCapsules,
-			Tools:                 turn.Tools,
-			AdditionalDirectories: turn.AdditionalDirectories,
-			ThoughtNotifier:       turn.ThoughtNotifier,
-		})
+	result, err := c.streamA2AResult(ctx, req, turn)
+	if err == nil {
+		return result, nil
 	}
+	if !isA2AStreamingUnsupported(err) {
+		return middleware.ConversationResult{}, err
+	}
+	result, sendErr := c.sendA2ANonStreaming(ctx, req, turn)
+	if sendErr != nil {
+		return middleware.ConversationResult{}, fmt.Errorf("A2A streaming unsupported and non-streaming fallback failed: %w", sendErr)
+	}
+	return result, nil
+}
+
+func (c *a2aConversationClient) streamA2AResult(ctx context.Context, req *a2a.SendMessageRequest, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
+	output, nextState, err := c.streamA2A(ctx, req, turn)
 	if err != nil {
 		return middleware.ConversationResult{}, err
 	}
@@ -110,6 +107,18 @@ func (c *a2aConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 			Status: "active",
 		},
 	}, nil
+}
+
+func (c *a2aConversationClient) sendA2ANonStreaming(ctx context.Context, req *a2a.SendMessageRequest, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
+	resp, err := c.client.SendMessage(ctx, req)
+	if err != nil {
+		return middleware.ConversationResult{}, fmt.Errorf("A2A send message failed: %w", err)
+	}
+	result := a2aResultFromSendMessage(resp)
+	if turn.ThoughtNotifier != nil && result.RemoteSessionID != "" {
+		turn.ThoughtNotifier.SetHeader(turn.AgentID, result.RemoteSessionID)
+	}
+	return result, nil
 }
 
 func (c *a2aConversationClient) ListRemoteSessions(ctx context.Context) ([]middleware.RemoteSessionInfo, error) {
@@ -253,6 +262,15 @@ func a2aPartsText(parts a2a.ContentParts) string {
 
 func isA2ASessionNotFound(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "task not found")
+}
+
+func isA2AStreamingUnsupported(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "streaming") &&
+		(strings.Contains(msg, "not supported") || strings.Contains(msg, "unsupported") || strings.Contains(msg, "method not found"))
 }
 
 func a2aTaskTitle(task *a2a.Task) string {

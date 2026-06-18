@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"github.com/Josepavese/matrix/internal/logic/frontendevents"
 	"github.com/Josepavese/matrix/internal/middleware"
@@ -141,60 +142,6 @@ func (h *defaultRequestHandler) HandleRequest(ctx context.Context, method string
 		}
 		log.Warn("unsupported agent request", "event", "request_unsupported", "method", method)
 		return nil, zedacp.NewMethodNotFoundError(method)
-	}
-}
-
-// --- Permission handling ---
-
-func (h *defaultRequestHandler) handlePermissionRequest(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
-	var req struct {
-		Options []struct {
-			OptionID string `json:"optionId"`
-			Kind     string `json:"kind"`
-		} `json:"options"`
-	}
-	if err := json.Unmarshal(params, &req); err != nil {
-		log.Warn("failed to parse permission request", "error", err)
-		if h.isTrustMode() {
-			h.notifyPermission(permissionAudit{params: params, decision: "approved", optionID: "allow-once", auto: true})
-			return h.approveResponse("allow-once"), nil
-		}
-		h.notifyPermission(permissionAudit{params: params, decision: "denied"})
-		return h.denyResponse(), nil
-	}
-
-	if !h.isTrustMode() {
-		log.Info("denying permission (trust mode off)", "event", "permission_denied", "options_count", len(req.Options))
-		h.notifyPermission(permissionAudit{params: params, options: req.Options, decision: "denied"})
-		return h.denyResponse(), nil
-	}
-
-	optionID := "allow-once"
-	for _, opt := range req.Options {
-		if opt.Kind == "allow_once" || opt.Kind == "allow_always" {
-			optionID = opt.OptionID
-			break
-		}
-	}
-	log.Info("auto-approving permission", "event", "permission_approved", "optionID", optionID, "options_count", len(req.Options))
-	h.notifyPermission(permissionAudit{params: params, options: req.Options, decision: "approved", optionID: optionID, auto: true})
-	return h.approveResponse(optionID), nil
-}
-
-func (h *defaultRequestHandler) approveResponse(optionID string) map[string]interface{} {
-	return map[string]interface{}{
-		"outcome": map[string]interface{}{
-			"outcome":  "selected",
-			"optionId": optionID,
-		},
-	}
-}
-
-func (h *defaultRequestHandler) denyResponse() map[string]interface{} {
-	return map[string]interface{}{
-		"outcome": map[string]interface{}{
-			"outcome": "denied",
-		},
 	}
 }
 
@@ -483,17 +430,20 @@ func (ts *terminalSession) appendOutput(chunk []byte) {
 		ts.output.Write(chunk)
 		return
 	}
-	remaining := ts.outputByteLimit - ts.output.Len()
-	if remaining <= 0 {
-		ts.truncated = true
-		return
-	}
-	if len(chunk) > remaining {
-		ts.output.Write(chunk[:remaining])
-		ts.truncated = true
-		return
-	}
 	ts.output.Write(chunk)
+	if ts.output.Len() <= ts.outputByteLimit {
+		return
+	}
+	ts.truncated = true
+	data := append([]byte(nil), ts.output.Bytes()...)
+	start := len(data) - ts.outputByteLimit
+	for start < len(data) && !utf8.RuneStart(data[start]) {
+		start++
+	}
+	ts.output.Reset()
+	if start < len(data) {
+		ts.output.Write(data[start:])
+	}
 }
 
 func terminalExitStatus(err error) (*int, string) {

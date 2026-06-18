@@ -100,7 +100,7 @@ func TestRouter_Integration_WS(t *testing.T) {
 
 			switch req.Method {
 			case "initialize":
-				resp.Result = json.RawMessage(`{"capabilities": {"edit": {}}}`)
+				resp.Result = json.RawMessage(`{"protocolVersion": 1, "agentCapabilities": {}}`)
 			case "session/new":
 				resp.Result = json.RawMessage(fmt.Sprintf(`{"sessionId": "%s"}`, mockSessionID))
 			case "session/prompt":

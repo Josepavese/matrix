@@ -471,7 +471,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
   }'
 ```
 
-The response contains `capabilities.session`, keyed by lifecycle feature. Each entry includes `supported`, `status`, `stability`, and `source`. ACP reports `list`, `info_update`, `resume`, and `close` as stable, and `fork` / `delete` as draft when the provider advertises them. Fork descriptors also expose `active_parent_safe`, `requires_idle_parent`, `artifact_turn`, `async_supported`, `blocking`, `artifact_streaming`, and `live_intervention_suitable`. `active_parent_safe=true` means the fork does not switch or damage the parent session; it does not mean a blocking child artifact turn will finish early enough for live intervention.
+The response contains `capabilities.session`, keyed by lifecycle feature. Each entry includes `supported`, `status`, `stability`, and `source`. ACP reports `list`, `info_update`, `resume`, `close`, and `delete` as stable when the provider advertises them; `fork` remains draft. Fork descriptors also expose `active_parent_safe`, `requires_idle_parent`, `artifact_turn`, `async_supported`, `blocking`, `artifact_streaming`, and `live_intervention_suitable`. `active_parent_safe=true` means the fork does not switch or damage the parent session; it does not mean a blocking child artifact turn will finish early enough for live intervention.
 
 Unknown agent ids return a typed client error such as
 `error.code=agent_not_found` instead of a generic server failure. Supervisory
@@ -770,8 +770,14 @@ curl -X POST http://127.0.0.1:9091/v1/modes \
 ### `POST /a2a`
 
 A2A protocol endpoint. Other A2A-compatible agents can call this to interact with Matrix.
+The endpoint accepts `application/json` and the A2A-preferred
+`application/a2a+json` JSON-RPC media type. Matrix currently advertises
+`text/plain` input/output in its Agent Card and rejects non-text inbound parts
+instead of silently dropping them.
 
-The A2A agent card is available at the standard well-known path.
+The A2A agent card is available at the standard well-known path. If Matrix is
+configured with an A2A API key, the card advertises both `X-Matrix-Key` and
+Bearer-token security schemes.
 
 ---
 

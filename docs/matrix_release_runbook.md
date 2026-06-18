@@ -50,6 +50,11 @@ For an isolated smoke install:
 MATRIX_HOME="$(mktemp -d)" scripts/deploy_local_install.sh
 ```
 
+For clean-OS validation, use Nido VMs. Check the Nido inventory first, reuse a
+matching clean VM when possible, and do not create duplicate VMs for the same
+OS/release role. Delete disposable VMs after evidence is captured. If a VM is
+kept, record its name, owner, reason, and expiry in release evidence.
+
 If you expect a live local runtime to be up before release validation:
 
 ```bash
@@ -120,6 +125,7 @@ Minimum criteria for a local release candidate:
 - restore path has been drilled recently
 - release archives install into one PAL home through `install/install.sh` and `install/install.ps1`
 - local PAL home has been updated from the generated host artifact through `scripts/deploy_local_install.sh`
+- clean-OS validation VMs, if used, were reused or deleted; retained VMs have owner/reason/expiry evidence
 
 If a previous local daemon is still running during validation, `matrix doctor`
 or `matrix readiness` may warn that the runtime endpoint report is invalid and

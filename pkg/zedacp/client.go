@@ -3,7 +3,6 @@ package zedacp
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,69 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 )
-
-type jsonRPCRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      int64           `json:"id"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
-
-type jsonRPCResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      *int64          `json:"id,omitempty"`
-	Method  *string         `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *jsonRPCError   `json:"error,omitempty"`
-}
-
-type jsonRPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    any    `json:"data,omitempty"`
-}
-
-const (
-	ErrCodeMethodNotFound = -32601
-	ErrCodeInternal       = -32603
-)
-
-// RPCError lets request handlers return protocol-correct JSON-RPC error codes.
-type RPCError struct {
-	Code    int
-	Message string
-	Data    any
-}
-
-func (e *RPCError) Error() string {
-	if e == nil {
-		return ""
-	}
-	if e.Message != "" {
-		return e.Message
-	}
-	return fmt.Sprintf("RPC error %d", e.Code)
-}
-
-func NewMethodNotFoundError(method string) error {
-	method = strings.TrimSpace(method)
-	if method == "" {
-		method = "<unknown>"
-	}
-	return &RPCError{Code: ErrCodeMethodNotFound, Message: "method not found: " + method}
-}
-
-func rpcErrorFromError(err error) *jsonRPCError {
-	if err == nil {
-		return nil
-	}
-	var rpcErr *RPCError
-	if errors.As(err, &rpcErr) && rpcErr != nil {
-		return &jsonRPCError{Code: rpcErr.Code, Message: rpcErr.Error(), Data: rpcErr.Data}
-	}
-	return &jsonRPCError{Code: ErrCodeInternal, Message: err.Error()}
-}
 
 // Client multiplexes JSON-RPC 2.0 messages over an ACP transport.
 type Client struct {
@@ -118,50 +54,6 @@ func (c *Client) SetRequestHandler(handler RequestHandler) {
 	c.requestHandler = handler
 }
 
-func (c *Client) readLoop() {
-	log := slog.With("component", "zedacp_client")
-	defer c.cancel()
-	for {
-		msgBytes, err := c.transport.Receive(c.ctx)
-		if err != nil {
-			log.Info("acp transport closed", "event", "transport_closed", "error", err)
-			return
-		}
-
-		var raw map[string]interface{}
-		if err := json.Unmarshal(msgBytes, &raw); err != nil {
-			log.Warn("acp transport received invalid json", "event", "invalid_json", "error", err, "bytes_len", len(msgBytes))
-			continue
-		}
-
-		c.logInbound(raw, msgBytes)
-
-		if _, ok := raw["method"].(string); ok && raw["id"] != nil {
-			var req jsonRPCRequest
-			if err := json.Unmarshal(msgBytes, &req); err == nil {
-				go c.handleIncomingRequest(req)
-				continue
-			}
-		}
-
-		var resp jsonRPCResponse
-		if err := json.Unmarshal(msgBytes, &resp); err != nil {
-			continue
-		}
-
-		if resp.ID != nil {
-			c.mu.RLock()
-			ch, ok := c.pending[*resp.ID]
-			c.mu.RUnlock()
-			if ok {
-				ch <- &resp
-			}
-		} else if resp.Method != nil {
-			c.handleNotification(&resp)
-		}
-	}
-}
-
 func (c *Client) handleIncomingRequest(req jsonRPCRequest) {
 	log := slog.With("component", "zedacp_client")
 	c.mu.RLock()
@@ -176,7 +68,7 @@ func (c *Client) handleIncomingRequest(req jsonRPCRequest) {
 		err = fmt.Errorf("no request handler registered for method %s", req.Method)
 	}
 
-	resp := jsonRPCResponse{JSONRPC: "2.0", ID: &req.ID}
+	resp := jsonRPCResponse{JSONRPC: "2.0", ID: cloneRawMessage(req.ID)}
 	if err != nil {
 		resp.Error = rpcErrorFromError(err)
 	} else {
@@ -190,14 +82,14 @@ func (c *Client) handleIncomingRequest(req jsonRPCRequest) {
 
 	respBytes, marshalErr := json.Marshal(resp)
 	if marshalErr != nil {
-		log.Error("failed to marshal response", "event", "response_marshal_failed", "error", marshalErr, "id", req.ID, "method", req.Method)
+		log.Error("failed to marshal response", "event", "response_marshal_failed", "error", marshalErr, "id", jsonRPCIDLogValue(req.ID), "method", req.Method)
 		return
 	}
 	if isWireLoggingEnabled() {
 		log.Debug("acp wire outbound response", "event", "wire_response_send", "payload", string(respBytes))
 	}
 	if err := c.transport.Send(c.ctx, respBytes); err != nil {
-		log.Error("failed to send response", "event", "response_send_failed", "error", err, "id", req.ID, "method", req.Method)
+		log.Error("failed to send response", "event", "response_send_failed", "error", err, "id", jsonRPCIDLogValue(req.ID), "method", req.Method)
 	}
 }
 
@@ -223,7 +115,7 @@ func (c *Client) doCall(ctx context.Context, method string, params interface{}) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal params: %w", err)
 	}
-	req := jsonRPCRequest{JSONRPC: "2.0", ID: id, Method: method, Params: json.RawMessage(paramsBytes)}
+	req := jsonRPCRequest{JSONRPC: "2.0", ID: newJSONRPCID(id), Method: method, Params: json.RawMessage(paramsBytes)}
 	reqBytes, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
