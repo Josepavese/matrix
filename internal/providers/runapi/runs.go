@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/logic/runactivity"
 	"github.com/Josepavese/matrix/internal/logic/runnotifier"
@@ -125,6 +126,10 @@ func (s *Server) startRun(req runRequest, agentID string) (runtrace.Run, error) 
 }
 
 func (s *Server) appendRouteEvents(run runtrace.Run, requestedAgentID, selectedAgentID string) {
+	protocolMeta := map[string]interface{}{"requested_agent_id": requestedAgentID, "selected_agent_id": selectedAgentID}
+	if launchPolicy := agentlaunch.MetadataForAgent(s.endpointResolver, selectedAgentID); len(launchPolicy) > 0 {
+		protocolMeta["agent_launch_policy"] = launchPolicy
+	}
 	_, _ = s.runStore.AppendEvent(runtrace.Event{
 		RunID:        run.ID,
 		Kind:         "routing.decision",
@@ -132,7 +137,7 @@ func (s *Server) appendRouteEvents(run runtrace.Run, requestedAgentID, selectedA
 		Status:       runtrace.StatusCompleted,
 		Protocol:     run.Protocol,
 		DecisionID:   "decision-" + run.ID,
-		ProtocolMeta: map[string]interface{}{"requested_agent_id": requestedAgentID, "selected_agent_id": selectedAgentID},
+		ProtocolMeta: protocolMeta,
 	})
 	_, _ = s.runStore.AppendEvent(runtrace.Event{
 		RunID:          run.ID,

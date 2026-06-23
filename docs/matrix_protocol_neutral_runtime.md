@@ -128,6 +128,8 @@ In other words, Matrix does not guess ACP vs A2A from traffic. It resolves the p
 
 - `matrix agent show <id>`: inspect effective config and normalized endpoint
 - `matrix agent set-binary <id> <path> --kind acp --transport stdio`
+- `matrix agent args set <id> -- <arg> [arg...]`: replace arguments appended
+  to the stored seed args at launch time
 - `matrix agent set-endpoint <id> <url> --kind a2a --transport JSONRPC`
 - `matrix install <id>`: ACP Registry install flow
 - `matrix install <id> --a2a-url <url>`: register a remote A2A endpoint in SSOT
@@ -136,6 +138,28 @@ In other words, Matrix does not guess ACP vs A2A from traffic. It resolves the p
 - `matrix agent info <ref> --source acp_registry|local|a2a_card|a2a_catalog`
 
 Normalization logic lives in `internal/logic/agentcfg/normalize.go`.
+
+### Trust and Provider Launch Policy
+
+Matrix keeps two trust boundaries separate:
+
+- `agent.trust_mode=true` allows Matrix's ACP client-side file, terminal, and
+  permission handlers to approve provider requests automatically.
+- Provider launch policy is passed to the agent process explicitly through the
+  SSOT endpoint command and args.
+
+For Codex ACP, trusted local workspace mode is configured by appending Codex
+runtime config to the agent launch command:
+
+```bash
+matrix config set agent.trust_mode true
+matrix agent args set codex -- -c 'sandbox_mode="danger-full-access"' -c 'approval_policy="never"'
+```
+
+This leaves Matrix's ACP permission trust independent from Codex's internal
+sandbox and approval policy. `/v1/runs` records detected launch-policy evidence
+on the `routing.decision` event under
+`protocol_meta.agent_launch_policy`.
 
 ## Inbound Surface
 

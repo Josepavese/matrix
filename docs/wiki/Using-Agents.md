@@ -90,6 +90,13 @@ matrix agent set-endpoint gemini ws://localhost:3000 --kind acp --transport ws
 matrix agent set-binary opencode /custom/path/opencode --args acp
 ```
 
+Append launch arguments without changing the seed definition:
+
+```bash
+matrix agent args set codex -- -c 'sandbox_mode="danger-full-access"' -c 'approval_policy="never"'
+matrix agent args list codex
+```
+
 ### Check agent health
 
 Run diagnostics on an agent:
@@ -234,6 +241,35 @@ Options:
 
 - `true` -- auto-approve all tool requests
 - `false` -- deny direct agent tool requests by default
+
+`agent.trust_mode` is Matrix-side trust. It controls Matrix's ACP file,
+terminal, and permission request handler. It does not automatically change a
+provider's own sandbox policy.
+
+For Codex ACP trusted local workspace runs, configure both layers explicitly:
+
+```bash
+matrix config set agent.trust_mode true
+matrix agent args set codex -- -c 'sandbox_mode="danger-full-access"' -c 'approval_policy="never"'
+```
+
+The appended Codex config is passed to `codex-acp` on launch. It is equivalent
+to running Codex without its internal sandbox and without interactive approval
+prompts for Matrix-routed HTTP runs. Run traces record the detected launch
+policy under `routing.decision.protocol_meta.agent_launch_policy`, including
+`trusted_terminal=true` when `sandbox_mode=danger-full-access` and
+`approval_policy=never`.
+
+If the daemon is already running as `matrix.service`, it may own the vault lock.
+Stop the user service before applying local CLI config or agent overrides, then
+start it again:
+
+```bash
+systemctl --user stop matrix.service
+matrix config set agent.trust_mode true
+matrix agent args set codex -- -c 'sandbox_mode="danger-full-access"' -c 'approval_policy="never"'
+systemctl --user start matrix.service
+```
 
 ## Troubleshooting
 

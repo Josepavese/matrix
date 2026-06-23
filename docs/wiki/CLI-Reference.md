@@ -112,6 +112,20 @@ Set a custom binary path for an agent.
 matrix agent set-binary claude /usr/local/bin/claude
 ```
 
+### `matrix agent args`
+
+Manage argument overrides appended to an agent command at launch time.
+
+```bash
+matrix agent args list codex
+matrix agent args set codex -- -c 'sandbox_mode="danger-full-access"' -c 'approval_policy="never"'
+matrix agent args append codex -- --verbose
+matrix agent args clear codex
+```
+
+`set` replaces only the appended override arguments. It does not modify the
+seed command or seed args stored for the agent.
+
 ### `matrix agent override`
 
 Inspect or clear raw SSOT overrides.
@@ -272,6 +286,18 @@ Common configuration keys:
 | `jsonrpc_addr` | JSON-RPC daemon address |
 | `daemon_api_key` | JSON-RPC daemon authentication |
 | `agent.trust_mode` | Auto-approve tool requests (`true` or `false`, default: `false`) |
+
+When a live `matrix.service` owns the local bbolt vault lock, direct CLI config
+or agent override commands may fail with `ERR_VAULT_OPEN`. The supported local
+operator path is to stop the user service, apply the config or override, and
+restart it:
+
+```bash
+systemctl --user stop matrix.service
+matrix config set agent.trust_mode true
+matrix agent args set codex -- -c 'sandbox_mode="danger-full-access"' -c 'approval_policy="never"'
+systemctl --user start matrix.service
+```
 
 ### `matrix config delete <key>`
 

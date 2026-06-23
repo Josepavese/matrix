@@ -28,7 +28,7 @@ func (m *memStorage) List(prefix string) ([]string, error) {
 func TestSaveAndLoad(t *testing.T) {
 	s := newMemStorage()
 	active := true
-	err := Save(s, "test-agent", Override{Active: &active, Env: []string{"API_KEY=sk-test"}})
+	err := Save(s, "test-agent", Override{Active: &active, Env: []string{"API_KEY=sk-test"}, AppendArgs: []string{"-c", "sandbox_mode=\"danger-full-access\""}})
 	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -43,6 +43,9 @@ func TestSaveAndLoad(t *testing.T) {
 	if len(ov.Env) != 1 || ov.Env[0] != "API_KEY=sk-test" {
 		t.Errorf("unexpected env: %v", ov.Env)
 	}
+	if len(ov.AppendArgs) != 2 || ov.AppendArgs[1] != "sandbox_mode=\"danger-full-access\"" {
+		t.Errorf("unexpected append args: %v", ov.AppendArgs)
+	}
 }
 
 func TestLoad_NotFound(t *testing.T) {
@@ -56,6 +59,9 @@ func TestLoad_NotFound(t *testing.T) {
 	}
 	if len(ov.Env) != 0 {
 		t.Errorf("expected empty env, got: %v", ov.Env)
+	}
+	if len(ov.AppendArgs) != 0 {
+		t.Errorf("expected empty append args, got: %v", ov.AppendArgs)
 	}
 }
 
