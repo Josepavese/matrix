@@ -90,6 +90,7 @@ Mitigations already present:
 - `X-Matrix-Key` support on HTTP surfaces
 - versioned ingress surfaces
 - channel-neutral typed APIs
+- browser CORS is loopback-origin only and rejects remote origins
 
 Remaining operator requirement:
 

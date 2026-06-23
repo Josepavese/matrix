@@ -16,6 +16,21 @@ Configure the API key:
 matrix config set matrix_api_key your-key
 ```
 
+## Local Browser CORS
+
+Matrix accepts browser CORS requests only from loopback HTTP origins:
+
+- `http://localhost:*`
+- `http://127.0.0.1:*`
+- `http://[::1]:*`
+
+Preflight requests from those origins receive `204 No Content` with
+`Access-Control-Allow-Origin` set to the exact origin, `Vary: Origin`, methods
+`GET, POST, OPTIONS`, and headers `Content-Type, X-Matrix-Key, Authorization`.
+Remote origins are rejected with `403 Forbidden`. API key authentication is
+unchanged; browser clients must still send `X-Matrix-Key` or `Authorization:
+Bearer ...` when `matrix_api_key` is configured.
+
 ## Health
 
 ### `GET /_matrix/runtime`

@@ -254,6 +254,7 @@ Response model:
 Auth and callbacks:
 
 - `/v1/runs` can be protected with `X-Matrix-Key`
+- Matrix HTTP ingress supports browser CORS only for loopback HTTP origins (`http://localhost:*`, `http://127.0.0.1:*`, and `http://[::1]:*`). Local preflight returns `204` with `Access-Control-Allow-Origin` echoing the exact origin, `Vary: Origin`, methods `GET, POST, OPTIONS`, and headers `Content-Type, X-Matrix-Key, Authorization`; remote origins are rejected with `403`, and API key authentication is unchanged.
 - `/v1/auth/openrouter/callback` is the versioned auxiliary HTTP callback endpoint used by the onboarding/auth flow, not a general ingress surface
 
 Readiness:
