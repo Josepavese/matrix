@@ -177,7 +177,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Start Matrix HTTP API server
-		httpServer := &http.Server{Addr: matrixHTTPAddr, Handler: mux}
+		httpServer := &http.Server{Addr: matrixHTTPAddr, Handler: matrixapi.LocalCORSHandler(mux)}
 		go func() {
 			log.Info("starting matrix http server", "event", "matrix_http_starting", "addr", matrixHTTPAddr)
 			if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
