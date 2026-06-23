@@ -276,6 +276,79 @@ func TestHandleRunsRejectsNonJSONContentType(t *testing.T) {
 	}
 }
 
+func TestHandleRuns_CodexReasoningEffortAddsLaunchArgsAndTrace(t *testing.T) {
+	router := &runTestRouter{}
+	server := NewServer(router).WithTraceStorage(memstore.New()).WithEndpointResolver(launchPolicyEndpointResolver{
+		endpoint: middleware.ProtocolEndpoint{Args: []string{"-c", "approval_policy=\"never\""}},
+	})
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id": "halfdesk.pm",
+		"agent_id":   "codex",
+		"input":      "say ok",
+		"agent_config": map[string]interface{}{
+			"model_reasoning_effort": "xhigh",
+		},
+	})
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := strings.Join(router.lastConversation.AgentLaunchArgs, "\x00"); got != "-c\x00model_reasoning_effort=\"xhigh\"" {
+		t.Fatalf("unexpected agent launch args: %#v", router.lastConversation.AgentLaunchArgs)
+	}
+	var resp runresponse.Success
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	events, err := server.Store().LoadEvents(resp.RunID, 100)
+	if err != nil {
+		t.Fatalf("LoadEvents: %v", err)
+	}
+	for _, event := range events {
+		if event.Kind != "routing.decision" {
+			continue
+		}
+		launchPolicy, ok := event.ProtocolMeta["agent_launch_policy"].(map[string]interface{})
+		if !ok || launchPolicy["model_reasoning_effort"] != "xhigh" {
+			t.Fatalf("expected reasoning effort evidence, got %+v", event.ProtocolMeta)
+		}
+		return
+	}
+	t.Fatalf("routing.decision event not found: %+v", events)
+}
+
+func TestHandleRuns_RejectsReasoningEffortForNonCodexAgent(t *testing.T) {
+	router := &runTestRouter{}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id": "halfdesk.pm",
+		"agent_id":   "opencode",
+		"input":      "say ok",
+		"codex_config": map[string]interface{}{
+			"model_reasoning_effort": "xhigh",
+		},
+	})
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if router.lastConversation.ChannelID != "" {
+		t.Fatalf("request should not have reached router: %#v", router.lastConversation)
+	}
+}
+
 func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.T) {
 	router := &runTestRouter{
 		reconcile: &middleware.AgentClientReconcileResult{

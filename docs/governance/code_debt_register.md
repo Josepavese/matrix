@@ -18,6 +18,12 @@ Current allowed baseline:
 
 Latest budget realignment:
 
+- 2026-06-24: per-run Codex `model_reasoning_effort` support partitions local
+  provider clients by launch args so different effort values cannot reuse the
+  same ACP process. The `internal/providers/agents` package LOC override was
+  raised to the measured baseline for the required cache-key, cleanup,
+  tombstone, and reconcile handling; file/function/parameter hard budgets remain
+  clean and quality warnings remain 0.
 - 2026-04-27: complexity-warning cleanup split branch-heavy session and
   workspace timeline code into smaller helpers. Quality warnings dropped to 0
   and maximum branch points dropped to 10. Package LOC overrides increased only

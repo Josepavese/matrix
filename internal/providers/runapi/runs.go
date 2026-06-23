@@ -6,12 +6,12 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/logic/runactivity"
+	"github.com/Josepavese/matrix/internal/logic/runconfig"
 	"github.com/Josepavese/matrix/internal/logic/runnotifier"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/logic/sidecar"
@@ -37,6 +37,9 @@ func (s *Server) HandleRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	agentID := firstNonEmpty(req.AgentID, s.defaultAgent)
+	if !s.prepareRunAgentConfig(w, &req, agentID) {
+		return
+	}
 	run, err := s.startRun(req, agentID)
 	if err != nil {
 		slog.Error("matrix run trace start failed", "error", err)
@@ -67,7 +70,7 @@ func decodeRunRequest(w http.ResponseWriter, r *http.Request) (runRequest, bool)
 		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
 		return runRequest{}, false
 	}
-	additionalDirectories, err := normalizeAdditionalDirectories(req.AdditionalDirectories)
+	additionalDirectories, err := runconfig.NormalizeAdditionalDirectories(req.AdditionalDirectories)
 	if err != nil {
 		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
 		return runRequest{}, false
@@ -76,27 +79,14 @@ func decodeRunRequest(w http.ResponseWriter, r *http.Request) (runRequest, bool)
 	return req, true
 }
 
-func normalizeAdditionalDirectories(values []string) ([]string, error) {
-	if len(values) == 0 {
-		return nil, nil
+func (s *Server) prepareRunAgentConfig(w http.ResponseWriter, req *runRequest, agentID string) bool {
+	args, err := agentlaunch.CodexReasoningEffortArgs(agentID, req.AgentConfig.ModelReasoningEffort, req.CodexConfig.ModelReasoningEffort)
+	if err != nil {
+		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
+		return false
 	}
-	out := make([]string, 0, len(values))
-	seen := map[string]struct{}{}
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if !filepath.IsAbs(value) {
-			return nil, errors.New("additional_directories entries must be absolute paths")
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	return out, nil
+	req.agentLaunchArgs = append(req.agentLaunchArgs, args...)
+	return true
 }
 
 func (s *Server) startRun(req runRequest, agentID string) (runtrace.Run, error) {
@@ -120,14 +110,14 @@ func (s *Server) startRun(req runRequest, agentID string) (runtrace.Run, error) 
 	if err := s.runStore.SaveRun(run); err != nil {
 		return runtrace.Run{}, err
 	}
-	s.appendRouteEvents(run, req.AgentID, agentID)
+	s.appendRouteEvents(run, req.AgentID, agentID, req.agentLaunchArgs)
 	s.appendSidecarEvents(run, req.SidecarCapsules)
 	return run, nil
 }
 
-func (s *Server) appendRouteEvents(run runtrace.Run, requestedAgentID, selectedAgentID string) {
+func (s *Server) appendRouteEvents(run runtrace.Run, requestedAgentID, selectedAgentID string, launchArgs []string) {
 	protocolMeta := map[string]interface{}{"requested_agent_id": requestedAgentID, "selected_agent_id": selectedAgentID}
-	if launchPolicy := agentlaunch.MetadataForAgent(s.endpointResolver, selectedAgentID); len(launchPolicy) > 0 {
+	if launchPolicy := agentlaunch.MetadataForAgent(s.endpointResolver, selectedAgentID, launchArgs...); len(launchPolicy) > 0 {
 		protocolMeta["agent_launch_policy"] = launchPolicy
 	}
 	_, _ = s.runStore.AppendEvent(runtrace.Event{
@@ -260,6 +250,7 @@ func (s *Server) route(ctx context.Context, exec runExecution, prepared sessionS
 			Input:                 req.Input.String(),
 			SidecarCapsules:       req.SidecarCapsules,
 			AdditionalDirectories: req.AdditionalDirectories,
+			AgentLaunchArgs:       req.agentLaunchArgs,
 			Notifier:              notifier,
 			NonInteractive:        true,
 		})

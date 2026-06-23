@@ -259,14 +259,31 @@ agents when Matrix can infer it from non-secret command arguments. Example:
     "source": "agent_args",
     "sandbox_mode": "danger-full-access",
     "approval_policy": "never",
+    "model_reasoning_effort": "xhigh",
     "trusted_terminal": true
   }
 }
 ```
 
+Recognized non-secret launch-policy keys are `sandbox_mode`,
+`approval_policy`, `sandbox_permissions`, `model_reasoning_effort`, and the
+Codex bypass flag. `model_reasoning_effort` may come from the stored Codex agent
+args or from a per-run `/v1/runs` `agent_config`/`codex_config` override.
+
+Streaming UI consumers can rely on these message channels in raw
+`/v1/runs/{run_id}/events` reads:
+
+- `agent.message.delta.message`: the incremental agent text chunk;
+- `agent.message.final.message`: the complete final answer;
+- `run.completed`, `run.failed`, or `run.cancelled`: terminal lifecycle state.
+
+Trace projections still apply `trace_policy`: non-`inline` trace exports redact
+event `message` fields even though the raw event stream carries live content.
+
 Matrix records only recognized launch-policy keys such as `sandbox_mode`,
-`approval_policy`, `sandbox_permissions`, and the Codex bypass flag. It does not
-copy arbitrary argv or environment variables into run trace protocol metadata.
+`approval_policy`, `sandbox_permissions`, `model_reasoning_effort`, and the
+Codex bypass flag. It does not copy arbitrary argv or environment variables into
+run trace protocol metadata.
 
 ## Sidecar Capsule Events
 

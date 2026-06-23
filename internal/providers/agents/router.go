@@ -180,7 +180,7 @@ func (r *Router) checkAndReconnect() {
 
 	log := slog.With("component", "agent_router_keepalive")
 	for _, key := range agentIDs {
-		agentID, cwd := splitClientCacheKey(key)
+		agentID, cwd, launchArgs := splitClientCacheKeyParts(key)
 		if !r.canSpawnFreshLifecycleClient(agentID) {
 			if r.evictCachedClient(key) {
 				log.Info("detected dead local agent client, evicted without pre-warm", "event", "keepalive_evict_dead_local_client", "agent", agentID, "cwd", cwd)
@@ -188,7 +188,7 @@ func (r *Router) checkAndReconnect() {
 			continue
 		}
 		log.Info("detected dead agent client, pre-warming replacement", "event", "keepalive_reconnect", "agent", agentID, "cwd", cwd)
-		if err := r.preWarm(r.keepAliveCtx, agentID, cwd); err != nil {
+		if err := r.preWarm(r.keepAliveCtx, agentID, cwd, launchArgs...); err != nil {
 			log.Warn("keepalive pre-warm failed, will retry on next check", "event", "keepalive_prewarm_failed", "agent", agentID, "cwd", cwd, "error", err)
 		}
 	}
@@ -211,16 +211,16 @@ func (r *Router) evictCachedClient(key string) bool {
 // preWarm evicts a dead client entry and creates a fresh one in its place.
 // The new client is fully initialized (initialize handshake complete) so it is
 // ready for session/new + prompt on the next user message.
-func (r *Router) preWarm(ctx context.Context, agentID string, cwd string) error {
+func (r *Router) preWarm(ctx context.Context, agentID string, cwd string, launchArgs ...string) error {
 	log := slog.With("component", "agent_router", "agent", agentID)
-	key := clientCacheKey(agentID, cwd)
+	key := clientCacheKey(agentID, cwd, launchArgs...)
 
 	r.mu.Lock()
 	// Evict the dead entry
 	delete(r.clients, key)
 
 	// Create a fresh client under the write lock
-	client, kind, err := r.createClient(ctx, agentID, cwd, log)
+	client, kind, err := r.createClient(ctx, agentID, cwd, launchArgs...)
 	if err != nil {
 		r.mu.Unlock()
 		return err
@@ -235,8 +235,8 @@ func (r *Router) preWarm(ctx context.Context, agentID string, cwd string) error 
 // Route finds the matching Agent Endpoint, connects a JSON-RPC struct, and executes the Prompt.
 func (r *Router) Route(ctx context.Context, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
 	cwd := r.effectiveCwd(req.WorkspacePath)
-	key := clientCacheKey(req.AgentID, cwd)
-	client, err := r.getOrCreateClient(ctx, req.AgentID, cwd)
+	key := clientCacheKey(req.AgentID, cwd, req.AgentLaunchArgs...)
+	client, err := r.getOrCreateClient(ctx, req.AgentID, cwd, req.AgentLaunchArgs...)
 	if err != nil {
 		return "", "", nil, middleware.ConversationMetadata{}, err
 	}
@@ -247,10 +247,14 @@ func (r *Router) Route(ctx context.Context, req middleware.RouteRequest) (string
 	return output, remoteSessionID, tools, metadata, err
 }
 
-func (r *Router) createClient(ctx context.Context, agentID string, cwd string, log *slog.Logger) (middleware.ConversationClient, middleware.ProtocolKind, error) {
+func (r *Router) createClient(ctx context.Context, agentID string, cwd string, launchArgs ...string) (middleware.ConversationClient, middleware.ProtocolKind, error) {
+	log := slog.With("component", "agent_router", "agent", agentID)
 	endpoint, err := r.resolver.GetAgentEndpoint(agentID)
 	if err != nil {
 		return nil, "", fmt.Errorf("router failed to resolve endpoint for agent %s: %w", agentID, err)
+	}
+	if len(launchArgs) > 0 {
+		endpoint.Args = append(append([]string{}, endpoint.Args...), launchArgs...)
 	}
 	log.Info("resolved agent endpoint", "event", "endpoint_resolved", "protocol_kind", endpoint.Kind, "transport", endpoint.Transport, "address", endpoint.Address, "command", endpoint.Command)
 

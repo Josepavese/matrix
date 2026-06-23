@@ -146,6 +146,7 @@ func (n *Notifier) appendMessageDelta(update middleware.ThoughtUpdate) {
 	event := n.baseEvent("agent.message.delta", n.agentID, "streaming", content)
 	event.ContentRef = "matrix://runs/" + n.runID + "/messages/delta"
 	event.ProtocolMethod = "session/update"
+	event.Message = content
 	event.Metadata = frontendevents.Merge(event.Metadata, map[string]interface{}{
 		"source_update_type": frontendevents.SourceUpdateType(update.Metadata, "agent_message_chunk"),
 	})

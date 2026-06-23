@@ -56,6 +56,7 @@ type RouteRequest struct {
 	Tools                 []Tool
 	McpServers            []McpServerConfig
 	AdditionalDirectories []string
+	AgentLaunchArgs       []string
 	ThoughtNotifier       ThoughtNotifier // optional: receives real-time thought/tool updates during prompt
 	StrictSession         bool            // do not recover by creating a replacement remote session
 	LiveContextAttach     bool            // true when this route is a best-effort live context injection

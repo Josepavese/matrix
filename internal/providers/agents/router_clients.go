@@ -16,38 +16,34 @@ const noReusableCachedAgentClient = "no reusable cached agent client owns worksp
 // binding used by an ephemeral run. For stdio ACP clients this terminates the
 // underlying child process through the transport Close path.
 func (r *Router) ReapAgentClient(_ context.Context, agentID string, workspacePath string) (bool, error) {
-	key := clientCacheKey(agentID, r.effectiveCwd(workspacePath))
-	return r.reapAgentClientByKey(key, "")
+	return r.reapAgentClientByBase(agentID, r.effectiveCwd(workspacePath), "")
 }
 
 func (r *Router) ReapAgentSessionClient(_ context.Context, agentID string, remoteSessionID string, workspacePath string) (bool, error) {
-	key := clientCacheKey(agentID, r.effectiveCwd(workspacePath))
-	return r.reapAgentClientByKey(key, strings.TrimSpace(remoteSessionID))
+	return r.reapAgentClientByBase(agentID, r.effectiveCwd(workspacePath), strings.TrimSpace(remoteSessionID))
 }
 
-func (r *Router) reapAgentClientByKey(key string, remoteSessionID string) (bool, error) {
+func (r *Router) reapAgentClientByBase(agentID, cwd string, remoteSessionID string) (bool, error) {
 	r.mu.Lock()
-	client, ok := r.clients[key]
-	if ok {
+	var toClose []clientToClose
+	for _, key := range r.clientKeysForBaseLocked(agentID, cwd) {
+		client := r.clients[key]
 		if remoteSessionID != "" && !clientTracksRemoteSession(client, remoteSessionID) {
-			if r.consumeClientTombstoneLocked(key, remoteSessionID) {
-				r.mu.Unlock()
-				return true, nil
-			}
-			r.mu.Unlock()
-			return false, nil
+			continue
 		}
 		r.rememberClientTombstoneLocked(key, client)
 		delete(r.clients, key)
-	} else if r.consumeClientTombstoneLocked(key, remoteSessionID) {
+		toClose = append(toClose, clientToClose{key: key, client: client})
+	}
+	if len(toClose) == 0 && r.consumeClientTombstoneByBaseLocked(agentID, cwd, remoteSessionID) {
 		r.mu.Unlock()
 		return true, nil
 	}
 	r.mu.Unlock()
-	if !ok {
+	if len(toClose) == 0 {
 		return false, nil
 	}
-	return true, client.Close()
+	return true, closeReconciledClients(toClose)
 }
 
 func (r *Router) ListAgentSessions(ctx context.Context, agentID string) ([]middleware.RemoteSessionInfo, middleware.ConversationSessionCapabilities, error) {
@@ -162,8 +158,8 @@ func (r *Router) MaterializeAgentSession(ctx context.Context, agentID string, re
 	return materializer.MaterializeRemoteSession(ctx, req)
 }
 
-func (r *Router) getOrCreateClient(ctx context.Context, agentID string, cwd string) (middleware.ConversationClient, error) {
-	key := clientCacheKey(agentID, cwd)
+func (r *Router) getOrCreateClient(ctx context.Context, agentID string, cwd string, launchArgs ...string) (middleware.ConversationClient, error) {
+	key := clientCacheKey(agentID, cwd, launchArgs...)
 	log := slog.With("component", "agent_router", "agent", agentID, "cwd", cwd)
 	if client, ok := r.lookupReusableClient(key); ok {
 		log.Debug("reusing cached conversation client", "event", "client_reused")
@@ -178,7 +174,7 @@ func (r *Router) getOrCreateClient(ctx context.Context, agentID string, cwd stri
 		r.rememberClientTombstoneLocked(key, stale)
 	}
 	delete(r.clients, key)
-	client, kind, err := r.createClient(ctx, agentID, cwd, log)
+	client, kind, err := r.createClient(ctx, agentID, cwd, launchArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +194,11 @@ func (r *Router) getOrCreateSessionControlClientForWorkspace(ctx context.Context
 	if strings.TrimSpace(workspacePath) == "" {
 		return r.getOrCreateSessionControlClient(ctx, agentID)
 	}
-	return r.getOrCreateClient(ctx, agentID, r.effectiveCwd(workspacePath))
+	cwd := r.effectiveCwd(workspacePath)
+	if client, ok := r.lookupReusableClientForAgentWorkspace(agentID, cwd); ok {
+		return client, nil
+	}
+	return r.getOrCreateClient(ctx, agentID, cwd)
 }
 
 func (r *Router) getSessionLifecycleClient(ctx context.Context, agentID string) (middleware.ConversationClient, error) {
@@ -218,11 +218,10 @@ func (r *Router) getSessionLifecycleClientForWorkspace(ctx context.Context, agen
 		return r.getSessionLifecycleClient(ctx, agentID)
 	}
 	cwd := r.effectiveCwd(workspacePath)
-	key := clientCacheKey(agentID, cwd)
-	if client, ok := r.lookupReusableClient(key); ok {
+	if client, ok := r.lookupReusableClientForAgentWorkspace(agentID, cwd); ok {
 		return client, nil
 	}
-	r.evictDeadClientForLifecycle(key)
+	r.evictDeadClientsForLifecycleBase(agentID, cwd)
 	if r.canSpawnFreshLifecycleClient(agentID) {
 		return r.getOrCreateClient(ctx, agentID, cwd)
 	}
@@ -278,18 +277,6 @@ func (r *Router) effectiveCwd(workspacePath string) string {
 		return filepath.Clean(r.cwd)
 	}
 	return "."
-}
-
-func clientCacheKey(agentID, cwd string) string {
-	return agentID + "\x00" + filepath.Clean(cwd)
-}
-
-func splitClientCacheKey(key string) (string, string) {
-	parts := strings.SplitN(key, "\x00", 2)
-	if len(parts) != 2 {
-		return key, ""
-	}
-	return parts[0], parts[1]
 }
 
 func isReusableClient(client middleware.ConversationClient) bool {

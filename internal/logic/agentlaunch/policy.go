@@ -10,9 +10,10 @@ import (
 const bypassFlag = "--dangerously-bypass-approvals-and-sandbox"
 
 var configKeys = map[string]string{
-	"approval_policy":     "approval_policy",
-	"sandbox_mode":        "sandbox_mode",
-	"sandbox_permissions": "sandbox_permissions",
+	"approval_policy":        "approval_policy",
+	"model_reasoning_effort": "model_reasoning_effort",
+	"sandbox_mode":           "sandbox_mode",
+	"sandbox_permissions":    "sandbox_permissions",
 }
 
 var nextArgKeys = map[string]string{
@@ -37,7 +38,7 @@ type argPrefix struct {
 }
 
 // MetadataForAgent resolves an agent endpoint and returns trace-safe launch policy.
-func MetadataForAgent(resolver middleware.AgentEndpointResolver, agentID string) map[string]interface{} {
+func MetadataForAgent(resolver middleware.AgentEndpointResolver, agentID string, launchArgs ...string) map[string]interface{} {
 	if resolver == nil || strings.TrimSpace(agentID) == "" {
 		return nil
 	}
@@ -45,7 +46,8 @@ func MetadataForAgent(resolver middleware.AgentEndpointResolver, agentID string)
 	if err != nil {
 		return nil
 	}
-	return Metadata(endpoint.Args)
+	args := append(append([]string{}, endpoint.Args...), launchArgs...)
+	return Metadata(args)
 }
 
 // Metadata returns trace-safe launch policy details inferred from argv.
@@ -62,6 +64,7 @@ func Metadata(args []string) map[string]interface{} {
 	addValue(meta, policy, "sandbox_mode")
 	addValue(meta, policy, "approval_policy")
 	addValue(meta, policy, "sandbox_permissions")
+	addValue(meta, policy, "model_reasoning_effort")
 	if bypass {
 		meta["bypass_approvals_and_sandbox"] = true
 	}

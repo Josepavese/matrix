@@ -32,7 +32,7 @@ func TestAppendRouteEventsIncludesLaunchPolicyEvidence(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 
-	server.appendRouteEvents(run, "codex", "codex")
+	server.appendRouteEvents(run, "codex", "codex", nil)
 	events, err := server.Store().LoadEvents(run.ID, 10)
 	if err != nil {
 		t.Fatalf("LoadEvents: %v", err)

@@ -97,6 +97,28 @@ matrix agent args set codex -- -c 'sandbox_mode="danger-full-access"' -c 'approv
 matrix agent args list codex
 ```
 
+These launch arguments are global for the stored agent endpoint. For Codex
+reasoning effort, HTTP clients can instead set a per-run override:
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/runs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "halfdesk.pm",
+    "agent_id": "codex",
+    "input": "Prepare the PM summary",
+    "agent_config": {
+      "model_reasoning_effort": "xhigh"
+    }
+  }'
+```
+
+Supported values are `low`, `medium`, `high`, and `xhigh`. Matrix rejects the
+request before launch if the selected agent does not resolve to `codex`, if the
+value is unsupported, or if `agent_config` and `codex_config` provide different
+values. The run trace records the applied value on `routing.decision` under
+`protocol_meta.agent_launch_policy.model_reasoning_effort`.
+
 ### Check agent health
 
 Run diagnostics on an agent:

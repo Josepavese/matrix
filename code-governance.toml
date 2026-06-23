@@ -54,7 +54,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # a cancelled ACP client. 2026-05-21 adds current ACP auth/env-var fallback,
 # additionalDirectories validation, and agent-first terminal-auth policy.
 # 2026-06-18 adds deny-by-default tool enforcement and symlink escape checks.
-"internal/providers/agents" = 3230
+# 2026-06-24 partitions local provider clients by per-run Codex launch args
+# while preserving workspace cleanup/reconcile semantics for those variants.
+"internal/providers/agents" = 3295
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
