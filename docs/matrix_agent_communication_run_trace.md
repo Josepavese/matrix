@@ -250,6 +250,24 @@ Matrix keeps the primary taxonomy operational and protocol-neutral:
 
 Provider-specific details belong in `protocol_meta`.
 
+`routing.decision` may include launch-policy evidence for locally spawned
+agents when Matrix can infer it from non-secret command arguments. Example:
+
+```json
+{
+  "agent_launch_policy": {
+    "source": "agent_args",
+    "sandbox_mode": "danger-full-access",
+    "approval_policy": "never",
+    "trusted_terminal": true
+  }
+}
+```
+
+Matrix records only recognized launch-policy keys such as `sandbox_mode`,
+`approval_policy`, `sandbox_permissions`, and the Codex bypass flag. It does not
+copy arbitrary argv or environment variables into run trace protocol metadata.
+
 ## Sidecar Capsule Events
 
 External systems can attach sidecar capsules to `/v1/runs` without coupling

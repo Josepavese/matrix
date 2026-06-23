@@ -14,8 +14,9 @@ const KeyPrefix = "agent.config."
 
 // Override holds runtime overrides for an agent.
 type Override struct {
-	Active *bool    `json:"active,omitempty"`
-	Env    []string `json:"env,omitempty"`
+	Active     *bool    `json:"active,omitempty"`
+	Env        []string `json:"env,omitempty"`
+	AppendArgs []string `json:"append_args,omitempty"`
 }
 
 // Config holds an agent's command, args, environment and protocol settings.

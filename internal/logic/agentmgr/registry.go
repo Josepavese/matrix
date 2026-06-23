@@ -53,8 +53,8 @@ func NewRegistry(_ middleware.ConfigReader, store middleware.Storage) (*Registry
 		// Map Entry (storable) to AgentConfig (runtime).
 		cfg := AgentConfig{
 			Command:         entry.Config.Command,
-			Args:            entry.Config.Args,
-			Env:             entry.Config.Env,
+			Args:            append([]string{}, entry.Config.Args...),
+			Env:             append([]string{}, entry.Config.Env...),
 			Protocol:        entry.Config.Kind,
 			Kind:            entry.Config.Kind,
 			Transport:       entry.Config.Transport,
@@ -67,21 +67,18 @@ func NewRegistry(_ middleware.ConfigReader, store middleware.Storage) (*Registry
 		}
 		endpoint := protocolEndpointFromAgentConfig(cfg)
 		cfg.Protocol = string(endpoint.Kind)
-		configs[id] = cfg
 
 		// Apply user overrides
 		if entry.Override.Active != nil {
-			configs[id] = func(c AgentConfig) AgentConfig {
-				c.Active = entry.Override.Active
-				return c
-			}(configs[id])
+			cfg.Active = entry.Override.Active
 		}
 		if len(entry.Override.Env) > 0 {
-			configs[id] = func(c AgentConfig) AgentConfig {
-				c.Env = append(append([]string{}, c.Env...), entry.Override.Env...)
-				return c
-			}(configs[id])
+			cfg.Env = append(cfg.Env, entry.Override.Env...)
 		}
+		if len(entry.Override.AppendArgs) > 0 {
+			cfg.Args = append(cfg.Args, entry.Override.AppendArgs...)
+		}
+		configs[id] = cfg
 	}
 
 	return &Registry{

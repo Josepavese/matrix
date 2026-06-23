@@ -22,8 +22,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 
 [package_overrides]
 # 2026-06-18: public-release hardening adds runtime endpoint auth coverage
-# and PAL/vault initialization checks.
-"cmd/matrix" = 3030
+# and PAL/vault initialization checks. 2026-06-23 adds SSOT agent launch
+# argument override commands for trusted local provider policy.
+"cmd/matrix" = 3150
 "internal/logic/onboarding" = 1400
 "internal/logic/runtrace" = 830
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
@@ -61,7 +62,8 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # prepared logical session and follows late-selected remote sessions when needed.
 # 2026-05-21 accepts and validates ACP additional_directories on run ingress.
 # 2026-06-18 rejects event sink localhost/private targets at HTTP ingress.
-"internal/providers/runapi" = 1300
+# 2026-06-23 records trusted provider launch-policy evidence in routing traces.
+"internal/providers/runapi" = 1310
 # 2026-05-04/05: Zed ACP schema v0.12.2 stable lifecycle/config surface plus
 # observer drain for providers that emit trailing session/update chunks after
 # session/prompt returns. 2026-05-21: v0.13.2 auth defaults, current
