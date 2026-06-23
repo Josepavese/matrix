@@ -10,7 +10,7 @@ import (
 func (r *Router) ReconcileAgentClients(_ context.Context, active []middleware.AgentClientRef) (middleware.AgentClientReconcileResult, error) {
 	activeKeys := make(map[string][]middleware.AgentClientRef, len(active))
 	for _, ref := range active {
-		key := clientCacheKey(ref.AgentID, r.effectiveCwd(ref.WorkspacePath))
+		key := clientCacheBaseKey(ref.AgentID, r.effectiveCwd(ref.WorkspacePath))
 		activeKeys[key] = append(activeKeys[key], ref)
 	}
 	var toClose []clientToClose
@@ -19,7 +19,7 @@ func (r *Router) ReconcileAgentClients(_ context.Context, active []middleware.Ag
 	for key, client := range r.clients {
 		agentID, cwd := splitClientCacheKey(key)
 		ref := middleware.AgentClientRef{AgentID: agentID, WorkspacePath: cwd}
-		if retained, ok := retainedAgentClientRef(activeKeys[key], client); ok {
+		if retained, ok := retainedAgentClientRef(activeKeys[clientCacheBaseKey(agentID, cwd)], client); ok {
 			result.Retained = append(result.Retained, retained)
 			continue
 		}

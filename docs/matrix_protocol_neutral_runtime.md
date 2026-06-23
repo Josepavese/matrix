@@ -161,6 +161,14 @@ sandbox and approval policy. `/v1/runs` records detected launch-policy evidence
 on the `routing.decision` event under
 `protocol_meta.agent_launch_policy`.
 
+Codex `model_reasoning_effort` can also be set per run through
+`agent_config.model_reasoning_effort` or `codex_config.model_reasoning_effort`
+on `/v1/runs`. Matrix validates `low`, `medium`, `high`, and `xhigh`, translates
+the value to `-c model_reasoning_effort="<value>"`, and records the applied
+value in `protocol_meta.agent_launch_policy`. Because provider launch policy is
+part of the process contract, local client reuse is partitioned by these
+per-run launch args as well as by agent and workspace.
+
 ## Inbound Surface
 
 Matrix exposes:
@@ -191,6 +199,8 @@ Important distinction:
 - `input`: latest user message
 - `sidecar_capsules`: optional protocol-neutral context capsules kept separate from the task body, projected into ACP/A2A, and traced as `sidecar.capsule.delivered`
 - `agent_id`: optional requested agent for new sessions
+- `agent_config` / `codex_config`: optional provider-scoped run config; Codex
+  currently supports `model_reasoning_effort`
 - `workspace_id` or `workspace_path`: optional work context
 - `session_policy`: optional lifecycle policy. `new_ephemeral_delete_after_run` forces a fresh random logical session and schedules cleanup after the turn
 - `cleanup_policy`: optional cleanup policy for ephemeral run lifecycles. Supported values are `delete_remote_or_cancel_and_forget_local`, `delete_remote_or_forget_local`, `delete_remote`, and `forget_local`; by itself it does not clean up a normal active session

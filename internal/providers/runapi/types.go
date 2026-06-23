@@ -40,6 +40,8 @@ type runRequest struct {
 	ChannelID              string                      `json:"channel_id"`
 	Input                  runpayload.Input            `json:"input"`
 	AgentID                string                      `json:"agent_id"`
+	AgentConfig            runAgentConfig              `json:"agent_config,omitempty"`
+	CodexConfig            runAgentConfig              `json:"codex_config,omitempty"`
 	WorkspaceID            string                      `json:"workspace_id,omitempty"`
 	WorkspacePath          string                      `json:"workspace_path,omitempty"`
 	ExecutionMode          string                      `json:"execution_mode,omitempty"`
@@ -52,6 +54,11 @@ type runRequest struct {
 	AdditionalDirectories  []string                    `json:"additional_directories,omitempty"`
 	ClientMeta             map[string]interface{}      `json:"client_meta,omitempty"`
 	TracePolicy            runtrace.TracePolicy        `json:"trace_policy,omitempty"`
+	agentLaunchArgs        []string
+}
+
+type runAgentConfig struct {
+	ModelReasoningEffort string `json:"model_reasoning_effort,omitempty"`
 }
 
 type runExecution struct {

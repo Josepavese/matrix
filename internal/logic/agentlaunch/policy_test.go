@@ -3,12 +3,15 @@ package agentlaunch
 import "testing"
 
 func TestMetadataDetectsCodexTrustedTerminalConfigArgs(t *testing.T) {
-	meta := Metadata([]string{"-c", "sandbox_mode=\"danger-full-access\"", "-c", "approval_policy=\"never\""})
+	meta := Metadata([]string{"-c", "sandbox_mode=\"danger-full-access\"", "-c", "approval_policy=\"never\"", "-c", "model_reasoning_effort=\"xhigh\""})
 	if meta["trusted_terminal"] != true {
 		t.Fatalf("expected trusted terminal evidence, got %+v", meta)
 	}
 	if meta["sandbox_mode"] != "danger-full-access" || meta["approval_policy"] != "never" {
 		t.Fatalf("expected codex launch policy, got %+v", meta)
+	}
+	if meta["model_reasoning_effort"] != "xhigh" {
+		t.Fatalf("expected model reasoning effort evidence, got %+v", meta)
 	}
 }
 

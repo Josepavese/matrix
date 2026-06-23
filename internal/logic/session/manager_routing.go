@@ -72,6 +72,7 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 		ContentBlocks:         req.ContentBlocks,
 		SidecarCapsules:       req.SidecarCapsules,
 		AdditionalDirectories: req.AdditionalDirectories,
+		AgentLaunchArgs:       req.AgentLaunchArgs,
 		ThoughtNotifier:       notifier,
 	})
 	m.applyPendingHandoff(&meta, channelID, log, routeErr)

@@ -44,26 +44,28 @@ func (r *Router) rememberClientTombstoneWithRemoteLocked(key string, client midd
 	}
 }
 
-func (r *Router) consumeClientTombstoneLocked(key string, remoteSessionID string) bool {
+func (r *Router) consumeClientTombstoneByBaseLocked(agentID, cwd string, remoteSessionID string) bool {
 	if r.clientTombstones == nil {
 		return false
 	}
 	r.pruneClientTombstonesLocked(time.Now())
-	tombstone, ok := r.clientTombstones[key]
-	if !ok || !tombstoneMatchesRemoteSession(tombstone, remoteSessionID) {
-		return false
-	}
-	if remoteSessionID == "" || len(tombstone.remoteSessionIDs) == 0 {
-		delete(r.clientTombstones, key)
+	for key, tombstone := range r.clientTombstones {
+		if !clientCacheKeyMatchesBase(key, agentID, cwd) || !tombstoneMatchesRemoteSession(tombstone, remoteSessionID) {
+			continue
+		}
+		if remoteSessionID == "" || len(tombstone.remoteSessionIDs) == 0 {
+			delete(r.clientTombstones, key)
+			return true
+		}
+		delete(tombstone.remoteSessionIDs, remoteSessionID)
+		if len(tombstone.remoteSessionIDs) == 0 {
+			delete(r.clientTombstones, key)
+		} else {
+			r.clientTombstones[key] = tombstone
+		}
 		return true
 	}
-	delete(tombstone.remoteSessionIDs, remoteSessionID)
-	if len(tombstone.remoteSessionIDs) == 0 {
-		delete(r.clientTombstones, key)
-	} else {
-		r.clientTombstones[key] = tombstone
-	}
-	return true
+	return false
 }
 
 func (r *Router) pruneClientTombstonesLocked(now time.Time) {
@@ -154,6 +156,23 @@ func (r *Router) evictDeadClientForLifecycle(key string) bool {
 		_ = client.Close()
 	}
 	return ok
+}
+
+func (r *Router) evictDeadClientsForLifecycleBase(agentID, cwd string) bool {
+	r.mu.Lock()
+	var toClose []clientToClose
+	for _, key := range r.clientKeysForBaseLocked(agentID, cwd) {
+		client := r.clients[key]
+		if isReusableClient(client) {
+			continue
+		}
+		r.rememberClientTombstoneLocked(key, client)
+		delete(r.clients, key)
+		toClose = append(toClose, clientToClose{key: key, client: client})
+	}
+	r.mu.Unlock()
+	_ = closeReconciledClients(toClose)
+	return len(toClose) > 0
 }
 
 func sameConversationClient(a, b middleware.ConversationClient) bool {

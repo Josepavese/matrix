@@ -94,6 +94,36 @@ func TestNotifierProjectsACPPlanThoughtAndUsage(t *testing.T) {
 	}
 }
 
+func TestNotifierRecordsMessageDeltaContent(t *testing.T) {
+	store := runtrace.NewStore(memstore.New())
+	run, _, err := store.Start(runtrace.Run{AgentID: "codex", Protocol: "acp", ChannelID: "http.test"})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	notifier := New(store, run.ID, "codex", "acp")
+	notifier.OnThought(middleware.ThoughtUpdate{
+		Type:    middleware.ThoughtTypeThinking,
+		Content: "OK",
+		Metadata: map[string]interface{}{
+			"source_update_type": "agent_message_chunk",
+		},
+	})
+
+	events, err := store.LoadEvents(run.ID, 0)
+	if err != nil {
+		t.Fatalf("load events: %v", err)
+	}
+	for _, event := range events {
+		if event.Kind == "agent.message.delta" {
+			if event.Message != "OK" {
+				t.Fatalf("expected delta message content, got %#v", event)
+			}
+			return
+		}
+	}
+	t.Fatalf("agent.message.delta event not found: %#v", events)
+}
+
 func TestNotifierNormalizesFrontendToolEvents(t *testing.T) {
 	store := runtrace.NewStore(memstore.New())
 	run, _, err := store.Start(runtrace.Run{

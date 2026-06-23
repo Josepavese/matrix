@@ -8,11 +8,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/orchestration"
+	"github.com/Josepavese/matrix/internal/logic/runconfig"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/runapi"
 )
@@ -179,7 +178,7 @@ func (s *Server) HandleSessionActions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request: channel_id and action are required", http.StatusBadRequest)
 		return
 	}
-	additionalDirectories, err := normalizeAdditionalDirectories(req.AdditionalDirectories)
+	additionalDirectories, err := runconfig.NormalizeAdditionalDirectories(req.AdditionalDirectories)
 	if err != nil {
 		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
 		return
@@ -211,29 +210,6 @@ func (s *Server) HandleSessionActions(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		slog.Error("matrix session action failed to encode response", "error", err)
 	}
-}
-
-func normalizeAdditionalDirectories(values []string) ([]string, error) {
-	if len(values) == 0 {
-		return nil, nil
-	}
-	out := make([]string, 0, len(values))
-	seen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		dir := strings.TrimSpace(value)
-		if dir == "" {
-			continue
-		}
-		if !filepath.IsAbs(dir) {
-			return nil, fmt.Errorf("additional_directories entries must be absolute paths")
-		}
-		if _, ok := seen[dir]; ok {
-			continue
-		}
-		seen[dir] = struct{}{}
-		out = append(out, dir)
-	}
-	return out, nil
 }
 
 func sessionActionHTTPStatus(result middleware.SessionActionResult) int {

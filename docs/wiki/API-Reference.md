@@ -73,13 +73,39 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
 | `input` | string or object | Yes | The task body to send to the agent. Structured form is `{ "text": "..." }` |
 | `execution_mode` | string | No | Execution mode: `sync` (default), `async`, `stream` |
 | `agent_id` | string | No | Target agent (defaults to the configured default agent) |
+| `agent_config.model_reasoning_effort` | string | No | Per-run Codex reasoning effort when `agent_id` resolves to `codex`; allowed values are `low`, `medium`, `high`, `xhigh` |
+| `codex_config.model_reasoning_effort` | string | No | Codex-specific alias for `agent_config.model_reasoning_effort`; if both are provided they must agree |
 | `workspace_id` | string | No | Target workspace |
 | `workspace_path` | string | No | Workspace root path |
 | `session_policy` | string | No | `new_ephemeral_delete_after_run` forces a fresh isolated session for the run |
 | `cleanup_policy` | string | No | Cleanup policy for `session_policy=new_ephemeral_delete_after_run`; ignored as a destructive cleanup trigger when `session_policy` is omitted |
 | `sidecar_capsules` | array | No | Protocol-neutral sidecar context projected into ACP/A2A and traced as `sidecar.capsule.delivered` |
+| `trace_policy` | object | No | Export policy for `/trace`; supports `content_mode`, `redaction_profile`, and `include_protocol_meta` |
 | `emergency_kill_seconds` | number | No | Explicit wall-clock emergency fuse. Omitted means no hard run timeout |
 | `activity_timeout_seconds` | number | No | Explicit idle-progress watchdog. Omitted means no activity timeout; when set, no agent/tool activity for this duration cancels the run with `activity_timeout` |
+
+For Codex ACP, clients can select reasoning effort per run without changing the
+stored agent definition:
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/runs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "halfdesk.pm",
+    "input": "Draft the release note",
+    "execution_mode": "async",
+    "agent_id": "codex",
+    "agent_config": {
+      "model_reasoning_effort": "xhigh"
+    }
+  }'
+```
+
+Matrix validates the value before starting the run and translates it to the
+Codex launch override `-c model_reasoning_effort="<value>"`. Unsupported values,
+conflicting `agent_config`/`codex_config` values, or use with a non-Codex agent
+return HTTP `400`. The `routing.decision` event records non-secret evidence in
+`protocol_meta.agent_launch_policy.model_reasoning_effort`.
 
 **Response (sync mode):**
 
@@ -232,6 +258,10 @@ curl http://127.0.0.1:9091/v1/runs/run-abc123/trace
 
 Get the events for a run.
 Consumers should use `kind`, `tool_call_id`, `tool_kind`, `inputs`, `outputs`, and `artifact_refs` instead of parsing agent prose.
+For UI streaming, `agent.message.delta.message` contains the incremental agent
+chunk, `agent.message.final.message` contains the complete final answer, and a
+terminal `run.completed`, `run.failed`, or `run.cancelled` event closes the run.
+Use the returned `next_cursor` as the next `after` value when polling.
 
 ```bash
 curl http://127.0.0.1:9091/v1/runs/run-abc123/events

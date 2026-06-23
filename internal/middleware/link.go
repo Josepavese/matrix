@@ -32,6 +32,7 @@ type ConversationRequest struct {
 	ContentBlocks         []Content
 	SidecarCapsules       []SidecarCapsule
 	AdditionalDirectories []string
+	AgentLaunchArgs       []string
 	Notifier              ThoughtNotifier
 	NonInteractive        bool
 }
