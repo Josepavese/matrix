@@ -22,6 +22,7 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/session"
 	"github.com/Josepavese/matrix/internal/logic/system_tools"
 	matrixa2a "github.com/Josepavese/matrix/internal/providers/a2a"
+	"github.com/Josepavese/matrix/internal/providers/agentprobe"
 	"github.com/Josepavese/matrix/internal/providers/agents"
 	"github.com/Josepavese/matrix/internal/providers/matrixapi"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
@@ -56,6 +57,7 @@ var runCmd = &cobra.Command{
 		log.Info("logging initialized", "event", "logging_initialized", "sink", logRuntime.Config.Sink, "format", logRuntime.Config.Format, "file", logRuntime.Config.FilePath, "level", logRuntime.Config.Level.String(), "max_bytes", logRuntime.Config.MaxBytes, "max_backups", logRuntime.Config.MaxBackups, "acp_wire", logRuntime.Config.ACPWire)
 
 		// Start agents
+		d.Supervisor.SetOnDemandProbe(agentprobe.ACPInitialize)
 		if err := d.Supervisor.StartAll(ctx); err != nil {
 			log.Warn("apm failed to start agents", "event", "apm_start_failed", "error", err)
 		}

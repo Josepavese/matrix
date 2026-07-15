@@ -117,7 +117,11 @@ codes are `provider_model_unavailable`, `provider_auth_mismatch`, and
 `agent_preflight_failed`. `failure_reason=provider_client_context_cancelled`
 means the cached provider client died or was cancelled before the requested ACP
 method completed; Matrix treats this as provider lifecycle evidence, not as a
-task-level model answer.
+task-level model answer. If an ACP stdio provider exits while a call is pending,
+Matrix instead reports `failure_reason=provider_process_exit`,
+`provider_exit_code`, and at most 400 characters of sanitized
+`provider_stderr`. Home paths are shortened and common bearer/API-key/token
+forms are redacted before logs, run responses, or trace metadata receive them.
 
 `clean=true` means Matrix reached an operational cleanup state for that lifecycle. `strong_cleanup=true` means Matrix has hard evidence from the provider or OS process layer. For ephemeral interrupt/resume flows, Matrix requires strong proof; local-only forgetting fails with `failure_code=cleanup_clean_without_remote_or_process_proof`. If no remote session was ever materialized and the exact workspace-bound provider client is absent, Matrix records `process_absent=true` with `process_absence_reason=no matching cached agent client`; that is strong proof for the not-started/no-provider-process path. If a remote session id is known, process absence alone is not enough and cleanup still needs remote delete/close/cancel or process reap proof. If the target remote session is deleted, closed, or canceled while another local session still owns the workspace client, Matrix keeps the cleanup strong and lists that owner as non-retained `related_sessions[]` evidence with reason `shared_agent_client_owner`. For non-ephemeral shared sessions without strong target proof, retained clients are allowed but explicitly marked with `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`.
 

@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/agentidentity"
+	"github.com/Josepavese/matrix/internal/logic/agentinstall"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -209,6 +211,9 @@ func (c *RegistryClient) ResolveDistribution(manifest *AgentManifest) (*BinaryDi
 
 // ResolveAnyDistribution tries binary first, then falls back to npx/uvx.
 func (c *RegistryClient) ResolveAnyDistribution(manifest *AgentManifest) (*ResolvedDist, error) {
+	if err := validateCanonicalProvider(manifest); err != nil {
+		return nil, err
+	}
 	// Try binary first
 	if _, err := c.ResolveDistribution(manifest); err == nil {
 		return &ResolvedDist{Type: "binary"}, nil
@@ -221,7 +226,7 @@ func (c *RegistryClient) ResolveAnyDistribution(manifest *AgentManifest) (*Resol
 			Type:    "npx",
 			Command: "npx",
 			Args:    append([]string{"-y", npx.Package}, npx.Args...),
-			Env:     flattenEnvMap(npx.Env),
+			Env:     agentinstall.EnvSlice(npx.Env),
 		}, nil
 	}
 
@@ -232,7 +237,7 @@ func (c *RegistryClient) ResolveAnyDistribution(manifest *AgentManifest) (*Resol
 			Type:    "uvx",
 			Command: "uvx",
 			Args:    append([]string{uvx.Package}, uvx.Args...),
-			Env:     flattenEnvMap(uvx.Env),
+			Env:     agentinstall.EnvSlice(uvx.Env),
 		}, nil
 	}
 
@@ -245,7 +250,21 @@ func findAgent(agents []AgentManifest, agentID string) (*AgentManifest, error) {
 			return &agents[i], nil
 		}
 	}
+	if alias := agentidentity.CanonicalRegistryAlias(agentID); alias != "" {
+		for i := range agents {
+			if agents[i].ID == alias {
+				return &agents[i], nil
+			}
+		}
+	}
 	return nil, fmt.Errorf("agent '%s' not found in registry", agentID)
+}
+
+func validateCanonicalProvider(manifest *AgentManifest) error {
+	if manifest == nil || manifest.Distribution.Npx == nil {
+		return nil
+	}
+	return agentidentity.ValidateProviderPackage(manifest.Distribution.Npx.Package)
 }
 
 func (c *RegistryClient) loadCache() (registryCache, bool) {
@@ -265,15 +284,4 @@ func (c *RegistryClient) saveCache(index RegistryIndex) {
 	if data, err := json.Marshal(cache); err == nil {
 		_ = c.storage.Set(cacheKey, data)
 	}
-}
-
-func flattenEnvMap(m map[string]string) []string {
-	if len(m) == 0 {
-		return nil
-	}
-	env := make([]string, 0, len(m))
-	for k, v := range m {
-		env = append(env, k+"="+v)
-	}
-	return env
 }

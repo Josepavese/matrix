@@ -201,6 +201,17 @@ go test ./tests/integration -run 'TestOpenCode.*Fork.*Cleanup' -v -count=1 -time
 
 Latest recorded evidence:
 
+- 2026-07-15: `matrix install codex` materialized
+  `@agentclientprotocol/codex-acp` 1.1.2 under `MATRIX_HOME/agents/codex` and
+  registered absolute Node and provider entrypoint paths. A daemon launched
+  with the system service PATH (without NVM entries) reported
+  `ready_on_demand`; API run `run-ba65b752-f597-4027-a848-6fa8dbf579ec`
+  completed with terminal event `run.completed` after 11 events.
+- 2026-07-15: `@agentclientprotocol/codex-acp` 1.1.2 completed real ACP
+  initialize, session discovery, new session, prompt, permission callback,
+  file/terminal proof tokens, and `end_turn` under the daemon-like system PATH
+  with `/usr/bin/node` 18.19.1. Matrix preserved provider exit code and bounded,
+  sanitized stderr in the separate fake-provider crash test.
 - 2026-05-21: real ACP provider lifecycle smoke passed against OpenCode,
   `codex-acp`, and Gemini with initialize, session discovery/load-or-resume,
   prompt execution, permission auto-approval where requested, file/terminal
@@ -213,13 +224,13 @@ Latest recorded evidence:
   parent, five standalone fork child route/cleanup cycles through `/v1/runs` and
   `/v1/session-actions`, strong child cleanup proofs, strong final parent
   cleanup, and no new retained `opencode acp` process.
-- 2026-05-04: OpenCode `1.4.1`, `@zed-industries/codex-acp 0.13.0`
+- 2026-05-04 historical evidence: OpenCode `1.4.1`, `@zed-industries/codex-acp 0.13.0`
   over `@openai/codex 0.128.0`, and Gemini CLI `0.40.1` all completed real
   ACP initialize/new/prompt flows and returned provider-specific LLM proof
   tokens from temporary workspaces.
 - OpenCode advertised `list`, `resume`, and draft `fork`; `session/list` and
   `session/resume` succeeded in the real probe.
-- Codex advertised `list`, `close`, and `loadSession`; `session/list` returned
+- The historical Codex probe advertised `list`, `close`, and `loadSession`; `session/list` returned
   an empty persisted-session set for the temporary workspace and prompt
   processing succeeded after upgrading `@zed-industries/codex-acp` from
   `0.11.1` to `0.13.0`.

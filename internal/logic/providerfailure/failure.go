@@ -4,9 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/providerdiag"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 const (
@@ -85,6 +90,75 @@ func Details(failure *Failure) map[string]string {
 		}
 	}
 	return details
+}
+
+func AppendProcessDiagnostics(diagnostics map[string]string, err error) {
+	var failure *providerdiag.ProcessFailure
+	if !errors.As(err, &failure) {
+		return
+	}
+	diagnostics["failure_reason"] = "provider_process_exit"
+	if failure.ExitCode >= 0 {
+		diagnostics["provider_exit_code"] = strconv.Itoa(failure.ExitCode)
+	}
+	if failure.Stderr != "" {
+		diagnostics["provider_stderr"] = failure.Stderr
+	}
+}
+
+// NewPreflight builds a typed generic provider preflight failure.
+func NewPreflight(agentID string, endpoint middleware.ProtocolEndpoint, phase string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := As(err); ok {
+		return err
+	}
+	return &Failure{
+		Code: PreflightFailed, Message: "agent provider preflight failed", AgentID: agentID,
+		Protocol: string(endpoint.Kind), Phase: phase, Diagnostics: Diagnostics(endpoint, err), Err: err,
+	}
+}
+
+// Diagnostics returns bounded launch and transport evidence for a provider error.
+func Diagnostics(endpoint middleware.ProtocolEndpoint, err error) map[string]string {
+	diagnostics := map[string]string{"transport": endpoint.Transport}
+	if endpoint.Command != "" {
+		diagnostics["command"] = endpoint.Command
+		diagnostics["adapter"] = filepath.Base(endpoint.Command)
+	}
+	if endpoint.Address != "" {
+		diagnostics["address"] = endpoint.Address
+	}
+	if endpoint.ProtocolVersion != "" {
+		diagnostics["protocol_version"] = endpoint.ProtocolVersion
+	}
+	if err != nil {
+		diagnostics["provider_error"] = err.Error()
+		diagnostics["failure_reason"] = failureReason(err.Error())
+		AppendProcessDiagnostics(diagnostics, err)
+	}
+	return diagnostics
+}
+
+func failureReason(text string) string {
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, "client context cancelled") || strings.Contains(lower, "client context canceled"):
+		return "provider_client_context_cancelled"
+	case strings.Contains(lower, "context cancelled") || strings.Contains(lower, "context canceled"):
+		return "request_context_cancelled"
+	case strings.Contains(lower, "signal: killed"):
+		return "provider_process_killed"
+	case strings.Contains(lower, "exit status"):
+		return "provider_process_exit"
+	case strings.Contains(lower, "eof"):
+		return "provider_transport_eof"
+	case strings.Contains(lower, "broken pipe") || strings.Contains(lower, "file already closed"):
+		return "provider_transport_closed"
+	default:
+		return "provider_error"
+	}
 }
 
 func AppendRunEvent(store *runtrace.Store, runID string, err error) {

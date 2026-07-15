@@ -1,4 +1,4 @@
-package agentmgr
+package agentinstall
 
 import (
 	"path/filepath"
@@ -8,7 +8,7 @@ import (
 func TestAgentDirValidatesAgentID(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "agents")
 
-	got, err := agentDir(baseDir, "opencode")
+	got, err := AgentDir(baseDir, "opencode")
 	if err != nil {
 		t.Fatalf("valid agent id rejected: %v", err)
 	}
@@ -18,7 +18,7 @@ func TestAgentDirValidatesAgentID(t *testing.T) {
 
 	for _, agentID := range []string{"", ".", "..", "../data", "nested/agent", `nested\agent`, filepath.Join(baseDir, "abs")} {
 		t.Run(agentID, func(t *testing.T) {
-			if _, err := agentDir(baseDir, agentID); err == nil {
+			if _, err := AgentDir(baseDir, agentID); err == nil {
 				t.Fatalf("expected invalid agent id %q to be rejected", agentID)
 			}
 		})
@@ -28,7 +28,7 @@ func TestAgentDirValidatesAgentID(t *testing.T) {
 func TestAgentTempArchiveValidatesPathTokens(t *testing.T) {
 	tempDir := filepath.Join(t.TempDir(), "tmp")
 
-	got, err := agentTempArchive(tempDir, "opencode", "1.2.3", "https://example.test/agent.tar.gz")
+	got, err := TempArchive(tempDir, "opencode", "1.2.3", "https://example.test/agent.tar.gz")
 	if err != nil {
 		t.Fatalf("valid temp archive rejected: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestAgentTempArchiveValidatesPathTokens(t *testing.T) {
 		{name: "empty version", agentID: "opencode", version: ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := agentTempArchive(tempDir, tc.agentID, tc.version, "https://example.test/agent.tar.gz"); err == nil {
+			if _, err := TempArchive(tempDir, tc.agentID, tc.version, "https://example.test/agent.tar.gz"); err == nil {
 				t.Fatalf("expected invalid temp archive token to be rejected")
 			}
 		})

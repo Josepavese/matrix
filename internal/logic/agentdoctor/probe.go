@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/agentidentity"
 	"github.com/Josepavese/matrix/internal/middleware"
 	execprovider "github.com/Josepavese/matrix/internal/providers/exec"
 )
@@ -13,6 +14,11 @@ type CommandProbe struct {
 	OK       bool
 	ExitCode int
 	Error    string
+}
+
+// DeprecatedCodexACPSource identifies persisted launch metadata from the retired package.
+func DeprecatedCodexACPSource(command string, args []string, repository string) string {
+	return agentidentity.DeprecatedCodexSource(command, args, repository)
 }
 
 func ProbeCommand(command string, args []string, env []string, envIsolation bool) CommandProbe {

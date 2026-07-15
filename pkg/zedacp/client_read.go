@@ -11,6 +11,12 @@ func (c *Client) readLoop() {
 	for {
 		msgBytes, err := c.transport.Receive(c.ctx)
 		if err != nil {
+			if reporter, ok := c.transport.(interface{ Failure(error) error }); ok {
+				err = reporter.Failure(err)
+			}
+			c.mu.Lock()
+			c.terminalErr = err
+			c.mu.Unlock()
 			log.Info("acp transport closed", "event", "transport_closed", "error", err)
 			return
 		}
