@@ -6,7 +6,7 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/cmdutil"
 	"github.com/Josepavese/matrix/internal/logic/config"
-	"github.com/Josepavese/matrix/internal/providers/bolt"
+	"github.com/Josepavese/matrix/internal/providers/runtimevault"
 	"github.com/spf13/cobra"
 )
 
@@ -21,15 +21,7 @@ var configCmd = &cobra.Command{
 }
 
 func openConfigManager() (*config.Manager, func(), error) {
-	provider, err := bolt.NewProvider(DefaultVaultPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("vault error: %w", err)
-	}
-	return cmdutil.OpenConfigManagerFromStorage(provider), func() { _ = provider.Close() }, nil
-}
-
-func openReadOnlyConfigManager() (*config.Manager, func(), error) {
-	provider, err := bolt.NewReadOnlyProvider(DefaultVaultPath)
+	provider, err := runtimevault.Open(DefaultVaultPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vault error: %w", err)
 	}

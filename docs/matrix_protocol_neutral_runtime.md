@@ -139,6 +139,20 @@ In other words, Matrix does not guess ACP vs A2A from traffic. It resolves the p
 
 Normalization logic lives in `internal/logic/agentcfg/normalize.go`.
 
+### Runtime-owned Vault access
+
+The daemon is the sole bbolt owner while it is running. It exposes the raw
+`middleware.Storage` contract through a loopback JSON-RPC service authenticated
+by a per-run random token. Connection metadata is written atomically to
+`MATRIX_HOME/data/runtime-broker.json` with mode `0600` on Unix and removed on
+graceful shutdown.
+
+CLI commands resolve storage broker-first. This keeps `agent show`, override
+inspection and mutation, `logs tail`, `doctor`, config management, discovery
+cache access, and installer registration available without a second bbolt
+writer. If the descriptor is absent or stale and no daemon owns the database,
+the CLI falls back to direct PAL Vault access.
+
 ### Trust and Provider Launch Policy
 
 Matrix keeps two trust boundaries separate:

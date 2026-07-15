@@ -163,7 +163,7 @@ var runCmd = &cobra.Command{
 		})
 
 		// JSON-RPC Daemon
-		srv := daemon.NewServer(d.App.Vault, d.NetProv)
+		srv := daemon.NewServer(d.App.Vault, d.NetProv).WithRuntimeBroker(d.App.Store, d.App.FS, activeMatrixHome, logRuntime.Config.FilePath)
 		if daemonAPIKey != "" {
 			srv.WithAPIKey(daemonAPIKey)
 			log.Info("daemon API key configured", "event", "daemon_apikey_set")

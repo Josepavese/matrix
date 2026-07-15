@@ -8,6 +8,8 @@ Commit verificato: `8ea0a0a3ad96a97e2fc842115879242c060099c1`
 
 Priorita suggerita: media
 
+Stato: risolta il 2026-07-15
+
 ## Sintesi
 
 I comandi CLI di ispezione possono fallire dopo circa un secondo quando
@@ -71,3 +73,30 @@ dal rilascio Codex ACP:
 - Nessun secondo writer, copia ad hoc del Vault o bypass del PAL.
 - `matrix doctor` descrive esplicitamente un eventuale lock runtime e non lo
   presenta come corruzione.
+
+## Risoluzione maintainer
+
+Il daemon resta l'unico processo che apre bbolt in scrittura. All'avvio
+pubblica `MATRIX_HOME/data/runtime-broker.json` in modo atomico e con permessi
+`0600`; il descriptor contiene l'indirizzo JSON-RPC effettivo e un token
+casuale valido solo per quella esecuzione. La CLI usa il broker autenticato per
+le operazioni storage mentre il runtime e' attivo e torna all'apertura diretta
+di bbolt solo in assenza del descriptor. Il descriptor viene rimosso allo
+shutdown.
+
+La verifica reale con daemon e CLI in processi distinti ha prodotto:
+
+```text
+matrix agent show codex             5 ms
+matrix agent args list codex        4 ms
+matrix logs tail -n 5               5 ms
+matrix doctor                      19 ms
+matrix config set ...               5 ms
+matrix agent args append ...        7 ms
+```
+
+Nessun comando ha prodotto `ERR_VAULT_OPEN`; letture e mutazioni sono state
+osservate dal processo proprietario senza secondo writer, copia o bypass del
+PAL. I test includono autenticazione del servizio storage, conservazione dei
+valori raw, uso del broker con il writer bbolt gia' aperto e ciclo di vita del
+descriptor runtime.
