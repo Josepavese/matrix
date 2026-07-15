@@ -294,9 +294,10 @@ Auth and callbacks:
 Readiness:
 
 - `matrix bootstrap doctor` reports `system_configured`, active agents, and setup guidance before traffic is sent;
-- `matrix agent doctor <id>` reports effective protocol endpoint data and probes ACP stdio commands with a safe `--help` invocation;
-- ACP stdio probe fields are `command_probe_ok`, `command_probe_exit_code`, and `command_probe_error`;
-- a failed ACP stdio probe means Matrix can see a path but the command is not runtime-ready, for example because the binary is corrupt or the configured subcommand is wrong.
+- `matrix agent doctor <id>` reports effective protocol endpoint data, keeps the lightweight `--help` command probe, and performs the same bounded ACP `initialize` handshake used by the daemon;
+- ACP stdio handshake fields include `provider_handshake_ok`, `provider_status`, `provider_handshake_error`, and safe `provider_handshake_diagnostics` such as exit code and sanitized stderr;
+- the daemon performs this bounded handshake in its own service environment before persisting `ready_on_demand`; failed initialization is persisted as `initialize_failed` and becomes a readiness warning;
+- doctor identifies persisted `@zed-industries/codex-acp` launch metadata as deprecated and directs operators to `matrix install codex`, which resolves the canonical `codex-acp` registry entry.
 
 Versioning policy:
 
@@ -463,7 +464,7 @@ ACP is the current operational standard for real coding agents in this environme
 
 Available ACP products and adapters include:
 
-- Codex via `codex-acp`
+- Codex via `@agentclientprotocol/codex-acp`
 - Gemini CLI via `gemini --acp`
 - Claude via `@agentclientprotocol/claude-agent-acp`
 - OpenCode via `opencode acp`
@@ -514,7 +515,7 @@ The 2026-05-04 lifecycle probe was executed against real ACP providers through
   `session/list`, stable `session/resume`, and draft `session/fork`;
   `session/list`, `session/resume`, prompt processing, file-token retrieval, and
   terminal-token retrieval succeeded.
-- `codex` via `@zed-industries/codex-acp` 0.13.0 over `@openai/codex` 0.128.0:
+- historical `codex` evidence used `@zed-industries/codex-acp` 0.13.0 over `@openai/codex` 0.128.0; this package is deprecated and retained here only as historical evidence:
   advertised `loadSession`, `session/list`, and stable `session/close`;
   prompt processing succeeded after upgrading `codex-acp` from 0.11.1. For a
   fresh temporary workspace, `session/list` returned zero persisted sessions and

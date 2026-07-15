@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentidentity"
+	"github.com/Josepavese/matrix/internal/logic/agentinstall"
 	"github.com/Josepavese/matrix/internal/logic/matrixhome"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
@@ -19,6 +20,7 @@ type Installer struct {
 	archive  middleware.Archive
 	storage  middleware.Storage
 	fs       middleware.FS
+	proc     middleware.Process
 	registry *RegistryClient
 	baseDir  string
 }
@@ -29,6 +31,7 @@ type InstallerConfig struct {
 	Archive  middleware.Archive
 	Storage  middleware.Storage
 	FS       middleware.FS
+	Process  middleware.Process
 	Registry *RegistryClient
 	BaseDir  string
 }
@@ -47,6 +50,7 @@ func NewInstaller(cfg InstallerConfig) (*Installer, error) {
 		archive:  cfg.Archive,
 		storage:  cfg.Storage,
 		fs:       cfg.FS,
+		proc:     cfg.Process,
 		registry: cfg.Registry,
 		baseDir:  cfg.BaseDir,
 	}, nil
@@ -72,31 +76,9 @@ func (inst *Installer) Install(ctx context.Context, agentID string) error {
 		return err
 	}
 
-	// 3. Install based on distribution type
-	var cfg agentcfg.Config
-
-	switch resolved.Type {
-	case "binary":
-		binaryPath, err := inst.installBinary(ctx, manifest)
-		if err != nil {
-			return err
-		}
-		cfg = agentcfg.Config{
-			Command:   binaryPath,
-			Kind:      "acp",
-			Transport: "stdio",
-		}
-	case "npx", "uvx":
-		fmt.Printf("Registering %s agent '%s' (v%s) via %s\n", resolved.Type, manifest.ID, manifest.Version, resolved.Command)
-		cfg = agentcfg.Config{
-			Command:   resolved.Command,
-			Args:      resolved.Args,
-			Env:       resolved.Env,
-			Kind:      "acp",
-			Transport: "stdio",
-		}
-	default:
-		return fmt.Errorf("unsupported distribution type: %s", resolved.Type)
+	cfg, err := inst.installResolved(ctx, agentID, manifest, resolved)
+	if err != nil {
+		return err
 	}
 
 	// 4. Register in Vault
@@ -121,6 +103,31 @@ func (inst *Installer) Install(ctx context.Context, agentID string) error {
 	return agentcfg.SaveMeta(inst.storage, agentID, meta)
 }
 
+func (inst *Installer) installResolved(ctx context.Context, agentID string, manifest *AgentManifest, resolved *ResolvedDist) (agentcfg.Config, error) {
+	if resolved.Type == "binary" {
+		binaryPath, err := inst.installBinary(ctx, manifest)
+		return agentcfg.Config{Command: binaryPath, Kind: "acp", Transport: "stdio"}, err
+	}
+	if resolved.Type != "npx" && resolved.Type != "uvx" {
+		return agentcfg.Config{}, fmt.Errorf("unsupported distribution type: %s", resolved.Type)
+	}
+	if manifest.Distribution.Npx == nil || !agentidentity.IsCanonicalCodexPackage(manifest.Distribution.Npx.Package) {
+		fmt.Printf("Registering %s agent '%s' (v%s) via %s\n", resolved.Type, manifest.ID, manifest.Version, resolved.Command)
+		return agentcfg.Config{
+			Command: resolved.Command, Args: resolved.Args, Env: resolved.Env,
+			Kind: "acp", Transport: "stdio",
+		}, nil
+	}
+	target, err := agentinstall.AgentDir(inst.baseDir, agentID)
+	if err != nil {
+		return agentcfg.Config{}, err
+	}
+	return agentinstall.InstallCanonicalCodex(ctx, agentinstall.Config{
+		FS: inst.fs, Process: inst.proc, Target: target,
+		Package: manifest.Distribution.Npx.Package, Env: agentinstall.EnvSlice(manifest.Distribution.Npx.Env),
+	})
+}
+
 // installBinary handles the binary distribution flow: download, extract, resolve path.
 func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifest) (string, error) {
 	dist, err := inst.registry.ResolveDistribution(manifest)
@@ -128,11 +135,11 @@ func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifes
 		return "", err
 	}
 
-	agentPath, err := agentDir(inst.baseDir, manifest.ID)
+	agentPath, err := agentinstall.AgentDir(inst.baseDir, manifest.ID)
 	if err != nil {
 		return "", err
 	}
-	tmpFile, err := agentTempArchive(inst.fs.TempDir(), manifest.ID, manifest.Version, dist.Archive)
+	tmpFile, err := agentinstall.TempArchive(inst.fs.TempDir(), manifest.ID, manifest.Version, dist.Archive)
 	if err != nil {
 		return "", err
 	}
@@ -162,7 +169,7 @@ func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifes
 // Uninstall removes the agent's files and its registration from the Vault.
 func (inst *Installer) Uninstall(_ context.Context, agentID string) error {
 	// 1. Remove files
-	agentPath, err := agentDir(inst.baseDir, agentID)
+	agentPath, err := agentinstall.AgentDir(inst.baseDir, agentID)
 	if err != nil {
 		return err
 	}
@@ -182,58 +189,4 @@ func (inst *Installer) Uninstall(_ context.Context, agentID string) error {
 		slog.Warn("failed to delete agent metadata", "agent", agentID, "error", err)
 	}
 	return nil
-}
-
-func agentDir(baseDir, agentID string) (string, error) {
-	agentID, err := safePathToken("agent id", agentID)
-	if err != nil {
-		return "", err
-	}
-	target := filepath.Join(baseDir, agentID)
-	rel, err := filepath.Rel(baseDir, target)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("agent path escapes install directory")
-	}
-	return target, nil
-}
-
-func agentTempArchive(tempDir, agentID, version, archiveURL string) (string, error) {
-	tempDir = strings.TrimSpace(tempDir)
-	if tempDir == "" {
-		return "", fmt.Errorf("temporary directory is required")
-	}
-	agentID, err := safePathToken("agent id", agentID)
-	if err != nil {
-		return "", err
-	}
-	version, err = safePathToken("agent version", version)
-	if err != nil {
-		return "", err
-	}
-	target := filepath.Join(tempDir, fmt.Sprintf("matrix-agent-%s-%s%s", agentID, version, archiveExt(archiveURL)))
-	rel, err := filepath.Rel(tempDir, target)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("temporary archive path escapes temp directory")
-	}
-	return target, nil
-}
-
-func safePathToken(label, value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" || filepath.IsAbs(value) || strings.ContainsAny(value, `/\`) || value == "." || value == ".." {
-		return "", fmt.Errorf("invalid %s %q", label, value)
-	}
-	return value, nil
-}
-
-// archiveExt derives the archive extension from a URL.
-// Handles compound extensions like .tar.gz, .tar.bz2, .tar.xz.
-func archiveExt(url string) string {
-	lower := strings.ToLower(url)
-	for _, ext := range []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tbz2", ".txz", ".zip"} {
-		if strings.HasSuffix(lower, ext) {
-			return ext
-		}
-	}
-	return filepath.Ext(url)
 }

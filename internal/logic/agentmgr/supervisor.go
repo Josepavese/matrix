@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	maxFastCrashes  = 5
-	fastCrashWindow = 5 * time.Second
+	maxFastCrashes       = 5
+	fastCrashWindow      = 5 * time.Second
+	onDemandProbeTimeout = 60 * time.Second
 )
 
 // AgentProcess tracks a running agent child process
@@ -44,9 +45,15 @@ type Supervisor struct {
 	net      middleware.Network
 	store    middleware.Storage
 	registry *Registry
+	probe    func(context.Context, middleware.ProtocolEndpoint) error
 
 	mu      sync.RWMutex
 	running map[string]*AgentProcess
+}
+
+// SetOnDemandProbe configures the daemon-owned bounded readiness handshake.
+func (s *Supervisor) SetOnDemandProbe(probe func(context.Context, middleware.ProtocolEndpoint) error) {
+	s.probe = probe
 }
 
 // NewSupervisor instantiates the APM.
@@ -73,26 +80,55 @@ func (s *Supervisor) StartAll(ctx context.Context) error {
 
 		endpoint := protocolEndpointFromAgentConfig(cfg)
 
-		// 2. Start supervision loop ONLY for networked ACP agents.
-		// stdio agents are handled on-demand by the Router.
 		if endpoint.Kind == middleware.ProtocolKindACP && (endpoint.Transport == "ws" || endpoint.Transport == "http") {
-			if !s.proc.HasExecutable(cfg.Command) {
-				s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "missing_executable", Error: "executable not found in PATH"})
-				log.Warn("agent not found in path, skipping supervision", "event", "agent_missing", "agent", agentID, "command", cfg.Command)
-				continue
-			}
-			go s.watchdog(ctx, agentID, cfg)
-		} else {
-			if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && !s.proc.HasExecutable(cfg.Command) {
-				s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "missing_executable", Error: "executable not found in PATH"})
-				log.Warn("agent not found in path, skipping supervision", "event", "agent_missing", "agent", agentID, "command", cfg.Command)
-				continue
-			}
-			s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "ready_on_demand"})
-			log.Info("agent is on-demand, skipping background supervision", "event", "agent_on_demand", "agent", agentID, "protocol_kind", endpoint.Kind, "transport", endpoint.Transport)
+			s.startSupervised(ctx, log, agentID, cfg)
+			continue
 		}
+		s.startOnDemand(ctx, log, agentID, cfg)
 	}
 	return nil
+}
+
+func (s *Supervisor) startSupervised(ctx context.Context, log *slog.Logger, agentID string, cfg AgentConfig) {
+	endpoint := protocolEndpointFromAgentConfig(cfg)
+	if !s.proc.HasExecutable(cfg.Command) {
+		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "missing_executable", Error: "executable not found in PATH"})
+		log.Warn("agent not found in path, skipping supervision", "event", "agent_missing", "agent", agentID, "command", cfg.Command)
+		return
+	}
+	go s.watchdog(ctx, agentID, cfg)
+}
+
+func (s *Supervisor) startOnDemand(ctx context.Context, log *slog.Logger, agentID string, cfg AgentConfig) {
+	endpoint := protocolEndpointFromAgentConfig(cfg)
+	if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && !s.proc.HasExecutable(cfg.Command) {
+		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "missing_executable", Error: "executable not found in PATH"})
+		log.Warn("agent not found in path, skipping supervision", "event", "agent_missing", "agent", agentID, "command", cfg.Command)
+		return
+	}
+	if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && s.probe != nil {
+		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "probing"})
+		go s.probeOnDemand(ctx, log, agentID, endpoint)
+		return
+	}
+	s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "ready_on_demand"})
+	log.Info("agent is on-demand, skipping background supervision", "event", "agent_on_demand", "agent", agentID, "protocol_kind", endpoint.Kind, "transport", endpoint.Transport)
+}
+
+func (s *Supervisor) probeOnDemand(ctx context.Context, log *slog.Logger, agentID string, endpoint middleware.ProtocolEndpoint) {
+	probeCtx, cancel := context.WithTimeout(ctx, onDemandProbeTimeout)
+	err := s.probe(probeCtx, endpoint)
+	cancel()
+	state := RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "ready_on_demand"}
+	if err != nil {
+		state.Status = "initialize_failed"
+		state.Error = err.Error()
+		s.persistRuntimeState(log, state)
+		log.Warn("agent initialize probe failed", "event", "agent_initialize_failed", "agent", agentID, "error", err)
+		return
+	}
+	s.persistRuntimeState(log, state)
+	log.Info("agent initialize probe passed", "event", "agent_initialize_ready", "agent", agentID)
 }
 
 // GetAgentEndpoint returns the normalized endpoint description for the agent.
