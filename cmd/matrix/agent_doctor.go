@@ -7,6 +7,7 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/logic/agentdoctor"
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/agentprobe"
 	"github.com/spf13/cobra"
 )
 
@@ -55,10 +56,7 @@ var agentDoctorCmd = &cobra.Command{
 				EnvIsolation:    cfg.EnvIsolation,
 				Active:          cfg.Active,
 			})
-			address := endpoint.Address
-			if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" {
-				address = endpoint.Command
-			}
+			address := agentdoctor.EndpointAddress(endpoint)
 
 			item := map[string]any{
 				"agent_id":                      id,
@@ -73,6 +71,8 @@ var agentDoctorCmd = &cobra.Command{
 				"override_env_count":            len(override.Env),
 				"command_in_path":               false,
 				"command_probe_ok":              false,
+				"provider_handshake_ok":         false,
+				"provider_status":               "not_probed",
 				"agents_config_path_override":   os.Getenv("MATRIX_AGENTS_CONFIG") != "",
 				"telegram_config_path_override": os.Getenv("MATRIX_TELEGRAM_CONFIG") != "",
 			}
@@ -84,16 +84,21 @@ var agentDoctorCmd = &cobra.Command{
 					item["command_in_path"] = true
 				}
 			}
-			if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && endpoint.Command != "" {
-				probe := agentdoctor.ProbeCommand(endpoint.Command, endpoint.Args, cfg.Env, cfg.EnvIsolation)
-				item["command_probe_ok"] = probe.OK
-				item["command_probe_exit_code"] = probe.ExitCode
-				if probe.Error != "" {
-					item["command_probe_error"] = probe.Error
-				}
-			}
-
 			var warnings []string
+			checks, checkWarnings := agentdoctor.InspectACP(endpoint, agentprobe.ACPInitialize)
+			for key, value := range checks {
+				item[key] = value
+			}
+			warnings = append(warnings, checkWarnings...)
+			meta, metaErr := agentcfg.LoadMeta(ctx.Store, id)
+			if metaErr != nil {
+				warnings = append(warnings, "agent metadata unavailable: "+metaErr.Error())
+			}
+			if source := agentdoctor.DeprecatedCodexACPSource(endpoint.Command, endpoint.Args, meta.Repository); source != "" {
+				item["provider_deprecated"] = true
+				item["provider_replacement"] = "@agentclientprotocol/codex-acp"
+				warnings = append(warnings, "deprecated @zed-industries/codex-acp provider; run matrix install codex to migrate")
+			}
 			if !cfg.IsActive() {
 				warnings = append(warnings, "agent disabled by effective configuration")
 			}
@@ -114,9 +119,6 @@ var agentDoctorCmd = &cobra.Command{
 			}
 			if len(cfg.Env) == 0 {
 				warnings = append(warnings, "no effective environment overrides")
-			}
-			if probeOK, _ := item["command_probe_ok"].(bool); endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && !probeOK {
-				warnings = append(warnings, "ACP stdio command probe failed")
 			}
 			item["warnings"] = warnings
 

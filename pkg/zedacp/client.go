@@ -15,6 +15,7 @@ import (
 type Client struct {
 	transport      Transport
 	requestHandler RequestHandler
+	terminalErr    error
 
 	mu        sync.RWMutex
 	nextID    int64
@@ -140,6 +141,12 @@ func (c *Client) doCall(ctx context.Context, method string, params interface{}) 
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-c.ctx.Done():
+		c.mu.RLock()
+		terminalErr := c.terminalErr
+		c.mu.RUnlock()
+		if terminalErr != nil {
+			return nil, terminalErr
+		}
 		return nil, fmt.Errorf("client context cancelled")
 	case resp := <-ch:
 		if resp.Error != nil {

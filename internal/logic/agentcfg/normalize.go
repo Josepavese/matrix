@@ -30,6 +30,7 @@ func NormalizeEndpoint(cfg Config) middleware.ProtocolEndpoint {
 		Command:         cfg.Command,
 		Args:            append([]string{}, cfg.Args...),
 		Env:             append([]string{}, cfg.Env...),
+		EnvIsolation:    cfg.EnvIsolation,
 		ProtocolVersion: cfg.ProtocolVersion,
 		CardURL:         cfg.CardURL,
 	}

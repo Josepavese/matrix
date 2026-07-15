@@ -169,6 +169,7 @@ func NewInstallerContext(vaultPath string) (*InstallerContext, func(), error) {
 		Archive:  osfs.NewArchiveProvider(),
 		Storage:  provider,
 		FS:       osfs.NewFSProvider(),
+		Process:  execprovider.NewProvider(),
 		Registry: agentmgr.NewCachingRegistryClient(netProv, "", provider),
 		BaseDir:  "",
 	})
@@ -215,6 +216,7 @@ func NewDaemonContext(vaultPath string) (*DaemonContext, func(), error) {
 		Archive:  archiveProv,
 		Storage:  app.Store,
 		FS:       osfs.NewFSProvider(),
+		Process:  execProv,
 		Registry: regClient,
 		BaseDir:  "",
 	})

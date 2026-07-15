@@ -28,6 +28,7 @@ type ProtocolEndpoint struct {
 	Command         string
 	Args            []string
 	Env             []string
+	EnvIsolation    bool
 	ProtocolVersion string
 	CardURL         string
 }

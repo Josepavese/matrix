@@ -19,11 +19,12 @@ type acpConversationFactory struct{}
 
 func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middleware.ProtocolEndpoint, deps middleware.ConversationFactoryDeps) (middleware.ConversationClient, error) {
 	transport, err := createTransport(ctx, transportSpec{
-		Protocol: endpoint.Transport,
-		Address:  endpoint.Address,
-		Command:  endpoint.Command,
-		Args:     endpoint.Args,
-		Env:      endpoint.Env,
+		Protocol:     endpoint.Transport,
+		Address:      endpoint.Address,
+		Command:      endpoint.Command,
+		Args:         endpoint.Args,
+		Env:          endpoint.Env,
+		EnvIsolation: endpoint.EnvIsolation,
 	})
 	if err != nil {
 		return nil, err
@@ -617,31 +618,6 @@ func (c *acpConversationClient) CloseRemoteSession(ctx context.Context, remoteSe
 	}
 	c.unmarkLoadedSession(remoteSessionID)
 	return nil
-}
-
-type transportSpec struct {
-	Protocol string
-	Address  string
-	Command  string
-	Args     []string
-	Env      []string
-}
-
-func createTransport(ctx context.Context, spec transportSpec) (middleware.AgentTransport, error) {
-	switch strings.ToLower(spec.Protocol) {
-	case "ws":
-		addr := spec.Address
-		if !strings.HasPrefix(addr, "ws://") && !strings.HasPrefix(addr, "wss://") {
-			addr = "ws://" + addr
-		}
-		return NewWSTransport(ctx, addr)
-	case "stdio", "acp":
-		return NewStdioTransport(ctx, spec.Command, spec.Env, spec.Args...)
-	case "unix":
-		return NewUnixTransport(ctx, spec.Address)
-	default:
-		return nil, fmt.Errorf("unsupported ACP transport: %s", spec.Protocol)
-	}
 }
 
 func toZedACPTools(tools []middleware.Tool) []acpTool {

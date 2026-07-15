@@ -130,7 +130,12 @@ func buildRuntimeReport(input inspectInput, canDial func(string) bool) AgentRunt
 		report.Status = "missing_executable"
 		report.Warnings = append(report.Warnings, "executable not found in PATH")
 	case report.Mode == "on_demand":
-		report.Status = "ready_on_demand"
+		if input.State.Status == "" {
+			report.Status = "not_probed"
+			report.Warnings = append(report.Warnings, "no bounded provider initialize probe recorded")
+		} else {
+			report = applyRuntimeState(report, input.State, canDial)
+		}
 	default:
 		report = applyRuntimeState(report, input.State, canDial)
 	}
