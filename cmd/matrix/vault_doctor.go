@@ -5,8 +5,8 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/schema"
 	"github.com/Josepavese/matrix/internal/logic/vaultsec"
-	"github.com/Josepavese/matrix/internal/providers/bolt"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/providers/runtimevault"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +22,7 @@ var vaultDoctorCmd = &cobra.Command{
 		report := map[string]any{
 			"security": securityReport,
 		}
-		if provider, err := bolt.NewReadOnlyProvider(DefaultVaultPath); err == nil {
+		if provider, err := runtimevault.OpenReadOnly(DefaultVaultPath); err == nil {
 			defer func() { _ = provider.Close() }()
 			if schemaReport, err := schema.LoadReport(provider); err == nil {
 				report["schema"] = schemaReport

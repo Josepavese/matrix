@@ -287,17 +287,20 @@ Common configuration keys:
 | `daemon_api_key` | JSON-RPC daemon authentication |
 | `agent.trust_mode` | Auto-approve tool requests (`true` or `false`, default: `false`) |
 
-When a live `matrix.service` owns the local bbolt vault lock, direct CLI config
-or agent override commands may fail with `ERR_VAULT_OPEN`. The supported local
-operator path is to stop the user service, apply the config or override, and
-restart it:
+When `matrix run` owns the bbolt vault, config and agent commands use the
+authenticated runtime storage broker published inside the PAL. The CLI does
+not open a second bbolt writer, and the service does not need to be stopped:
 
 ```bash
-systemctl --user stop matrix.service
 matrix config set agent.trust_mode true
 matrix agent args set codex -- -c 'sandbox_mode="danger-full-access"' -c 'approval_policy="never"'
-systemctl --user start matrix.service
 ```
+
+The ephemeral broker descriptor is `data/runtime-broker.json` under
+`MATRIX_HOME`, has mode `0600` on Unix, contains a per-run random token, and is
+removed on graceful shutdown. When no daemon is active, the CLI opens the Vault
+directly as before. Read-only commands such as `matrix agent show`,
+`matrix logs tail`, and `matrix doctor` follow the same broker-first policy.
 
 ### `matrix config delete <key>`
 

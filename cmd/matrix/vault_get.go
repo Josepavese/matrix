@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/Josepavese/matrix/internal/logic/channelcfg"
 	"github.com/Josepavese/matrix/internal/logic/vault"
-	"github.com/Josepavese/matrix/internal/providers/bolt"
+	"github.com/Josepavese/matrix/internal/providers/runtimevault"
 	"github.com/spf13/cobra"
 )
 
@@ -14,7 +14,7 @@ var vaultGetCmd = &cobra.Command{
 	Short: "Get a value from the Vault",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		provider, err := bolt.NewReadOnlyProvider(DefaultVaultPath)
+		provider, err := runtimevault.OpenReadOnly(DefaultVaultPath)
 		if err != nil {
 			exitf("Vault error: %v", err)
 		}
