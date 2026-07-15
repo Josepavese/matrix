@@ -59,14 +59,11 @@ func TestStartPipedPreservesWindowsCurrentUserTrust(t *testing.T) {
 	}
 	fingerprintBytes := sha1.Sum(caDER) // #nosec G401 -- Windows store deletion requires the SHA-1 thumbprint.
 	fingerprint := strings.ToUpper(hex.EncodeToString(fingerprintBytes[:]))
-	certutil(t, "-user", "-addstore", "-f", "Root", caPath)
+	runPowerShell(t, []string{"MATRIX_TEST_CA=" + caPath},
+		`Import-Certificate -FilePath $env:MATRIX_TEST_CA -CertStoreLocation Cert:\CurrentUser\Root | Out-Null`)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		defer cancel()
-		command := goexec.CommandContext(ctx, "certutil", "-user", "-delstore", "Root", fingerprint)
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Errorf("remove test root: %v: %s", err, output)
-		}
+		runPowerShell(t, []string{"MATRIX_TEST_THUMBPRINT=" + fingerprint},
+			`Remove-Item -LiteralPath ("Cert:\CurrentUser\Root\" + $env:MATRIX_TEST_THUMBPRINT) -Force`)
 	})
 
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -138,11 +135,13 @@ func createWindowsTrustFixture(t *testing.T) ([]byte, tls.Certificate) {
 	return rootDER, certificate
 }
 
-func certutil(t *testing.T, args ...string) {
+func runPowerShell(t *testing.T, env []string, script string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if output, err := goexec.CommandContext(ctx, "certutil", args...).CombinedOutput(); err != nil {
-		t.Fatalf("certutil %v: %v: %s", args, err, output)
+	command := goexec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	command.Env = append(os.Environ(), env...)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("PowerShell certificate store command: %v: %s", err, output)
 	}
 }
