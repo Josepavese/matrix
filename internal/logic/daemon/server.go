@@ -20,6 +20,7 @@ type Server struct {
 	listener  middleware.ClosableListener
 	vault     *vault.Vault
 	apiKey    string
+	broker    *runtimeBrokerConfig
 }
 
 // NewServer initializes a new JSON-RPC Daemon
@@ -37,22 +38,22 @@ func (s *Server) WithAPIKey(key string) *Server {
 	return s
 }
 
+// WithRuntimeBroker enables authenticated CLI access to the daemon-owned storage.
+func (s *Server) WithRuntimeBroker(store middleware.Storage, fs middleware.FS, home, logFile string) *Server {
+	s.broker = &runtimeBrokerConfig{store: store, fs: fs, home: home, logFile: logFile}
+	return s
+}
+
 // Start opens the TCP socket and serves JSON-RPC requests until the context is cancelled.
 // Returns nil on graceful shutdown, or an error if startup fails.
 func (s *Server) Start(ctx context.Context, addr string) error {
 	log := slog.With("component", "daemon")
 
-	vaultSvc := NewVaultService(s.vault, s.apiKey)
-	if err := s.rpcServer.RegisterName("Vault", vaultSvc); err != nil {
+	if err := s.prepareRuntimeBroker(addr); err != nil {
 		return err
 	}
-
-	if s.apiKey != "" {
-		authSvc := &AuthService{apiKey: s.apiKey}
-		if err := s.rpcServer.RegisterName("Auth", authSvc); err != nil {
-			return err
-		}
-		log.Info("daemon API key authentication enabled", "event", "daemon_auth_enabled")
+	if err := s.registerServices(log); err != nil {
+		return err
 	}
 
 	l, err := s.net.Listen("tcp", addr)
@@ -62,6 +63,12 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 	s.mu.Lock()
 	s.listener = l
 	s.mu.Unlock()
+	cleanupBroker, err := s.activateRuntimeBroker(listenerAddress(l, addr))
+	if err != nil {
+		_ = l.Close()
+		return err
+	}
+	defer cleanupBroker()
 
 	log.Info("matrix daemon started", "event", "daemon_started", "addr", addr, "protocol", "json-rpc")
 

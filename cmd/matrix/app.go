@@ -14,6 +14,7 @@ import (
 	execprovider "github.com/Josepavese/matrix/internal/providers/exec"
 	networkprovider "github.com/Josepavese/matrix/internal/providers/network"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/providers/runtimevault"
 )
 
 // AppContext holds shared dependencies for CLI commands that need vault access.
@@ -67,7 +68,7 @@ func NewAppContext(vaultPath string) (*AppContext, func(), error) {
 
 // NewReadOnlyAppContext opens the vault in read-only mode.
 func NewReadOnlyAppContext(vaultPath string) (*AppContext, func(), error) {
-	provider, err := bolt.NewReadOnlyProvider(vaultPath)
+	provider, err := runtimevault.OpenReadOnly(vaultPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vault error: %w", err)
 	}
@@ -96,7 +97,7 @@ func seedDefaultAgents(store middleware.Storage, configRdr middleware.ConfigRead
 
 // NewAgentContext opens storage with initialized schema and seeded agent registry.
 func NewAgentContext(vaultPath string) (*AgentContext, func(), error) {
-	provider, err := bolt.NewProvider(vaultPath)
+	provider, err := runtimevault.Open(vaultPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vault error: %w", err)
 	}
@@ -125,7 +126,7 @@ func NewAgentContext(vaultPath string) (*AgentContext, func(), error) {
 
 // NewAgentStoreContext opens read-write storage for agent mutations.
 func NewAgentStoreContext(vaultPath string) (*AgentContext, func(), error) {
-	provider, err := bolt.NewProvider(vaultPath)
+	provider, err := runtimevault.Open(vaultPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vault error: %w", err)
 	}
@@ -154,7 +155,7 @@ func NewAgentStoreContext(vaultPath string) (*AgentContext, func(), error) {
 
 // NewInstallerContext builds installer dependencies.
 func NewInstallerContext(vaultPath string) (*InstallerContext, func(), error) {
-	provider, err := bolt.NewProvider(vaultPath)
+	provider, err := runtimevault.Open(vaultPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vault error: %w", err)
 	}

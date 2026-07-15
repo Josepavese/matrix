@@ -6,18 +6,19 @@ import (
 	"os"
 
 	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/logic/cmdutil"
 	"github.com/Josepavese/matrix/internal/logic/config"
 	logiclogging "github.com/Josepavese/matrix/internal/logic/logging"
 	"github.com/Josepavese/matrix/internal/logic/runtimecheck"
 	"github.com/Josepavese/matrix/internal/logic/vault"
-	"github.com/Josepavese/matrix/internal/providers/bolt"
 	execprovider "github.com/Josepavese/matrix/internal/providers/exec"
 	"github.com/Josepavese/matrix/internal/providers/network"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/providers/runtimevault"
 )
 
 func openLogConfig() (logiclogging.Config, func(), error) {
-	mgr, cleanup, err := openReadOnlyConfigManager()
+	mgr, cleanup, err := cmdutil.OpenReadOnlyConfigManager(DefaultVaultPath)
 	if err != nil {
 		return logiclogging.Config{}, nil, err
 	}
@@ -58,7 +59,7 @@ func buildRuntimeDoctorReport() (map[string]any, error) {
 	proc := execprovider.NewProvider()
 	jsonrpcAddr, matrixHTTPAddr, a2aHTTPAddr := discoverRuntimeAddrs()
 
-	provider, err := bolt.NewReadOnlyProvider(DefaultVaultPath)
+	provider, err := runtimevault.OpenReadOnly(DefaultVaultPath)
 	if err != nil {
 		return runtimecheck.BuildLocalReport(runtimecheck.LocalInput{
 			VaultPath:      DefaultVaultPath,
