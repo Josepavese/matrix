@@ -90,14 +90,9 @@ var agentDoctorCmd = &cobra.Command{
 				item[key] = value
 			}
 			warnings = append(warnings, checkWarnings...)
-			meta, metaErr := agentcfg.LoadMeta(ctx.Store, id)
+			_, metaErr := agentcfg.LoadMeta(ctx.Store, id)
 			if metaErr != nil {
 				warnings = append(warnings, "agent metadata unavailable: "+metaErr.Error())
-			}
-			if source := agentdoctor.DeprecatedCodexACPSource(endpoint.Command, endpoint.Args, meta.Repository); source != "" {
-				item["provider_deprecated"] = true
-				item["provider_replacement"] = "@agentclientprotocol/codex-acp"
-				warnings = append(warnings, "deprecated @zed-industries/codex-acp provider; run matrix install codex to migrate")
 			}
 			if !cfg.IsActive() {
 				warnings = append(warnings, "agent disabled by effective configuration")

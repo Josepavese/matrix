@@ -3,6 +3,8 @@ package agentmgr
 import (
 	"strings"
 	"testing"
+
+	"github.com/Josepavese/matrix/internal/logic/agentidentity"
 )
 
 func TestFindAgentResolvesCodexAliasToCanonicalRegistryID(t *testing.T) {
@@ -17,10 +19,19 @@ func TestFindAgentResolvesCodexAliasToCanonicalRegistryID(t *testing.T) {
 	}
 }
 
+func TestFindAgentRejectsCodexProviderIdentifierAsPublicAgentID(t *testing.T) {
+	agents := []AgentManifest{{ID: "codex-acp", Version: "1.1.4"}}
+
+	_, err := findAgent(agents, "codex-acp")
+	if err == nil || !strings.Contains(err.Error(), `use "codex"`) {
+		t.Fatalf("expected canonical Matrix agent ID error, got %v", err)
+	}
+}
+
 func TestResolveAnyDistributionRejectsDeprecatedCodexPackage(t *testing.T) {
 	client := NewRegistryClient(nil, "")
 	manifest := &AgentManifest{ID: "codex-acp", Distribution: RegistryDistribution{
-		Npx: &NpxDist{Package: "@zed-industries/codex-acp@0.16.0"},
+		Npx: &NpxDist{Package: agentidentity.DeprecatedCodexPackage + "@0.16.0"},
 	}}
 
 	_, err := client.ResolveAnyDistribution(manifest)

@@ -18,6 +18,7 @@ required = [
   "docs/governance/issue_triage_template.md",
   "docs/governance/release_evidence_template.md",
   "docs/governance/security_governance.md",
+  "docs/governance/zero_legacy_governance.md",
   "docs/wiki/Governance.md",
   "code-governance.toml",
   "docs/matrix_deployment_policy.md",
@@ -41,6 +42,7 @@ required = [
 "docs/governance/issue_triage_template.md" = ["accepted", "rejected", "issues/closed"]
 "docs/governance/release_evidence_template.md" = ["Release Identity", "GitHub Actions", "Local Install", "Runtime Evidence"]
 "docs/governance/security_governance.md" = ["vault", "secret", "installer", "token"]
+"docs/governance/zero_legacy_governance.md" = ["ZERO-LEGACY", "fail closed", "one-way", "PAL", "codex"]
 "docs/wiki/Governance.md" = ["governance_check", "protocol-neutral", "channel-neutral", "release evidence"]
 "docs/matrix_zed_acp_compliance.md" = ["Zed Agent Client Protocol", "session/fork", "additionalDirectories", "side"]
 
@@ -132,3 +134,15 @@ allowed_files = [
 ]
 max = 0
 reason = "PAL home resolution must stay centralized and provider-backed."
+
+[pattern_budget.deprecated_codex_provider]
+roots = ["cmd", "configs", "internal", "pkg", "scripts", "install", ".github"]
+patterns = [
+  "@zed-industries/codex-acp"
+]
+allowed_files = [
+  "internal/logic/agentidentity/codex.go",
+  "internal/logic/agentidentity/codex_test.go"
+]
+max = 0
+reason = "ZERO-LEGACY: the retired Codex provider may exist only at its centralized rejection boundary and in rejection tests."
