@@ -10,7 +10,6 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/schema"
 	"github.com/Josepavese/matrix/internal/logic/vault"
 	"github.com/Josepavese/matrix/internal/middleware"
-	"github.com/Josepavese/matrix/internal/providers/bolt"
 	execprovider "github.com/Josepavese/matrix/internal/providers/exec"
 	networkprovider "github.com/Josepavese/matrix/internal/providers/network"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
@@ -49,7 +48,7 @@ func NewAppContext(vaultPath string) (*AppContext, func(), error) {
 }
 
 func newLocalAppContext(vaultPath string) (*AppContext, func(), error) {
-	return newAppContext(bolt.NewProvider(vaultPath))
+	return newAppContext(runtimevault.OpenDaemon(vaultPath))
 }
 
 func newAppContext(provider runtimevault.Storage, err error) (*AppContext, func(), error) {
