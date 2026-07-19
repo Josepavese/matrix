@@ -91,6 +91,22 @@ func TestObserverForwardsMetadataOnlyToolUpdates(t *testing.T) {
 	}
 }
 
+func TestObserverPreservesRichAgentMessageBlocks(t *testing.T) {
+	obs := &simpleObserver{}
+	obs.OnUpdate(acpSessionNotification{
+		SessionID: "remote-123",
+		Update: zedacp.SessionUpdate{
+			SessionUpdate: "agent_message_chunk",
+			Content:       acpContent{Type: "image", Data: "aW1hZ2U=", MimeType: "image/png"},
+			Contents:      []acpContent{{Type: "image", Data: "aW1hZ2U=", MimeType: "image/png"}},
+		},
+	})
+	blocks := obs.ContentBlocks()
+	if len(blocks) != 1 || blocks[0].Type != "image" || blocks[0].MimeType != "image/png" {
+		t.Fatalf("rich ACP output was not preserved: %#v", blocks)
+	}
+}
+
 func TestObserverPreservesToolContentAndPlanMetadata(t *testing.T) {
 	notifier := &observerTestNotifier{}
 	obs := &simpleObserver{notifier: notifier}

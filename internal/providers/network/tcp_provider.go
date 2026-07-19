@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Josepavese/matrix/internal/middleware"
@@ -97,9 +98,21 @@ func (p *Provider) downloadOnce(ctx context.Context, url, destPath string) (int,
 
 // FetchJSON fetches a JSON resource from a URL and decodes it into the target
 func (p *Provider) FetchJSON(ctx context.Context, url string, target interface{}) error {
+	return p.FetchJSONWithHeaders(ctx, url, nil, target)
+}
+
+// FetchJSONWithHeaders fetches a JSON discovery document with governed request
+// headers. It is intentionally an optional provider capability so the generic
+// Network interface does not acquire protocol-specific authentication policy.
+func (p *Provider) FetchJSONWithHeaders(ctx context.Context, url string, headers map[string]string, target interface{}) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
+	}
+	for name, value := range headers {
+		if strings.TrimSpace(name) != "" {
+			req.Header.Set(name, value)
+		}
 	}
 
 	resp, err := p.httpClient.Do(req)

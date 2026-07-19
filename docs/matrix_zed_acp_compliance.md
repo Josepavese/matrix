@@ -1,244 +1,88 @@
 # Matrix Zed ACP Compliance Notes
 
-Last reviewed: 2026-06-18.
+Last reviewed: 2026-07-19 against stable ACP v1 schema `schema-v1.19.0`.
 
 Matrix follows the Zed Agent Client Protocol documented at
-https://agentclientprotocol.com and the official SDK references.
+https://agentclientprotocol.com/protocol/overview. The exhaustive current
+method and feature inventory is
+[`protocol_coverage.md`](protocol_coverage.md).
 
-Current source anchors:
+## Matrix position
 
-- Protocol docs: https://agentclientprotocol.com/protocol/overview
-- Latest schema release, Schema v1.14.0, published 2026-06-18:
-  https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.14.0
-- Schema reference: https://agentclientprotocol.com/protocol/schema
-- Session config options: https://agentclientprotocol.com/protocol/session-config-options
-- Terminals: https://agentclientprotocol.com/protocol/terminals
-- File system: https://agentclientprotocol.com/protocol/file-system
-- Official SDK index: https://agentclientprotocol.com/libraries/typescript
-- Session fork RFD: https://agentclientprotocol.com/rfds/session-fork
-- Additional directories RFD: https://agentclientprotocol.com/rfds/additional-directories
-- Request cancellation RFD: https://agentclientprotocol.com/rfds/request-cancellation
-- Next Edit Suggestions RFD: https://agentclientprotocol.com/rfds/next-edit-suggestions
-- Elicitation RFD: https://agentclientprotocol.com/rfds/elicitation
+ACP is a first-class coding-agent protocol behind Matrix's protocol-neutral
+boundary. Channels never emit ACP methods directly. The adapter reports live
+provider capabilities, rejects unsupported optional content before creating a
+session, and never simulates an unavailable lifecycle primitive.
 
-## Matrix Position
+The project-wide
+[`ZERO-LEGACY`](governance/zero_legacy_governance.md) policy applies to ACP
+wire evolution. Matrix accepts `agentCapabilities`, stable `{methodId}`
+authentication, and the current stable session contracts. It does not retry a
+retired credential payload or read a retired initialization alias.
 
-ACP is Matrix's operational default for real coding agents today. A2A remains a
-strategic protocol target, but current day-to-day coding-agent support is better
-through ACP.
+## Stable coverage
 
-Matrix must stay protocol-neutral at the product boundary:
+The ACP package and adapter cover every stable v1 method in both directions:
 
-- channels and users do not choose ACP wire methods directly;
-- providers advertise capabilities;
-- Matrix maps those capabilities into neutral actions;
-- unsupported ACP surfaces return typed unsupported results instead of being
-  simulated.
+- initialization, agent-owned authentication, and capability-gated logout;
+- session new/load/resume/list/delete/close, prompt/cancel, mode and config
+  selection;
+- session updates and permission requests;
+- filesystem reads/writes;
+- terminal create/output/wait/kill/release;
+- JSON-RPC request cancellation;
+- stable text/resource-link prompt content and capability-gated image, audio,
+  and embedded resource content;
+- stdio MCP configuration plus capability-gated HTTP and SSE configuration;
+- paginated session discovery and stable `additionalDirectories` handling.
 
-## No `side` Primitive
+`session/set_config_option` is preferred when a session returns config options.
+`session/set_mode` remains a separate stable ACP operation and is used when a
+session exposes modes instead.
 
-ACP does not define `side`, `session/side`, or a hidden side-session primitive.
+`session/update` remains authoritative for streamed output. Matrix keeps the
+observer registered through a short post-response idle drain because a provider
+may emit the final update immediately after the prompt response.
 
-Matrix terms:
+## Capability rules
 
-- `sidecar`: Matrix-owned protocol-neutral auxiliary context.
-- `session/fork`: ACP branch primitive for a separate provider session.
-- `attach_context`: Matrix live-context action that requires provider-specific
-  proof and is not guaranteed by baseline ACP.
+- Text and `resource_link` are baseline prompt types.
+- Image, audio, and embedded resource blocks fail before `session/new` unless
+  their `promptCapabilities` flags are true.
+- HTTP/SSE MCP endpoints fail before `session/new` unless their
+  `mcpCapabilities` flags are true.
+- `additionalDirectories` is sent only when the stable session capability is
+  present, and every supplied path must be absolute.
+- Filesystem and terminal client methods are advertised only when Matrix has the
+  corresponding host backend.
+- Unknown incoming methods return JSON-RPC `-32601` unless an explicit Matrix
+  extension handler owns them.
 
-Mapping:
+## No `side` primitive
 
-- sidecar prompt context -> ACP `session/prompt` visible content plus `_meta`
-  correlation;
-- sidecar branch/artifact work -> ACP `session/fork` when advertised;
-- mid-turn live context -> provider-specific extension, cancel/restart, or
-  next-turn context; not baseline ACP.
+ACP does not define `side`, `session/side`, or a hidden side-session method.
+Matrix `sidecar` context is projected through ordinary prompt content and
+`_meta`. A provider branch uses the explicitly named draft `session/fork`
+action only when advertised. Mid-turn context injection remains provider-bound
+and cannot be inferred from baseline ACP.
 
-## Implemented ACP Surface
+## Experimental boundary
 
-`pkg/zedacp` and the Matrix ACP adapter currently cover:
+`session/fork` is draft and is reported as such. It is available only through
+the explicit fork workflow, never as a fallback.
 
-- `initialize`
-- `authenticate`
-- `session/new`
-- `session/load`
-- `session/list`
-- `session/resume`
-- `session/prompt`
-- `session/cancel`
-- `session/close`
-- `session/set_config_option`
-- `session/set_mode`
-- `session/fork`
-- `session/delete`
-- `logout` at the typed `pkg/zedacp` protocol layer
-- extension requests and notifications through explicit handlers only
-- `session_info_update`
-- `config_option_update`
-- `plan`
-- `available_commands_update`
-- `current_mode_update`
-- `agent_thought_chunk`
-- `tool_call` and `tool_call_update`, including ACP `content`, `diff`, and
-  `terminal` tool content variants
-- `usage_update` as an unstable/audit event projection
-- client filesystem requests, including `line` and `limit` on `fs/read_text_file`
-- client terminal lifecycle requests: `terminal/create`, `terminal/output`,
-  `terminal/wait_for_exit`, `terminal/kill`, and `terminal/release`
+Provider configuration, model selection, NES/document events, elicitation,
+MCP-over-ACP, and Streamable HTTP are draft or unstable. Matrix does not claim
+them as stable coverage. Any experiment must be separately named, non-default,
+capability-gated, and removable under ZERO-LEGACY governance.
 
-Matrix prefers stable session config options over legacy `modes`. If a provider
-returns `configOptions`, Matrix selects through `session/set_config_option` and
-uses `modes` only as a fallback for transition-period agents.
+## Verification
 
-Matrix does not auto-approve unknown agent-to-client JSON-RPC methods. Unknown
-methods return JSON-RPC `-32601 Method not found` unless a Matrix extension
-handler has been explicitly registered.
-
-Prompt content supports text plus additional ACP content blocks
-(`resource_link`, `resource`, `image`, `audio`) when a channel/runtime supplies
-them. Channel adapters remain responsible for respecting provider
-`promptCapabilities` before sending optional non-text blocks.
-
-ACP `session/update` notifications remain authoritative for streamed output.
-Matrix keeps prompt/load observers registered through a short post-response idle
-drain because real providers can emit the final `agent_message_chunk`
-immediately after the JSON-RPC `session/prompt` response. This is not a timeout
-on agent execution; it is a transport-drain guard that prevents false empty
-outputs after a completed prompt.
-
-## Tracked Latest Schema Deltas
-
-Matrix models the current unstable/draft fields needed for forward compatibility:
-
-- `additionalDirectories` on new/load/resume/fork requests and session info;
-- structured auth methods, including `env_var.vars[]`, terminal method
-  metadata, auth `_meta`, and `AuthEnvVar.secret` defaulting to `true`;
-- `messageId` on prompt requests;
-- `userMessageId`, `usage`, and `_meta` on prompt responses;
-- `nextCursor` and request filters on `session/list`.
-- MCP server lists on `session/new`, `session/load`, `session/resume`, and
-  `session/fork` when Matrix is configured to provide them.
-- typed package calls for current draft `$/cancel_request`,
-  `providers/list`, `providers/set`, `providers/disable`, and
-  `session/set_model`; stable `logout` is typed but not exposed as a Matrix
-  runtime action yet.
-
-Usage rules:
-
-- `additionalDirectories` must be sent only when the provider advertises
-  `sessionCapabilities.additionalDirectories`; it must not be sent on
-  `session/list`. Matrix ingress must reject relative
-  `additional_directories` values before an ACP lifecycle call is emitted.
-- current `authenticate` requests carry `methodId` only. Matrix omits legacy
-  credential payloads on the first call and retries with legacy credentials only
-  for older adapters that reject the current shape.
-- `terminal/create` capability is agent-first automation: Matrix advertises it
-  when a process backend is configured and can auto-approve according to trust
-  mode. `auth.terminal` is a human-interaction promise and is not advertised by
-  the autonomous runtime path until a frontend explicitly owns that login loop.
-- `messageId` is optional and should be generated only when Matrix needs
-  explicit user-message correlation.
-- generic `$/cancel_request` is typed in `pkg/zedacp` but must not replace
-  `session/cancel` for prompt-turn semantics without request-id tracking.
-- extension methods must be explicitly registered by Matrix or a caller; silent
-  success for unknown methods is forbidden because it hides protocol drift.
-
-Stable lifecycle deltas confirmed on 2026-05-21:
-
-- `session/list` is stable and remains capability-gated by
-  `sessionCapabilities.list`.
-- `session/resume` is stable and capability-gated by
-  `sessionCapabilities.resume`; Matrix prefers it before `session/load`.
-- `session/close` is stable and capability-gated by
-  `sessionCapabilities.close`.
-- `session_info_update` is stable through `session/update`.
-- `session/set_config_option` and `config_option_update` are stable. The
-  response/update carries the full `configOptions` state.
-- `plan`, `agent_thought_chunk`, `tool_call`, `tool_call_update`,
-  `available_commands_update`, `current_mode_update`, and
-  `session_info_update` are projected into Matrix runtime events with raw ACP
-  payloads retained in protocol metadata.
-
-## Future Surfaces
-
-Matrix should treat these as optional, capability-gated integrations:
-
-- provider configuration;
-- logout;
-- terminal auth UX;
-- NES/document events;
-- elicitation;
-- Streamable HTTP.
-- `session/set_model`;
-- `usage_update` beyond audit projection.
-
-None of these replaces Matrix sidecar capsules or channel-neutral session
-actions.
-
-## Test Expectations
-
-Any ACP compliance change must include at least one of:
-
-- package-level wire/schema test in `pkg/zedacp`;
-- adapter-level capability/projection test in `internal/providers/agents`;
-- real-provider smoke with at least three available providers when the change
-  affects runtime behavior.
-
-Real-provider smoke command:
+Protocol changes require package wire tests, adapter capability/projection
+tests, governance, and a real provider smoke when runtime behavior changes:
 
 ```bash
-MATRIX_SMOKE_TEST=1 \
-MATRIX_REAL_ACP_PROVIDERS='opencode=opencode acp --pure;codex=codex-acp;gemini=gemini --acp --yolo' \
-go test ./tests/integration -run TestSmoke_RealACPProviderLifecycleCompliance -v -count=1 -timeout 20m
+go run ./scripts/governance_check --manifest governance/manifest.toml
+go test ./pkg/zedacp ./internal/providers/agents
+MATRIX_SMOKE_TEST=1 go test ./tests/integration -run TestSmoke_RealACPProviderLifecycleCompliance -v -count=1 -timeout 20m
 ```
-
-Run-owned OpenCode fork cleanup smoke:
-
-```bash
-MATRIX_SMOKE_TEST=1 MATRIX_OPENCODE_ACP_STDIO=1 \
-go test ./tests/integration -run 'TestOpenCode.*Fork.*Cleanup' -v -count=1 -timeout 20m
-```
-
-Latest recorded evidence:
-
-- 2026-07-15: `matrix install codex` materialized
-  `@agentclientprotocol/codex-acp` 1.1.2 under `MATRIX_HOME/agents/codex` and
-  registered absolute Node and provider entrypoint paths. A daemon launched
-  with the system service PATH (without NVM entries) reported
-  `ready_on_demand`; API run `run-ba65b752-f597-4027-a848-6fa8dbf579ec`
-  completed with terminal event `run.completed` after 11 events.
-- 2026-07-15: `@agentclientprotocol/codex-acp` 1.1.2 completed real ACP
-  initialize, session discovery, new session, prompt, permission callback,
-  file/terminal proof tokens, and `end_turn` under the daemon-like system PATH
-  with `/usr/bin/node` 18.19.1. Matrix preserved provider exit code and bounded,
-  sanitized stderr in the separate fake-provider crash test.
-- 2026-05-21: real ACP provider lifecycle smoke passed against OpenCode,
-  `codex-acp`, and Gemini with initialize, session discovery/load-or-resume,
-  prompt execution, permission auto-approval where requested, file/terminal
-  proof tokens, and transport cleanup.
-- 2026-05-04: real OpenCode ACP run-owned fork cleanup smoke passed with one
-  parent session, two fork artifact child sessions, strong child cleanup proofs,
-  strong final parent cleanup, and no new retained `opencode acp` process after
-  router close.
-- 2026-05-04: real OpenCode ACP HTTP/session-action smoke passed with one live
-  parent, five standalone fork child route/cleanup cycles through `/v1/runs` and
-  `/v1/session-actions`, strong child cleanup proofs, strong final parent
-  cleanup, and no new retained `opencode acp` process.
-- 2026-05-04 historical evidence: OpenCode `1.4.1`, `@zed-industries/codex-acp 0.13.0`
-  over `@openai/codex 0.128.0`, and Gemini CLI `0.40.1` all completed real
-  ACP initialize/new/prompt flows and returned provider-specific LLM proof
-  tokens from temporary workspaces.
-- OpenCode advertised `list`, `resume`, and draft `fork`; `session/list` and
-  `session/resume` succeeded in the real probe.
-- The historical Codex probe advertised `list`, `close`, and `loadSession`; `session/list` returned
-  an empty persisted-session set for the temporary workspace and prompt
-  processing succeeded after upgrading `@zed-industries/codex-acp` from
-  `0.11.1` to `0.13.0`.
-- Gemini advertised `loadSession`; for a fresh temporary workspace it returned
-  the provider error "No previous sessions found", then completed prompt
-  processing and requested ACP `session/request_permission`.
-- OpenCode and Codex did not call Matrix client-side `fs/*` or `terminal/*`
-  requests in the probe; they used provider-native tool calls and emitted
-  structural `tool_call` updates. Gemini requested ACP permission and emitted
-  tool updates. Matrix must therefore preserve structural updates and avoid
-  assuming every real provider uses client request methods for tool execution.

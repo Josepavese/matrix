@@ -27,7 +27,6 @@ func (m *Manager) Route(ctx context.Context, channelID string, agentID string, i
 func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.ConversationRequest, preResolvedSessionID string, fallbackAgentID string) (string, error) {
 	channelID := req.ChannelID
 	agentID := req.AgentID
-	input := req.Input
 	notifier := req.Notifier
 	log := slog.With("component", "session_manager", "channel", channelID)
 	if strings.TrimSpace(agentID) == "" {
@@ -44,7 +43,7 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 			return "", fmt.Errorf("failed to route session: %w", err)
 		}
 	}
-	log.Info("routing channel input", "event", "route_started", "logical_session", sessionID, "requested_agent", agentID, "input_len", len(input))
+	log.Info("routing channel input", "event", "route_started", "logical_session", sessionID, "requested_agent", agentID, "input_len", len(req.Input))
 
 	queue := m.getOrCreateQueue(channelID)
 	seq := queue.NextSeq()
@@ -56,24 +55,26 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 	if header, ok := notifier.(interface{ SetLogicalSession(string, string) }); ok {
 		header.SetLogicalSession(sessionID, meta.WorkspaceID)
 	}
-	if strings.TrimSpace(input) != "" {
-		m.recordWorkspaceTurn(meta, "user", input)
+	if strings.TrimSpace(req.Input) != "" {
+		m.recordWorkspaceTurn(meta, "user", req.Input)
 	}
-	message := input
+	message := req.Input
 	if handoffPrompt := renderHandoffPrompt(meta.PendingHandoff); handoffPrompt != "" {
-		message = handoffPrompt + "\n\nUser request:\n" + input
+		message = handoffPrompt + "\n\nUser request:\n" + req.Input
 	}
 	responseTxt, newAgentSessionID, toolCalls, metadata, routeErr := m.router.Route(ctx, middleware.RouteRequest{
-		AgentID:               effectiveAgentID,
-		LogicalSessionID:      sessionID,
-		AgentSessionID:        meta.AgentSessionID,
-		WorkspacePath:         meta.WorkspacePath,
-		Message:               message,
-		ContentBlocks:         req.ContentBlocks,
-		SidecarCapsules:       req.SidecarCapsules,
-		AdditionalDirectories: req.AdditionalDirectories,
-		AgentLaunchArgs:       req.AgentLaunchArgs,
-		ThoughtNotifier:       notifier,
+		AgentID:                  effectiveAgentID,
+		LogicalSessionID:         sessionID,
+		AgentSessionID:           meta.AgentSessionID,
+		WorkspacePath:            meta.WorkspacePath,
+		Message:                  message,
+		ContentBlocks:            req.ContentBlocks,
+		ExtensionURIs:            req.ExtensionURIs,
+		ReferencedRemoteSessions: req.ReferencedRemoteSessions,
+		SidecarCapsules:          req.SidecarCapsules,
+		AdditionalDirectories:    req.AdditionalDirectories,
+		AgentLaunchArgs:          req.AgentLaunchArgs,
+		ThoughtNotifier:          notifier,
 	})
 	m.applyPendingHandoff(&meta, channelID, log, routeErr)
 

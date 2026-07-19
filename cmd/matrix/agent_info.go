@@ -68,6 +68,9 @@ var agentInfoCmd = &cobra.Command{
 		if record.CardURL != "" {
 			fmt.Printf("Card URL:     %s\n", record.CardURL)
 		}
+		if record.Tenant != "" {
+			fmt.Printf("Tenant:       %s\n", record.Tenant)
+		}
 		if record.Repository != "" {
 			fmt.Printf("Repository:   %s\n", record.Repository)
 		}

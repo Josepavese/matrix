@@ -1,36 +1,20 @@
 package agentmgr
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
+	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/logic/agentidentity"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
-// AgentConfig represents how to launch and communicate with a specific agent.
-type AgentConfig struct {
-	Command         string   `json:"command"`
-	Args            []string `json:"args"`
-	Env             []string `json:"env,omitempty"`
-	Protocol        string   `json:"protocol,omitempty"`
-	Kind            string   `json:"kind,omitempty"`
-	Transport       string   `json:"transport,omitempty"`
-	Address         string   `json:"address,omitempty"`
-	CardURL         string   `json:"card_url,omitempty"`
-	ProtocolVersion string   `json:"protocol_version,omitempty"`
-	HealthcheckPath string   `json:"healthcheck_path"`
-	EnvIsolation    bool     `json:"env_isolation"`
-	Active          *bool    `json:"active,omitempty"`
-}
-
-// IsActive returns whether the agent should be considered enabled.
-// Missing values default to true by policy.
-func (c AgentConfig) IsActive() bool {
-	return c.Active == nil || *c.Active
-}
+// AgentConfig is the runtime view of the current governed endpoint config.
+type AgentConfig = agentcfg.Config
 
 // Registry handles loading the SSOT definitions for available agents.
 type Registry struct {
@@ -51,23 +35,10 @@ func NewRegistry(_ middleware.ConfigReader, store middleware.Storage) (*Registry
 			return nil, err
 		}
 
-		// Map Entry (storable) to AgentConfig (runtime).
-		cfg := AgentConfig{
-			Command:         entry.Config.Command,
-			Args:            append([]string{}, entry.Config.Args...),
-			Env:             append([]string{}, entry.Config.Env...),
-			Protocol:        entry.Config.Kind,
-			Kind:            entry.Config.Kind,
-			Transport:       entry.Config.Transport,
-			Address:         entry.Config.Address,
-			CardURL:         entry.Config.CardURL,
-			ProtocolVersion: entry.Config.ProtocolVersion,
-			HealthcheckPath: entry.Config.HealthcheckPath,
-			EnvIsolation:    entry.Config.EnvIsolation,
-			Active:          entry.Config.Active,
-		}
-		endpoint := protocolEndpointFromAgentConfig(cfg)
-		cfg.Protocol = string(endpoint.Kind)
+		cfg := entry.Config
+		cfg.Args = append([]string{}, cfg.Args...)
+		cfg.Env = append([]string{}, cfg.Env...)
+		cfg.Headers = agentcfg.CloneHeaders(cfg.Headers)
 
 		// Apply user overrides
 		if entry.Override.Active != nil {
@@ -130,8 +101,16 @@ func SeedFromConfigFile(store middleware.Storage, configReader middleware.Config
 	}
 
 	var configs map[string]AgentConfig
-	if err := json.Unmarshal(data, &configs); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&configs); err != nil {
+		if strings.Contains(err.Error(), `unknown field "protocol"`) {
+			return fmt.Errorf("retired agent config field %q; use %q: %w", "protocol", "kind", err)
+		}
 		return fmt.Errorf("failed to parse agent config file %s: %w", path, err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("failed to parse agent config file %s: trailing JSON data", path)
 	}
 
 	for id, cfg := range configs {
@@ -149,6 +128,8 @@ func SeedFromConfigFile(store middleware.Storage, configReader middleware.Config
 				Command:         cfg.Command,
 				Args:            cfg.Args,
 				Env:             cfg.Env,
+				Headers:         agentcfg.CloneHeaders(cfg.Headers),
+				Tenant:          cfg.Tenant,
 				Kind:            cfg.Kind,
 				Transport:       cfg.Transport,
 				Address:         cfg.Address,
@@ -171,6 +152,8 @@ func protocolEndpointFromAgentConfig(cfg AgentConfig) middleware.ProtocolEndpoin
 		Command:         cfg.Command,
 		Args:            cfg.Args,
 		Env:             cfg.Env,
+		Headers:         agentcfg.CloneHeaders(cfg.Headers),
+		Tenant:          cfg.Tenant,
 		Kind:            cfg.Kind,
 		Transport:       cfg.Transport,
 		Address:         cfg.Address,

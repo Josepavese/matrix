@@ -32,11 +32,15 @@ func (c *acpConversationClient) createACPRemoteSession(ctx context.Context, req 
 	if err != nil {
 		return nil, err
 	}
+	mcpServers, err := c.materializeMCPServers(req.McpServers)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.client.NewSession(ctx, acpNewSessionRequest{
 		ClientTitle:           strings.TrimSpace(req.LogicalSessionID),
 		Cwd:                   cwd,
 		AdditionalDirectories: additionalDirectories,
-		McpServers:            c.materializeMCPServers(req.McpServers),
+		McpServers:            mcpServers,
 		Tools:                 toZedACPTools(req.Tools),
 	})
 	if err != nil {
@@ -46,9 +50,15 @@ func (c *acpConversationClient) createACPRemoteSession(ctx context.Context, req 
 	return resp, nil
 }
 
-func (c *acpConversationClient) materializeMCPServers(reqServers []middleware.McpServerConfig) []acpMcpServerConfig {
+func (c *acpConversationClient) materializeMCPServers(reqServers []middleware.McpServerConfig) ([]acpMcpServerConfig, error) {
+	var servers []acpMcpServerConfig
 	if len(reqServers) > 0 {
-		return toZedACPMCPServers(reqServers)
+		servers = toZedACPMCPServers(reqServers)
+	} else {
+		servers = cloneACPMCPServers(c.mcpServers)
 	}
-	return cloneACPMCPServers(c.mcpServers)
+	if err := c.validateMCPServers(servers); err != nil {
+		return nil, err
+	}
+	return servers, nil
 }

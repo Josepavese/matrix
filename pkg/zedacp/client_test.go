@@ -105,7 +105,7 @@ func (o *postResponseDrainObserver) WaitIdle(_ context.Context, _ time.Duration)
 	o.client.handleNotification(sessionUpdateResponse(o.t, o.sessionID, "late-final"))
 }
 
-func TestSessionLifecycleRequestsMarshalLatestUnstableFields(t *testing.T) {
+func TestSessionLifecycleRequestsMarshalStableDirectoriesAndDraftFork(t *testing.T) {
 	forkReq := ForkSessionRequest{
 		SessionID:             "sess_parent",
 		Cwd:                   "/workspace/main",
@@ -316,37 +316,59 @@ func TestConfigOptionAcceptsExtensionScalarCurrentValue(t *testing.T) {
 	if opt.Current != "true" {
 		t.Fatalf("expected boolean currentValue to become string, got %#v", opt.Current)
 	}
+	if opt.BooleanCurrent == nil || !*opt.BooleanCurrent {
+		t.Fatalf("expected typed boolean currentValue, got %#v", opt.BooleanCurrent)
+	}
 }
 
-func TestInitializeUnmarshalCurrentAuthMethodsAndModels(t *testing.T) {
+func TestBooleanConfigOptionWireShape(t *testing.T) {
+	transport := newMethodRecordingTransport(t, map[string]json.RawMessage{
+		"session/set_config_option": json.RawMessage(`{"configOptions":[{"id":"reasoning","name":"Reasoning","type":"boolean","currentValue":true}]}`),
+	})
+	client := NewClient(context.Background(), transport)
+	defer client.Close()
+
+	response, err := client.SetConfigOption(context.Background(), SetSessionConfigOptionRequest{
+		SessionID: "session-1",
+		ConfigID:  "reasoning",
+		Type:      "boolean",
+		Value:     true,
+	})
+	if err != nil {
+		t.Fatalf("set boolean config option: %v", err)
+	}
+	if len(response.ConfigOptions) != 1 || response.ConfigOptions[0].BooleanCurrent == nil || !*response.ConfigOptions[0].BooleanCurrent {
+		t.Fatalf("boolean current value was not preserved: %#v", response.ConfigOptions)
+	}
+	var sent jsonRPCRequest
+	if err := json.Unmarshal(transport.sentForMethod("session/set_config_option"), &sent); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	var params map[string]interface{}
+	if err := json.Unmarshal(sent.Params, &params); err != nil {
+		t.Fatalf("decode params: %v", err)
+	}
+	if params["type"] != "boolean" || params["value"] != true {
+		t.Fatalf("unexpected boolean config wire shape: %#v", params)
+	}
+}
+
+func TestInitializeUnmarshalStableAuthMethodsAndModels(t *testing.T) {
 	var resp InitializeResponse
 	if err := json.Unmarshal([]byte(`{
 		"protocolVersion": 1,
 		"authMethods": [{
-			"type": "env_var",
+			"type": "agent",
 			"id": "openai",
 			"name": "OpenAI",
-			"link": "https://platform.openai.com/api-keys",
-			"vars": [{"name": "OPENAI_API_KEY", "label": "API key", "secret": true}],
+			"description": "Authenticate in the agent",
 			"_meta": {"source": "test"}
-		}, {
-			"type": "terminal",
-			"id": "terminal",
-			"name": "Terminal",
-			"args": ["auth"],
-			"env": {"NO_COLOR": "1"}
 		}]
 	}`), &resp); err != nil {
 		t.Fatalf("unmarshal initialize response: %v", err)
 	}
-	if len(resp.AuthMethods) != 2 || resp.AuthMethods[0].Name != "OpenAI" {
+	if len(resp.AuthMethods) != 1 || resp.AuthMethods[0].Type != "agent" || resp.AuthMethods[0].Name != "OpenAI" {
 		t.Fatalf("unexpected auth methods: %#v", resp.AuthMethods)
-	}
-	if len(resp.AuthMethods[0].Vars) != 1 || resp.AuthMethods[0].Vars[0].Name != "OPENAI_API_KEY" {
-		t.Fatalf("expected env_var vars surface: %#v", resp.AuthMethods[0])
-	}
-	if got := resp.AuthMethods[1].Env["NO_COLOR"]; got != "1" {
-		t.Fatalf("expected terminal env surface, got %#v", resp.AuthMethods[1])
 	}
 
 	var newResp NewSessionResponse
@@ -364,19 +386,13 @@ func TestInitializeUnmarshalCurrentAuthMethodsAndModels(t *testing.T) {
 	}
 }
 
-func TestAuthEnvVarDefaultsSecretToTrue(t *testing.T) {
-	var variable AuthEnvVar
-	if err := json.Unmarshal([]byte(`{"name":"OPENAI_API_KEY"}`), &variable); err != nil {
-		t.Fatalf("unmarshal auth env var: %v", err)
+func TestInitializeResponseRejectsRetiredCapabilitiesField(t *testing.T) {
+	var response InitializeResponse
+	if err := json.Unmarshal([]byte(`{"protocolVersion":1,"capabilities":{"loadSession":true}}`), &response); err != nil {
+		t.Fatalf("unmarshal initialize response: %v", err)
 	}
-	if !variable.Secret {
-		t.Fatalf("auth env var secret must default to true: %#v", variable)
-	}
-	if err := json.Unmarshal([]byte(`{"name":"AZURE_OPENAI_ENDPOINT","secret":false}`), &variable); err != nil {
-		t.Fatalf("unmarshal non-secret auth env var: %v", err)
-	}
-	if variable.Secret {
-		t.Fatalf("explicit secret=false must be preserved: %#v", variable)
+	if response.Capabilities != nil {
+		t.Fatalf("retired capabilities field must not be accepted: %#v", response.Capabilities)
 	}
 }
 
@@ -384,38 +400,38 @@ func TestSessionResponsePreservesUnknownDraftModels(t *testing.T) {
 	var resp NewSessionResponse
 	if err := json.Unmarshal([]byte(`{
 		"sessionId": "sess-1",
-		"models": {"current": "legacy-shape", "available": ["x"]}
+		"models": {"current": "unknown-draft-shape", "available": ["x"]}
 	}`), &resp); err != nil {
 		t.Fatalf("unmarshal permissive models response: %v", err)
 	}
 	if resp.Models != nil {
 		t.Fatalf("unknown draft models shape should not decode as typed state: %#v", resp.Models)
 	}
-	if !bytes.Contains(resp.RawModels, []byte(`"legacy-shape"`)) {
+	if !bytes.Contains(resp.RawModels, []byte(`"unknown-draft-shape"`)) {
 		t.Fatalf("raw models should preserve unknown draft shape: %s", resp.RawModels)
 	}
 }
 
-func TestAuthenticateOmitsCredentialsWhenEmpty(t *testing.T) {
+func TestAuthenticateUsesStableMethodIDOnly(t *testing.T) {
 	transport := newMethodRecordingTransport(t, map[string]json.RawMessage{
 		"authenticate": json.RawMessage(`{}`),
 	})
 	client := NewClient(context.Background(), transport)
 	defer client.Close()
 
-	if err := client.Authenticate(context.Background(), "env", nil); err != nil {
+	if err := client.Authenticate(context.Background(), "agent"); err != nil {
 		t.Fatalf("authenticate: %v", err)
 	}
 	var sent jsonRPCRequest
 	if err := json.Unmarshal(transport.sentForMethod("authenticate"), &sent); err != nil {
 		t.Fatalf("unmarshal authenticate request: %v", err)
 	}
-	if bytes.Contains(sent.Params, []byte(`"credentials"`)) {
-		t.Fatalf("current authenticate request must omit empty legacy credentials: %s", sent.Params)
+	if bytes.Contains(sent.Params, []byte(`"credentials"`)) || !bytes.Contains(sent.Params, []byte(`"methodId":"agent"`)) {
+		t.Fatalf("stable authenticate request must contain methodId only: %s", sent.Params)
 	}
 }
 
-func TestClientUnstableProviderModelLogoutAndCancelSurfaces(t *testing.T) {
+func TestClientExperimentalProviderModelAndStableControlSurfaces(t *testing.T) {
 	transport := newMethodRecordingTransport(t, map[string]json.RawMessage{
 		"providers/list":    json.RawMessage(`{"providers":[{"id":"main","supported":["openai","anthropic"],"required":false,"current":{"apiType":"openai","baseUrl":"https://api.openai.com/v1"}}]}`),
 		"providers/set":     json.RawMessage(`{"_meta":{"ok":true}}`),

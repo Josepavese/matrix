@@ -25,7 +25,7 @@ type RequestHandler interface {
 // ClientAPI defines the typed ACP methods exposed by the client.
 type ClientAPI interface {
 	Initialize(ctx context.Context, req InitializeRequest) (*InitializeResponse, error)
-	Authenticate(ctx context.Context, methodID string, credentials map[string]string) error
+	Authenticate(ctx context.Context, methodID string) error
 	NewSession(ctx context.Context, req NewSessionRequest) (*NewSessionResponse, error)
 	LoadSession(ctx context.Context, req LoadSessionRequest, observer SessionObserver) (*LoadSessionResponse, error)
 	ResumeSession(ctx context.Context, req ResumeSessionRequest) (*ResumeSessionResponse, error)
@@ -35,18 +35,24 @@ type ClientAPI interface {
 	CancelRequest(ctx context.Context, req CancelRequestNotification) error
 	CloseSession(ctx context.Context, sessionID string) error
 	DeleteSession(ctx context.Context, sessionID string) error
-	ForkSession(ctx context.Context, req ForkSessionRequest) (*ForkSessionResponse, error)
 	Prompt(ctx context.Context, req PromptRequest, observer SessionObserver) (*PromptResponse, error)
 	SetRequestHandler(handler RequestHandler)
 	SetMode(ctx context.Context, sessionID, modeID string) error
 	SetConfigOption(ctx context.Context, req SetSessionConfigOptionRequest) (*SetSessionConfigOptionResponse, error)
+	Logout(ctx context.Context, req LogoutRequest) (*LogoutResponse, error)
+	ExtRequest(ctx context.Context, method string, params interface{}, result interface{}) error
+	ExtNotification(ctx context.Context, method string, params interface{}) error
+}
+
+// ExperimentalClientAPI contains explicitly non-stable ACP v1 operations.
+// It is separate so callers cannot mistake draft surfaces for the stable
+// ClientAPI contract.
+type ExperimentalClientAPI interface {
+	ForkSession(ctx context.Context, req ForkSessionRequest) (*ForkSessionResponse, error)
 	SetSessionModel(ctx context.Context, req SetSessionModelRequest) (*SetSessionModelResponse, error)
 	ListProviders(ctx context.Context, req ListProvidersRequest) (*ListProvidersResponse, error)
 	SetProvider(ctx context.Context, req SetProvidersRequest) (*SetProvidersResponse, error)
 	DisableProvider(ctx context.Context, req DisableProvidersRequest) (*DisableProvidersResponse, error)
-	Logout(ctx context.Context, req LogoutRequest) (*LogoutResponse, error)
-	ExtRequest(ctx context.Context, method string, params interface{}, result interface{}) error
-	ExtNotification(ctx context.Context, method string, params interface{}) error
 }
 
 type InitializeRequest struct {
@@ -56,18 +62,26 @@ type InitializeRequest struct {
 }
 
 type ClientCapabilities struct {
-	Fs                *FsCapability          `json:"fs,omitempty"`
-	Terminal          bool                   `json:"terminal,omitempty"`
-	Auth              *AuthCapabilities      `json:"auth,omitempty"`
-	Elicitation       map[string]interface{} `json:"elicitation,omitempty"`
-	Nes               map[string]interface{} `json:"nes,omitempty"`
-	PositionEncodings []string               `json:"positionEncodings,omitempty"`
-	Meta              map[string]interface{} `json:"_meta,omitempty"`
+	Fs       *FsCapability              `json:"fs,omitempty"`
+	Terminal bool                       `json:"terminal,omitempty"`
+	Session  *ClientSessionCapabilities `json:"session,omitempty"`
+	Meta     map[string]interface{}     `json:"_meta,omitempty"`
 }
 
-type AuthCapabilities struct {
-	Terminal bool                   `json:"terminal,omitempty"`
-	Meta     map[string]interface{} `json:"_meta,omitempty"`
+type ClientSessionCapabilities struct {
+	ConfigOptions *SessionConfigOptionsCapabilities `json:"configOptions,omitempty"`
+	Meta          map[string]interface{}            `json:"_meta,omitempty"`
+}
+
+type SessionConfigOptionsCapabilities struct {
+	Boolean *BooleanConfigOptionCapabilities `json:"boolean,omitempty"`
+	Meta    map[string]interface{}           `json:"_meta,omitempty"`
+}
+
+// BooleanConfigOptionCapabilities is intentionally empty: in ACP v1 the
+// presence of an empty object advertises support for boolean config options.
+type BooleanConfigOptionCapabilities struct {
+	Meta map[string]interface{} `json:"_meta,omitempty"`
 }
 
 type FsCapability struct {
@@ -75,8 +89,7 @@ type FsCapability struct {
 	WriteTextFile bool `json:"writeTextFile"`
 }
 
-// InitializeResponse accepts both the current `agentCapabilities` field name and
-// the older compatibility field name `capabilities`.
+// InitializeResponse decodes the stable ACP v1 initialization response.
 type InitializeResponse struct {
 	ProtocolVersion int                    `json:"protocolVersion,omitempty"`
 	AgentInfo       map[string]interface{} `json:"agentInfo,omitempty"`
@@ -89,7 +102,6 @@ func (r *InitializeResponse) UnmarshalJSON(data []byte) error {
 		ProtocolVersion   int                    `json:"protocolVersion,omitempty"`
 		AgentInfo         map[string]interface{} `json:"agentInfo,omitempty"`
 		AgentCapabilities map[string]interface{} `json:"agentCapabilities,omitempty"`
-		Capabilities      map[string]interface{} `json:"capabilities,omitempty"`
 		AuthMethods       []AuthMethod           `json:"authMethods,omitempty"`
 	}
 	var raw alias
@@ -99,11 +111,7 @@ func (r *InitializeResponse) UnmarshalJSON(data []byte) error {
 	r.ProtocolVersion = raw.ProtocolVersion
 	r.AgentInfo = raw.AgentInfo
 	r.AuthMethods = raw.AuthMethods
-	if raw.AgentCapabilities != nil {
-		r.Capabilities = raw.AgentCapabilities
-	} else {
-		r.Capabilities = raw.Capabilities
-	}
+	r.Capabilities = raw.AgentCapabilities
 	return nil
 }
 
@@ -112,43 +120,7 @@ type AuthMethod struct {
 	ID          string                 `json:"id,omitempty"`
 	Name        string                 `json:"name,omitempty"`
 	Description string                 `json:"description,omitempty"`
-	Link        string                 `json:"link,omitempty"`
-	Vars        []AuthEnvVar           `json:"vars,omitempty"`
-	Args        []string               `json:"args,omitempty"`
-	Env         map[string]string      `json:"env,omitempty"`
-	EnvVar      string                 `json:"envVar,omitempty"`
 	Meta        map[string]interface{} `json:"_meta,omitempty"`
-}
-
-type AuthEnvVar struct {
-	Name     string                 `json:"name"`
-	Label    string                 `json:"label,omitempty"`
-	Optional bool                   `json:"optional,omitempty"`
-	Secret   bool                   `json:"secret,omitempty"`
-	Meta     map[string]interface{} `json:"_meta,omitempty"`
-}
-
-func (v *AuthEnvVar) UnmarshalJSON(data []byte) error {
-	type rawAuthEnvVar struct {
-		Name     string                 `json:"name"`
-		Label    string                 `json:"label,omitempty"`
-		Optional bool                   `json:"optional,omitempty"`
-		Secret   *bool                  `json:"secret,omitempty"`
-		Meta     map[string]interface{} `json:"_meta,omitempty"`
-	}
-	var raw rawAuthEnvVar
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	v.Name = raw.Name
-	v.Label = raw.Label
-	v.Optional = raw.Optional
-	v.Secret = true
-	if raw.Secret != nil {
-		v.Secret = *raw.Secret
-	}
-	v.Meta = raw.Meta
-	return nil
 }
 
 type NewSessionResponse struct {
@@ -330,14 +302,15 @@ func looksLikeSessionModelState(state SessionModelState) bool {
 }
 
 type ConfigOption struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	Category    string                 `json:"category,omitempty"`
-	Type        string                 `json:"type,omitempty"`
-	Options     []ConfigOptionValue    `json:"options,omitempty"`
-	Current     string                 `json:"currentValue,omitempty"`
-	Meta        map[string]interface{} `json:"_meta,omitempty"`
+	ID             string                 `json:"id"`
+	Name           string                 `json:"name"`
+	Description    string                 `json:"description,omitempty"`
+	Category       string                 `json:"category,omitempty"`
+	Type           string                 `json:"type,omitempty"`
+	Options        []ConfigOptionValue    `json:"options,omitempty"`
+	Current        string                 `json:"currentValue,omitempty"`
+	BooleanCurrent *bool                  `json:"-"`
+	Meta           map[string]interface{} `json:"_meta,omitempty"`
 }
 
 type ConfigOptionValue struct {
@@ -372,9 +345,24 @@ func (o *ConfigOption) UnmarshalJSON(data []byte) error {
 	if o.Current == "" {
 		o.Current = configScalarString(raw.Current)
 	}
+	o.BooleanCurrent = configBoolean(raw.CurrentValue)
+	if o.BooleanCurrent == nil {
+		o.BooleanCurrent = configBoolean(raw.Current)
+	}
 	o.Meta = raw.Meta
 	o.Options = decodeConfigOptions(raw.Options)
 	return nil
+}
+
+func configBoolean(data json.RawMessage) *bool {
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	var value bool
+	if err := json.Unmarshal(data, &value); err != nil {
+		return nil
+	}
+	return &value
 }
 
 func configScalarString(data json.RawMessage) string {
@@ -453,7 +441,8 @@ func looksLikeConfigValues(values []ConfigOptionValue) bool {
 type SetSessionConfigOptionRequest struct {
 	SessionID string                 `json:"sessionId"`
 	ConfigID  string                 `json:"configId"`
-	Value     string                 `json:"value"`
+	Type      string                 `json:"type,omitempty"`
+	Value     interface{}            `json:"value"`
 	Meta      map[string]interface{} `json:"_meta,omitempty"`
 }
 

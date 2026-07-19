@@ -23,18 +23,20 @@ type ChannelResponse struct {
 // workspace-aware callers. It keeps channel identity as ingress metadata while
 // letting the runtime resolve work context from workspace hints.
 type ConversationRequest struct {
-	ChannelID             string
-	AgentID               string
-	LogicalSessionID      string
-	WorkspaceID           string
-	WorkspacePath         string
-	Input                 string
-	ContentBlocks         []Content
-	SidecarCapsules       []SidecarCapsule
-	AdditionalDirectories []string
-	AgentLaunchArgs       []string
-	Notifier              ThoughtNotifier
-	NonInteractive        bool
+	ChannelID                string
+	AgentID                  string
+	LogicalSessionID         string
+	WorkspaceID              string
+	WorkspacePath            string
+	Input                    string
+	ContentBlocks            []Content
+	ExtensionURIs            []string
+	ReferencedRemoteSessions []string
+	SidecarCapsules          []SidecarCapsule
+	AdditionalDirectories    []string
+	AgentLaunchArgs          []string
+	Notifier                 ThoughtNotifier
+	NonInteractive           bool
 }
 
 // RunContextAttachmentRequest asks a runtime to inject provider-neutral sidecar

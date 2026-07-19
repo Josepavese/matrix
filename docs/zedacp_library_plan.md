@@ -79,129 +79,39 @@ Reference pages:
 
 ## Current Compliance Snapshot
 
-Last reviewed against the official ACP docs and latest Schema v1.14.0 on
-2026-06-18.
+Last reviewed against ACP stable Schema v1.19.0 on 2026-07-19.
 
-Implemented in `pkg/zedacp` and the Matrix ACP adapter:
+The normative operation/content/transport matrix is maintained in
+[`protocol_coverage.md`](protocol_coverage.md). `pkg/zedacp` owns the stable wire
+types and JSON-RPC client; `internal/providers/agents` owns capability checks and
+neutral projection. Middleware contains no ACP SDK imports.
 
-- `initialize`
-- `authenticate`
-- `session/new`
-- `session/load`
-- `session/list`
-- stable `session/resume`
-- `session/prompt`
-- `session/cancel` notification
-- stable `session/close`
-- stable `session/set_config_option`
-- `session/fork`
-- `session/delete`
-- `session_info_update`
-- client-side filesystem and terminal request handling used by Matrix
-- stdio, websocket, and unix transports
-- object-style capability parsing for current Zed `sessionCapabilities`
+Stable authentication accepts a method ID only, initialization reads
+`agentCapabilities` only, and optional session/content/MCP operations are
+capability-gated before traffic is sent. Filesystem and terminal callbacks are
+advertised only when their Matrix host backends exist.
 
-Newly tracked unstable/draft schema deltas:
+`session/fork` is the sole explicitly named draft opt-in. Other draft surfaces,
+including provider/model selection, NES/document events, elicitation,
+MCP-over-ACP, and Streamable HTTP, are not advertised by the production adapter.
+ACP has no stable `side` primitive; Matrix sidecars remain protocol-neutral.
 
-- `additionalDirectories` on new/load/resume/fork request and session info shapes
-- `messageId` / `userMessageId` on prompt request/response
-- typed `$/cancel_request` as generic JSON-RPC request cancellation
-- typed provider configuration, logout, and `session/set_model` package surfaces
-- current structured auth method shapes
-- NES/document event surfaces
-- elicitation surfaces
+## Remaining package work
 
-Important semantic conclusion:
+There is no known stable ACP coverage gap in the maintained table. Future work
+is packaging work, not a compatibility layer:
 
-- ACP does not expose `side`, `session/side`, or a side-session lifecycle method.
-- Matrix `sidecar` is a Matrix-owned protocol-neutral context concept.
-- ACP branch/side work must use capability-gated `session/fork`; live mid-turn context remains provider-specific and cannot be inferred from baseline ACP compatibility.
+1. keep the protocol facade isolated from Matrix host/runtime policy;
+2. run schema drift checks against the pinned upstream stable release;
+3. evaluate a third-party Go SDK only through the atomic replacement gate in
+   [`acp_sdk_evaluation.md`](acp_sdk_evaluation.md); and
+4. promote a draft feature only after upstream stable promotion or behind a
+   separately named, non-default experimental interface.
 
-## Compliance Work Still Open
+## Vault mirror direction
 
-### additionalDirectories policy
-
-Protocol value:
-
-- declare multi-root workspace scope without changing `cwd`
-
-Matrix impact:
-
-- the package and ACP adapter now model and propagate the field when callers
-  provide roots and the provider advertises support
-- Matrix still needs product policy for when PAL/workspace roots should be
-  forwarded automatically
-- usage must stay gated on `sessionCapabilities.additionalDirectories`; the
-  field must not be sent on `session/list`
-
-### Generic request cancellation
-
-Protocol value:
-
-- cancel individual JSON-RPC requests through `$/cancel_request`
-
-Matrix impact:
-
-- `pkg/zedacp` can emit the notification; Matrix could map Go
-  `context.Context` cancellation to ACP request ids
-- should not replace `session/cancel` for prompt-turn semantics until the official protocol makes that transition
-
-### Provider configuration/logout/model/NES/elicitation
-
-Protocol value:
-
-- richer editor-agent integration surfaces
-
-Matrix impact:
-
-- provider configuration, logout, and model selection have typed package calls,
-  but are not wired to Matrix runtime UX yet
-- useful for future channel UX, but not required for current Matrix production runtime
-- must remain optional and capability-gated
-
-### Streamable HTTP
-
-Protocol value:
-
-- support the ACP transport track beyond stdio/custom transports
-
-Matrix impact:
-
-- endpoint normalization
-- transport creation
-- health checks and doctor/runtime reporting
-
-## Vault Mirror Direction
-
-Target model:
-
-- Matrix vault is not the authority over ACP/A2A session state
-- Matrix vault becomes the local mirror used for:
-  - list
-  - update
-  - delete
-  - recovery
-  - diagnostics
-
-That means:
-
-1. ACP/A2A remote state changes should update the vault mirror
-2. Matrix commands should prefer remote protocol operations first when available
-3. vault records should explicitly track:
-   - local logical session id
-   - remote protocol kind
-   - remote session/task id
-   - mirrored metadata
-   - sync status
-
-## Recommended Sequence
-
-1. keep Matrix consuming `pkg/zedacp` only through adapters
-2. define product policy for when Matrix should supply `additionalDirectories`
-3. evaluate generic `$/cancel_request` below the existing prompt-turn cancellation layer
-4. evaluate provider configuration/logout/model selection only when a real agent requires them
-5. evaluate NES/document events as editor-style context signals, not as Matrix sidecar replacement
-6. evaluate elicitation as a structured user-input surface for channels
-7. evaluate Streamable HTTP
-
-This order maximizes value to Matrix while also making the ACP package more standalone.
+Matrix stores a local mirror for routing, recovery, diagnostics, and cleanup
+proof. Remote protocol operations remain authoritative for remote lifecycle.
+The mirror records the logical session, protocol kind, remote session/task ID,
+metadata, and synchronization status; it must never emulate an unsupported
+remote operation.

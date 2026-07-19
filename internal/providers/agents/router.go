@@ -319,7 +319,8 @@ func configOptionIDs(values []middleware.ConfigOptionValue) []string {
 	return out
 }
 
-// pickAutoApproveMode finds the most permissive legacy mode from the session/new response.
+// pickAutoApproveMode finds the most permissive stable mode from the session/new response
+// when the provider does not return stable config options.
 // Priority: build > yolo > auto > autoEdit > code > agent > first available.
 // Mode IDs are agent-defined strings, so we match case-insensitively against
 // known write-enabled mode names. "build" is opencode's write mode, "yolo" is
@@ -365,26 +366,40 @@ func pickPreferredID(available []string) string {
 //  4. Collect final response and return
 func (r *Router) executePrompt(ctx context.Context, client middleware.ConversationClient, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
 	turn := middleware.ConversationTurn{
-		AgentID:               req.AgentID,
-		LogicalSessionID:      req.LogicalSessionID,
-		RemoteSessionID:       req.AgentSessionID,
-		WorkspacePath:         req.WorkspacePath,
-		Message:               req.Message,
-		ContentBlocks:         req.ContentBlocks,
-		SidecarCapsules:       req.SidecarCapsules,
-		Tools:                 req.Tools,
-		McpServers:            req.McpServers,
-		AdditionalDirectories: req.AdditionalDirectories,
-		ThoughtNotifier:       req.ThoughtNotifier,
-		LiveContextAttach:     req.LiveContextAttach,
+		AgentID:                  req.AgentID,
+		LogicalSessionID:         req.LogicalSessionID,
+		RemoteSessionID:          req.AgentSessionID,
+		WorkspacePath:            req.WorkspacePath,
+		Message:                  req.Message,
+		ContentBlocks:            req.ContentBlocks,
+		ExtensionURIs:            req.ExtensionURIs,
+		ReferencedRemoteSessions: req.ReferencedRemoteSessions,
+		SidecarCapsules:          req.SidecarCapsules,
+		Tools:                    req.Tools,
+		McpServers:               req.McpServers,
+		AdditionalDirectories:    req.AdditionalDirectories,
+		ThoughtNotifier:          req.ThoughtNotifier,
+		LiveContextAttach:        req.LiveContextAttach,
 	}
 	result, err := client.ExecuteTurn(ctx, turn)
 	if err != nil && turn.RemoteSessionID != "" && isSessionNotFoundError(err) && !req.StrictSession {
 		turn.RemoteSessionID = ""
 		result, err = client.ExecuteTurn(ctx, turn)
 	}
+	result.Metadata = metadataWithContentBlocks(result.Metadata, result.ContentBlocks)
 	if err != nil {
 		return "", result.RemoteSessionID, result.ToolCalls, result.Metadata, err
 	}
 	return result.Output, result.RemoteSessionID, result.ToolCalls, result.Metadata, nil
+}
+
+func metadataWithContentBlocks(metadata middleware.ConversationMetadata, blocks []middleware.Content) middleware.ConversationMetadata {
+	if len(blocks) == 0 {
+		return metadata
+	}
+	if metadata.Meta == nil {
+		metadata.Meta = map[string]interface{}{}
+	}
+	metadata.Meta["content_blocks"] = append([]middleware.Content(nil), blocks...)
+	return metadata
 }
