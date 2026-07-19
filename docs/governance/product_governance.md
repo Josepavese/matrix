@@ -16,6 +16,9 @@ Feature acceptance rule:
 
 A feature is product-fit only if it strengthens Matrix as a communication matrix, orchestration surface, or continuity layer. Features that make Matrix a vertical wrapper for one agent, one channel, or one protocol should be rejected or redesigned.
 
-No legacy-first design:
+ZERO-LEGACY design:
 
-This repo is in active development. New work should converge on the final product shape instead of preserving obsolete internal layouts, aliases, or compatibility paths unless explicitly required for a release contract.
+This repo is in active development. Active product surfaces converge on the
+final product shape and reject obsolete layouts, aliases, packages, and
+compatibility paths. The project-wide release policy is defined in
+[`zero_legacy_governance.md`](zero_legacy_governance.md).

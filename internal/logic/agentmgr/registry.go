@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentidentity"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -78,19 +79,20 @@ func NewRegistry(_ middleware.ConfigReader, store middleware.Storage) (*Registry
 		if len(entry.Override.AppendArgs) > 0 {
 			cfg.Args = append(cfg.Args, entry.Override.AppendArgs...)
 		}
+		if err := agentidentity.ValidateRuntimeDefinition(id, cfg.Command, cfg.Args); err != nil {
+			return nil, err
+		}
 		configs[id] = cfg
 	}
 
-	return &Registry{
-		configs: configs,
-	}, nil
+	return &Registry{configs: configs}, nil
 }
 
 // Get finds the configuration for a given agent ID.
 func (r *Registry) Get(agentID string) (AgentConfig, error) {
 	cfg, ok := r.configs[agentID]
 	if !ok {
-		return AgentConfig{}, fmt.Errorf("agent '%s' not found in registry", agentID)
+		return AgentConfig{}, fmt.Errorf("agent '%s' not found in registry%s", agentID, agentidentity.PublicAgentIDHint(agentID))
 	}
 	return cfg, nil
 }
