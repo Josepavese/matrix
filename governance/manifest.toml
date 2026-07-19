@@ -157,3 +157,13 @@ allowed_files = [
 ]
 max = 0
 reason = "The daemon owns bbolt; CLI commands must use the authenticated runtime Vault broker, with direct access confined to daemon composition."
+
+[pattern_budget.bbolt_sdk_outside_provider]
+roots = ["cmd", "internal/logic", "internal/middleware", "pkg"]
+patterns = [
+  "go.etcd.io/bbolt",
+  "bbolt.Open("
+]
+allowed_files = []
+max = 0
+reason = "Raw bbolt access is provider-owned; logic and CLI diagnostics must use the daemon broker instead of opening the Vault file."

@@ -30,6 +30,27 @@ func NewReadOnlyProvider(path string) (*Provider, error) {
 	return openProvider(path, true)
 }
 
+// InspectRawEncryption counts raw value formats on the already-open database.
+func (p *Provider) InspectRawEncryption() (encryptedKeys int, plaintextKeys int, err error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	err = p.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket(defaultBucket)
+		if bucket == nil {
+			return nil
+		}
+		return bucket.ForEach(func(_, value []byte) error {
+			if vaultsec.IsEncryptedValue(value) {
+				encryptedKeys++
+			} else {
+				plaintextKeys++
+			}
+			return nil
+		})
+	})
+	return encryptedKeys, plaintextKeys, err
+}
+
 func openProvider(path string, readOnly bool) (*Provider, error) {
 	db, err := bbolt.Open(path, 0600, &bbolt.Options{Timeout: 1 * time.Second, ReadOnly: readOnly})
 	if err != nil {

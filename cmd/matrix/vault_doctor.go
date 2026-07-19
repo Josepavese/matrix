@@ -15,18 +15,18 @@ var vaultDoctorCmd = &cobra.Command{
 	Short: "Inspect vault security posture",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
-		securityReport, err := vaultsec.BuildReport(osfs.NewFSProvider(), DefaultVaultPath)
+		provider, err := runtimevault.OpenReadOnly(DefaultVaultPath)
+		if err != nil {
+			exitf("Vault storage inspection failed: %v", err)
+		}
+		defer func() { _ = provider.Close() }()
+		securityReport, err := vaultsec.BuildReport(osfs.NewFSProvider(), DefaultVaultPath, provider)
 		if err != nil {
 			exitf("Vault doctor failed: %v", err)
 		}
-		report := map[string]any{
-			"security": securityReport,
-		}
-		if provider, err := runtimevault.OpenReadOnly(DefaultVaultPath); err == nil {
-			defer func() { _ = provider.Close() }()
-			if schemaReport, err := schema.LoadReport(provider); err == nil {
-				report["schema"] = schemaReport
-			}
+		report := map[string]any{"security": securityReport}
+		if schemaReport, err := schema.LoadReport(provider); err == nil {
+			report["schema"] = schemaReport
 		}
 		blob, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {

@@ -8,6 +8,14 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/runtimebroker"
 )
 
+type inspectableStorage struct {
+	*memstore.Storage
+}
+
+func (s *inspectableStorage) InspectRawEncryption() (int, int, error) {
+	return 3, 1, nil
+}
+
 func TestStorageServiceRequiresTokenAndPreservesRawValues(t *testing.T) {
 	store := memstore.New()
 	service := NewStorageService(store, "runtime-secret")
@@ -30,5 +38,17 @@ func TestStorageServiceRequiresTokenAndPreservesRawValues(t *testing.T) {
 	}
 	if len(reply.Keys) != 1 || reply.Keys[0] != "agent.a" {
 		t.Fatalf("unexpected keys: %v", reply.Keys)
+	}
+}
+
+func TestStorageServiceReportsRawEncryptionCounts(t *testing.T) {
+	service := NewStorageService(&inspectableStorage{Storage: memstore.New()}, "runtime-secret")
+	reply := runtimebroker.StorageReply{}
+	err := service.InspectRawEncryption(&runtimebroker.StorageArgs{Token: "runtime-secret"}, &reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.EncryptedKeys != 3 || reply.PlaintextKeys != 1 {
+		t.Fatalf("unexpected encryption counts: %+v", reply)
 	}
 }
