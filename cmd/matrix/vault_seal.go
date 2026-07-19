@@ -2,8 +2,8 @@ package main
 
 import (
 	"github.com/Josepavese/matrix/internal/logic/vaultsec"
-	"github.com/Josepavese/matrix/internal/providers/bolt"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/providers/runtimevault"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +20,7 @@ var vaultSealCmd = &cobra.Command{
 			exitf("Vault encryption master key is not configured")
 		}
 
-		provider, err := bolt.NewProvider(DefaultVaultPath)
+		provider, err := runtimevault.Open(DefaultVaultPath)
 		if err != nil {
 			exitf("Vault error: %v", err)
 		}

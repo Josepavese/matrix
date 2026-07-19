@@ -45,7 +45,16 @@ type InstallerContext struct {
 
 // NewAppContext opens the vault in read-write mode and builds core dependencies.
 func NewAppContext(vaultPath string) (*AppContext, func(), error) {
+	provider, err := runtimevault.Open(vaultPath)
+	return newAppContext(provider, err)
+}
+
+func newLocalAppContext(vaultPath string) (*AppContext, func(), error) {
 	provider, err := bolt.NewProvider(vaultPath)
+	return newAppContext(provider, err)
+}
+
+func newAppContext(provider runtimevault.Storage, err error) (*AppContext, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("vault error: %w", err)
 	}
@@ -187,7 +196,7 @@ func NewInstallerContext(vaultPath string) (*InstallerContext, func(), error) {
 
 // NewDaemonContext builds all dependencies needed for `matrix run`.
 func NewDaemonContext(vaultPath string) (*DaemonContext, func(), error) {
-	app, closeApp, err := NewAppContext(vaultPath)
+	app, closeApp, err := newLocalAppContext(vaultPath)
 	if err != nil {
 		return nil, nil, err
 	}
