@@ -146,3 +146,14 @@ allowed_files = [
 ]
 max = 0
 reason = "ZERO-LEGACY: the retired Codex provider may exist only at its centralized rejection boundary and in rejection tests."
+
+[pattern_budget.direct_bolt_cli_access]
+roots = ["cmd/matrix"]
+patterns = [
+  "bolt.NewProvider("
+]
+allowed_files = [
+  "cmd/matrix/app.go"
+]
+max = 0
+reason = "The daemon owns bbolt; CLI commands must use the authenticated runtime Vault broker, with direct access confined to daemon composition."
