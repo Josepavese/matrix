@@ -9,3 +9,9 @@ type Storage interface {
 	// List returns all keys that start with the given prefix
 	List(prefix string) ([]string, error)
 }
+
+// RawEncryptionInspector reports encrypted versus plaintext values without
+// exposing their raw contents.
+type RawEncryptionInspector interface {
+	InspectRawEncryption() (encryptedKeys int, plaintextKeys int, err error)
+}

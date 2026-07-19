@@ -55,6 +55,13 @@ func TestOpenUsesBrokerWhileDaemonOwnsBolt(t *testing.T) {
 	if value, err := reader.Get("probe"); err != nil || string(value) != `"ok"` {
 		t.Fatalf("value=%q err=%v", value, err)
 	}
+	encrypted, plaintext, err := reader.InspectRawEncryption()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encrypted != 1 || plaintext != 0 {
+		t.Fatalf("encrypted=%d plaintext=%d", encrypted, plaintext)
+	}
 
 	cancel()
 	if err := <-done; err != nil {

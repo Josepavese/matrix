@@ -45,6 +45,12 @@ func (p *Provider) List(prefix string) ([]string, error) {
 	return reply.Keys, err
 }
 
+func (p *Provider) InspectRawEncryption() (int, int, error) {
+	reply := runtimebroker.StorageReply{}
+	err := p.call("Storage.InspectRawEncryption", runtimebroker.StorageArgs{}, &reply)
+	return reply.EncryptedKeys, reply.PlaintextKeys, err
+}
+
 func (p *Provider) Close() error {
 	return p.client.Close()
 }

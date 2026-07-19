@@ -31,8 +31,10 @@ type StorageArgs struct {
 }
 
 type StorageReply struct {
-	Value []byte   `json:"value,omitempty"`
-	Keys  []string `json:"keys,omitempty"`
+	Value         []byte   `json:"value,omitempty"`
+	Keys          []string `json:"keys,omitempty"`
+	EncryptedKeys int      `json:"encrypted_keys,omitempty"`
+	PlaintextKeys int      `json:"plaintext_keys,omitempty"`
 }
 
 func Path(home string) string {

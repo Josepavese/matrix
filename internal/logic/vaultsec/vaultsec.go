@@ -8,12 +8,10 @@ import (
 	"time"
 
 	"github.com/Josepavese/matrix/internal/middleware"
-
-	bbolt "go.etcd.io/bbolt"
 )
 
 // BuildReport generates a vault security report.
-func BuildReport(fs middleware.FS, path string) (map[string]any, error) {
+func BuildReport(fs middleware.FS, path string, inspector middleware.RawEncryptionInspector) (map[string]any, error) {
 	_, keyStatus, err := ResolveMasterKey(fs)
 	if err != nil {
 		return nil, err
@@ -25,7 +23,7 @@ func BuildReport(fs middleware.FS, path string) (map[string]any, error) {
 		return handleMissingVault(report, keyStatus, err)
 	}
 
-	report["warnings"] = collectWarnings(fs, path, info, keyStatus, report)
+	report["warnings"] = collectWarnings(inspector, path, info, keyStatus, report)
 	return report, nil
 }
 
@@ -50,7 +48,7 @@ func handleMissingVault(report map[string]any, keyStatus KeyStatus, err error) (
 	return report, nil
 }
 
-func collectWarnings(_ middleware.FS, path string, info os.FileInfo, keyStatus KeyStatus, report map[string]any) []string {
+func collectWarnings(inspector middleware.RawEncryptionInspector, path string, info os.FileInfo, keyStatus KeyStatus, report map[string]any) []string {
 	warnings := baseWarnings(keyStatus)
 	report["exists"] = true
 	report["size_bytes"] = info.Size()
@@ -60,10 +58,14 @@ func collectWarnings(_ middleware.FS, path string, info os.FileInfo, keyStatus K
 		warnings = append(warnings, "vault file permissions are broader than recommended")
 	}
 
-	meta, err := inspectEncryption(path)
+	if inspector == nil {
+		return append(warnings, "raw vault encryption inspector unavailable")
+	}
+	encryptedKeys, plaintextKeys, err := inspector.InspectRawEncryption()
 	if err != nil {
 		return append(warnings, "failed to inspect raw vault encryption state: "+err.Error())
 	}
+	meta := encryptionMeta{encryptedKeys: encryptedKeys, plaintextKeys: plaintextKeys}
 	report["encryption"] = encryptionReport(keyStatus, meta)
 	if keyStatus.Configured && meta.plaintextKeys > 0 {
 		warnings = append(warnings, "vault contains plaintext entries; run `matrix vault seal` to rewrite them encrypted")
@@ -129,29 +131,4 @@ func CreateBackup(fs middleware.FS, path, destDir string, now time.Time) (string
 type encryptionMeta struct {
 	encryptedKeys int
 	plaintextKeys int
-}
-
-func inspectEncryption(path string) (encryptionMeta, error) {
-	db, err := bbolt.Open(path, 0o600, &bbolt.Options{ReadOnly: true, Timeout: 1 * time.Second})
-	if err != nil {
-		return encryptionMeta{}, err
-	}
-	defer func() { _ = db.Close() }()
-
-	meta := encryptionMeta{}
-	err = db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("matrix_vault"))
-		if b == nil {
-			return nil
-		}
-		return b.ForEach(func(_, v []byte) error {
-			if IsEncryptedValue(v) {
-				meta.encryptedKeys++
-				return nil
-			}
-			meta.plaintextKeys++
-			return nil
-		})
-	})
-	return meta, err
 }
