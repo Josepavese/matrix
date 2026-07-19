@@ -15,17 +15,29 @@ type Storage interface {
 }
 
 func Open(vaultPath string) (Storage, error) {
-	if provider, err := openBroker(); err == nil {
-		return provider, nil
-	}
-	return bolt.NewProvider(vaultPath)
+	return openWithBrokerRetry(func() (Storage, error) {
+		return bolt.NewProvider(vaultPath)
+	})
 }
 
 func OpenReadOnly(vaultPath string) (Storage, error) {
+	return openWithBrokerRetry(func() (Storage, error) {
+		return bolt.NewReadOnlyProvider(vaultPath)
+	})
+}
+
+func openWithBrokerRetry(openLocal func() (Storage, error)) (Storage, error) {
 	if provider, err := openBroker(); err == nil {
 		return provider, nil
 	}
-	return bolt.NewReadOnlyProvider(vaultPath)
+	provider, err := openLocal()
+	if err == nil {
+		return provider, nil
+	}
+	if broker, brokerErr := openBroker(); brokerErr == nil {
+		return broker, nil
+	}
+	return nil, err
 }
 
 func RuntimeLogFile() (string, bool) {
