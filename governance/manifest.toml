@@ -153,10 +153,9 @@ patterns = [
   "bolt.NewProvider("
 ]
 allowed_files = [
-  "cmd/matrix/app.go"
 ]
 max = 0
-reason = "The daemon owns bbolt; CLI commands must use the authenticated runtime Vault broker, with direct access confined to daemon composition."
+reason = "The daemon owns bbolt through runtimevault startup coordination; CLI commands must use the authenticated runtime Vault broker."
 
 [pattern_budget.bbolt_sdk_outside_provider]
 roots = ["cmd", "internal/logic", "internal/middleware", "pkg"]

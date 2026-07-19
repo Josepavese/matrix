@@ -115,6 +115,64 @@ func TestOpenRetriesBrokerPublishedDuringBoltLockWait(t *testing.T) {
 	}
 }
 
+func TestOpenWaitsForBrokerWhileDaemonStartupOwnsVaultIntent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("MATRIX_HOME", home)
+	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
+	t.Setenv("MATRIX_VAULT_MASTER_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)))
+	fs := osfs.NewFSProvider()
+	if err := fs.MkdirAll(filepath.Join(home, "data"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtimebroker.ClaimStartup(fs, runtimebroker.StartupPath(home), time.Now(), 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(home, "data", "matrix-vault.db")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	startupErr := make(chan error, 1)
+	serverDone := make(chan error, 1)
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		writer, err := bolt.NewProvider(dbPath)
+		if err != nil {
+			startupErr <- err
+			return
+		}
+		defer writer.Close()
+		if err := runtimebroker.RemoveStartup(fs, runtimebroker.StartupPath(home)); err != nil {
+			startupErr <- err
+			return
+		}
+		if err := writer.Set("probe", []byte(`"intent"`)); err != nil {
+			startupErr <- err
+			return
+		}
+		startupErr <- nil
+		server := daemon.NewServer(vault.NewVault(writer), networkprovider.NewProvider()).
+			WithRuntimeBroker(writer, fs, home, filepath.Join(home, "logs", "runtime.jsonl"))
+		serverDone <- server.Start(ctx, "127.0.0.1:0")
+	}()
+
+	reader, err := runtimevault.OpenReadOnly(dbPath)
+	if startupErr := <-startupErr; startupErr != nil {
+		t.Fatalf("daemon startup: %v", startupErr)
+	}
+	if err != nil {
+		t.Fatalf("CLI open during daemon startup: %v", err)
+	}
+	if value, err := reader.Get("probe"); err != nil || string(value) != `"intent"` {
+		t.Fatalf("value=%q err=%v", value, err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func waitForDescriptor(t *testing.T, fs *osfs.FSProvider, path string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)

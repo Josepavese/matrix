@@ -147,6 +147,12 @@ by a per-run random token. Connection metadata is written atomically to
 `MATRIX_HOME/data/runtime-broker.json` with mode `0600` on Unix and removed on
 graceful shutdown.
 
+During startup, the daemon claims
+`MATRIX_HOME/data/runtime-broker.starting.json` before opening bbolt. CLI vault
+commands observe that short-lived claim and wait for the authenticated broker,
+so they cannot acquire the database between service start and broker publish.
+Stale claims expire after the bounded bbolt startup window.
+
 CLI commands resolve storage broker-first. This keeps `agent show`, override
 inspection and mutation, `logs tail`, `doctor`, config management, discovery
 cache access, and installer registration available without a second bbolt

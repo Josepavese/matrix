@@ -301,6 +301,8 @@ The ephemeral broker descriptor is `data/runtime-broker.json` under
 removed on graceful shutdown. When no daemon is active, the CLI opens the Vault
 directly as before. Read-only commands such as `matrix agent show`,
 `matrix logs tail`, and `matrix doctor` follow the same broker-first policy.
+The short-lived `data/runtime-broker.starting.json` ownership claim prevents a
+CLI command from taking the bbolt lock while the daemon is starting.
 
 ### `matrix config delete <key>`
 
