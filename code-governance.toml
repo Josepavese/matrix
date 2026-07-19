@@ -36,27 +36,20 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # shared same-workspace provider owners are now explicit non-retained cleanup
 # evidence when the target remote session has strong provider proof.
 "internal/logic/session" = 5250
-# 2026-05-21: ACP v0.13.2 alignment adds protocol-neutral
-# additional-directories propagation and current AuthEnvVar secret defaults.
+# 2026-07-19: stable ACP v1.19/A2A v1.0.1 protocol-neutral request and
+# capability surfaces; retired credential models were deleted.
 "internal/middleware" = 980
 # 2026-04-27: workspace timeline event recording split validation/persistence/state update.
 "internal/logic/workspace" = 910
 # 2026-06-18: public-release hardening adds agent-id path validation for
 # binary install/uninstall containment and temp archive path validation.
 "internal/logic/agentmgr" = 950
-# 2026-05-04/05/08: Zed ACP v0.12.2 lifecycle plus session-bound tombstone
-# proof for dead/replaced local ACP clients used by fork subtree cleanup. Final
-# resume cleanup adds scoped reconcile ownership details and no-fresh-stdio
-# lifecycle clients for cleanup-only paths. 2026-05-08 separates cached
-# provider-client lifetime from per-request contexts, tombstones dead exact
-# lifecycle clients before cleanup proof, and evicts poisoned workspace clients
-# after cancellable prompt failures so immediate follow-up runs cannot inherit
-# a cancelled ACP client. 2026-05-21 adds current ACP auth/env-var fallback,
-# additionalDirectories validation, and agent-first terminal-auth policy.
-# 2026-06-18 adds deny-by-default tool enforcement and symlink escape checks.
-# 2026-06-24 partitions local provider clients by per-run Codex launch args
-# while preserving workspace cleanup/reconcile semantics for those variants.
-"internal/providers/agents" = 3295
+# 2026-07-19: the stable ACP v1.19 and A2A v1.0.1 coverage expansion adds
+# capability-gated rich content, authentication/lifecycle controls, full
+# operation reports, A2A task/push/profile facades, and zero-legacy rejection.
+# The implementation is split into focused files; file/function/branch budgets
+# remain clean and this exact package baseline is not permission for growth.
+"internal/providers/agents" = 3531
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
@@ -66,14 +59,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-06-18 rejects event sink localhost/private targets at HTTP ingress.
 # 2026-06-23 records trusted provider launch-policy evidence in routing traces.
 "internal/providers/runapi" = 1310
-# 2026-05-04/05: Zed ACP schema v0.12.2 stable lifecycle/config surface plus
-# observer drain for providers that emit trailing session/update chunks after
-# session/prompt returns. 2026-05-21: v0.13.2 auth defaults, current
-# authenticate request shape, and permissive draft model-state decoding.
-# 2026-06-18: Schema v1.14.0 alignment adds raw JSON-RPC ids, required MCP
-# collection fields, stable session/delete/logout surface, terminal output
-# truncation semantics, and tolerant currentValue scalar decoding.
-"pkg/zedacp" = 1740
+# 2026-07-19: stable ACP schema v1.19.0 only; retired auth credentials and
+# response aliases were deleted and draft-only methods are explicit opt-ins.
+"pkg/zedacp" = 1599
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390

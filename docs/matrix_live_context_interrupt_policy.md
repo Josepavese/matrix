@@ -1,6 +1,6 @@
 # Matrix Live Context Interrupt Policy
 
-Last reviewed: 2026-06-18.
+Last reviewed: 2026-07-19.
 
 ## Decision
 
@@ -11,7 +11,7 @@ ACP guarantees a cancellation path for an active prompt turn. It does not define
 a standard "append this new prompt/context into the currently running turn and
 make the model consume it before final answer" operation.
 
-The latest ACP docs and Schema v1.14.0, published 2026-06-18, also do not define
+The current ACP stable Schema v1.19.0 also does not define
 a `side`, `session/side`, or equivalent inline side-channel primitive. The
 official branching primitive is draft `session/fork`; it creates a separate
 session and does not solve mid-turn live context injection by itself.
@@ -72,12 +72,12 @@ append/interruption operation.
 
 Reference: https://geminicli.com/docs/cli/acp-mode/
 
-Zed `codex-acp` README documents Codex ACP adapter features such as context
+The canonical `codex-acp` README documents Codex ACP adapter features such as context
 mentions, images, tool calls, following, edit review, TODO lists, slash
 commands, client MCP servers, and authentication. It does not document a
 standard mid-turn live context injection guarantee.
 
-Reference: https://github.com/zed-industries/codex-acp
+Reference: https://github.com/agentclientprotocol/codex-acp
 
 ## Observed Matrix Runtime Results
 

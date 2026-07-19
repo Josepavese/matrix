@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -51,20 +50,27 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		_ = transport.Close()
 		return nil, classifyProviderFailure("", endpoint, "initialize", fmt.Errorf("ACP protocol version %d is not supported (matrix supports %d)", initResp.ProtocolVersion, supportedACPProtocolVersion))
 	}
-	for _, m := range initResp.AuthMethods {
-		authenticateACPEnvVarFromEnvironment(ctx, client, m)
-	}
-
 	caps := acpSessionCapabilities(initResp)
-	return &acpConversationClient{
+	features := parseACPFeatureCapabilities(initResp)
+	features.fsRead = deps.FS != nil
+	features.fsWrite = deps.FS != nil
+	features.terminal = deps.Process != nil
+	conversation := &acpConversationClient{
 		client:              client,
 		handler:             handler,
 		cwd:                 deps.Cwd,
 		endpoint:            endpoint,
 		sessionCapabilities: caps,
+		featureCapabilities: features,
+		authMethods:         append([]acpAuthMethod(nil), initResp.AuthMethods...),
 		loadedSessions:      map[string]bool{},
 		mcpServers:          toZedACPMCPServers(deps.McpServers),
-	}, nil
+	}
+	if err := conversation.validateMCPServers(conversation.mcpServers); err != nil {
+		_ = transport.Close()
+		return nil, classifyProviderFailure("", endpoint, "initialize", err)
+	}
+	return conversation, nil
 }
 
 func acpClientCapabilitiesForDeps(deps middleware.ConversationFactoryDeps) *acpClientCapabilities {
@@ -74,99 +80,11 @@ func acpClientCapabilitiesForDeps(deps middleware.ConversationFactoryDeps) *acpC
 			WriteTextFile: deps.FS != nil,
 		},
 		Terminal: deps.Process != nil,
-		// terminal/create is safe for agent-first automation when a process
-		// backend is configured. ACP auth.terminal is different: it promises an
-		// interactive login flow, so Matrix keeps it opt-out on the autonomous
-		// runtime path until a human-facing frontend can complete it explicitly.
-		Auth: &acpAuthCapabilities{},
-	}
-}
-
-type acpAuthenticator interface {
-	Authenticate(ctx context.Context, methodID string, credentials map[string]string) error
-}
-
-type acpEnvSpec struct {
-	name     string
-	optional bool
-}
-
-func authenticateACPEnvVarFromEnvironment(ctx context.Context, client acpAuthenticator, method acpAuthMethod) {
-	if method.Type != "env_var" || strings.TrimSpace(method.ID) == "" {
-		return
-	}
-	credentials, ok := acpEnvVarCredentials(method)
-	if !ok {
-		return
-	}
-	if err := client.Authenticate(ctx, method.ID, nil); err == nil {
-		return
-	} else if fallbackErr := client.Authenticate(ctx, method.ID, credentials); fallbackErr != nil {
-		slog.Warn("ACP authentication failed", "methodId", method.ID, "error", fallbackErr, "initial_error", err)
-	}
-}
-
-func acpEnvVarCredentials(method acpAuthMethod) (map[string]string, bool) {
-	specs := acpEnvVarSpecs(method)
-	if len(specs) == 0 {
-		return nil, false
-	}
-	credentials, ok := lookupACPEnvVarCredentials(specs)
-	if !ok {
-		return nil, false
-	}
-	addLegacyACPAPIKeyCredential(credentials)
-	return credentials, true
-}
-
-func acpEnvVarSpecs(method acpAuthMethod) []acpEnvSpec {
-	var specs []acpEnvSpec
-	if name := strings.TrimSpace(method.EnvVar); name != "" {
-		specs = append(specs, acpEnvSpec{name: name})
-	}
-	seen := map[string]struct{}{}
-	for _, variable := range method.Vars {
-		specs = appendACPEnvSpec(specs, seen, variable.Name, variable.Optional)
-	}
-	return specs
-}
-
-func appendACPEnvSpec(specs []acpEnvSpec, seen map[string]struct{}, name string, optional bool) []acpEnvSpec {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return specs
-	}
-	if _, ok := seen[name]; ok {
-		return specs
-	}
-	seen[name] = struct{}{}
-	return append(specs, acpEnvSpec{name: name, optional: optional})
-}
-
-func lookupACPEnvVarCredentials(specs []acpEnvSpec) (map[string]string, bool) {
-	credentials := map[string]string{}
-	for _, spec := range specs {
-		value, ok := os.LookupEnv(spec.name)
-		if !ok {
-			if spec.optional {
-				continue
-			}
-			return nil, false
-		}
-		credentials[spec.name] = value
-	}
-	if len(credentials) == 0 {
-		return nil, false
-	}
-	return credentials, true
-}
-
-func addLegacyACPAPIKeyCredential(credentials map[string]string) {
-	if len(credentials) != 1 {
-		return
-	}
-	for _, value := range credentials {
-		credentials["api_key"] = value
+		Session: &acpClientSessionCapabilities{
+			ConfigOptions: &acpSessionConfigOptionsCapabilities{
+				Boolean: &acpBooleanConfigOptionCapabilities{},
+			},
+		},
 	}
 }
 
@@ -176,6 +94,8 @@ type acpConversationClient struct {
 	cwd                 string
 	endpoint            middleware.ProtocolEndpoint
 	sessionCapabilities middleware.ConversationSessionCapabilities
+	featureCapabilities acpFeatureCapabilities
+	authMethods         []acpAuthMethod
 	mcpServers          []acpMcpServerConfig
 	mu                  sync.Mutex
 	loadedSessions      map[string]bool
@@ -195,6 +115,9 @@ func (c *acpConversationClient) Close() error {
 
 func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
 	log := slog.With("component", "acp_adapter", "logical_session", turn.LogicalSessionID, "agent", turn.AgentID)
+	if err := c.validatePromptContent(turn.ContentBlocks); err != nil {
+		return middleware.ConversationResult{}, err
+	}
 	cwd := c.turnCwd(turn)
 	remoteSessionID, err := c.ensureACPRemoteSession(ctx, turn, cwd, log)
 	if err != nil {
@@ -216,6 +139,7 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 	if err != nil {
 		return middleware.ConversationResult{
 			Output:          obs.GetContent(),
+			ContentBlocks:   obs.ContentBlocks(),
 			RemoteSessionID: remoteSessionID,
 			Metadata:        obs.Metadata(),
 		}, classifyProviderFailure(turn.AgentID, c.endpoint, "session/prompt", fmt.Errorf("ACP prompt failed: %w", err))
@@ -224,6 +148,7 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 	obs.WaitIdle(ctx, 150*time.Millisecond)
 	return middleware.ConversationResult{
 		Output:          obs.GetContent(),
+		ContentBlocks:   obs.ContentBlocks(),
 		RemoteSessionID: remoteSessionID,
 		ToolCalls:       fromZedACPToolCalls(resp.ToolCalls),
 		Metadata:        obs.Metadata(),
@@ -235,12 +160,16 @@ func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn
 		return c.createAndConfigureACPRemoteSession(ctx, turn, cwd, log)
 	}
 	if !c.isLoadedSession(turn.RemoteSessionID) && c.sessionCapabilities.Resume {
+		mcpServers, err := c.turnMCPServers(turn.McpServers)
+		if err != nil {
+			return "", err
+		}
 		resumed, err := c.resumeACPRemoteSession(acpLoadRemoteSessionRequest{
 			Ctx:                   ctx,
 			RemoteSessionID:       turn.RemoteSessionID,
 			Cwd:                   cwd,
 			AdditionalDirectories: turn.AdditionalDirectories,
-			McpServers:            c.turnMCPServers(turn.McpServers),
+			McpServers:            mcpServers,
 			Notifier:              turn.ThoughtNotifier,
 			Log:                   log,
 		})
@@ -252,12 +181,16 @@ func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn
 		}
 	}
 	if !c.isLoadedSession(turn.RemoteSessionID) && c.sessionCapabilities.Load {
+		mcpServers, err := c.turnMCPServers(turn.McpServers)
+		if err != nil {
+			return "", err
+		}
 		if err := c.loadACPRemoteSession(acpLoadRemoteSessionRequest{
 			Ctx:                   ctx,
 			RemoteSessionID:       turn.RemoteSessionID,
 			Cwd:                   cwd,
 			AdditionalDirectories: turn.AdditionalDirectories,
-			McpServers:            c.turnMCPServers(turn.McpServers),
+			McpServers:            mcpServers,
 			Notifier:              turn.ThoughtNotifier,
 			Log:                   log,
 		}); err != nil {
@@ -413,17 +346,19 @@ func (c *acpConversationClient) promptACP(ctx context.Context, remoteSessionID s
 
 func (c *acpConversationClient) retryTurnWithFreshSession(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
 	return c.ExecuteTurn(ctx, middleware.ConversationTurn{
-		AgentID:               turn.AgentID,
-		LogicalSessionID:      turn.LogicalSessionID,
-		WorkspacePath:         turn.WorkspacePath,
-		Message:               turn.Message,
-		ContentBlocks:         turn.ContentBlocks,
-		SidecarCapsules:       turn.SidecarCapsules,
-		Tools:                 turn.Tools,
-		McpServers:            turn.McpServers,
-		AdditionalDirectories: turn.AdditionalDirectories,
-		ThoughtNotifier:       turn.ThoughtNotifier,
-		LiveContextAttach:     turn.LiveContextAttach,
+		AgentID:                  turn.AgentID,
+		LogicalSessionID:         turn.LogicalSessionID,
+		WorkspacePath:            turn.WorkspacePath,
+		Message:                  turn.Message,
+		ContentBlocks:            turn.ContentBlocks,
+		ExtensionURIs:            turn.ExtensionURIs,
+		ReferencedRemoteSessions: turn.ReferencedRemoteSessions,
+		SidecarCapsules:          turn.SidecarCapsules,
+		Tools:                    turn.Tools,
+		McpServers:               turn.McpServers,
+		AdditionalDirectories:    turn.AdditionalDirectories,
+		ThoughtNotifier:          turn.ThoughtNotifier,
+		LiveContextAttach:        turn.LiveContextAttach,
 	})
 }
 
@@ -470,11 +405,17 @@ func (c *acpConversationClient) turnCwd(turn middleware.ConversationTurn) string
 	return c.cwd
 }
 
-func (c *acpConversationClient) turnMCPServers(turnServers []middleware.McpServerConfig) []acpMcpServerConfig {
+func (c *acpConversationClient) turnMCPServers(turnServers []middleware.McpServerConfig) ([]acpMcpServerConfig, error) {
+	var servers []acpMcpServerConfig
 	if len(turnServers) > 0 {
-		return toZedACPMCPServers(turnServers)
+		servers = toZedACPMCPServers(turnServers)
+	} else {
+		servers = cloneACPMCPServers(c.mcpServers)
 	}
-	return cloneACPMCPServers(c.mcpServers)
+	if err := c.validateMCPServers(servers); err != nil {
+		return nil, err
+	}
+	return servers, nil
 }
 
 func (c *acpConversationClient) additionalDirectories(values []string) ([]string, error) {

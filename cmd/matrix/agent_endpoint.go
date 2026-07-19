@@ -14,13 +14,15 @@ var (
 	agentSetEndpointTransport       string
 	agentSetEndpointProtocolVersion string
 	agentSetEndpointCardURL         string
+	agentSetEndpointTenant          string
+	agentSetEndpointHeaders         []string
 )
 
 var agentSetEndpointCmd = &cobra.Command{
 	Use:   "set-endpoint <agent_id> <address>",
 	Short: "Set a protocol-neutral remote endpoint for an agent",
 	Args:  cobra.ExactArgs(2),
-	Run: func(_ *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, args []string) {
 		agentID := args[0]
 		address := args[1]
 
@@ -53,6 +55,14 @@ var agentSetEndpointCmd = &cobra.Command{
 		entry.Config.Address = address
 		entry.Config.ProtocolVersion = agentSetEndpointProtocolVersion
 		entry.Config.CardURL = agentSetEndpointCardURL
+		entry.Config.Tenant = agentSetEndpointTenant
+		if cmd.Flags().Changed("header") {
+			headers, err := agentcfg.ParseHeaders(agentSetEndpointHeaders)
+			if err != nil {
+				exitf("Error: %v", err)
+			}
+			entry.Config.Headers = headers
+		}
 
 		// Remote endpoints are not local binaries.
 		entry.Config.Command = ""
@@ -69,6 +79,8 @@ var agentSetEndpointCmd = &cobra.Command{
 			"transport":        entry.Config.Transport,
 			"address":          entry.Config.Address,
 			"card_url":         entry.Config.CardURL,
+			"tenant":           entry.Config.Tenant,
+			"header_names":     agentcfg.HeaderNames(entry.Config.Headers),
 			"protocol_version": entry.Config.ProtocolVersion,
 		}, "", "  ")
 		if err != nil {
@@ -83,5 +95,7 @@ func init() {
 	agentSetEndpointCmd.Flags().StringVar(&agentSetEndpointTransport, "transport", "", "Endpoint transport/binding. Examples: ws, unix, JSONRPC, HTTP+JSON")
 	agentSetEndpointCmd.Flags().StringVar(&agentSetEndpointProtocolVersion, "protocol-version", "", "Protocol version exposed by the endpoint")
 	agentSetEndpointCmd.Flags().StringVar(&agentSetEndpointCardURL, "card-url", "", "Optional A2A agent card URL")
+	agentSetEndpointCmd.Flags().StringVar(&agentSetEndpointTenant, "tenant", "", "Optional A2A tenant exposed by the selected interface")
+	agentSetEndpointCmd.Flags().StringArrayVar(&agentSetEndpointHeaders, "header", nil, "Governed endpoint header as Name=Value (repeatable; values are never printed)")
 	agentCmd.AddCommand(agentSetEndpointCmd)
 }

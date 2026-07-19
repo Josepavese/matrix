@@ -47,6 +47,7 @@ var agentDoctorCmd = &cobra.Command{
 				Command:         cfg.Command,
 				Args:            cfg.Args,
 				Env:             cfg.Env,
+				Tenant:          cfg.Tenant,
 				Kind:            cfg.Kind,
 				Transport:       cfg.Transport,
 				Address:         cfg.Address,

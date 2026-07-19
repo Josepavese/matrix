@@ -1,8 +1,10 @@
 package agentcfg
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -21,18 +23,23 @@ type Override struct {
 
 // Config holds an agent's command, args, environment and protocol settings.
 type Config struct {
-	Command         string   `json:"command"`
-	Args            []string `json:"args"`
-	Env             []string `json:"env,omitempty"`
-	Kind            string   `json:"kind,omitempty"`
-	Transport       string   `json:"transport,omitempty"`
-	Address         string   `json:"address,omitempty"`
-	CardURL         string   `json:"card_url,omitempty"`
-	ProtocolVersion string   `json:"protocol_version,omitempty"`
-	HealthcheckPath string   `json:"healthcheck_path"`
-	EnvIsolation    bool     `json:"env_isolation"`
-	Active          *bool    `json:"active,omitempty"`
+	Command         string            `json:"command"`
+	Args            []string          `json:"args"`
+	Env             []string          `json:"env,omitempty"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	Tenant          string            `json:"tenant,omitempty"`
+	Kind            string            `json:"kind,omitempty"`
+	Transport       string            `json:"transport,omitempty"`
+	Address         string            `json:"address,omitempty"`
+	CardURL         string            `json:"card_url,omitempty"`
+	ProtocolVersion string            `json:"protocol_version,omitempty"`
+	HealthcheckPath string            `json:"healthcheck_path"`
+	EnvIsolation    bool              `json:"env_isolation"`
+	Active          *bool             `json:"active,omitempty"`
 }
+
+// IsActive reports whether this endpoint is enabled; omission means enabled.
+func (c Config) IsActive() bool { return c.Active == nil || *c.Active }
 
 // Entry bundles a Config with its Override for a single agent.
 type Entry struct {
@@ -59,8 +66,16 @@ func LoadEntry(storage middleware.Storage, agentID string) (Entry, error) {
 	if len(data) == 0 {
 		return entry, nil
 	}
-	if err := json.Unmarshal(data, &entry); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&entry); err != nil {
+		if strings.Contains(err.Error(), `unknown field "protocol"`) {
+			return entry, fmt.Errorf("retired agent config field %q; use %q: %w", "protocol", "kind", err)
+		}
 		return entry, fmt.Errorf("failed to decode agent entry for %s: %w", agentID, err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return entry, fmt.Errorf("failed to decode agent entry for %s: trailing JSON data", agentID)
 	}
 	return entry, nil
 }

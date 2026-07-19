@@ -3,6 +3,11 @@
 Matrix is currently experimental. Contributions are welcome, but public APIs,
 commands, and protocol integrations can still change.
 
+All changes are governed by
+[ZERO-LEGACY](docs/governance/zero_legacy_governance.md): active surfaces keep
+one canonical contract, migrations are one-way, and compatibility fallbacks
+for retired contracts are not accepted.
+
 ## Local Checks
 
 Before opening a pull request, run:

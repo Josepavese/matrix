@@ -30,6 +30,18 @@ that the single rejection boundary blocks it.
    be minimal, fail closed, carry its removal condition, and be enforced by a
    governance budget.
 
+## Protocol evolution
+
+ACP, A2A, and every future protocol adapter implement one current stable
+protocol contract at a time. A protocol upgrade removes the superseded wire
+shape, fallback, capability advertisement, tests, and active documentation in
+the same change.
+
+Draft or unstable protocol features may exist only behind an explicitly named,
+non-default experimental surface. They must never be used as an implicit
+fallback for the stable protocol. Receiving a retired wire shape fails closed
+at the adapter boundary and points to the stable protocol replacement.
+
 ## Codex identity contract
 
 `codex` is the only public Matrix agent ID. `codex-acp` is the canonical ACP

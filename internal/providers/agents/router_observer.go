@@ -16,6 +16,7 @@ import (
 type simpleObserver struct {
 	mu       sync.Mutex
 	content  string
+	blocks   []middleware.Content
 	updates  chan struct{}
 	notifier middleware.ThoughtNotifier
 	metadata middleware.ConversationMetadata
@@ -33,7 +34,7 @@ func (o *simpleObserver) handleStreamUpdate(log *slog.Logger, notif acpSessionNo
 	text := updateContentText(notif.Update)
 	switch notif.Update.SessionUpdate {
 	case "agent_message_chunk":
-		o.appendMessageChunk(text, streamUpdateMetadata(notif))
+		o.appendMessageChunk(text, notif.Update.Contents, streamUpdateMetadata(notif))
 	case "agent_thought_chunk":
 		o.forwardThought(middleware.ThoughtTypeThinking, text, "", streamUpdateMetadata(notif))
 	case "tool_call", "tool_call_update":
@@ -41,14 +42,6 @@ func (o *simpleObserver) handleStreamUpdate(log *slog.Logger, notif acpSessionNo
 	case "plan", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update", "usage_update":
 		o.forwardThought(middleware.ThoughtTypeThinking, text, notif.Update.Title, structuralUpdateMetadata(notif))
 	}
-}
-
-func (o *simpleObserver) appendMessageChunk(text string, metadata map[string]interface{}) {
-	o.mu.Lock()
-	o.content += text
-	o.mu.Unlock()
-	o.forwardThought(middleware.ThoughtTypeThinking, text, "", metadata)
-	o.signalUpdate()
 }
 
 func (o *simpleObserver) forwardToolUpdate(log *slog.Logger, notif acpSessionNotification) {

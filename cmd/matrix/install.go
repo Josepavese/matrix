@@ -6,8 +6,7 @@ import (
 	"os"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcatalog"
-	"github.com/Josepavese/matrix/internal/logic/agentdiscovery"
-	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	networkprovider "github.com/Josepavese/matrix/internal/providers/network"
 	"github.com/spf13/cobra"
 )
@@ -17,6 +16,8 @@ var (
 	installA2ATransport       string
 	installA2AProtocolVersion string
 	installA2ACardURL         string
+	installA2ATenant          string
+	installA2AHeaders         []string
 )
 
 var installCmd = &cobra.Command{
@@ -36,48 +37,25 @@ var installCmd = &cobra.Command{
 		defer cleanup()
 
 		if installA2AURL != "" || installA2ACardURL != "" {
-			if installA2AURL == "" {
-				cardProvider, err := agentdiscovery.NewProvider(agentdiscovery.SourceA2ACard, agentdiscovery.Options{Net: netProv})
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error initializing A2A card discovery: %v\n", err)
-					os.Exit(1)
-				}
-				record, err := cardProvider.Get(context.Background(), installA2ACardURL)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error resolving A2A card: %v\n", err)
-					os.Exit(1)
-				}
-				installA2AURL = record.Address
-				if installA2ATransport == "" {
-					installA2ATransport = record.Transport
-				}
-				if installA2AProtocolVersion == "" {
-					installA2AProtocolVersion = record.ProtocolVersion
-				}
-				installA2ACardURL = record.CardURL
-			}
-			if installA2AURL == "" {
-				fmt.Fprintln(os.Stderr, "Error: unable to resolve an A2A endpoint address")
+			headers, err := agentcfg.ParseHeaders(installA2AHeaders)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
-			if err := agentcatalog.RegisterRemote(ctx.Store, agentcatalog.Entry{
-				ID:              agentID,
-				Name:            agentID,
-				Source:          agentdiscovery.SourceA2ACard,
-				Kind:            middleware.ProtocolKindA2A,
-				Transport:       installA2ATransport,
-				Address:         installA2AURL,
-				CardURL:         installA2ACardURL,
-				ProtocolVersion: installA2AProtocolVersion,
-			}); err != nil {
+			entry, err := agentcatalog.ResolveAndRegisterA2A(context.Background(), ctx.Store, netProv, agentcatalog.A2ARegistration{
+				ID: agentID, Address: installA2AURL, Transport: installA2ATransport,
+				ProtocolVersion: installA2AProtocolVersion, CardURL: installA2ACardURL,
+				Tenant: installA2ATenant, Headers: headers,
+			})
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error saving A2A endpoint: %v\n", err)
 				os.Exit(1)
 			}
-			transport := installA2ATransport
+			transport := entry.Transport
 			if transport == "" {
 				transport = "JSONRPC"
 			}
-			fmt.Printf("Successfully registered remote A2A agent '%s' at %s (%s)\n", agentID, installA2AURL, transport)
+			fmt.Printf("Successfully registered remote A2A agent '%s' at %s (%s)\n", agentID, entry.Address, transport)
 			return
 		}
 
@@ -96,5 +74,7 @@ func init() {
 	installCmd.Flags().StringVar(&installA2ATransport, "a2a-transport", "JSONRPC", "A2A transport binding for --a2a-url or an A2A card")
 	installCmd.Flags().StringVar(&installA2AProtocolVersion, "a2a-protocol-version", "", "A2A protocol version for --a2a-url or an A2A card")
 	installCmd.Flags().StringVar(&installA2ACardURL, "a2a-card-url", "", "A2A agent card URL or base URL used to discover a remote endpoint")
+	installCmd.Flags().StringVar(&installA2ATenant, "a2a-tenant", "", "Optional A2A tenant for direct endpoint registration")
+	installCmd.Flags().StringArrayVar(&installA2AHeaders, "a2a-header", nil, "Governed A2A header as Name=Value (repeatable; stored only in the Vault)")
 	rootCmd.AddCommand(installCmd)
 }

@@ -49,6 +49,16 @@ func (f *fakeNet) PostJSON(context.Context, string, interface{}) ([]byte, int, e
 }
 func (f *fakeNet) CanDial(string) bool { return false }
 
+type fakeHeaderNet struct {
+	*fakeNet
+	headers map[string]string
+}
+
+func (f *fakeHeaderNet) FetchJSONWithHeaders(ctx context.Context, url string, headers map[string]string, target interface{}) error {
+	f.headers = copyHeaders(headers)
+	return f.FetchJSON(ctx, url, target)
+}
+
 func TestResolveAgentCardURL(t *testing.T) {
 	got, err := ResolveAgentCardURL("https://agents.example.com/a2a")
 	if err != nil {
@@ -66,7 +76,7 @@ func TestA2ACardProviderGet(t *testing.T) {
 				"name":"Remote Planner",
 				"description":"Plans work",
 				"version":"1.2.3",
-				"supportedInterfaces":[{"url":"https://agents.example.com/a2a","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],
+				"supportedInterfaces":[{"url":"https://agents.example.com/a2a","protocolBinding":"JSONRPC","protocolVersion":"1.0","tenant":"project-7"}],
 				"capabilities":{"streaming":true},
 				"defaultInputModes":["text/plain"],
 				"defaultOutputModes":["text/plain"],
@@ -91,6 +101,28 @@ func TestA2ACardProviderGet(t *testing.T) {
 	}
 	if record.Transport != "JSONRPC" {
 		t.Fatalf("Transport = %q", record.Transport)
+	}
+	if record.Tenant != "project-7" {
+		t.Fatalf("Tenant = %q", record.Tenant)
+	}
+}
+
+func TestA2ACardProviderUsesGovernedDiscoveryHeaders(t *testing.T) {
+	net := &fakeHeaderNet{fakeNet: &fakeNet{payloads: map[string][]byte{
+		"https://agents.example.com/.well-known/agent-card.json": []byte(`{
+			"name":"Private Agent","version":"1","supportedInterfaces":[{"url":"https://agents.example.com/a2a","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],
+			"capabilities":{},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[]
+		}`),
+	}}}
+	provider, err := NewProvider(SourceA2ACard, Options{Net: net, Headers: map[string]string{"Authorization": "Bearer secret"}})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	if _, err := provider.Get(context.Background(), "https://agents.example.com"); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if net.headers["Authorization"] != "Bearer secret" {
+		t.Fatalf("discovery headers were not propagated: %#v", net.headers)
 	}
 }
 
@@ -138,7 +170,7 @@ func TestA2ACatalogProviderSearch(t *testing.T) {
 		payloads: map[string][]byte{
 			"https://catalog.example.com/a2a.json": []byte(`{
 				"agents":[
-					{"id":"planner","name":"Planner","description":"Plans work","transport":"JSONRPC","address":"https://planner.example.com/a2a","card_url":"https://planner.example.com/.well-known/agent-card.json","tags":["planning"]}
+					{"id":"planner","name":"Planner","description":"Plans work","transport":"JSONRPC","address":"https://planner.example.com/a2a","card_url":"https://planner.example.com/.well-known/agent-card.json","tenant":"project-7","tags":["planning"]}
 				]
 			}`),
 		},
@@ -159,5 +191,8 @@ func TestA2ACatalogProviderSearch(t *testing.T) {
 	}
 	if records[0].CardURL == "" {
 		t.Fatalf("CardURL should not be empty")
+	}
+	if records[0].Tenant != "project-7" {
+		t.Fatalf("Tenant = %q, want project-7", records[0].Tenant)
 	}
 }

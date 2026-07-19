@@ -140,6 +140,7 @@ func TestRegisterRemotePersistsA2AEndpoint(t *testing.T) {
 		Address:         "http://127.0.0.1:8088/a2a",
 		CardURL:         "http://127.0.0.1:8088/.well-known/agent-card.json",
 		ProtocolVersion: "1.0",
+		Tenant:          "project-7",
 	})
 	if err != nil {
 		t.Fatalf("RegisterRemote: %v", err)
@@ -149,7 +150,7 @@ func TestRegisterRemotePersistsA2AEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadEntry: %v", err)
 	}
-	if entry.Config.Kind != "a2a" || entry.Config.Address != "http://127.0.0.1:8088/a2a" {
+	if entry.Config.Kind != "a2a" || entry.Config.Address != "http://127.0.0.1:8088/a2a" || entry.Config.Tenant != "project-7" {
 		t.Fatalf("unexpected entry config: %+v", entry.Config)
 	}
 	meta, err := agentcfg.LoadMeta(store, "remote-planner")
@@ -158,5 +159,26 @@ func TestRegisterRemotePersistsA2AEndpoint(t *testing.T) {
 	}
 	if meta.Name != "Remote Planner" {
 		t.Fatalf("unexpected metadata: %+v", meta)
+	}
+}
+
+func TestResolveAndRegisterA2ADirectPreservesGovernedConnectionData(t *testing.T) {
+	store := newTestStorage()
+	entry, err := ResolveAndRegisterA2A(context.Background(), store, nil, A2ARegistration{
+		ID: "remote", Address: "https://agent.example/a2a", Transport: "HTTP+JSON",
+		Tenant: "project-7", Headers: map[string]string{"Authorization": "Bearer secret"},
+	})
+	if err != nil {
+		t.Fatalf("ResolveAndRegisterA2A: %v", err)
+	}
+	if entry.Address != "https://agent.example/a2a" || entry.Tenant != "project-7" {
+		t.Fatalf("unexpected resolved entry: %+v", entry)
+	}
+	stored, err := agentcfg.LoadEntry(store, "remote")
+	if err != nil {
+		t.Fatalf("LoadEntry: %v", err)
+	}
+	if stored.Config.Headers["Authorization"] != "Bearer secret" || stored.Config.Tenant != "project-7" {
+		t.Fatalf("governed connection data not persisted: %+v", stored.Config)
 	}
 }

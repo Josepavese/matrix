@@ -18,6 +18,13 @@ Current allowed baseline:
 
 Latest budget realignment:
 
+- 2026-07-19: ACP v1.19.0 and A2A v1.0.1 coverage was aligned end-to-end under
+  ZERO-LEGACY: rich content, authentication, lifecycle/task controls, discovery
+  negotiation, push/profile opt-ins, and complete capability reports. The
+  `internal/providers/agents` override was raised to the measured 3531 LOC
+  product baseline, while `pkg/zedacp` was ratcheted down to 1599 LOC after
+  deleting retired wire aliases and credentials. File/function/parameter hard
+  budgets remain clean, quality warnings remain 0, and branch points remain 10.
 - 2026-06-24: per-run Codex `model_reasoning_effort` support partitions local
   provider clients by launch args so different effort values cannot reuse the
   same ACP process. The `internal/providers/agents` package LOC override was
