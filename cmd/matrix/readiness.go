@@ -7,6 +7,7 @@ import (
 	readinesslogic "github.com/Josepavese/matrix/internal/logic/readiness"
 	"github.com/Josepavese/matrix/internal/logic/vaultsec"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/providers/runtimevault"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +31,12 @@ var readinessCmd = &cobra.Command{
 		if err != nil {
 			exitf("Storage doctor failed: %v", err)
 		}
-		vaultReport, err := vaultsec.BuildReport(osfs.NewFSProvider(), DefaultVaultPath)
+		vaultStore, err := runtimevault.OpenReadOnly(DefaultVaultPath)
+		if err != nil {
+			exitf("Vault storage inspection failed: %v", err)
+		}
+		defer func() { _ = vaultStore.Close() }()
+		vaultReport, err := vaultsec.BuildReport(osfs.NewFSProvider(), DefaultVaultPath, vaultStore)
 		if err != nil {
 			exitf("Vault doctor failed: %v", err)
 		}

@@ -11,6 +11,7 @@ import (
 
 type Storage interface {
 	middleware.Storage
+	middleware.RawEncryptionInspector
 	Close() error
 }
 

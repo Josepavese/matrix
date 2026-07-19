@@ -45,13 +45,11 @@ type InstallerContext struct {
 
 // NewAppContext opens the vault in read-write mode and builds core dependencies.
 func NewAppContext(vaultPath string) (*AppContext, func(), error) {
-	provider, err := runtimevault.Open(vaultPath)
-	return newAppContext(provider, err)
+	return newAppContext(runtimevault.Open(vaultPath))
 }
 
 func newLocalAppContext(vaultPath string) (*AppContext, func(), error) {
-	provider, err := bolt.NewProvider(vaultPath)
-	return newAppContext(provider, err)
+	return newAppContext(bolt.NewProvider(vaultPath))
 }
 
 func newAppContext(provider runtimevault.Storage, err error) (*AppContext, func(), error) {

@@ -8,6 +8,7 @@ import (
 )
 
 var ErrInvalidBrokerToken = errors.New("invalid runtime broker token")
+var ErrRawEncryptionInspectionUnavailable = errors.New("raw vault encryption inspection unavailable")
 
 type StorageService struct {
 	store middleware.Storage
@@ -47,6 +48,20 @@ func (s *StorageService) List(args *runtimebroker.StorageArgs, reply *runtimebro
 	}
 	keys, err := s.store.List(args.Prefix)
 	reply.Keys = keys
+	return err
+}
+
+func (s *StorageService) InspectRawEncryption(args *runtimebroker.StorageArgs, reply *runtimebroker.StorageReply) error {
+	if err := s.authorize(args); err != nil {
+		return err
+	}
+	inspector, ok := s.store.(middleware.RawEncryptionInspector)
+	if !ok {
+		return ErrRawEncryptionInspectionUnavailable
+	}
+	encrypted, plaintext, err := inspector.InspectRawEncryption()
+	reply.EncryptedKeys = encrypted
+	reply.PlaintextKeys = plaintext
 	return err
 }
 
