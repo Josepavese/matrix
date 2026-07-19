@@ -246,7 +246,7 @@ func (c *RegistryClient) ResolveAnyDistribution(manifest *AgentManifest) (*Resol
 
 func findAgent(agents []AgentManifest, agentID string) (*AgentManifest, error) {
 	for i := range agents {
-		if agents[i].ID == agentID {
+		if agents[i].ID == agentID && agentID != agentidentity.CodexRegistryID {
 			return &agents[i], nil
 		}
 	}
@@ -257,7 +257,7 @@ func findAgent(agents []AgentManifest, agentID string) (*AgentManifest, error) {
 			}
 		}
 	}
-	return nil, fmt.Errorf("agent '%s' not found in registry", agentID)
+	return nil, fmt.Errorf("agent '%s' not found in registry%s", agentID, agentidentity.PublicAgentIDHint(agentID))
 }
 
 func validateCanonicalProvider(manifest *AgentManifest) error {

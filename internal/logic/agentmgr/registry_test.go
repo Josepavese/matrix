@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentidentity"
 )
 
 type registryMemStorage struct {
@@ -55,5 +56,44 @@ func TestNewRegistryAppendsOverrideArgs(t *testing.T) {
 	want := []string{"--base", "-c", "sandbox_mode=\"danger-full-access\"", "-c", "approval_policy=\"never\""}
 	if strings.Join(cfg.Args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("unexpected args: got %#v want %#v", cfg.Args, want)
+	}
+}
+
+func TestNewRegistryRejectsProviderIdentifierAsPersistedAgentID(t *testing.T) {
+	store := newRegistryMemStorage()
+	if err := agentcfg.SaveEntry(store, "codex-acp", agentcfg.Entry{
+		Config: agentcfg.Config{Command: "node", Kind: "acp", Transport: "stdio"},
+	}); err != nil {
+		t.Fatalf("SaveEntry: %v", err)
+	}
+
+	_, err := NewRegistry(nil, store)
+	if err == nil || !strings.Contains(err.Error(), `use "codex"`) {
+		t.Fatalf("expected canonical agent ID error, got %v", err)
+	}
+}
+
+func TestNewRegistryRejectsDeprecatedCodexProvider(t *testing.T) {
+	store := newRegistryMemStorage()
+	if err := agentcfg.SaveEntry(store, "codex", agentcfg.Entry{
+		Config: agentcfg.Config{
+			Command: "npx", Args: []string{"-y", agentidentity.DeprecatedCodexPackage + "@0.16.0"},
+			Kind: "acp", Transport: "stdio",
+		},
+	}); err != nil {
+		t.Fatalf("SaveEntry: %v", err)
+	}
+
+	_, err := NewRegistry(nil, store)
+	if err == nil || !strings.Contains(err.Error(), "matrix install codex") {
+		t.Fatalf("expected ZERO-LEGACY migration error, got %v", err)
+	}
+}
+
+func TestRegistryGetRejectsProviderIdentifier(t *testing.T) {
+	registry := &Registry{configs: map[string]AgentConfig{}}
+	_, err := registry.Get("codex-acp")
+	if err == nil || !strings.Contains(err.Error(), `use "codex"`) {
+		t.Fatalf("expected canonical agent ID error, got %v", err)
 	}
 }

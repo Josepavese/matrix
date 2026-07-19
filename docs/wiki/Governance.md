@@ -17,6 +17,7 @@ What it protects:
 - Test evidence: protocol, provider, channel, session, and runtime changes need evidence appropriate to their risk.
 - Issue handling: accepted, rejected, and closed issues must leave a maintainable trail.
 - Architecture guardrails: pattern budgets block protocol, channel, and PAL home drift.
+- ZERO-LEGACY: active surfaces fail closed on retired contracts and migrate only one way to PAL-owned canonical artifacts.
 
 Primary docs:
 
@@ -27,3 +28,4 @@ Primary docs:
 - [Zed ACP compliance](../matrix_zed_acp_compliance.md)
 - [Deploy governance](../governance/deploy_governance.md)
 - [Architecture guardrails](../governance/architecture_guardrails.md)
+- [ZERO-LEGACY policy](../governance/zero_legacy_governance.md)
