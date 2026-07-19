@@ -62,6 +62,52 @@ func TestOpenUsesBrokerWhileDaemonOwnsBolt(t *testing.T) {
 	}
 }
 
+func TestOpenRetriesBrokerPublishedDuringBoltLockWait(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("MATRIX_HOME", home)
+	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
+	t.Setenv("MATRIX_VAULT_MASTER_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32)))
+	fs := osfs.NewFSProvider()
+	if err := fs.MkdirAll(filepath.Join(home, "data"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(home, "data", "matrix-vault.db")
+	writer, err := bolt.NewProvider(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	if err := writer.Set("probe", []byte(`"startup"`)); err != nil {
+		t.Fatal(err)
+	}
+
+	server := daemon.NewServer(vault.NewVault(writer), networkprovider.NewProvider()).
+		WithRuntimeBroker(writer, fs, home, filepath.Join(home, "logs", "runtime.jsonl"))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		done <- server.Start(ctx, "127.0.0.1:0")
+	}()
+
+	reader, err := runtimevault.OpenReadOnly(dbPath)
+	if err != nil {
+		cancel()
+		t.Fatalf("open during broker startup: %v", err)
+	}
+	if value, err := reader.Get("probe"); err != nil || string(value) != `"startup"` {
+		t.Fatalf("value=%q err=%v", value, err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func waitForDescriptor(t *testing.T, fs *osfs.FSProvider, path string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
