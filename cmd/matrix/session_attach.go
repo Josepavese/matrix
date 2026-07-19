@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/Josepavese/matrix/internal/logic/session"
-	"github.com/Josepavese/matrix/internal/providers/bolt"
+	"github.com/Josepavese/matrix/internal/providers/runtimevault"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +17,7 @@ var sessionAttachCmd = &cobra.Command{
 		channelID := args[0]
 		sessionID := args[1]
 
-		provider, err := bolt.NewProvider(DefaultVaultPath)
+		provider, err := runtimevault.Open(DefaultVaultPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Vault error: %v\n", err)
 			os.Exit(1)

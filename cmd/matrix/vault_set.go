@@ -6,7 +6,7 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/channelcfg"
 	"github.com/Josepavese/matrix/internal/logic/vault"
-	"github.com/Josepavese/matrix/internal/providers/bolt"
+	"github.com/Josepavese/matrix/internal/providers/runtimevault"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +22,7 @@ var vaultSetCmd = &cobra.Command{
 		return cobra.ExactArgs(2)(cmd, args)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		provider, err := bolt.NewProvider(DefaultVaultPath)
+		provider, err := runtimevault.Open(DefaultVaultPath)
 		if err != nil {
 			exitf("Vault error: %v", err)
 		}
