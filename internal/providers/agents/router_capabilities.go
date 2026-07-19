@@ -17,6 +17,12 @@ func (r *Router) AgentCapabilities(ctx context.Context, agentID string) (middlew
 	if err != nil {
 		return middleware.ProviderCapabilityReport{}, err
 	}
+	if reporter, ok := client.(middleware.ConversationCapabilityReporter); ok {
+		protocolReport := reporter.ProtocolCapabilities()
+		report.Operations = protocolReport.Operations
+		report.Content = protocolReport.Content
+		report.Transports = protocolReport.Transports
+	}
 	controller, ok := client.(middleware.ConversationSessionControl)
 	if !ok {
 		report.Session = unsupportedSessionCapabilityDetails()

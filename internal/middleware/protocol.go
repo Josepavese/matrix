@@ -28,6 +28,8 @@ type ProtocolEndpoint struct {
 	Command         string
 	Args            []string
 	Env             []string
+	Headers         map[string]string
+	Tenant          string
 	EnvIsolation    bool
 	ProtocolVersion string
 	CardURL         string
@@ -35,23 +37,26 @@ type ProtocolEndpoint struct {
 
 // ConversationTurn is the protocol-neutral representation of a single user turn.
 type ConversationTurn struct {
-	AgentID               string
-	LogicalSessionID      string
-	RemoteSessionID       string
-	WorkspacePath         string
-	Message               string
-	ContentBlocks         []Content
-	SidecarCapsules       []SidecarCapsule
-	Tools                 []Tool
-	McpServers            []McpServerConfig
-	AdditionalDirectories []string
-	ThoughtNotifier       ThoughtNotifier
-	LiveContextAttach     bool
+	AgentID                  string
+	LogicalSessionID         string
+	RemoteSessionID          string
+	WorkspacePath            string
+	Message                  string
+	ContentBlocks            []Content
+	ExtensionURIs            []string
+	ReferencedRemoteSessions []string
+	SidecarCapsules          []SidecarCapsule
+	Tools                    []Tool
+	McpServers               []McpServerConfig
+	AdditionalDirectories    []string
+	ThoughtNotifier          ThoughtNotifier
+	LiveContextAttach        bool
 }
 
 // ConversationResult is the protocol-neutral result of a single agent turn.
 type ConversationResult struct {
 	Output          string
+	ContentBlocks   []Content
 	RemoteSessionID string
 	ToolCalls       []ToolCall
 	Metadata        ConversationMetadata
@@ -110,6 +115,15 @@ type ProviderCapabilityReport struct {
 	AgentID      string                          `json:"agent_id,omitempty"`
 	ProtocolKind ProtocolKind                    `json:"protocol_kind,omitempty"`
 	Session      map[string]CapabilityDescriptor `json:"session,omitempty"`
+	Operations   map[string]CapabilityDescriptor `json:"operations,omitempty"`
+	Content      map[string]CapabilityDescriptor `json:"content,omitempty"`
+	Transports   map[string]CapabilityDescriptor `json:"transports,omitempty"`
+}
+
+// ConversationCapabilityReporter exposes the full adapter contract instead of
+// forcing Matrix callers to infer protocol support from failed operations.
+type ConversationCapabilityReporter interface {
+	ProtocolCapabilities() ProviderCapabilityReport
 }
 
 // ConversationSessionCapabilities declares which session lifecycle features

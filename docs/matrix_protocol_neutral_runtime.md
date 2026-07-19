@@ -317,7 +317,9 @@ Readiness:
 - `matrix agent doctor <id>` reports effective protocol endpoint data, keeps the lightweight `--help` command probe, and performs the same bounded ACP `initialize` handshake used by the daemon;
 - ACP stdio handshake fields include `provider_handshake_ok`, `provider_status`, `provider_handshake_error`, and safe `provider_handshake_diagnostics` such as exit code and sanitized stderr;
 - the daemon performs this bounded handshake in its own service environment before persisting `ready_on_demand`; failed initialization is persisted as `initialize_failed` and becomes a readiness warning;
-- doctor identifies persisted `@zed-industries/codex-acp` launch metadata as deprecated and directs operators to `matrix install codex`, which resolves the canonical `codex-acp` registry entry.
+- doctor rejects retired Codex provider metadata and directs operators to
+  `matrix install codex`, which resolves the canonical `codex-acp` registry
+  entry inside the Matrix PAL.
 
 Versioning policy:
 
@@ -346,23 +348,24 @@ Current behavior:
 - ACP remote sessions can be closed when the provider advertises stable `sessionCapabilities.close`; Matrix uses this before `session/cancel` when `session/delete` is unavailable
 - ACP remote sessions can also be interrupted through `session/cancel`, which Matrix sends as a JSON-RPC notification
 - ACP lifecycle support is reported through a protocol-neutral capability model with `supported`, `status`, `stability`, and `source` for `list`, `info_update`, `load`, `cancel`, `close`, `delete`, `resume`, and `fork`
-- ACP session configuration prefers stable `configOptions` plus `session/set_config_option`; legacy `modes` are fallback only
+- ACP session configuration prefers stable `configOptions` plus `session/set_config_option`; stable session modes are used only when config options are absent
 - Fork capability descriptors also expose Matrix orchestration truth: `active_parent_safe`, `requires_idle_parent`, `artifact_turn`, `async_supported`, `blocking`, `artifact_streaming`, and `live_intervention_suitable`
 - ACP `session/fork` is wired only as a Draft capability-gated operation; Matrix returns typed unsupported results unless the provider advertises it
-- A2A remote tasks are enumerated through `ListTasks`, imported through `GetTask`, and deleted through `CancelTask`
+- A2A remote tasks are enumerated through paginated `ListTasks`, imported through `GetTask`, subscribed through `SubscribeToTask`, and canceled through `CancelTask`; A2A defines no task-delete RPC
 - channel users do not select ACP or A2A explicitly; Matrix resolves the provider from SSOT and the active session
 
-As of 2026-06-18, the current Zed ACP source of truth is the official
+As of 2026-07-19, the current Zed ACP source of truth is the official
 `agentclientprotocol.com` protocol docs plus the `agentclientprotocol` schema
-release `Schema v1.14.0`, published 2026-06-18.
+release `Schema v1.19.0`.
 `session/list`, `session_info_update`, `session/resume`, `session/close`,
 `session/delete`, `logout`, and `session/set_config_option` are stable
 lifecycle/configuration operations with capability checks where applicable.
 Matrix iterates `session/list` pagination through `nextCursor` and can propagate
 configured MCP servers into ACP session setup/resume/fork calls.
 ACP prompt projection supports additional content blocks supplied by channel or
-HTTP ingress (`resource_link`, `resource`, `image`, `audio`) while channel
-adapters remain responsible for provider capability checks.
+HTTP ingress (`resource_link`, `resource`, `image`, `audio`); the ACP adapter
+rejects optional types before session creation unless the provider advertises
+the matching prompt capability.
 ACP runtime updates are not collapsed into text-only streams: plan changes,
 thought chunks, usage updates, session config/info updates, commands, tool
 calls, diffs, and terminal references are projected into protocol-neutral run
@@ -474,57 +477,17 @@ The A2A ingress is implemented with the official Go SDK:
 - module: `github.com/a2aproject/a2a-go/v2` at `v2.3.1`, which exposes A2A
   protocol version `1.0`
 
-## Market State
+## Protocol status
 
-Matrix is intentionally ready for both ACP and A2A at the runtime boundary, but the operational state of the market is not symmetric.
+ACP and A2A are both first-class Matrix protocols. ACP remains the default for
+locally installed coding agents such as Codex, Gemini, Claude, and OpenCode.
+A2A is the first-class remote agent-to-agent path, with client, server,
+discovery, rich content, task lifecycle, streaming, push configuration, tenant,
+and extended-card coverage. Runtime selection always comes from the configured
+agent endpoint rather than market assumptions or traffic inference.
 
-### Operational Standard Today
-
-ACP is the current operational standard for real coding agents in this environment.
-
-Available ACP products and adapters include:
-
-- Codex via `@agentclientprotocol/codex-acp`
-- Gemini CLI via `gemini --acp`
-- Claude via `@agentclientprotocol/claude-agent-acp`
-- OpenCode via `opencode acp`
-
-The latest three-provider Matrix smoke evidence is recorded below for OpenCode,
-Codex ACP, and Gemini CLI.
-
-For day-to-day usage, ACP should be treated as the default production path.
-
-### Strategic Readiness
-
-A2A remains strategically important and is already supported in Matrix at the protocol, routing, discovery, and ingress layers.
-
-However, for the real products currently used with Matrix, A2A support is not yet mature enough to be treated as the default operational standard.
-
-Current state:
-
-- Matrix runtime: A2A-ready
-- Matrix discovery: A2A-ready
-- Matrix ingress: A2A-ready
-- Real market availability across coding agents: still uneven
-
-Therefore A2A should be documented as:
-
-- implemented in the core
-- suitable for experimentation and future adoption
-- pending broader and more stable market support from vendors and adapters
-
-### Adoption Trigger
-
-Matrix should promote A2A from strategic readiness to operational standard only when at least one of these becomes true:
-
-- major coding agents expose stable native A2A endpoints
-- stable vendor-supported A2A adapters become common and well documented
-- A2A discovery and deployment patterns become operationally simpler than ACP in real environments
-
-Until then:
-
-- use ACP by default
-- keep A2A available without making it the primary recommended path
+The maintained feature matrix is
+[`protocol_coverage.md`](protocol_coverage.md).
 
 ### Real Provider Lifecycle Probe
 
@@ -535,12 +498,9 @@ The 2026-05-04 lifecycle probe was executed against real ACP providers through
   `session/list`, stable `session/resume`, and draft `session/fork`;
   `session/list`, `session/resume`, prompt processing, file-token retrieval, and
   terminal-token retrieval succeeded.
-- historical `codex` evidence used `@zed-industries/codex-acp` 0.13.0 over `@openai/codex` 0.128.0; this package is deprecated and retained here only as historical evidence:
-  advertised `loadSession`, `session/list`, and stable `session/close`;
-  prompt processing succeeded after upgrading `codex-acp` from 0.11.1. For a
-  fresh temporary workspace, `session/list` returned zero persisted sessions and
-  `session/load` returned resource-not-found, which Matrix treats as provider
-  state, not as a protocol simulation opportunity.
+- Codex via the canonical `@agentclientprotocol/codex-acp` registry provider:
+  initialize, session discovery, prompt, permission, file, terminal, and
+  end-turn behavior are covered by the current release evidence.
 - `gemini` 0.40.1 via `gemini --acp --yolo`: advertised `loadSession`, then
   returned "No previous sessions found" for a fresh temporary workspace;
   prompt processing succeeded and Gemini requested ACP `session/request_permission`.

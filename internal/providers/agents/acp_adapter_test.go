@@ -2,12 +2,10 @@ package agents
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/exec"
-	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 func TestSupportsSessionCapabilityAcceptsZedObjectStyle(t *testing.T) {
@@ -29,31 +27,6 @@ func TestSupportsSessionCapabilityAcceptsZedObjectStyle(t *testing.T) {
 	}
 	if !supportsSessionCapability(resp, "delete") {
 		t.Fatalf("expected object-style delete capability")
-	}
-}
-
-func TestSupportsSessionCapabilityAcceptsLegacyBooleanTrueOnly(t *testing.T) {
-	resp := &acpInitializeResponse{
-		Capabilities: map[string]interface{}{
-			"sessionCapabilities": map[string]interface{}{
-				"list":   true,
-				"close":  false,
-				"delete": nil,
-			},
-		},
-	}
-
-	if !supportsSessionCapability(resp, "list") {
-		t.Fatalf("expected boolean true list capability")
-	}
-	if supportsSessionCapability(resp, "close") {
-		t.Fatalf("did not expect boolean false close capability")
-	}
-	if supportsSessionCapability(resp, "delete") {
-		t.Fatalf("did not expect nil delete capability")
-	}
-	if supportsSessionCapability(resp, "fork") {
-		t.Fatalf("did not expect absent fork capability")
 	}
 }
 
@@ -92,8 +65,8 @@ func TestACPSessionCapabilitiesExposeLifecycleStability(t *testing.T) {
 	if caps.Details["fork"].LiveInterventionSuitable == nil || *caps.Details["fork"].LiveInterventionSuitable {
 		t.Fatalf("fork should not claim timely live intervention suitability: %#v", caps.Details["fork"])
 	}
-	if caps.Details["additional_directories"].Stability != "draft" {
-		t.Fatalf("additional directories should be draft: %#v", caps.Details["additional_directories"])
+	if caps.Details["additional_directories"].Stability != "stable" {
+		t.Fatalf("additional directories should follow ACP v1 stable schema: %#v", caps.Details["additional_directories"])
 	}
 }
 
@@ -115,20 +88,17 @@ func TestPickAutoApproveConfigOptionPrefersStableConfigSurface(t *testing.T) {
 		t.Fatalf("unexpected config selection: %s=%s", configID, value)
 	}
 	if modeID := pickAutoApproveMode(resp); modeID != "" {
-		t.Fatalf("legacy mode picker must not consume config options, got %q", modeID)
+		t.Fatalf("mode picker must not consume config options, got %q", modeID)
 	}
 }
 
-func TestACPClientCapabilitiesKeepTerminalAuthExplicit(t *testing.T) {
+func TestACPClientCapabilitiesAdvertiseStableBooleanConfig(t *testing.T) {
 	caps := acpClientCapabilitiesForDeps(middleware.ConversationFactoryDeps{Process: exec.NewProvider()})
 	if !caps.Terminal {
 		t.Fatalf("terminal tool capability should follow process backend availability: %#v", caps)
 	}
-	if caps.Auth == nil {
-		t.Fatalf("auth capabilities should be present for current ACP auth surface")
-	}
-	if caps.Auth.Terminal {
-		t.Fatalf("auth.terminal must not be advertised on the autonomous runtime path")
+	if caps.Session == nil || caps.Session.ConfigOptions == nil || caps.Session.ConfigOptions.Boolean == nil {
+		t.Fatalf("stable session.configOptions.boolean capability should be advertised: %#v", caps)
 	}
 }
 
@@ -139,6 +109,8 @@ type pagedListACPClient struct {
 	newReq    *acpNewSessionRequest
 	resumeReq *acpResumeSessionRequest
 	promptReq *acpPromptRequest
+	authID    string
+	logouts   int
 }
 
 func (c *pagedListACPClient) Context() context.Context            { return c.ctx }
@@ -147,8 +119,14 @@ func (c *pagedListACPClient) SetRequestHandler(acpRequestHandler) {}
 func (c *pagedListACPClient) Initialize(context.Context, acpInitializeRequest) (*acpInitializeResponse, error) {
 	return &acpInitializeResponse{ProtocolVersion: supportedACPProtocolVersion}, nil
 }
-func (c *pagedListACPClient) Authenticate(context.Context, string, map[string]string) error {
+
+func (c *pagedListACPClient) Authenticate(_ context.Context, methodID string) error {
+	c.authID = methodID
 	return nil
+}
+func (c *pagedListACPClient) Logout(context.Context, acpLogoutRequest) (*acpLogoutResponse, error) {
+	c.logouts++
+	return &acpLogoutResponse{}, nil
 }
 func (c *pagedListACPClient) NewSession(_ context.Context, req acpNewSessionRequest) (*acpNewSessionResponse, error) {
 	c.newReq = &req
@@ -309,92 +287,6 @@ func TestExecuteTurnRejectsRelativeAdditionalDirectoriesWhenAdvertised(t *testin
 	}
 }
 
-func TestACPEnvVarAuthUsesStructuredVars(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "secret")
-	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://example.test")
-
-	credentials, ok := acpEnvVarCredentials(acpAuthMethod{
-		Type: "env_var",
-		ID:   "openai",
-		Vars: []zedacp.AuthEnvVar{
-			{Name: "OPENAI_API_KEY"},
-			{Name: "AZURE_OPENAI_ENDPOINT", Optional: true},
-		},
-	})
-	if !ok {
-		t.Fatal("expected structured env vars to be usable from process environment")
-	}
-	if credentials["OPENAI_API_KEY"] != "secret" || credentials["AZURE_OPENAI_ENDPOINT"] != "https://example.test" {
-		t.Fatalf("unexpected credentials: %#v", credentials)
-	}
-}
-
-type recordingACPAuthenticator struct {
-	errs  []error
-	calls []recordedACPAuthCall
-}
-
-type recordedACPAuthCall struct {
-	methodID    string
-	credentials map[string]string
-}
-
-func (a *recordingACPAuthenticator) Authenticate(_ context.Context, methodID string, credentials map[string]string) error {
-	cloned := map[string]string(nil)
-	if credentials != nil {
-		cloned = make(map[string]string, len(credentials))
-		for key, value := range credentials {
-			cloned[key] = value
-		}
-	}
-	a.calls = append(a.calls, recordedACPAuthCall{methodID: methodID, credentials: cloned})
-	if len(a.errs) == 0 {
-		return nil
-	}
-	err := a.errs[0]
-	a.errs = a.errs[1:]
-	return err
-}
-
-func TestACPEnvVarAuthUsesCurrentAuthenticateShapeBeforeLegacyFallback(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "secret")
-	auth := &recordingACPAuthenticator{}
-
-	authenticateACPEnvVarFromEnvironment(context.Background(), auth, acpAuthMethod{
-		Type:   "env_var",
-		ID:     "openai",
-		EnvVar: "OPENAI_API_KEY",
-	})
-
-	if len(auth.calls) != 1 {
-		t.Fatalf("expected one authenticate call, got %#v", auth.calls)
-	}
-	if auth.calls[0].methodID != "openai" || auth.calls[0].credentials != nil {
-		t.Fatalf("current authenticate call should omit legacy credentials, got %#v", auth.calls[0])
-	}
-}
-
-func TestACPEnvVarAuthFallsBackToLegacyCredentials(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "secret")
-	auth := &recordingACPAuthenticator{errs: []error{errors.New("legacy agent requires credentials")}}
-
-	authenticateACPEnvVarFromEnvironment(context.Background(), auth, acpAuthMethod{
-		Type:   "env_var",
-		ID:     "openai",
-		EnvVar: "OPENAI_API_KEY",
-	})
-
-	if len(auth.calls) != 2 {
-		t.Fatalf("expected current call plus legacy fallback, got %#v", auth.calls)
-	}
-	if got := auth.calls[1].credentials["OPENAI_API_KEY"]; got != "secret" {
-		t.Fatalf("expected env var credential fallback, got %#v", auth.calls[1].credentials)
-	}
-	if got := auth.calls[1].credentials["api_key"]; got != "secret" {
-		t.Fatalf("expected single-var api_key compatibility fallback, got %#v", auth.calls[1].credentials)
-	}
-}
-
 func TestExecuteTurnSendsEmptyMCPServersArray(t *testing.T) {
 	fake := &pagedListACPClient{ctx: context.Background()}
 	client := &acpConversationClient{
@@ -414,5 +306,75 @@ func TestExecuteTurnSendsEmptyMCPServersArray(t *testing.T) {
 	}
 	if len(fake.newReq.McpServers) != 0 {
 		t.Fatalf("expected no MCP servers, got %#v", fake.newReq.McpServers)
+	}
+}
+
+func TestExecuteTurnGatesOptionalACPContentBeforeCreatingSession(t *testing.T) {
+	fake := &pagedListACPClient{ctx: context.Background()}
+	client := &acpConversationClient{client: fake, loadedSessions: map[string]bool{}}
+
+	_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{
+		ContentBlocks: []middleware.Content{{Type: "image", Data: "aW1hZ2U=", MimeType: "image/png"}},
+	})
+	if err == nil || fake.newReq != nil {
+		t.Fatalf("unadvertised image must fail before session/new: req=%#v err=%v", fake.newReq, err)
+	}
+	client.featureCapabilities.promptImage = true
+	if _, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{
+		ContentBlocks: []middleware.Content{{Type: "image", Data: "aW1hZ2U=", MimeType: "image/png"}},
+	}); err != nil {
+		t.Fatalf("advertised image content failed: %v", err)
+	}
+}
+
+func TestExecuteTurnGatesACPMCPTransportBeforeCreatingSession(t *testing.T) {
+	fake := &pagedListACPClient{ctx: context.Background()}
+	client := &acpConversationClient{client: fake, loadedSessions: map[string]bool{}}
+
+	_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{
+		Message:    "mcp",
+		McpServers: []middleware.McpServerConfig{{Name: "remote", Type: "http", URL: "https://mcp.example"}},
+	})
+	if err == nil || fake.newReq != nil {
+		t.Fatalf("unadvertised HTTP MCP must fail before session/new: req=%#v err=%v", fake.newReq, err)
+	}
+}
+
+func TestACPAuthenticationUsesStableAgentMethodAndCapabilityGatedLogout(t *testing.T) {
+	fake := &pagedListACPClient{ctx: context.Background()}
+	client := &acpConversationClient{
+		client: fake,
+		authMethods: []acpAuthMethod{
+			{Type: "agent", ID: "browser", Name: "Browser login"},
+			{Type: "env_var", ID: "retired", Name: "Retired draft shape"},
+		},
+		featureCapabilities: acpFeatureCapabilities{logout: true},
+	}
+	if methods := client.AuthenticationMethods(); len(methods) != 1 || methods[0].ID != "browser" {
+		t.Fatalf("unexpected stable authentication methods: %#v", methods)
+	}
+	if err := client.Authenticate(context.Background(), "retired"); err == nil {
+		t.Fatal("retired authentication shape must fail closed")
+	}
+	if err := client.Authenticate(context.Background(), "browser"); err != nil || fake.authID != "browser" {
+		t.Fatalf("stable authentication failed: auth=%q err=%v", fake.authID, err)
+	}
+	if err := client.Logout(context.Background()); err != nil || fake.logouts != 1 {
+		t.Fatalf("capability-gated logout failed: calls=%d err=%v", fake.logouts, err)
+	}
+}
+
+func TestACPProtocolCapabilitiesExposeStableSurface(t *testing.T) {
+	client := &acpConversationClient{
+		endpoint:            middleware.ProtocolEndpoint{Transport: "stdio"},
+		featureCapabilities: acpFeatureCapabilities{promptImage: true, fsRead: true},
+		sessionCapabilities: middleware.ConversationSessionCapabilities{List: true},
+	}
+	report := client.ProtocolCapabilities()
+	if !report.Operations["session/prompt"].Supported || !report.Operations["session/list"].Supported {
+		t.Fatalf("missing stable ACP operations: %#v", report.Operations)
+	}
+	if !report.Content["image"].Supported || report.Content["audio"].Supported {
+		t.Fatalf("content capability gates lost: %#v", report.Content)
 	}
 }

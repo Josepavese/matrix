@@ -35,6 +35,22 @@ func (s *stubSessionRouter) Route(_ context.Context, channelID string, agentID s
 	return "matrix:" + input, nil
 }
 
+type richSessionRouter struct {
+	stubSessionRouter
+	content []middleware.Content
+}
+
+func (r *richSessionRouter) RouteConversation(_ context.Context, req middleware.ConversationRequest) (string, error) {
+	r.channelID = req.ChannelID
+	r.agentID = req.AgentID
+	r.input = req.Input
+	r.content = append([]middleware.Content(nil), req.ContentBlocks...)
+	if req.Notifier != nil {
+		req.Notifier.OnThought(middleware.ThoughtUpdate{Content: "working", Metadata: map[string]interface{}{"phase": "route"}})
+	}
+	return "matrix:" + req.Input, nil
+}
+
 func TestServer_RegisterRoutesAndHandleMessage(t *testing.T) {
 	router := &stubSessionRouter{}
 	mux := http.NewServeMux()
@@ -59,17 +75,20 @@ func TestServer_RegisterRoutesAndHandleMessage(t *testing.T) {
 	if card.Name != "Matrix" || card.Version != "2" {
 		t.Fatalf("unexpected agent card identity: %#v", card)
 	}
-	if card.Capabilities.Streaming {
-		t.Fatalf("agent card must not advertise streaming until Matrix emits progressive A2A events")
+	if !card.Capabilities.Streaming {
+		t.Fatalf("agent card must advertise the implemented SSE streaming surface")
 	}
-	if len(card.DefaultInputModes) != 1 || card.DefaultInputModes[0] != "text/plain" {
+	if len(card.DefaultInputModes) < 3 || card.DefaultInputModes[0] != "text/plain" {
 		t.Fatalf("unexpected input modes: %#v", card.DefaultInputModes)
 	}
-	if len(card.SupportedInterfaces) != 1 {
-		t.Fatalf("expected one supported interface, got %#v", card.SupportedInterfaces)
+	if len(card.SupportedInterfaces) != 2 {
+		t.Fatalf("expected JSON-RPC and HTTP+JSON interfaces, got %#v", card.SupportedInterfaces)
 	}
 	if got := card.SupportedInterfaces[0]; got.ProtocolBinding != a2asdk.TransportProtocolJSONRPC || string(got.ProtocolVersion) != "1.0" {
 		t.Fatalf("unexpected supported interface: %#v", got)
+	}
+	if got := card.SupportedInterfaces[1]; got.ProtocolBinding != a2asdk.TransportProtocolHTTPJSON || string(got.ProtocolVersion) != "1.0" {
+		t.Fatalf("unexpected HTTP+JSON interface: %#v", got)
 	}
 
 	client, err := a2aclient.NewFromEndpoints(context.Background(), []*a2asdk.AgentInterface{
@@ -90,11 +109,14 @@ func TestServer_RegisterRoutesAndHandleMessage(t *testing.T) {
 		t.Fatalf("SendMessage failed: %v", err)
 	}
 
-	message, ok := resp.(*a2asdk.Message)
+	task, ok := resp.(*a2asdk.Task)
 	if !ok {
-		t.Fatalf("expected *a2a.Message, got %T", resp)
+		t.Fatalf("expected task lifecycle result, got %T", resp)
 	}
-	if got := strings.TrimSpace(partsText(message.Parts)); got != "matrix:hello a2a" {
+	if len(task.Artifacts) != 1 {
+		t.Fatalf("expected one final artifact, got %#v", task.Artifacts)
+	}
+	if got := strings.TrimSpace(partsText(task.Artifacts[0].Parts)); got != "matrix:hello a2a" {
 		t.Fatalf("unexpected response output: %q", got)
 	}
 	if router.channelID != "a2a:test" {
@@ -176,6 +198,86 @@ func TestServer_A2AAcceptsProtocolJSONContentType(t *testing.T) {
 	}
 }
 
+func TestServer_A2AStreamsTaskProgressAndArtifacts(t *testing.T) {
+	router := &richSessionRouter{}
+	mux := http.NewServeMux()
+	NewServer(router, "http://127.0.0.1:0", "opencode").RegisterRoutes(mux)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client, err := a2aclient.NewFromEndpoints(context.Background(), []*a2asdk.AgentInterface{
+		a2asdk.NewAgentInterface(server.URL+"/a2a", a2asdk.TransportProtocolJSONRPC),
+	})
+	if err != nil {
+		t.Fatalf("NewFromEndpoints failed: %v", err)
+	}
+	defer func() { _ = client.Destroy() }()
+
+	var submitted, working, artifacts, completed int
+	for event, streamErr := range client.SendStreamingMessage(context.Background(), &a2asdk.SendMessageRequest{
+		Message: a2asdk.NewMessage(a2asdk.MessageRoleUser, a2asdk.NewTextPart("stream me")),
+	}) {
+		if streamErr != nil {
+			t.Fatalf("stream failed: %v", streamErr)
+		}
+		switch value := event.(type) {
+		case *a2asdk.Task:
+			if value.Status.State == a2asdk.TaskStateSubmitted {
+				submitted++
+			}
+		case *a2asdk.TaskStatusUpdateEvent:
+			switch value.Status.State {
+			case a2asdk.TaskStateWorking:
+				working++
+			case a2asdk.TaskStateCompleted:
+				completed++
+			}
+		case *a2asdk.TaskArtifactUpdateEvent:
+			artifacts++
+		}
+	}
+	if submitted != 1 || working < 2 || artifacts != 1 || completed != 1 {
+		t.Fatalf("incomplete task stream: submitted=%d working=%d artifacts=%d completed=%d", submitted, working, artifacts, completed)
+	}
+}
+
+func TestServer_HTTPJSONAcceptsRichA2AContent(t *testing.T) {
+	router := &richSessionRouter{}
+	mux := http.NewServeMux()
+	NewServer(router, "http://127.0.0.1:0", "opencode").RegisterRoutes(mux)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client, err := a2aclient.NewFromEndpoints(context.Background(), []*a2asdk.AgentInterface{
+		a2asdk.NewAgentInterface(server.URL+"/a2a/rest", a2asdk.TransportProtocolHTTPJSON),
+	})
+	if err != nil {
+		t.Fatalf("NewFromEndpoints failed: %v", err)
+	}
+	defer func() { _ = client.Destroy() }()
+
+	file := a2asdk.NewRawPart([]byte("png"))
+	file.Filename = "image.png"
+	file.MediaType = "image/png"
+	data := a2asdk.NewDataPart(map[string]any{"priority": "high"})
+	data.MediaType = "application/json"
+	_, err = client.SendMessage(context.Background(), &a2asdk.SendMessageRequest{
+		Message: a2asdk.NewMessage(a2asdk.MessageRoleUser, a2asdk.NewTextPart("inspect"), file, data),
+	})
+	if err != nil {
+		t.Fatalf("HTTP+JSON SendMessage failed: %v", err)
+	}
+	if router.input != "inspect" || len(router.content) != 3 {
+		t.Fatalf("rich request was not projected: input=%q content=%#v", router.input, router.content)
+	}
+	if router.content[1].Type != "image" || router.content[1].Name != "image.png" || router.content[1].Data == "" {
+		t.Fatalf("file part was not preserved: %#v", router.content[1])
+	}
+	if router.content[2].Type != "data" || !strings.Contains(router.content[2].Data, "priority") {
+		t.Fatalf("data part was not preserved: %#v", router.content[2])
+	}
+}
+
 func TestServer_A2ARejectsNonTextParts(t *testing.T) {
 	router := &stubSessionRouter{}
 	mux := http.NewServeMux()
@@ -194,9 +296,13 @@ func TestServer_A2ARejectsNonTextParts(t *testing.T) {
 	defer func() { _ = client.Destroy() }()
 
 	msg := a2asdk.NewMessage(a2asdk.MessageRoleUser, a2asdk.NewDataPart(map[string]any{"not": "text"}))
-	_, err = client.SendMessage(context.Background(), &a2asdk.SendMessageRequest{Message: msg})
-	if err == nil {
-		t.Fatalf("expected non-text A2A part to be rejected")
+	result, err := client.SendMessage(context.Background(), &a2asdk.SendMessageRequest{Message: msg})
+	if err != nil {
+		t.Fatalf("protocol should return a failed task rather than break transport: %v", err)
+	}
+	task, ok := result.(*a2asdk.Task)
+	if !ok || task.Status.State != a2asdk.TaskStateFailed {
+		t.Fatalf("expected failed task for router without rich ingress, got %#v", result)
 	}
 	if router.input != "" {
 		t.Fatalf("non-text request should not have reached router, input=%q", router.input)

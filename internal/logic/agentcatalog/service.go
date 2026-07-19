@@ -23,6 +23,8 @@ type Entry struct {
 	Transport       string                  `json:"transport,omitempty"`
 	Address         string                  `json:"address,omitempty"`
 	CardURL         string                  `json:"card_url,omitempty"`
+	Tenant          string                  `json:"tenant,omitempty"`
+	Headers         map[string]string       `json:"-"`
 	DistTypes       []string                `json:"dist_types,omitempty"`
 	Installed       bool                    `json:"installed"`
 }
@@ -156,6 +158,8 @@ func RegisterRemote(storage middleware.Storage, entry Entry) error {
 	current.Config.Transport = transport
 	current.Config.Address = strings.TrimSpace(entry.Address)
 	current.Config.CardURL = strings.TrimSpace(entry.CardURL)
+	current.Config.Tenant = strings.TrimSpace(entry.Tenant)
+	current.Config.Headers = agentcfg.CloneHeaders(entry.Headers)
 	current.Config.ProtocolVersion = strings.TrimSpace(entry.ProtocolVersion)
 	current.Config.Command = ""
 	current.Config.Args = nil
@@ -244,6 +248,7 @@ func (s *Service) listLocal() []Entry {
 			Transport:       endpoint.Transport,
 			Address:         address,
 			CardURL:         endpoint.CardURL,
+			Tenant:          endpoint.Tenant,
 			DistTypes:       append([]string{}, meta.DistTypes...),
 			Installed:       true,
 		})
@@ -277,6 +282,7 @@ func entriesFromRecords(records []agentdiscovery.Record) []Entry {
 			Transport:       record.Transport,
 			Address:         record.Address,
 			CardURL:         record.CardURL,
+			Tenant:          record.Tenant,
 			DistTypes:       append([]string{}, record.Distribution...),
 		})
 	}
@@ -325,6 +331,9 @@ func fillMissingEntryFields(target *Entry, source Entry) {
 	}
 	if target.CardURL == "" {
 		target.CardURL = source.CardURL
+	}
+	if target.Tenant == "" {
+		target.Tenant = source.Tenant
 	}
 	fillMissingDistTypes(target, source)
 }

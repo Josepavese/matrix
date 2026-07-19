@@ -24,6 +24,7 @@ required = [
   "docs/matrix_deployment_policy.md",
   "docs/matrix_release_runbook.md",
   "docs/matrix_protocol_neutral_runtime.md",
+  "docs/protocol_coverage.md",
   "docs/matrix_zed_acp_compliance.md",
   "docs/matrix_production_readiness.md"
 ]
@@ -42,9 +43,10 @@ required = [
 "docs/governance/issue_triage_template.md" = ["accepted", "rejected", "issues/closed"]
 "docs/governance/release_evidence_template.md" = ["Release Identity", "GitHub Actions", "Local Install", "Runtime Evidence"]
 "docs/governance/security_governance.md" = ["vault", "secret", "installer", "token"]
-"docs/governance/zero_legacy_governance.md" = ["ZERO-LEGACY", "fail closed", "one-way", "PAL", "codex"]
+"docs/governance/zero_legacy_governance.md" = ["ZERO-LEGACY", "fail closed", "one-way", "PAL", "codex", "current stable", "retired wire shape"]
 "docs/wiki/Governance.md" = ["governance_check", "protocol-neutral", "channel-neutral", "release evidence"]
 "docs/matrix_zed_acp_compliance.md" = ["Zed Agent Client Protocol", "session/fork", "additionalDirectories", "side"]
+"docs/protocol_coverage.md" = ["ACP v1 stable coverage", "A2A v1.0.1 coverage", "ZERO-LEGACY", "ListTaskPushConfigs", "GetExtendedAgentCard"]
 
 [preflight]
 file = "scripts/deploy_preflight.sh"
@@ -106,7 +108,8 @@ patterns = [
   "github.com/a2aproject/a2a-go"
 ]
 allowed_files = [
-  "internal/logic/agentdiscovery/discovery.go"
+  "internal/logic/agentdiscovery/discovery.go",
+  "internal/logic/agentdiscovery/card_provider.go"
 ]
 max = 0
 reason = "Protocol SDK usage must stay behind provider adapters or explicit discovery seams."
@@ -146,6 +149,17 @@ allowed_files = [
 ]
 max = 0
 reason = "ZERO-LEGACY: the retired Codex provider may exist only at its centralized rejection boundary and in rejection tests."
+
+[pattern_budget.retired_acp_wire_contract]
+roots = ["pkg/zedacp", "internal/providers/agents", "internal/middleware"]
+patterns = [
+  "AuthEnvVar",
+  "credentials map[string]string",
+  "json:\"capabilities,omitempty\""
+]
+allowed_files = ["internal/middleware/link.go"]
+max = 0
+reason = "ZERO-LEGACY: ACP authentication accepts methodId only and initialization accepts agentCapabilities only."
 
 [pattern_budget.direct_bolt_cli_access]
 roots = ["cmd/matrix"]

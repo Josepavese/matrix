@@ -33,8 +33,11 @@ func (c *blockingACPClient) SetRequestHandler(acpRequestHandler) {}
 func (c *blockingACPClient) Initialize(context.Context, acpInitializeRequest) (*acpInitializeResponse, error) {
 	return &acpInitializeResponse{ProtocolVersion: supportedACPProtocolVersion}, nil
 }
-func (c *blockingACPClient) Authenticate(context.Context, string, map[string]string) error {
+func (c *blockingACPClient) Authenticate(context.Context, string) error {
 	return nil
+}
+func (c *blockingACPClient) Logout(context.Context, acpLogoutRequest) (*acpLogoutResponse, error) {
+	return &acpLogoutResponse{}, nil
 }
 func (c *blockingACPClient) NewSession(context.Context, acpNewSessionRequest) (*acpNewSessionResponse, error) {
 	return &acpNewSessionResponse{SessionID: "remote-session"}, nil

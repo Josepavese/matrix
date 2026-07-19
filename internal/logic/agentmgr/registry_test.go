@@ -8,6 +8,10 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/agentidentity"
 )
 
+type staticConfigReader []byte
+
+func (r staticConfigReader) ReadConfig(string) ([]byte, error) { return r, nil }
+
 type registryMemStorage struct {
 	data map[string][]byte
 }
@@ -95,5 +99,12 @@ func TestRegistryGetRejectsProviderIdentifier(t *testing.T) {
 	_, err := registry.Get("codex-acp")
 	if err == nil || !strings.Contains(err.Error(), `use "codex"`) {
 		t.Fatalf("expected canonical agent ID error, got %v", err)
+	}
+}
+
+func TestSeedFromConfigFileRejectsRetiredProtocolField(t *testing.T) {
+	err := SeedFromConfigFile(newRegistryMemStorage(), staticConfigReader(`{"agent":{"command":"agent","protocol":"acp"}}`), "agents.json")
+	if err == nil || !strings.Contains(err.Error(), `use "kind"`) {
+		t.Fatalf("expected actionable ZERO-LEGACY rejection, got %v", err)
 	}
 }

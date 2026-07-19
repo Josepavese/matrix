@@ -3,7 +3,6 @@ package middleware
 
 import (
 	"context"
-	"encoding/json"
 )
 
 // AgentTransport abstracts a bidirectional stream for JSON-RPC 2.0 messages (e.g. Stdio, WebSocket).
@@ -16,27 +15,6 @@ type AgentTransport interface {
 	Close() error
 }
 
-// SessionObserver receives asynchronous updates (e.g. streaming text) during a prompt execution.
-type SessionObserver interface {
-	OnUpdate(notification SessionNotification)
-}
-
-// RequestHandler handles incoming JSON-RPC requests from the agent (e.g. tool calls, permissions).
-type RequestHandler interface {
-	HandleRequest(ctx context.Context, method string, params json.RawMessage) (interface{}, error)
-}
-
-// AgentClient provides the strictly-typed semantic methods to interact with an ACP Agent.
-type AgentClient interface {
-	Initialize(ctx context.Context, req InitializeRequest) (*InitializeResponse, error)
-	NewSession(ctx context.Context, req NewSessionRequest) (*NewSessionResponse, error)
-	Prompt(ctx context.Context, req PromptRequest, observer SessionObserver) (*PromptResponse, error)
-	// SetRequestHandler registers a handler for incoming agent-to-client requests.
-	SetRequestHandler(handler RequestHandler)
-	// SetMode switches the agent session mode (e.g. "yolo" for auto-approve all tools).
-	SetMode(ctx context.Context, sessionID, modeID string) error
-}
-
 // AgentRouter is responsible for orchestrating the complete lifecycle (Init -> Session -> Prompt) for a given agent.
 type AgentRouter interface {
 	// Route executes a full prompt turn, delegating to the proper AgentClient.
@@ -46,20 +24,22 @@ type AgentRouter interface {
 
 // RouteRequest contains the parameters for routing a prompt to an agent.
 type RouteRequest struct {
-	AgentID               string
-	LogicalSessionID      string
-	AgentSessionID        string
-	WorkspacePath         string
-	Message               string
-	ContentBlocks         []Content
-	SidecarCapsules       []SidecarCapsule
-	Tools                 []Tool
-	McpServers            []McpServerConfig
-	AdditionalDirectories []string
-	AgentLaunchArgs       []string
-	ThoughtNotifier       ThoughtNotifier // optional: receives real-time thought/tool updates during prompt
-	StrictSession         bool            // do not recover by creating a replacement remote session
-	LiveContextAttach     bool            // true when this route is a best-effort live context injection
+	AgentID                  string
+	LogicalSessionID         string
+	AgentSessionID           string
+	WorkspacePath            string
+	Message                  string
+	ContentBlocks            []Content
+	ExtensionURIs            []string
+	ReferencedRemoteSessions []string
+	SidecarCapsules          []SidecarCapsule
+	Tools                    []Tool
+	McpServers               []McpServerConfig
+	AdditionalDirectories    []string
+	AgentLaunchArgs          []string
+	ThoughtNotifier          ThoughtNotifier // optional: receives real-time thought/tool updates during prompt
+	StrictSession            bool            // do not recover by creating a replacement remote session
+	LiveContextAttach        bool            // true when this route is a best-effort live context injection
 }
 
 // ThoughtUpdateType classifies the kind of intermediate update from an agent.
@@ -98,116 +78,6 @@ type ThoughtNotifier interface {
 // AgentEndpointResolver maps an agent ID to a protocol-neutral endpoint description.
 type AgentEndpointResolver interface {
 	GetAgentEndpoint(agentID string) (ProtocolEndpoint, error)
-}
-
-// --- Domain Structures matching Zed ACP ---
-
-// InitializeRequest is the payload sent to initialize an ACP agent connection.
-type InitializeRequest struct {
-	ProtocolVersion    int                    `json:"protocolVersion"`
-	ClientInfo         map[string]interface{} `json:"clientInfo"`
-	ClientCapabilities *ClientCapabilities    `json:"clientCapabilities,omitempty"`
-}
-
-// ClientCapabilities declares what the client supports per ACP spec.
-// Per spec: fs is an object {readTextFile, writeTextFile}, terminal is a boolean.
-type ClientCapabilities struct {
-	Fs                *FsCapability          `json:"fs,omitempty"`
-	Terminal          bool                   `json:"terminal,omitempty"`
-	Auth              *AuthCapabilities      `json:"auth,omitempty"`
-	Elicitation       map[string]interface{} `json:"elicitation,omitempty"`
-	Nes               map[string]interface{} `json:"nes,omitempty"`
-	PositionEncodings []string               `json:"positionEncodings,omitempty"`
-	Meta              map[string]interface{} `json:"_meta,omitempty"`
-}
-
-type AuthCapabilities struct {
-	Terminal bool                   `json:"terminal,omitempty"`
-	Meta     map[string]interface{} `json:"_meta,omitempty"`
-}
-
-// FsCapability indicates the client can handle fs/read_text_file and fs/write_text_file.
-type FsCapability struct {
-	ReadTextFile  bool `json:"readTextFile"`
-	WriteTextFile bool `json:"writeTextFile"`
-}
-
-// InitializeResponse contains the agent capabilities and auth methods returned after initialization.
-// It accepts both the current Zed ACP field name `agentCapabilities` and the older
-// compatibility field name `capabilities`.
-type InitializeResponse struct {
-	ProtocolVersion int                    `json:"protocolVersion,omitempty"`
-	AgentInfo       map[string]interface{} `json:"agentInfo,omitempty"`
-	Capabilities    map[string]interface{} `json:"-"`
-	AuthMethods     []AuthMethod           `json:"authMethods,omitempty"`
-}
-
-func (r *InitializeResponse) UnmarshalJSON(data []byte) error {
-	type alias struct {
-		ProtocolVersion   int                    `json:"protocolVersion,omitempty"`
-		AgentInfo         map[string]interface{} `json:"agentInfo,omitempty"`
-		AgentCapabilities map[string]interface{} `json:"agentCapabilities,omitempty"`
-		Capabilities      map[string]interface{} `json:"capabilities,omitempty"`
-		AuthMethods       []AuthMethod           `json:"authMethods,omitempty"`
-	}
-	var raw alias
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	r.ProtocolVersion = raw.ProtocolVersion
-	r.AgentInfo = raw.AgentInfo
-	r.AuthMethods = raw.AuthMethods
-	if raw.AgentCapabilities != nil {
-		r.Capabilities = raw.AgentCapabilities
-	} else {
-		r.Capabilities = raw.Capabilities
-	}
-	return nil
-}
-
-// AuthMethod describes an authentication method returned by the agent during initialize.
-type AuthMethod struct {
-	Type        string                 `json:"type,omitempty"`
-	ID          string                 `json:"id,omitempty"`
-	Name        string                 `json:"name,omitempty"`
-	Description string                 `json:"description,omitempty"`
-	Link        string                 `json:"link,omitempty"`
-	Vars        []AuthEnvVar           `json:"vars,omitempty"`
-	Args        []string               `json:"args,omitempty"`
-	Env         map[string]string      `json:"env,omitempty"`
-	EnvVar      string                 `json:"envVar,omitempty"`
-	Meta        map[string]interface{} `json:"_meta,omitempty"`
-}
-
-type AuthEnvVar struct {
-	Name     string                 `json:"name"`
-	Label    string                 `json:"label,omitempty"`
-	Optional bool                   `json:"optional,omitempty"`
-	Secret   bool                   `json:"secret,omitempty"`
-	Meta     map[string]interface{} `json:"_meta,omitempty"`
-}
-
-func (v *AuthEnvVar) UnmarshalJSON(data []byte) error {
-	type rawAuthEnvVar struct {
-		Name     string                 `json:"name"`
-		Label    string                 `json:"label,omitempty"`
-		Optional bool                   `json:"optional,omitempty"`
-		Secret   *bool                  `json:"secret,omitempty"`
-		Meta     map[string]interface{} `json:"_meta,omitempty"`
-	}
-	var raw rawAuthEnvVar
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	v.Name = raw.Name
-	v.Label = raw.Label
-	v.Optional = raw.Optional
-	v.Secret = true
-	if raw.Secret != nil {
-		v.Secret = *raw.Secret
-	}
-	v.Meta = raw.Meta
-	return nil
 }
 
 // NewSessionRequest is the payload sent to create a new agent session.

@@ -22,14 +22,8 @@ func supportsSessionCapability(resp *acpInitializeResponse, name string) bool {
 }
 
 func capabilityEnabled(raw interface{}) bool {
-	switch value := raw.(type) {
-	case bool:
-		return value
-	case map[string]interface{}:
-		return value != nil
-	default:
-		return false
-	}
+	value, ok := raw.(map[string]interface{})
+	return ok && value != nil
 }
 
 func acpSessionCapabilities(resp *acpInitializeResponse) middleware.ConversationSessionCapabilities {
@@ -59,7 +53,7 @@ func acpSessionCapabilities(resp *acpInitializeResponse) middleware.Conversation
 			"delete":                 acpCapability("delete", deleteSession, "stable", "zed_acp_schema_session_delete"),
 			"resume":                 acpCapability("resume", resume, "stable", "zed_acp_schema_session_resume"),
 			"fork":                   acpForkCapability(fork),
-			"additional_directories": acpCapability("additional_directories", additionalDirectories, "draft", "zed_acp_rfd_additional_directories"),
+			"additional_directories": acpCapability("additional_directories", additionalDirectories, "stable", "zed_acp_v1_session_additional_directories"),
 		},
 	}
 }

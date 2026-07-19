@@ -37,6 +37,7 @@ type Record struct {
 	Transport       string                  `json:"transport,omitempty"`
 	Address         string                  `json:"address,omitempty"`
 	CardURL         string                  `json:"card_url,omitempty"`
+	Tenant          string                  `json:"tenant,omitempty"`
 	Website         string                  `json:"website,omitempty"`
 	Repository      string                  `json:"repository,omitempty"`
 	License         string                  `json:"license,omitempty"`
@@ -56,6 +57,7 @@ type Options struct {
 	Registry    *agentmgr.Registry
 	RegistryURL string
 	CatalogURL  string
+	Headers     map[string]string
 }
 
 func NewProvider(source Source, opts Options) (Provider, error) {
@@ -74,7 +76,7 @@ func NewProvider(source Source, opts Options) (Provider, error) {
 		if opts.Net == nil {
 			return nil, fmt.Errorf("A2A card discovery requires network")
 		}
-		return &a2aCardProvider{net: opts.Net}, nil
+		return &a2aCardProvider{net: opts.Net, headers: copyHeaders(opts.Headers)}, nil
 	case SourceA2ACatalog:
 		if opts.Net == nil {
 			return nil, fmt.Errorf("A2A catalog discovery requires network")
@@ -120,6 +122,7 @@ func (p *localProvider) Get(_ context.Context, ref string) (*Record, error) {
 		Command:         cfg.Command,
 		Args:            cfg.Args,
 		Env:             cfg.Env,
+		Tenant:          cfg.Tenant,
 		Kind:            cfg.Kind,
 		Transport:       cfg.Transport,
 		Address:         cfg.Address,
@@ -142,6 +145,7 @@ func (p *localProvider) Get(_ context.Context, ref string) (*Record, error) {
 		Transport:       endpoint.Transport,
 		Address:         address,
 		CardURL:         endpoint.CardURL,
+		Tenant:          endpoint.Tenant,
 		ProtocolVersion: endpoint.ProtocolVersion,
 	}, nil
 }
@@ -176,27 +180,6 @@ func (p *acpRegistryProvider) Get(ctx context.Context, ref string) (*Record, err
 	return &record, nil
 }
 
-type a2aCardProvider struct {
-	net middleware.Network
-}
-
-func (p *a2aCardProvider) Search(context.Context, string) ([]Record, error) {
-	return nil, ErrSearchUnsupported
-}
-
-func (p *a2aCardProvider) Get(ctx context.Context, ref string) (*Record, error) {
-	cardURL, err := ResolveAgentCardURL(ref)
-	if err != nil {
-		return nil, err
-	}
-	var card a2asdk.AgentCard
-	if err := p.net.FetchJSON(ctx, cardURL, &card); err != nil {
-		return nil, err
-	}
-	record := recordFromAgentCard(cardURL, &card)
-	return &record, nil
-}
-
 type a2aCatalogProvider struct {
 	net        middleware.Network
 	catalogURL string
@@ -217,6 +200,7 @@ type a2aCatalogEntry struct {
 	Transport   string   `json:"transport,omitempty"`
 	Address     string   `json:"address,omitempty"`
 	CardURL     string   `json:"card_url,omitempty"`
+	Tenant      string   `json:"tenant,omitempty"`
 	Website     string   `json:"website,omitempty"`
 	Repository  string   `json:"repository,omitempty"`
 	License     string   `json:"license,omitempty"`
@@ -307,6 +291,7 @@ func recordFromCatalogEntry(entry a2aCatalogEntry) Record {
 		Transport:       transport,
 		Address:         entry.Address,
 		CardURL:         entry.CardURL,
+		Tenant:          entry.Tenant,
 		Website:         entry.Website,
 		Repository:      entry.Repository,
 		Authors:         append([]string{}, entry.Authors...),
@@ -336,6 +321,7 @@ func recordFromAgentCard(cardURL string, card *a2asdk.AgentCard) Record {
 		Transport:       iface.ProtocolBindingString(),
 		Address:         iface.URL,
 		CardURL:         cardURL,
+		Tenant:          iface.Tenant,
 		Website:         website,
 		Tags:            dedupe(tags),
 	}
@@ -354,6 +340,7 @@ func preferredInterface(card *a2asdk.AgentCard) *agentInterfaceView {
 			URL:             iface.URL,
 			ProtocolBinding: string(iface.ProtocolBinding),
 			ProtocolVersion: string(iface.ProtocolVersion),
+			Tenant:          iface.Tenant,
 		}
 		if iface.ProtocolBinding == a2asdk.TransportProtocolJSONRPC {
 			return candidate
@@ -369,6 +356,7 @@ type agentInterfaceView struct {
 	URL             string
 	ProtocolBinding string
 	ProtocolVersion string
+	Tenant          string
 }
 
 func (v *agentInterfaceView) ProtocolBindingString() string {

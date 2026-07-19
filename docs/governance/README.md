@@ -30,3 +30,4 @@ Operational templates:
 - [Architecture guardrails](architecture_guardrails.md)
 - [ZERO-LEGACY policy](zero_legacy_governance.md)
 - [Zed ACP compliance](../matrix_zed_acp_compliance.md)
+- [ACP and A2A protocol coverage](../protocol_coverage.md)

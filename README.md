@@ -205,6 +205,7 @@ For contributors and those interested in the product direction:
 - [Production readiness](docs/matrix_production_readiness.md)
 - [Deployment policy](docs/matrix_deployment_policy.md)
 - [Governance](docs/governance/README.md)
+- [ACP and A2A protocol coverage](docs/protocol_coverage.md)
 - [Threat model](docs/matrix_threat_model.md)
 - [Brand direction](docs/brand_direction.md)
 

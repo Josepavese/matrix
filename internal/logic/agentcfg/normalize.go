@@ -30,8 +30,22 @@ func NormalizeEndpoint(cfg Config) middleware.ProtocolEndpoint {
 		Command:         cfg.Command,
 		Args:            append([]string{}, cfg.Args...),
 		Env:             append([]string{}, cfg.Env...),
+		Headers:         CloneHeaders(cfg.Headers),
+		Tenant:          strings.TrimSpace(cfg.Tenant),
 		EnvIsolation:    cfg.EnvIsolation,
 		ProtocolVersion: cfg.ProtocolVersion,
 		CardURL:         cfg.CardURL,
 	}
+}
+
+// CloneHeaders copies governed endpoint headers without sharing mutable state.
+func CloneHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(headers))
+	for key, value := range headers {
+		out[key] = value
+	}
+	return out
 }
