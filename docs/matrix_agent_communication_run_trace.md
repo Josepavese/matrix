@@ -245,7 +245,9 @@ Matrix keeps the primary taxonomy operational and protocol-neutral:
 - `session.resumed`
 - `agent.prompt.sent`
 - `agent.message.delta`
+- `agent.message.progress`
 - `agent.message.final`
+- `agent.runtime.diagnostic`
 - `tool.call.requested`
 - `tool.result.received`
 - `artifact.created`
@@ -277,9 +279,25 @@ args or from a per-run `/v1/runs` `agent_config`/`codex_config` override.
 Streaming UI consumers can rely on these message channels in raw
 `/v1/runs/{run_id}/events` reads:
 
-- `agent.message.delta.message`: the incremental agent text chunk;
+- `agent.message.delta.message`: the exact incremental final/unclassified text
+  chunk; Matrix does not trim, pad, or otherwise rewrite chunk boundaries;
+- `agent.message.progress.message`: structured provider commentary/progress;
+- `agent.runtime.diagnostic.message`: unclassified content received after an
+  explicit final message, hidden from normal frontend timelines by default;
 - `agent.message.final.message`: the complete final answer;
 - `run.completed`, `run.failed`, or `run.cancelled`: terminal lifecycle state.
+
+Message events expose `metadata.message_id`, `metadata.message_phase`, and
+`metadata.message_classification` when the ACP provider supplies enough
+structure. Current canonical Codex maps `_meta.codex.phase=commentary` to
+`agent.message.progress` and `final_answer` to `agent.message.delta`. If any
+explicit final-phase chunk exists, only those chunks and content blocks form
+`agent.message.final`; later unclassified chunks become
+`agent.runtime.diagnostic`. If no explicit final phase exists, unclassified ACP
+chunks retain the compatible append-only delta/final behavior. ACP message IDs
+separate messages but do not by themselves define which message is final, so
+Matrix preserves an explicit `unclassified` classification instead of guessing
+from warning text or natural language.
 
 Trace projections still apply `trace_policy`: non-`inline` trace exports redact
 event `message` fields even though the raw event stream carries live content.
@@ -511,8 +529,9 @@ Captured event sources:
 - Matrix run lifecycle: `run.started`, `run.completed`, `run.failed`, `run.cancelled`.
 - Matrix routing: `routing.decision`.
 - Matrix prompt dispatch: `agent.prompt.sent`.
-- Provider streaming updates through `ThoughtNotifier`: `agent.message.delta`
-  and `agent.thought.delta`.
+- Provider streaming updates through `ThoughtNotifier`: `agent.message.delta`,
+  `agent.message.progress`, `agent.runtime.diagnostic`, and
+  `agent.thought.delta`.
 - Provider plan/config/runtime updates through `ThoughtNotifier`:
   `agent.plan.updated`, `agent.commands.updated`,
   `agent.session.config.updated`, `agent.session.info.updated`, and
@@ -528,6 +547,11 @@ streamed output and drains the observer briefly after `session/prompt` returns.
 Some real providers can send the final `agent_message_chunk` just after the
 JSON-RPC response; Matrix must not convert that ordering race into an empty run
 output or a false processing failure.
+ACP `messageId` and provider phase metadata are preserved in normalized event
+metadata and `protocol_meta.acp`. Exact chunk text remains byte-for-byte
+appendable. When structured final-phase evidence exists, the observer selects
+only those chunks for final output; otherwise it retains append-only ACP
+fallback semantics.
 
 Run enrichment:
 

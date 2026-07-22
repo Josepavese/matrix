@@ -103,14 +103,15 @@ func TestACPClientCapabilitiesAdvertiseStableBooleanConfig(t *testing.T) {
 }
 
 type pagedListACPClient struct {
-	ctx       context.Context
-	cursors   []string
-	listReqs  []acpListSessionsRequest
-	newReq    *acpNewSessionRequest
-	resumeReq *acpResumeSessionRequest
-	promptReq *acpPromptRequest
-	authID    string
-	logouts   int
+	ctx           context.Context
+	cursors       []string
+	listReqs      []acpListSessionsRequest
+	newReq        *acpNewSessionRequest
+	resumeReq     *acpResumeSessionRequest
+	promptReq     *acpPromptRequest
+	promptUpdates []acpSessionNotification
+	authID        string
+	logouts       int
 }
 
 func (c *pagedListACPClient) Context() context.Context            { return c.ctx }
@@ -161,8 +162,11 @@ func (c *pagedListACPClient) DeleteSession(context.Context, string) error { retu
 func (c *pagedListACPClient) ForkSession(context.Context, acpForkSessionRequest) (*acpForkSessionResponse, error) {
 	return &acpForkSessionResponse{}, nil
 }
-func (c *pagedListACPClient) Prompt(_ context.Context, req acpPromptRequest, _ acpSessionObserver) (*acpPromptResponse, error) {
+func (c *pagedListACPClient) Prompt(_ context.Context, req acpPromptRequest, observer acpSessionObserver) (*acpPromptResponse, error) {
 	c.promptReq = &req
+	for _, update := range c.promptUpdates {
+		observer.OnUpdate(update)
+	}
 	return &acpPromptResponse{StopReason: "end_turn"}, nil
 }
 func (c *pagedListACPClient) SetMode(context.Context, string, string) error { return nil }
@@ -240,6 +244,32 @@ func TestExecuteTurnPropagatesPromptBlocksAndMCPServers(t *testing.T) {
 	}
 	if fake.promptReq.Prompt[1].Type != "resource_link" || fake.promptReq.Prompt[1].URI != "file:///workspace/main.go" {
 		t.Fatalf("expected resource link prompt block, got %#v", fake.promptReq.Prompt[1])
+	}
+}
+
+func TestExecuteTurnReturnsOnlyExplicitFinalACPMessage(t *testing.T) {
+	phase := func(value string) map[string]interface{} {
+		return map[string]interface{}{"codex": map[string]interface{}{"phase": value}}
+	}
+	fake := &pagedListACPClient{
+		ctx: context.Background(),
+		promptUpdates: []acpSessionNotification{
+			{SessionID: "remote-new", Update: acpSessionUpdate{SessionUpdate: "agent_message_chunk", MessageID: "commentary-1", Content: acpContent{Type: "text", Text: "Controllo. "}, Contents: []acpContent{{Type: "text", Text: "Controllo. "}}, Meta: phase("commentary")}},
+			{SessionID: "remote-new", Update: acpSessionUpdate{SessionUpdate: "agent_message_chunk", MessageID: "final-1", Content: acpContent{Type: "text", Text: "Ciao "}, Contents: []acpContent{{Type: "text", Text: "Ciao "}}, Meta: phase("final_answer")}},
+			{SessionID: "remote-new", Update: acpSessionUpdate{SessionUpdate: "agent_message_chunk", MessageID: "final-1", Content: acpContent{Type: "text", Text: "Jose"}, Contents: []acpContent{{Type: "text", Text: "Jose"}}, Meta: phase("final_answer")}},
+			{SessionID: "remote-new", Update: acpSessionUpdate{SessionUpdate: "agent_message_chunk", Content: acpContent{Type: "text", Text: "Warning: disk full"}, Contents: []acpContent{{Type: "text", Text: "Warning: disk full"}}}},
+		},
+	}
+	client := &acpConversationClient{client: fake, loadedSessions: map[string]bool{}}
+	result, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{AgentID: "codex", Message: "ciao"})
+	if err != nil {
+		t.Fatalf("execute turn: %v", err)
+	}
+	if result.Output != "Ciao Jose" {
+		t.Fatalf("final output contaminated: %q", result.Output)
+	}
+	if len(result.ContentBlocks) != 2 || result.ContentBlocks[0].Text != "Ciao " || result.ContentBlocks[1].Text != "Jose" {
+		t.Fatalf("final blocks contaminated: %#v", result.ContentBlocks)
 	}
 }
 

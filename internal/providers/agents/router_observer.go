@@ -14,12 +14,15 @@ import (
 // It also forwards real-time thought/tool updates to an optional ThoughtNotifier
 // so the UI (e.g. Telegram) can show a live "thinking" indicator.
 type simpleObserver struct {
-	mu       sync.Mutex
-	content  string
-	blocks   []middleware.Content
-	updates  chan struct{}
-	notifier middleware.ThoughtNotifier
-	metadata middleware.ConversationMetadata
+	mu               sync.Mutex
+	content          string
+	finalContent     string
+	hasExplicitFinal bool
+	blocks           []middleware.Content
+	finalBlocks      []middleware.Content
+	updates          chan struct{}
+	notifier         middleware.ThoughtNotifier
+	metadata         middleware.ConversationMetadata
 }
 
 func (o *simpleObserver) OnUpdate(notif acpSessionNotification) {
@@ -153,6 +156,9 @@ func (o *simpleObserver) mergeMetadataMap(values map[string]interface{}) {
 func (o *simpleObserver) GetContent() string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if o.hasExplicitFinal {
+		return stripThinking(o.finalContent)
+	}
 	return stripThinking(o.content)
 }
 
@@ -243,28 +249,6 @@ func addOptionalToolMetadata(meta map[string]interface{}, notif acpSessionNotifi
 	if len(notif.Update.Locations) > 0 {
 		meta["locations"] = notif.Update.Locations
 	}
-}
-
-func streamUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
-	meta := map[string]interface{}{
-		"source_update_type": notif.Update.SessionUpdate,
-		"protocol":           "acp",
-		"protocol_method":    "session/update",
-		"acp": map[string]interface{}{
-			"session_id":     notif.SessionID,
-			"session_update": notif.Update.SessionUpdate,
-			"content":        notif.Update.Content,
-			"content_blocks": notif.Update.Contents,
-			"tool_contents":  notif.Update.ToolContents,
-			"title":          notif.Update.Title,
-			"updated_at":     notif.Update.UpdatedAt,
-			"_meta":          notif.Update.Meta,
-		},
-	}
-	for k, v := range notif.Update.Meta {
-		meta[k] = v
-	}
-	return meta
 }
 
 func structuralUpdateMetadata(notif acpSessionNotification) map[string]interface{} {

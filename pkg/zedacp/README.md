@@ -93,7 +93,7 @@ Near-term goals:
 
 ## Protocol Notes
 
-- Reviewed against the official ACP docs and stable release `schema-v1.19.0` on 2026-07-19.
+- Reviewed against the official ACP docs and stable release `schema-v1.20.0` on 2026-07-22.
 - `session/list`, `session/load`, stable `session/resume`, stable `session/close`, and stable `session/delete` are first-class and used by Matrix for protocol-transparent session lifecycle actions.
 - `session/cancel` is emitted as an ACP notification, matching current Zed ACP semantics
 - `session/close` is implemented as an optional stable method; callers should gate it on advertised `sessionCapabilities.close`
@@ -109,6 +109,7 @@ Near-term goals:
 - stable `$/cancel_request` and `logout` are typed; provider configuration and `session/set_model` remain non-default draft product surfaces. NES/document events, elicitation, and full `usage_update` control remain tracked gaps
 - ACP tool updates surface official `kind`, `status`, `toolCallId`, `rawInput`, `rawOutput`, `locations`, and `content` variants (`content`, `diff`, `terminal`) so higher layers can build structural tool traces without string parsing
 - ACP `plan`, `agent_thought_chunk`, `available_commands_update`, `current_mode_update`, `config_option_update`, `session_info_update`, and `usage_update` are decoded into typed update fields while preserving raw protocol metadata for audit
+- ACP message chunks preserve optional stable `messageId`, exact content boundaries, content blocks, and namespaced `_meta` used by higher layers for structured message-phase projection
 - ACP terminal requests follow the official lifecycle: `terminal/create` returns a `terminalId`, `terminal/output` reports retained output and exit status, `terminal/wait_for_exit` blocks for completion, and `terminal/kill` / `terminal/release` manage process lifetime
 - ACP filesystem reads support official absolute `path`, 1-based `line`, and line `limit` fields
 - ACP prompt content supports text plus `resource_link`, `resource`, `image`, and `audio` content blocks; the Matrix adapter enforces advertised `promptCapabilities` before session creation
