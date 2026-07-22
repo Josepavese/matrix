@@ -26,9 +26,11 @@ type realACPProviderSpec struct {
 }
 
 type acpProbeObserver struct {
-	mu      sync.Mutex
-	text    strings.Builder
-	updates []string
+	mu            sync.Mutex
+	text          strings.Builder
+	updates       []string
+	messageIDs    []string
+	messagePhases []string
 }
 
 func (o *acpProbeObserver) OnUpdate(notification zedacp.SessionNotification) {
@@ -37,6 +39,16 @@ func (o *acpProbeObserver) OnUpdate(notification zedacp.SessionNotification) {
 	update := notification.Update
 	if update.SessionUpdate != "" {
 		o.updates = append(o.updates, update.SessionUpdate)
+	}
+	if update.SessionUpdate == "agent_message_chunk" {
+		if update.MessageID != "" {
+			o.messageIDs = append(o.messageIDs, update.MessageID)
+		}
+		if codex, ok := update.Meta["codex"].(map[string]interface{}); ok {
+			if phase, ok := codex["phase"].(string); ok && phase != "" {
+				o.messagePhases = append(o.messagePhases, phase)
+			}
+		}
 	}
 	for _, content := range update.Contents {
 		if content.Text != "" {
@@ -60,6 +72,12 @@ func (o *acpProbeObserver) UpdateKinds() []string {
 	out := make([]string, len(o.updates))
 	copy(out, o.updates)
 	return out
+}
+
+func (o *acpProbeObserver) MessageEvidence() ([]string, []string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]string(nil), o.messageIDs...), append([]string(nil), o.messagePhases...)
 }
 
 type countingACPHandler struct {
@@ -242,12 +260,16 @@ func probeRealACPProvider(t *testing.T, spec realACPProviderSpec) {
 		t.Fatalf("prompt provider %s: %v", spec.name, err)
 	}
 	output := observer.Text()
-	t.Logf("provider=%s stop=%s updates=%v handler_calls=%v output=%q", spec.name, promptResp.StopReason, observer.UpdateKinds(), handler.Calls(), output)
+	messageIDs, messagePhases := observer.MessageEvidence()
+	t.Logf("provider=%s stop=%s updates=%v message_ids=%v message_phases=%v handler_calls=%v output=%q", spec.name, promptResp.StopReason, observer.UpdateKinds(), messageIDs, messagePhases, handler.Calls(), output)
 	if !strings.Contains(output, replyToken) {
 		t.Fatalf("provider %s did not prove LLM prompt processing with token %s; output=%q", spec.name, replyToken, output)
 	}
 	if !strings.Contains(output, fileToken) {
 		t.Fatalf("provider %s did not include file probe token %s; output=%q", spec.name, fileToken, output)
+	}
+	if spec.name == "codex" && (len(messageIDs) == 0 || !containsString(messagePhases, "final_answer")) {
+		t.Fatalf("canonical Codex did not expose messageId/final_answer evidence: ids=%v phases=%v", messageIDs, messagePhases)
 	}
 
 	if supportsSessionCapability(initResp.Capabilities, "close") {
@@ -259,6 +281,15 @@ func probeRealACPProvider(t *testing.T, spec realACPProviderSpec) {
 	if err := client.CancelSession(ctx, session.SessionID); err != nil {
 		t.Fatalf("cancel session provider %s: %v", spec.name, err)
 	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func probeConfigOptions(ctx context.Context, t *testing.T, client zedacp.ClientAPI, provider, sessionID string, options []zedacp.ConfigOption) {

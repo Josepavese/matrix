@@ -17,6 +17,7 @@ type Notifier struct {
 	protocol         string
 	activeToolCallID string
 	activeTool       toolContext
+	sawExplicitFinal bool
 }
 
 type toolContext struct {
@@ -135,23 +136,10 @@ func (n *Notifier) appendAgentProgress(update middleware.ThoughtUpdate) {
 	case "session_info_update":
 		n.appendStructuredProgress("agent.session.info.updated", update, runtrace.StatusCompleted)
 	case "agent_message_chunk", "user_message_chunk":
-		n.appendMessageDelta(update)
+		n.appendMessageUpdate(update)
 	default:
 		n.append("agent.message.delta", n.agentID, "streaming", update.Content)
 	}
-}
-
-func (n *Notifier) appendMessageDelta(update middleware.ThoughtUpdate) {
-	content := strings.TrimSpace(update.Content)
-	event := n.baseEvent("agent.message.delta", n.agentID, "streaming", content)
-	event.ContentRef = "matrix://runs/" + n.runID + "/messages/delta"
-	event.ProtocolMethod = "session/update"
-	event.Message = content
-	event.Metadata = frontendevents.Merge(event.Metadata, map[string]interface{}{
-		"source_update_type": frontendevents.SourceUpdateType(update.Metadata, "agent_message_chunk"),
-	})
-	event.ProtocolMeta = frontendevents.ProtocolMeta(update.Metadata)
-	_, _ = n.store.AppendEvent(event)
 }
 
 func (n *Notifier) appendStructuredProgress(kind string, update middleware.ThoughtUpdate, status string) {

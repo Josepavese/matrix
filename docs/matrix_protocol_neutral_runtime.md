@@ -354,9 +354,9 @@ Current behavior:
 - A2A remote tasks are enumerated through paginated `ListTasks`, imported through `GetTask`, subscribed through `SubscribeToTask`, and canceled through `CancelTask`; A2A defines no task-delete RPC
 - channel users do not select ACP or A2A explicitly; Matrix resolves the provider from SSOT and the active session
 
-As of 2026-07-19, the current Zed ACP source of truth is the official
+As of 2026-07-22, the current Zed ACP source of truth is the official
 `agentclientprotocol.com` protocol docs plus the `agentclientprotocol` schema
-release `Schema v1.19.0`.
+release `Schema v1.20.0`.
 `session/list`, `session_info_update`, `session/resume`, `session/close`,
 `session/delete`, `logout`, and `session/set_config_option` are stable
 lifecycle/configuration operations with capability checks where applicable.
@@ -370,7 +370,10 @@ ACP runtime updates are not collapsed into text-only streams: plan changes,
 thought chunks, usage updates, session config/info updates, commands, tool
 calls, diffs, and terminal references are projected into protocol-neutral run
 events while raw ACP payloads stay in protocol metadata.
-`session/fork`, `additionalDirectories`, message ids, provider configuration,
+ACP message chunks preserve optional stable `messageId` values. Structured
+provider phase metadata separates Codex commentary from final-answer chunks;
+Matrix never infers finality from message text.
+`session/fork`, `additionalDirectories`, provider configuration,
 NES/document events, elicitation, `session/set_model`, `usage_update`, and
 generic `$/cancel_request` remain RFD/unstable/draft surfaces unless the
 official docs move them to completed/stable. Matrix records this lifecycle
