@@ -545,6 +545,7 @@ type ToolCallFunction struct {
 
 type SessionUpdate struct {
 	SessionUpdate     string                 `json:"sessionUpdate"`
+	MessageID         string                 `json:"messageId,omitempty"`
 	Content           Content                `json:"-"`
 	Contents          []Content              `json:"-"`
 	ToolContents      []ToolCallContent      `json:"-"`
@@ -568,6 +569,7 @@ type SessionUpdate struct {
 func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 	type rawUpdate struct {
 		SessionUpdate     string                 `json:"sessionUpdate"`
+		MessageID         string                 `json:"messageId,omitempty"`
 		Content           json.RawMessage        `json:"content,omitempty"`
 		Title             string                 `json:"title,omitempty"`
 		UpdatedAt         string                 `json:"updatedAt,omitempty"`
@@ -589,6 +591,7 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	u.SessionUpdate = raw.SessionUpdate
+	u.MessageID = raw.MessageID
 	u.Title = raw.Title
 	u.UpdatedAt = raw.UpdatedAt
 	u.ToolCallID = raw.ToolCallID
@@ -611,6 +614,7 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 	type rawUpdate struct {
 		SessionUpdate     string                 `json:"sessionUpdate"`
+		MessageID         string                 `json:"messageId,omitempty"`
 		Content           interface{}            `json:"content,omitempty"`
 		Title             string                 `json:"title,omitempty"`
 		UpdatedAt         string                 `json:"updatedAt,omitempty"`
@@ -630,6 +634,7 @@ func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 	content := encodeUpdateContent(u.Content, u.Contents, u.ToolContents, u.RawContent)
 	return json.Marshal(rawUpdate{
 		SessionUpdate:     u.SessionUpdate,
+		MessageID:         u.MessageID,
 		Content:           content,
 		Title:             u.Title,
 		UpdatedAt:         u.UpdatedAt,

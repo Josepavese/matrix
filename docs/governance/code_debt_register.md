@@ -18,6 +18,12 @@ Current allowed baseline:
 
 Latest budget realignment:
 
+- 2026-07-22: ACP message chunks now preserve stable `messageId`, exact delta
+  boundaries, and structured Codex `commentary` / `final_answer` phase evidence.
+  The `internal/providers/agents` and `pkg/zedacp` overrides were raised to the
+  measured 3591/1604 LOC product baselines for lossless protocol projection and
+  final-output isolation. File/function/parameter budgets remain clean, quality
+  warnings remain 0, and branch points remain 10.
 - 2026-07-19: ACP v1.19.0 and A2A v1.0.1 coverage was aligned end-to-end under
   ZERO-LEGACY: rich content, authentication, lifecycle/task controls, discovery
   negotiation, push/profile opt-ins, and complete capability reports. The

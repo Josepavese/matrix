@@ -502,6 +502,28 @@ func TestSessionUpdateUnmarshalStructuredVariants(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{
 		"sessionId": "sess-1",
 		"update": {
+			"sessionUpdate": "agent_message_chunk",
+			"messageId": "message-final",
+			"content": {"type":"text","text":"Ciao "},
+			"_meta": {"codex":{"phase":"final_answer"}}
+		}
+	}`), &notif); err != nil {
+		t.Fatalf("unmarshal message update: %v", err)
+	}
+	if notif.Update.MessageID != "message-final" || notif.Update.Content.Text != "Ciao " {
+		t.Fatalf("message identity or exact content lost: %#v", notif.Update)
+	}
+	encoded, err := json.Marshal(notif.Update)
+	if err != nil {
+		t.Fatalf("marshal message update: %v", err)
+	}
+	if !bytes.Contains(encoded, []byte(`"messageId":"message-final"`)) {
+		t.Fatalf("messageId lost during round trip: %s", encoded)
+	}
+
+	if err := json.Unmarshal([]byte(`{
+		"sessionId": "sess-1",
+		"update": {
 			"sessionUpdate": "tool_call",
 			"toolCallId": "tool-1",
 			"title": "Read files",

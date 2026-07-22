@@ -1,6 +1,6 @@
 # ACP and A2A Protocol Coverage
 
-Last verified: 2026-07-19.
+Last verified: 2026-07-22.
 
 This document is the Matrix source of truth for protocol feature coverage. The
 runtime capability report is the live source of truth for a specific configured
@@ -10,8 +10,8 @@ apply to every adapter.
 
 ## Upstream snapshot
 
-- ACP v1 stable schema release `schema-v1.19.0`, protocol release `v1.4.0`,
-  official repository commit `b06dc4b4e1c2dd9ab388847111bfee0a016782bd`.
+- ACP v1 stable schema release `schema-v1.20.0`, protocol release `v1.4.0`,
+  official repository commit `5e89c71497fe07dd4ae633c181a17224f4a8956d`.
 - A2A specification `v1.0.1`, official repository commit
   `af112d9491c1fd4b2a568ac65755af4a62790490`.
 - Matrix A2A SDK: `github.com/a2aproject/a2a-go/v2 v2.3.1`.
@@ -39,6 +39,12 @@ method existing in the SDK never causes Matrix to advertise provider support.
 | Session configuration | select groups and boolean options | Complete; Matrix advertises stable boolean config-option support |
 | Transport | stdio plus Matrix remote websocket/unix adapters | Complete for configured Matrix ACP endpoints; upstream Streamable HTTP remains draft and is not advertised |
 | Authentication | agent-owned method ID and capability-gated logout | Complete through the neutral authentication control; retired credential payloads are rejected by construction |
+
+ACP message updates preserve optional stable `messageId` and exact chunk text.
+Matrix projects structured message-phase metadata into neutral
+`progress`/`final` classifications without text heuristics. Providers that do
+not expose final-phase evidence retain append-only ACP fallback semantics and
+remain explicitly `unclassified`.
 
 `session/fork` remains a named draft operation. It is available only through
 the explicit fork action and only when the provider advertises it; it is not a

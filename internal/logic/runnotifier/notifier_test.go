@@ -124,6 +124,92 @@ func TestNotifierRecordsMessageDeltaContent(t *testing.T) {
 	t.Fatalf("agent.message.delta event not found: %#v", events)
 }
 
+func TestNotifierPreservesExactMessageDeltaBoundaries(t *testing.T) {
+	tests := []struct {
+		name     string
+		chunks   []string
+		expected string
+	}{
+		{name: "trailing space", chunks: []string{"Ciao ", "Jose"}, expected: "Ciao Jose"},
+		{name: "newline", chunks: []string{"prima riga\n", "seconda riga"}, expected: "prima riga\nseconda riga"},
+		{name: "sub-token", chunks: []string{"con", "testo"}, expected: "contesto"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := runtrace.NewStore(memstore.New())
+			run, _, err := store.Start(runtrace.Run{AgentID: "codex", Protocol: "acp", ChannelID: "http.test"})
+			if err != nil {
+				t.Fatalf("start run: %v", err)
+			}
+			notifier := New(store, run.ID, "codex", "acp")
+			for _, chunk := range tt.chunks {
+				notifier.OnThought(middleware.ThoughtUpdate{
+					Type:    middleware.ThoughtTypeThinking,
+					Content: chunk,
+					Metadata: map[string]interface{}{
+						"source_update_type":     "agent_message_chunk",
+						"message_classification": "unclassified",
+					},
+				})
+			}
+			events, err := store.LoadEvents(run.ID, 0)
+			if err != nil {
+				t.Fatalf("load events: %v", err)
+			}
+			var got string
+			for _, event := range events {
+				if event.Kind == "agent.message.delta" {
+					got += event.Message
+				}
+			}
+			if got != tt.expected {
+				t.Fatalf("delta boundaries changed: got %q want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestNotifierClassifiesProgressFinalAndPostFinalDiagnostic(t *testing.T) {
+	store := runtrace.NewStore(memstore.New())
+	run, _, err := store.Start(runtrace.Run{AgentID: "codex", Protocol: "acp", ChannelID: "http.test"})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	notifier := New(store, run.ID, "codex", "acp")
+	updates := []middleware.ThoughtUpdate{
+		{Type: middleware.ThoughtTypeThinking, Content: "Leggo il contesto. ", Metadata: map[string]interface{}{
+			"source_update_type": "agent_message_chunk", "message_id": "commentary-1", "message_phase": "commentary", "message_classification": "progress",
+		}},
+		{Type: middleware.ThoughtTypeThinking, Content: "Ciao Jose", Metadata: map[string]interface{}{
+			"source_update_type": "agent_message_chunk", "message_id": "final-1", "message_phase": "final_answer", "message_classification": "final",
+		}},
+		{Type: middleware.ThoughtTypeThinking, Content: "Warning: disk full\n\n", Metadata: map[string]interface{}{
+			"source_update_type": "agent_message_chunk", "message_classification": "unclassified",
+		}},
+	}
+	for _, update := range updates {
+		notifier.OnThought(update)
+	}
+	events, err := store.LoadEvents(run.ID, 0)
+	if err != nil {
+		t.Fatalf("load events: %v", err)
+	}
+	byKind := map[string]runtrace.Event{}
+	for _, event := range events {
+		byKind[event.Kind] = event
+	}
+	if byKind["agent.message.progress"].Message != "Leggo il contesto. " {
+		t.Fatalf("commentary not projected as progress: %#v", byKind)
+	}
+	if byKind["agent.message.delta"].Message != "Ciao Jose" {
+		t.Fatalf("final delta missing: %#v", byKind)
+	}
+	diagnostic := byKind["agent.runtime.diagnostic"]
+	if diagnostic.Message != "Warning: disk full\n\n" || diagnostic.Metadata["frontend_visible"] != false || diagnostic.Metadata["audit_visible"] != true {
+		t.Fatalf("post-final diagnostic not isolated: %#v", diagnostic)
+	}
+}
+
 func TestNotifierNormalizesFrontendToolEvents(t *testing.T) {
 	store := runtrace.NewStore(memstore.New())
 	run, _, err := store.Start(runtrace.Run{

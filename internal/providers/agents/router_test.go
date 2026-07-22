@@ -107,6 +107,80 @@ func TestObserverPreservesRichAgentMessageBlocks(t *testing.T) {
 	}
 }
 
+func TestObserverSelectsExplicitFinalMessageWithoutCommentaryOrDiagnostic(t *testing.T) {
+	notifier := &observerTestNotifier{}
+	obs := &simpleObserver{notifier: notifier}
+	updates := []zedacp.SessionUpdate{
+		{
+			SessionUpdate: "agent_message_chunk",
+			MessageID:     "commentary-1",
+			Content:       acpContent{Type: "text", Text: "Leggo il contesto. "},
+			Contents:      []acpContent{{Type: "text", Text: "Leggo il contesto. "}},
+			Meta:          map[string]interface{}{"codex": map[string]interface{}{"phase": "commentary"}},
+		},
+		{
+			SessionUpdate: "agent_message_chunk",
+			MessageID:     "final-1",
+			Content:       acpContent{Type: "text", Text: "Ciao "},
+			Contents:      []acpContent{{Type: "text", Text: "Ciao "}},
+			Meta:          map[string]interface{}{"codex": map[string]interface{}{"phase": "final_answer"}},
+		},
+		{
+			SessionUpdate: "agent_message_chunk",
+			MessageID:     "final-1",
+			Content:       acpContent{Type: "text", Text: "Jose"},
+			Contents:      []acpContent{{Type: "text", Text: "Jose"}},
+			Meta:          map[string]interface{}{"codex": map[string]interface{}{"phase": "final_answer"}},
+		},
+		{
+			SessionUpdate: "agent_message_chunk",
+			Content:       acpContent{Type: "text", Text: "Warning: disk full"},
+			Contents:      []acpContent{{Type: "text", Text: "Warning: disk full"}},
+		},
+	}
+	for _, update := range updates {
+		obs.OnUpdate(acpSessionNotification{SessionID: "remote-123", Update: update})
+	}
+
+	if got := obs.GetContent(); got != "Ciao Jose" {
+		t.Fatalf("expected explicit final only, got %q", got)
+	}
+	blocks := obs.ContentBlocks()
+	if len(blocks) != 2 || blocks[0].Text != "Ciao " || blocks[1].Text != "Jose" {
+		t.Fatalf("expected final content blocks only, got %#v", blocks)
+	}
+	if got := obs.RawContent(); got != "Leggo il contesto. Ciao JoseWarning: disk full" {
+		t.Fatalf("raw ACP evidence lost, got %q", got)
+	}
+	if len(notifier.updates) != len(updates) {
+		t.Fatalf("expected all updates to be forwarded, got %#v", notifier.updates)
+	}
+	if notifier.updates[0].Metadata["message_id"] != "commentary-1" || notifier.updates[0].Metadata["message_phase"] != "commentary" {
+		t.Fatalf("commentary identity lost: %#v", notifier.updates[0].Metadata)
+	}
+	if notifier.updates[1].Metadata["message_classification"] != "final" {
+		t.Fatalf("final phase not classified: %#v", notifier.updates[1].Metadata)
+	}
+	if notifier.updates[3].Metadata["message_classification"] != "unclassified" {
+		t.Fatalf("unphased diagnostic must remain explicit: %#v", notifier.updates[3].Metadata)
+	}
+}
+
+func TestObserverFallsBackToUnclassifiedACPMessage(t *testing.T) {
+	obs := &simpleObserver{}
+	for _, text := range []string{"con", "testo"} {
+		obs.OnUpdate(acpSessionNotification{
+			Update: zedacp.SessionUpdate{
+				SessionUpdate: "agent_message_chunk",
+				Content:       acpContent{Type: "text", Text: text},
+			},
+		})
+	}
+	if got := obs.GetContent(); got != "contesto" {
+		t.Fatalf("unclassified ACP fallback changed chunk boundaries: %q", got)
+	}
+}
+
 func TestObserverPreservesToolContentAndPlanMetadata(t *testing.T) {
 	notifier := &observerTestNotifier{}
 	obs := &simpleObserver{notifier: notifier}
