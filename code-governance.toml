@@ -44,12 +44,14 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-06-18: public-release hardening adds agent-id path validation for
 # binary install/uninstall containment and temp archive path validation.
 "internal/logic/agentmgr" = 950
-# 2026-07-19: the stable ACP v1.19 and A2A v1.0.1 coverage expansion adds
+# 2026-07-22: ACP message identity and structured final/progress projection add
+# lossless messageId/phase handling without provider-text heuristics. 2026-07-19:
+# stable ACP v1.19 and A2A v1.0.1 coverage expansion adds
 # capability-gated rich content, authentication/lifecycle controls, full
 # operation reports, A2A task/push/profile facades, and zero-legacy rejection.
 # The implementation is split into focused files; file/function/branch budgets
 # remain clean and this exact package baseline is not permission for growth.
-"internal/providers/agents" = 3531
+"internal/providers/agents" = 3591
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
@@ -59,9 +61,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-06-18 rejects event sink localhost/private targets at HTTP ingress.
 # 2026-06-23 records trusted provider launch-policy evidence in routing traces.
 "internal/providers/runapi" = 1310
-# 2026-07-19: stable ACP schema v1.19.0 only; retired auth credentials and
-# response aliases were deleted and draft-only methods are explicit opt-ins.
-"pkg/zedacp" = 1599
+# 2026-07-22: stable ACP messageId is retained on session updates. 2026-07-19:
+# stable ACP schema v1.19.0 only; retired auth credentials and response aliases
+# were deleted and draft-only methods are explicit opt-ins.
+"pkg/zedacp" = 1604
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390

@@ -258,9 +258,14 @@ curl http://127.0.0.1:9091/v1/runs/run-abc123/trace
 
 Get the events for a run.
 Consumers should use `kind`, `tool_call_id`, `tool_kind`, `inputs`, `outputs`, and `artifact_refs` instead of parsing agent prose.
-For UI streaming, `agent.message.delta.message` contains the incremental agent
-chunk, `agent.message.final.message` contains the complete final answer, and a
-terminal `run.completed`, `run.failed`, or `run.cancelled` event closes the run.
+For UI streaming, `agent.message.delta.message` contains the exact incremental
+agent chunk, including leading/trailing whitespace and newlines.
+`agent.message.progress` carries structured commentary/progress,
+`agent.runtime.diagnostic` carries post-final unclassified runtime output, and
+`agent.message.final.message` contains only the selected final answer when the
+provider supplies final-phase metadata. Message events expose `message_id`,
+`message_phase`, and `message_classification` when available. A terminal
+`run.completed`, `run.failed`, or `run.cancelled` event closes the run.
 Use the returned `next_cursor` as the next `after` value when polling.
 
 ```bash
