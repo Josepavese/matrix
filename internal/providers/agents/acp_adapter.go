@@ -100,17 +100,14 @@ type acpConversationClient struct {
 	mu                  sync.Mutex
 	loadedSessions      map[string]bool
 	activePrompts       map[string]chan struct{}
+	activeClientLeases  int
+	closeRequested      bool
+	closed              bool
+	closeErr            error
 }
 
 func (c *acpConversationClient) Alive() bool {
 	return c.client != nil && c.client.Context().Err() == nil
-}
-
-func (c *acpConversationClient) Close() error {
-	if c.client == nil {
-		return nil
-	}
-	return c.client.Close()
 }
 
 func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {

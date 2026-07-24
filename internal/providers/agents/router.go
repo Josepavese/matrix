@@ -51,6 +51,7 @@ type Router struct {
 	factory      map[middleware.ProtocolKind]middleware.ConversationFactory
 	clientCtx    context.Context
 	clientCancel context.CancelFunc
+	draining     map[string][]middleware.ConversationClient
 
 	// Tombstones preserve short-lived OS/process cleanup proof when a dead
 	// stdio client is evicted by keepalive before strict session cleanup runs.
@@ -81,6 +82,7 @@ func NewRouter(resolver middleware.AgentEndpointResolver) *Router {
 	return &Router{
 		resolver:         resolver,
 		clients:          make(map[string]middleware.ConversationClient),
+		draining:         make(map[string][]middleware.ConversationClient),
 		clientCtx:        clientCtx,
 		clientCancel:     clientCancel,
 		clientTombstones: make(map[string]agentClientTombstone),
@@ -142,6 +144,12 @@ func (r *Router) Close() {
 	for id, client := range r.clients {
 		_ = client.Close()
 		delete(r.clients, id)
+	}
+	for key, clients := range r.draining {
+		for _, client := range clients {
+			_ = client.Close()
+		}
+		delete(r.draining, key)
 	}
 }
 
@@ -236,10 +244,11 @@ func (r *Router) preWarm(ctx context.Context, agentID string, cwd string, launch
 func (r *Router) Route(ctx context.Context, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
 	cwd := r.effectiveCwd(req.WorkspacePath)
 	key := clientCacheKey(req.AgentID, cwd, req.AgentLaunchArgs...)
-	client, err := r.getOrCreateClient(ctx, req.AgentID, cwd, req.AgentLaunchArgs...)
+	client, release, err := r.acquireRouteClient(ctx, req.AgentID, cwd, req.AgentLaunchArgs...)
 	if err != nil {
 		return "", "", nil, middleware.ConversationMetadata{}, err
 	}
+	defer release()
 	output, remoteSessionID, tools, metadata, err := r.executePrompt(ctx, client, req)
 	if err != nil {
 		r.evictClientAfterTurnFailure(key, client, remoteSessionID, err)

@@ -229,9 +229,11 @@ Important distinction:
   `agent_preflight_failed` identify adapter/provider problems and should not be
   scored as task failures by external evaluators.
 - cancelled/deadline turns must not poison cached provider clients. For local
-  stdio ACP, Matrix evicts the exact workspace client after cancellable prompt
-  failures and preserves remote-session tombstone proof for cleanup; immediate
-  follow-up requests create a fresh provider client.
+  stdio ACP, Matrix removes the exact workspace client from new routing after a
+  cancellable turn failure. Existing sibling turns retain leases on the old
+  client until they finish; immediate follow-up requests create a fresh client.
+  A process-reap tombstone is recorded only after the final lease closes the old
+  client.
 - lane preflight is a normal `/v1/runs` call with a minimal prompt plus
   `session_policy=new_ephemeral_delete_after_run`, so it exercises the same
   channel-neutral Matrix path and still produces cleanup evidence.

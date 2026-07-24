@@ -481,7 +481,11 @@ Matrix may record typed warnings such as
 `remote_cancel_session_not_found_after_process_reap`.
 For stdio providers, cached provider processes are router-lifetime resources,
 not request-lifetime resources, so canceling one run does not implicitly kill the
-client used by later cleanup or resume work.
+client used by a concurrent sibling. Matrix sends provider cancellation for the
+run-bound remote session when known, removes a cancellable client from new
+routing, and defers physical close until all existing client leases finish.
+`run.cancel.signal` records whether the provider signal was sent; it is not a
+provider acknowledgement that the remote turn already stopped.
 
 **Cleanup a session:**
 
