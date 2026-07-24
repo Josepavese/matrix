@@ -158,12 +158,13 @@ of its workspace sessions. Cleanup must target the exact reusable workspace
 client; Matrix must not spawn a fresh ACP process just to send `session/cancel`
 for a session owned by a reaped process. Cached provider clients are owned by the
 router lifecycle, not by one `/v1/runs` request context; canceling an active run
-must not cancel the cached ACP process before cleanup can prove ownership. If a
-turn context is cancelled while `session/prompt` is active, Matrix deliberately
-closes and evicts the exact workspace client and tombstones the known remote
-session id; this converts a potentially poisoned provider client into explicit
-process proof and guarantees the next same-agent request starts from a fresh
-client. If process reap already proves the old
+first sends `session/cancel` for the run-bound remote session when known, then
+cancels only that run's local context. If a turn context is cancelled during
+`session/new` or `session/prompt`, Matrix removes the exact workspace client from
+new routing and marks it draining. Existing sibling turns keep leases on the
+old client; new requests receive a fresh client. The draining client closes only
+after its final sibling finishes, and only that physical close creates
+process-reap tombstone proof. If process reap already proves the old
 session unreachable, cleanup can remain `clean=true strong_cleanup=true` and
 carry typed warnings such as
 `remote_lifecycle_skipped_no_reusable_cached_agent_client` or

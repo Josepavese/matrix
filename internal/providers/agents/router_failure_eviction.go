@@ -20,7 +20,12 @@ func (r *Router) evictClientAfterTurnFailure(key string, client middleware.Conve
 		r.mu.Unlock()
 		return false
 	}
-	r.rememberClientTombstoneWithRemoteLocked(key, current, remoteSessionID)
+	_, leased := current.(middleware.ConversationClientLeaser)
+	if !leased {
+		r.rememberClientTombstoneWithRemoteLocked(key, current, remoteSessionID)
+	} else {
+		r.draining[key] = append(r.draining[key], current)
+	}
 	delete(r.clients, key)
 	r.mu.Unlock()
 	_ = current.Close()

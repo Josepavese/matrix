@@ -62,6 +62,12 @@ Latest budget realignment:
   compatibility code. Follow-up refactor target: split ACP client lifecycle,
   prompt execution, and cleanup proof ownership into smaller subpackages once
   the provider surface stabilizes.
+- 2026-07-24: ACP cancellation recovery now leases shared clients across active
+  turns. A canceled turn removes its client from new routing but physical close
+  waits for concurrent siblings; tombstone proof is emitted only at final close.
+  Run cancellation also sends `session/cancel` using the run-bound remote ID
+  before canceling local execution. Package LOC budgets were raised to measured
+  production baselines with zero quality warnings.
 - 2026-05-08: ACP cleanup proof now separates target remote-session cleanup
   from unrelated same-workspace provider ownership. A cleanup with strong target
   proof records other local owners as non-retained

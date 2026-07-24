@@ -154,7 +154,8 @@ func (s *Server) handleRunActions(w http.ResponseWriter, r *http.Request, runID 
 		return
 	}
 	attacher, _ := s.router.(middleware.RunContextAttacher)
-	code, resp := runaction.New(s.runStore, attacher, s.cancelActiveRun).Handle(r.Context(), runID, req)
+	canceller, _ := s.router.(middleware.RunCanceller)
+	code, resp := runaction.New(s.runStore, attacher, s.cancelActiveRun, canceller).Handle(r.Context(), runID, req)
 	if code >= http.StatusInternalServerError {
 		slog.Error("matrix run action failed", "run_id", runID, "action", req.Action, "message", resp.Message)
 	}

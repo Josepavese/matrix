@@ -18,6 +18,47 @@ func (f fakeAttacher) AttachRunContext(ctx context.Context, req middleware.RunCo
 	return f.attach(ctx, req)
 }
 
+type fakeRunCanceller struct {
+	request middleware.RunCancellationRequest
+	called  bool
+}
+
+func (f *fakeRunCanceller) CancelRun(_ context.Context, req middleware.RunCancellationRequest) error {
+	f.called = true
+	f.request = req
+	return nil
+}
+
+func TestCancelSignalsRunBoundRemoteBeforeLocalContext(t *testing.T) {
+	store := runtrace.NewStore(memstore.New())
+	run, _, err := store.Start(runtrace.Run{
+		AgentID: "codex", Protocol: "acp", ChannelID: "task-b",
+		ExecutionMode: runtrace.ExecutionModeAsync, WorkspacePath: "/tmp/shared",
+		LogicalSessionID: "logical-b", RemoteSessionID: "remote-b",
+	})
+	if err != nil {
+		t.Fatalf("Start run: %v", err)
+	}
+	provider := &fakeRunCanceller{}
+	localCancelled := false
+	_, resp := New(store, nil, func(string) {
+		if !provider.called {
+			t.Fatal("local context cancelled before provider signal")
+		}
+		localCancelled = true
+	}, provider).Handle(context.Background(), run.ID, Request{Action: "cancel"})
+	if !resp.Accepted || resp.Status != runtrace.StatusCancelled || !localCancelled {
+		t.Fatalf("unexpected cancel response: %+v local=%v", resp, localCancelled)
+	}
+	if provider.request.RunID != run.ID || provider.request.RemoteSessionID != "remote-b" || provider.request.WorkspacePath != "/tmp/shared" {
+		t.Fatalf("provider cancel did not use run-bound SSOT: %+v", provider.request)
+	}
+	event := waitRunActionEvent(t, store, run.ID, "run.cancel.signal", runtrace.StatusCompleted)
+	if event.ProtocolMethod != "session/cancel" {
+		t.Fatalf("unexpected cancel signal event: %+v", event)
+	}
+}
+
 func TestAttachContextMarksLateWhenRunCompletesBeforeDeliveryReturns(t *testing.T) {
 	store := runtrace.NewStore(memstore.New())
 	run, _, err := store.Start(runtrace.Run{

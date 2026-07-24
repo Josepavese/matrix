@@ -99,7 +99,7 @@ func (r *Router) CloseAgentSession(ctx context.Context, agentID string, remoteSe
 }
 
 func (r *Router) CancelAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error {
-	client, err := r.getSessionLifecycleClientForWorkspace(ctx, agentID, workspacePath)
+	client, err := r.getSessionLifecycleClientForWorkspaceRemote(ctx, agentID, remoteSessionID, workspacePath)
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (r *Router) CancelAgentSessionForWorkspace(ctx context.Context, agentID str
 }
 
 func (r *Router) CloseAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error {
-	client, err := r.getSessionLifecycleClientForWorkspace(ctx, agentID, workspacePath)
+	client, err := r.getSessionLifecycleClientForWorkspaceRemote(ctx, agentID, remoteSessionID, workspacePath)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func (r *Router) DeleteAgentSession(ctx context.Context, agentID string, remoteS
 }
 
 func (r *Router) DeleteAgentSessionForWorkspace(ctx context.Context, agentID string, remoteSessionID string, workspacePath string) error {
-	client, err := r.getSessionLifecycleClientForWorkspace(ctx, agentID, workspacePath)
+	client, err := r.getSessionLifecycleClientForWorkspaceRemote(ctx, agentID, remoteSessionID, workspacePath)
 	if err != nil {
 		return err
 	}
@@ -159,15 +159,16 @@ func (r *Router) MaterializeAgentSession(ctx context.Context, agentID string, re
 }
 
 func (r *Router) getOrCreateClient(ctx context.Context, agentID string, cwd string, launchArgs ...string) (middleware.ConversationClient, error) {
-	key := clientCacheKey(agentID, cwd, launchArgs...)
-	log := slog.With("component", "agent_router", "agent", agentID, "cwd", cwd)
-	if client, ok := r.lookupReusableClient(key); ok {
-		log.Debug("reusing cached conversation client", "event", "client_reused")
-		return client, nil
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.getOrCreateClientLocked(ctx, agentID, cwd, launchArgs...)
+}
+
+func (r *Router) getOrCreateClientLocked(ctx context.Context, agentID string, cwd string, launchArgs ...string) (middleware.ConversationClient, error) {
+	key := clientCacheKey(agentID, cwd, launchArgs...)
+	log := slog.With("component", "agent_router", "agent", agentID, "cwd", cwd)
 	if client, ok := r.lookupReusableClientLocked(key); ok {
+		log.Debug("reusing cached conversation client", "event", "client_reused")
 		return client, nil
 	}
 	if stale := r.clients[key]; stale != nil {
@@ -228,6 +229,17 @@ func (r *Router) getSessionLifecycleClientForWorkspace(ctx context.Context, agen
 	return nil, fmt.Errorf("%s: agent=%s workspace=%s", noReusableCachedAgentClient, agentID, cwd)
 }
 
+func (r *Router) getSessionLifecycleClientForWorkspaceRemote(ctx context.Context, agentID, remoteSessionID, workspacePath string) (middleware.ConversationClient, error) {
+	if strings.TrimSpace(workspacePath) == "" {
+		return r.getSessionLifecycleClient(ctx, agentID)
+	}
+	cwd := r.effectiveCwd(workspacePath)
+	if client, ok := r.lookupDrainingClient(agentID, cwd, remoteSessionID); ok {
+		return client, nil
+	}
+	return r.getSessionLifecycleClientForWorkspace(ctx, agentID, workspacePath)
+}
+
 func (r *Router) canSpawnFreshLifecycleClient(agentID string) bool {
 	if r.resolver == nil {
 		return false
@@ -241,12 +253,6 @@ func (r *Router) canSpawnFreshLifecycleClient(agentID string) bool {
 	}
 	transport := strings.ToLower(strings.TrimSpace(endpoint.Transport))
 	return transport != "stdio" && transport != "acp"
-}
-
-func (r *Router) lookupReusableClient(key string) (middleware.ConversationClient, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.lookupReusableClientLocked(key)
 }
 
 func (r *Router) lookupReusableClientLocked(key string) (middleware.ConversationClient, bool) {

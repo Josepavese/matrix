@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/runnotifier"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
@@ -34,16 +35,21 @@ type Service struct {
 	store    *runtrace.Store
 	attacher middleware.RunContextAttacher
 	cancel   func(string)
+	provider middleware.RunCanceller
 }
 
-func New(store *runtrace.Store, attacher middleware.RunContextAttacher, cancel func(string)) Service {
-	return Service{store: store, attacher: attacher, cancel: cancel}
+func New(store *runtrace.Store, attacher middleware.RunContextAttacher, cancel func(string), providers ...middleware.RunCanceller) Service {
+	service := Service{store: store, attacher: attacher, cancel: cancel}
+	if len(providers) > 0 {
+		service.provider = providers[0]
+	}
+	return service
 }
 
 func (s Service) Handle(ctx context.Context, runID string, req Request) (int, Response) {
 	switch strings.ToLower(strings.TrimSpace(req.Action)) {
 	case "cancel", "stop":
-		return s.cancelRun(runID, req)
+		return s.cancelRun(ctx, runID, req)
 	case "attach_context", "append_context":
 		return s.attachContext(ctx, runID, req)
 	default:
@@ -51,15 +57,54 @@ func (s Service) Handle(ctx context.Context, runID string, req Request) (int, Re
 	}
 }
 
-func (s Service) cancelRun(runID string, req Request) (int, Response) {
-	if s.cancel != nil {
-		s.cancel(runID)
-	}
-	run, err := s.store.Cancel(runID, req.Reason)
+func (s Service) cancelRun(ctx context.Context, runID string, req Request) (int, Response) {
+	run, found, err := s.store.LoadRun(runID)
 	if err != nil {
 		return http.StatusInternalServerError, Response{RunID: runID, Action: "cancel", Status: "failed", Message: err.Error()}
 	}
-	return http.StatusAccepted, Response{RunID: run.ID, Status: run.Status, Action: "cancel", Accepted: true}
+	if !found {
+		return http.StatusNotFound, Response{RunID: runID, Action: "cancel", Status: "not_found", Message: "run not found"}
+	}
+	message := s.signalProviderCancel(ctx, run)
+	if s.cancel != nil {
+		s.cancel(runID)
+	}
+	run, err = s.store.Cancel(runID, req.Reason)
+	if err != nil {
+		return http.StatusInternalServerError, Response{RunID: runID, Action: "cancel", Status: "failed", Message: err.Error()}
+	}
+	return http.StatusAccepted, Response{RunID: run.ID, Status: run.Status, Action: "cancel", Accepted: true, Message: message}
+}
+
+func (s Service) signalProviderCancel(ctx context.Context, run runtrace.Run) string {
+	if s.provider == nil || run.Status != runtrace.StatusRunning || strings.TrimSpace(run.RemoteSessionID) == "" {
+		return ""
+	}
+	signalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	err := s.provider.CancelRun(signalCtx, middleware.RunCancellationRequest{
+		RunID:            run.ID,
+		AgentID:          run.AgentID,
+		WorkspacePath:    run.WorkspacePath,
+		LogicalSessionID: run.LogicalSessionID,
+		RemoteSessionID:  run.RemoteSessionID,
+	})
+	status, message := runtrace.StatusCompleted, "provider cancellation signal sent"
+	if err != nil {
+		status, message = runtrace.StatusFailed, "provider cancellation signal failed: "+err.Error()
+	}
+	_, _ = s.store.AppendEvent(runtrace.Event{
+		RunID: run.ID, Kind: "run.cancel.signal", Actor: "matrix", Status: status,
+		Protocol: run.Protocol, ProtocolMethod: providerCancelMethod(run.Protocol), Message: message,
+	})
+	return message
+}
+
+func providerCancelMethod(protocol string) string {
+	if strings.EqualFold(strings.TrimSpace(protocol), string(middleware.ProtocolKindA2A)) {
+		return "tasks/cancel"
+	}
+	return "session/cancel"
 }
 
 func (s Service) attachContext(ctx context.Context, runID string, req Request) (int, Response) {
