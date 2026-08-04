@@ -43,6 +43,14 @@ func TestSmoke_InstalledCanonicalCodexAppliesFullAccessPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install canonical Codex: %v", err)
 	}
+	// A clean CI runner has no Codex login. Authenticate the local app-server
+	// with a non-secret dummy key in an isolated Codex home; session/new does not
+	// issue a model request, but it does expose the provider's effective mode.
+	cfg.Env = append(cfg.Env,
+		"CODEX_HOME="+t.TempDir(),
+		"CODEX_API_KEY=matrix-policy-smoke-dummy",
+		`DEFAULT_AUTH_REQUEST={"methodId":"api-key"}`,
+	)
 	cfg.Args = append(cfg.Args,
 		"-c", "sandbox_mode=danger-full-access",
 		"-c", "approval_policy=never",
