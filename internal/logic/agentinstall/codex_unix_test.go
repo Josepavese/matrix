@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	execprovider "github.com/Josepavese/matrix/internal/providers/exec"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
 )
@@ -39,6 +40,9 @@ func TestInstallCanonicalCodexActivatesCompleteStaging(t *testing.T) {
 	}
 	if cfg.Command != filepath.Join(bin, "node") || len(cfg.Args) != 1 || !strings.HasSuffix(cfg.Args[0], "dist/index.js") {
 		t.Fatalf("unexpected config: %+v", cfg)
+	}
+	if got := strings.Join(cfg.Env, "\x00"); !strings.Contains(got, agentlaunch.CodexPolicyContractEnv+"="+agentlaunch.CodexPolicyContractV1) {
+		t.Fatalf("missing Codex policy contract marker: %#v", cfg.Env)
 	}
 	if _, err := os.Stat(filepath.Join(target, "old")); !os.IsNotExist(err) {
 		t.Fatalf("old install was not replaced: %v", err)

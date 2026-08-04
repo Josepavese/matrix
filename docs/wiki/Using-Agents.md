@@ -117,7 +117,7 @@ Supported values are `low`, `medium`, `high`, and `xhigh`. Matrix rejects the
 request before launch if the selected agent does not resolve to `codex`, if the
 value is unsupported, or if `agent_config` and `codex_config` provide different
 values. The run trace records the applied value on `routing.decision` under
-`protocol_meta.agent_launch_policy.model_reasoning_effort`.
+`protocol_meta.agent_launch_policy.effective.model_reasoning_effort`.
 
 ### Check agent health
 
@@ -275,12 +275,16 @@ matrix config set agent.trust_mode true
 matrix agent args set codex -- -c 'sandbox_mode="danger-full-access"' -c 'approval_policy="never"'
 ```
 
-The appended Codex config is passed to `codex-acp` on launch. It is equivalent
-to running Codex without its internal sandbox and without interactive approval
-prompts for Matrix-routed HTTP runs. Run traces record the detected launch
-policy under `routing.decision.protocol_meta.agent_launch_policy`, including
-`trusted_terminal=true` when `sandbox_mode=danger-full-access` and
-`approval_policy=never`.
+Matrix translates these governed args through Codex policy adapter into
+`INITIAL_AGENT_MODE=agent-full-access` and `CODEX_CONFIG`; ignored wrapper argv
+never carries policy. Matrix then verifies or sets exact ACP session mode after
+new, resume, and load. Run traces separate `requested`, `effective`,
+`application_mechanism`, and `verification_status`; `trusted_terminal=true`
+appears only when effective full-access policy is verified.
+
+After upgrading from a release that installed Codex without policy contract
+marker, run `matrix install codex`. Until then, runtime and
+`matrix agent doctor codex` fail closed with `launch_policy_invalid`.
 
 If the daemon is already running as `matrix.service`, it may own the vault lock.
 Stop the user service before applying local CLI config or agent overrides, then

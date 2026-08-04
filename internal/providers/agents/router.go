@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/a2aclient"
 )
@@ -262,9 +263,11 @@ func (r *Router) createClient(ctx context.Context, agentID string, cwd string, l
 	if err != nil {
 		return nil, "", fmt.Errorf("router failed to resolve endpoint for agent %s: %w", agentID, err)
 	}
-	if len(launchArgs) > 0 {
-		endpoint.Args = append(append([]string{}, endpoint.Args...), launchArgs...)
+	resolved, err := agentlaunch.ResolveEndpoint(agentID, endpoint, launchArgs...)
+	if err != nil {
+		return nil, "", fmt.Errorf("agent launch policy rejected: %w", err)
 	}
+	endpoint = resolved.Endpoint
 	log.Info("resolved agent endpoint", "event", "endpoint_resolved", "protocol_kind", endpoint.Kind, "transport", endpoint.Transport, "address", endpoint.Address, "command", endpoint.Command)
 
 	factory, ok := r.factory[endpoint.Kind]

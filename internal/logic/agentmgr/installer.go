@@ -64,6 +64,10 @@ func (inst *Installer) RegistryClient() *RegistryClient {
 // Install fetches, downloads, extracts and registers an agent.
 // Supports binary, npx, and uvx distribution types.
 func (inst *Installer) Install(ctx context.Context, agentID string) error {
+	existing, err := agentcfg.LoadEntry(inst.storage, agentID)
+	if err != nil {
+		return err
+	}
 	// 1. Fetch Manifest
 	manifest, err := inst.registry.FetchManifest(ctx, agentID)
 	if err != nil {
@@ -82,7 +86,7 @@ func (inst *Installer) Install(ctx context.Context, agentID string) error {
 	}
 
 	// 4. Register in Vault
-	entry := agentcfg.Entry{Config: cfg}
+	entry := agentcfg.Entry{Config: cfg, Override: existing.Override}
 	if err := agentcfg.SaveEntry(inst.storage, agentID, entry); err != nil {
 		return err
 	}

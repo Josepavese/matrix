@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/spf13/cobra"
 )
@@ -47,6 +48,7 @@ var agentShowCmd = &cobra.Command{
 		if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" {
 			address = endpoint.Command
 		}
+		resolved, policyErr := agentlaunch.ResolveEndpoint(agentID, endpoint)
 
 		payload := map[string]any{
 			"agent_id":  agentID,
@@ -64,6 +66,18 @@ var agentShowCmd = &cobra.Command{
 			"override":   override,
 			"is_active":  cfg.IsActive(),
 			"env_effect": cfg.Env,
+		}
+		if len(resolved.Metadata) > 0 {
+			payload["agent_launch_policy"] = resolved.Metadata
+		}
+		if policyErr != nil {
+			payload["agent_launch_policy_error"] = policyErr.Error()
+		} else if len(resolved.Metadata) > 0 {
+			payload["launch_endpoint"] = map[string]any{
+				"command":   resolved.Endpoint.Command,
+				"args":      resolved.Endpoint.Args,
+				"env_count": len(resolved.Endpoint.Env),
+			}
 		}
 		out, err := json.MarshalIndent(payload, "", "  ")
 		if err != nil {

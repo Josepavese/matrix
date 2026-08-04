@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/Josepavese/matrix/internal/middleware"
@@ -11,6 +12,9 @@ import (
 func (c *acpConversationClient) MaterializeRemoteSession(ctx context.Context, req middleware.SessionMaterializeRequest) (middleware.RemoteSessionInfo, middleware.ConversationMetadata, error) {
 	resp, err := c.createACPRemoteSession(ctx, req)
 	if err != nil {
+		return middleware.RemoteSessionInfo{}, middleware.ConversationMetadata{}, err
+	}
+	if err := c.applySessionMode(ctx, fromZedACPSession(resp), resp.SessionID, slog.Default()); err != nil {
 		return middleware.RemoteSessionInfo{}, middleware.ConversationMetadata{}, err
 	}
 	info := middleware.RemoteSessionInfo{

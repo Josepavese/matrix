@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Josepavese/matrix/internal/middleware"
@@ -92,6 +93,31 @@ func TestPickAutoApproveConfigOptionPrefersStableConfigSurface(t *testing.T) {
 	}
 }
 
+func TestApplyPreferredSessionModeUsesExactConfiguredValue(t *testing.T) {
+	fake := &pagedListACPClient{ctx: context.Background()}
+	client := &acpConversationClient{client: fake, preferredMode: "agent-full-access"}
+	session := &middleware.NewSessionResponse{ConfigOptions: []middleware.ConfigOption{{
+		ID: "mode", Category: "mode", Options: []middleware.ConfigOptionValue{{ID: "agent"}, {ID: "agent-full-access"}},
+	}}}
+	if err := client.applyPreferredSessionMode(context.Background(), session, "remote"); err != nil {
+		t.Fatal(err)
+	}
+	if fake.setConfigReq == nil || fake.setConfigReq.Value != "agent-full-access" {
+		t.Fatalf("configured mode was downgraded: %#v", fake.setConfigReq)
+	}
+}
+
+func TestApplyPreferredSessionModeFailsClosedWhenUnavailable(t *testing.T) {
+	client := &acpConversationClient{client: &pagedListACPClient{ctx: context.Background()}, preferredMode: "agent-full-access"}
+	session := &middleware.NewSessionResponse{Modes: &middleware.SessionModeState{
+		CurrentModeID: "agent", AvailableModes: []middleware.SessionMode{{ID: "agent"}},
+	}}
+	err := client.applyPreferredSessionMode(context.Background(), session, "remote")
+	if err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("expected fail-closed mode error, got %v", err)
+	}
+}
+
 func TestACPClientCapabilitiesAdvertiseStableBooleanConfig(t *testing.T) {
 	caps := acpClientCapabilitiesForDeps(middleware.ConversationFactoryDeps{Process: exec.NewProvider()})
 	if !caps.Terminal {
@@ -112,6 +138,8 @@ type pagedListACPClient struct {
 	promptUpdates []acpSessionNotification
 	authID        string
 	logouts       int
+	setModeID     string
+	setConfigReq  *acpSetConfigOptionRequest
 }
 
 func (c *pagedListACPClient) Context() context.Context            { return c.ctx }
@@ -169,8 +197,12 @@ func (c *pagedListACPClient) Prompt(_ context.Context, req acpPromptRequest, obs
 	}
 	return &acpPromptResponse{StopReason: "end_turn"}, nil
 }
-func (c *pagedListACPClient) SetMode(context.Context, string, string) error { return nil }
-func (c *pagedListACPClient) SetConfigOption(context.Context, acpSetConfigOptionRequest) (*acpSetConfigOptionResponse, error) {
+func (c *pagedListACPClient) SetMode(_ context.Context, _ string, modeID string) error {
+	c.setModeID = modeID
+	return nil
+}
+func (c *pagedListACPClient) SetConfigOption(_ context.Context, req acpSetConfigOptionRequest) (*acpSetConfigOptionResponse, error) {
+	c.setConfigReq = &req
 	return &acpSetConfigOptionResponse{}, nil
 }
 func (c *pagedListACPClient) ExtRequest(context.Context, string, interface{}, interface{}) error {

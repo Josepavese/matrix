@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -101,6 +102,13 @@ func (s *Supervisor) startSupervised(ctx context.Context, log *slog.Logger, agen
 
 func (s *Supervisor) startOnDemand(ctx context.Context, log *slog.Logger, agentID string, cfg AgentConfig) {
 	endpoint := protocolEndpointFromAgentConfig(cfg)
+	resolved, policyErr := agentlaunch.ResolveEndpoint(agentID, endpoint)
+	if policyErr != nil {
+		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "launch_policy_invalid", Error: policyErr.Error()})
+		log.Warn("agent launch policy is not applicable", "event", "agent_launch_policy_invalid", "agent", agentID, "error", policyErr)
+		return
+	}
+	endpoint = resolved.Endpoint
 	if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && !s.proc.HasExecutable(cfg.Command) {
 		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "missing_executable", Error: "executable not found in PATH"})
 		log.Warn("agent not found in path, skipping supervision", "event", "agent_missing", "agent", agentID, "command", cfg.Command)

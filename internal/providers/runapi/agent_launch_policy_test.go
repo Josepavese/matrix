@@ -3,6 +3,7 @@ package runapi
 import (
 	"testing"
 
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/memstore"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/middleware"
@@ -25,6 +26,7 @@ func TestAppendRouteEventsIncludesLaunchPolicyEvidence(t *testing.T) {
 	server := NewServer(&runTestRouter{}).WithTraceStorage(store).WithEndpointResolver(launchPolicyEndpointResolver{
 		endpoint: middleware.ProtocolEndpoint{
 			Args: []string{"--dangerously-bypass-approvals-and-sandbox"},
+			Env:  []string{agentlaunch.CodexPolicyContractEnv + "=" + agentlaunch.CodexPolicyContractV1},
 		},
 	})
 	run, _, err := server.Store().Start(runtrace.Run{AgentID: "codex", Protocol: "acp", ChannelID: "test", InputRef: "matrix://pending/input"})
@@ -45,7 +47,7 @@ func TestAppendRouteEventsIncludesLaunchPolicyEvidence(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected agent launch policy meta, got %+v", event.ProtocolMeta)
 		}
-		if launchPolicy["bypass_approvals_and_sandbox"] != true || launchPolicy["trusted_terminal"] != true {
+		if launchPolicy["bypass_approvals_and_sandbox"] != true || launchPolicy["trusted_terminal"] != true || launchPolicy["verified"] != true {
 			t.Fatalf("expected bypass trusted terminal evidence, got %+v", launchPolicy)
 		}
 		return

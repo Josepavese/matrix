@@ -18,6 +18,12 @@ Current allowed baseline:
 
 Latest budget realignment:
 
+- 2026-08-04: provider launch policy gained a generic adapter registry, a
+  Codex `codex-acp-env-v1` mapping, fail-closed doctor/trace evidence, and exact
+  ACP mode enforcement across new/resume/load. `cmd/matrix` and
+  `internal/providers/agents` overrides were raised to measured 3178/3784 LOC
+  product baselines. File/function/parameter budgets remain clean, quality
+  warnings remain 0, and maximum branch points remain 10.
 - 2026-07-22: ACP message chunks now preserve stable `messageId`, exact delta
   boundaries, and structured Codex `commentary` / `final_answer` phase evidence.
   The `internal/providers/agents` and `pkg/zedacp` overrides were raised to the

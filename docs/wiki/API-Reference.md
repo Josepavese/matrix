@@ -101,11 +101,13 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
   }'
 ```
 
-Matrix validates the value before starting the run and translates it to the
-Codex launch override `-c model_reasoning_effort="<value>"`. Unsupported values,
+Matrix validates the value before starting the run and translates it through
+Codex provider-policy adapter into `CODEX_CONFIG`. Unsupported values,
 conflicting `agent_config`/`codex_config` values, or use with a non-Codex agent
-return HTTP `400`. The `routing.decision` event records non-secret evidence in
-`protocol_meta.agent_launch_policy.model_reasoning_effort`.
+return HTTP `400`; missing/inapplicable installed provider policy contract
+returns HTTP `409` before dispatch. `routing.decision` records non-secret
+evidence in
+`protocol_meta.agent_launch_policy.effective.model_reasoning_effort`.
 
 **Response (sync mode):**
 
