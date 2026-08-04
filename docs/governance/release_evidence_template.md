@@ -29,6 +29,7 @@ Use this template for every production-oriented Matrix release.
 - Governance job:
 - Lint job:
 - Test job:
+- Windows Codex policy job:
 - Build job:
 - Release dry-run job:
 - Release workflow URL:

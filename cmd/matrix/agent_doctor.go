@@ -6,6 +6,7 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/logic/agentdoctor"
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/agentprobe"
 	"github.com/spf13/cobra"
@@ -58,6 +59,7 @@ var agentDoctorCmd = &cobra.Command{
 				Active:          cfg.Active,
 			})
 			address := agentdoctor.EndpointAddress(endpoint)
+			resolved, policyErr := agentlaunch.ResolveEndpoint(id, endpoint)
 
 			item := map[string]any{
 				"agent_id":                      id,
@@ -77,6 +79,17 @@ var agentDoctorCmd = &cobra.Command{
 				"agents_config_path_override":   os.Getenv("MATRIX_AGENTS_CONFIG") != "",
 				"telegram_config_path_override": os.Getenv("MATRIX_TELEGRAM_CONFIG") != "",
 			}
+			var warnings []string
+			if len(resolved.Metadata) > 0 {
+				item["agent_launch_policy"] = resolved.Metadata
+			}
+			if policyErr != nil {
+				item["provider_status"] = "launch_policy_invalid"
+				item["agent_launch_policy_error"] = policyErr.Error()
+				warnings = append(warnings, "agent launch policy is not applicable: "+policyErr.Error())
+			} else {
+				endpoint = resolved.Endpoint
+			}
 
 			if cfg.Command != "" {
 				if _, err := os.Stat(cfg.Command); err == nil {
@@ -85,12 +98,13 @@ var agentDoctorCmd = &cobra.Command{
 					item["command_in_path"] = true
 				}
 			}
-			var warnings []string
-			checks, checkWarnings := agentdoctor.InspectACP(endpoint, agentprobe.ACPInitialize)
-			for key, value := range checks {
-				item[key] = value
+			if policyErr == nil {
+				checks, checkWarnings := agentdoctor.InspectACP(endpoint, agentprobe.ACPInitialize)
+				for key, value := range checks {
+					item[key] = value
+				}
+				warnings = append(warnings, checkWarnings...)
 			}
-			warnings = append(warnings, checkWarnings...)
 			_, metaErr := agentcfg.LoadMeta(ctx.Store, id)
 			if metaErr != nil {
 				warnings = append(warnings, "agent metadata unavailable: "+metaErr.Error())

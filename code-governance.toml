@@ -23,8 +23,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 [package_overrides]
 # 2026-06-18: public-release hardening adds runtime endpoint auth coverage
 # and PAL/vault initialization checks. 2026-06-23 adds SSOT agent launch
-# argument override commands for trusted local provider policy.
-"cmd/matrix" = 3150
+# argument override commands for trusted local provider policy. 2026-08-04
+# adds fail-closed doctor/show evidence for effective provider policy.
+"cmd/matrix" = 3178
 "internal/logic/onboarding" = 1400
 "internal/logic/runtrace" = 830
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
@@ -55,7 +56,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # remain clean and this exact package baseline is not permission for growth.
 # 2026-07-24: ACP client leases defer physical close while sibling runs still
 # use one router-lifetime client; new routes move to a fresh cached client.
-"internal/providers/agents" = 3727
+# 2026-08-04: exact configured provider mode is verified on ACP new/resume/load
+# so wrapper policy cannot be downgraded before a turn.
+"internal/providers/agents" = 3784
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.

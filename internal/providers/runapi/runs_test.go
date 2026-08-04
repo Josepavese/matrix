@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/memstore"
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
@@ -279,7 +280,10 @@ func TestHandleRunsRejectsNonJSONContentType(t *testing.T) {
 func TestHandleRuns_CodexReasoningEffortAddsLaunchArgsAndTrace(t *testing.T) {
 	router := &runTestRouter{}
 	server := NewServer(router).WithTraceStorage(memstore.New()).WithEndpointResolver(launchPolicyEndpointResolver{
-		endpoint: middleware.ProtocolEndpoint{Args: []string{"-c", "approval_policy=\"never\""}},
+		endpoint: middleware.ProtocolEndpoint{
+			Args: []string{"-c", "sandbox_mode=\"danger-full-access\"", "-c", "approval_policy=\"never\""},
+			Env:  []string{agentlaunch.CodexPolicyContractEnv + "=" + agentlaunch.CodexPolicyContractV1},
+		},
 	})
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
@@ -315,7 +319,8 @@ func TestHandleRuns_CodexReasoningEffortAddsLaunchArgsAndTrace(t *testing.T) {
 			continue
 		}
 		launchPolicy, ok := event.ProtocolMeta["agent_launch_policy"].(map[string]interface{})
-		if !ok || launchPolicy["model_reasoning_effort"] != "xhigh" {
+		effective, effectiveOK := launchPolicy["effective"].(map[string]interface{})
+		if !ok || !effectiveOK || effective["model_reasoning_effort"] != "xhigh" || launchPolicy["verified"] != true {
 			t.Fatalf("expected reasoning effort evidence, got %+v", event.ProtocolMeta)
 		}
 		return

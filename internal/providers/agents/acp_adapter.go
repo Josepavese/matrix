@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/sidecar"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/sidecarprojection"
@@ -65,6 +66,7 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		authMethods:         append([]acpAuthMethod(nil), initResp.AuthMethods...),
 		loadedSessions:      map[string]bool{},
 		mcpServers:          toZedACPMCPServers(deps.McpServers),
+		preferredMode:       agentlaunch.PreferredSessionMode(endpoint),
 	}
 	if err := conversation.validateMCPServers(conversation.mcpServers); err != nil {
 		_ = transport.Close()
@@ -97,6 +99,7 @@ type acpConversationClient struct {
 	featureCapabilities acpFeatureCapabilities
 	authMethods         []acpAuthMethod
 	mcpServers          []acpMcpServerConfig
+	preferredMode       string
 	mu                  sync.Mutex
 	loadedSessions      map[string]bool
 	activePrompts       map[string]chan struct{}
@@ -230,29 +233,93 @@ func (c *acpConversationClient) createAndConfigureACPRemoteSession(ctx context.C
 		return "", err
 	}
 	c.markLoadedSession(newSessResp.SessionID)
-	c.setAutoApproveMode(ctx, newSessResp, log)
+	if err := c.applySessionMode(ctx, fromZedACPSession(newSessResp), newSessResp.SessionID, log); err != nil {
+		c.unmarkLoadedSession(newSessResp.SessionID)
+		return "", err
+	}
 	return newSessResp.SessionID, nil
 }
 
-func (c *acpConversationClient) setAutoApproveMode(ctx context.Context, resp *acpNewSessionResponse, log *slog.Logger) {
-	session := fromZedACPSession(resp)
+func (c *acpConversationClient) applySessionMode(ctx context.Context, session *middleware.NewSessionResponse, sessionID string, log *slog.Logger) error {
+	if c.preferredMode != "" {
+		return c.applyPreferredSessionMode(ctx, session, sessionID)
+	}
 	if configID, value := pickAutoApproveConfigOption(session); configID != "" && value != "" {
 		if _, err := c.client.SetConfigOption(ctx, acpSetConfigOptionRequest{
-			SessionID: resp.SessionID,
+			SessionID: sessionID,
 			ConfigID:  configID,
 			Value:     value,
 		}); err != nil {
 			log.Warn("failed to set ACP config option", "config_id", configID, "value", value, "error", err)
 		}
-		return
+		return nil
 	}
 	modeID := pickAutoApproveMode(session)
 	if modeID == "" {
-		return
+		return nil
 	}
-	if err := c.client.SetMode(ctx, resp.SessionID, modeID); err != nil {
+	if err := c.client.SetMode(ctx, sessionID, modeID); err != nil {
 		log.Warn("failed to set ACP mode", "mode", modeID, "error", err)
 	}
+	return nil
+}
+
+func (c *acpConversationClient) applyPreferredSessionMode(ctx context.Context, session *middleware.NewSessionResponse, sessionID string) error {
+	if session == nil {
+		return fmt.Errorf("configured provider mode %q cannot be verified: empty session state", c.preferredMode)
+	}
+	if currentSessionMode(session) == c.preferredMode {
+		return nil
+	}
+	if configID, value := findSessionConfigMode(session, c.preferredMode); configID != "" {
+		_, err := c.client.SetConfigOption(ctx, acpSetConfigOptionRequest{SessionID: sessionID, ConfigID: configID, Value: value})
+		return wrapConfiguredModeError(c.preferredMode, err)
+	}
+	if !hasSessionMode(session, c.preferredMode) {
+		return fmt.Errorf("configured provider mode %q is unavailable in ACP session state", c.preferredMode)
+	}
+	err := c.client.SetMode(ctx, sessionID, c.preferredMode)
+	return wrapConfiguredModeError(c.preferredMode, err)
+}
+
+func findSessionConfigMode(session *middleware.NewSessionResponse, preferred string) (string, string) {
+	for _, option := range session.ConfigOptions {
+		if option.Category != "mode" && !strings.EqualFold(option.ID, "mode") {
+			continue
+		}
+		for _, value := range option.Options {
+			if value.ID == preferred {
+				return option.ID, value.ID
+			}
+		}
+	}
+	return "", ""
+}
+
+func currentSessionMode(session *middleware.NewSessionResponse) string {
+	if session.Modes == nil {
+		return ""
+	}
+	return session.Modes.CurrentModeID
+}
+
+func hasSessionMode(session *middleware.NewSessionResponse, preferred string) bool {
+	if session.Modes == nil {
+		return false
+	}
+	for _, mode := range session.Modes.AvailableModes {
+		if mode.ID == preferred {
+			return true
+		}
+	}
+	return false
+}
+
+func wrapConfiguredModeError(mode string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("apply configured provider mode %q: %w", mode, err)
 }
 
 type acpLoadRemoteSessionRequest struct {
@@ -281,14 +348,8 @@ func (c *acpConversationClient) resumeACPRemoteSession(req acpLoadRemoteSessionR
 		return false, nil
 	}
 	c.markLoadedSession(req.RemoteSessionID)
-	if configID, value := pickAutoApproveConfigOption(fromZedACPResumeSession(resp)); configID != "" && value != "" {
-		if _, err := c.client.SetConfigOption(req.Ctx, acpSetConfigOptionRequest{
-			SessionID: req.RemoteSessionID,
-			ConfigID:  configID,
-			Value:     value,
-		}); err != nil {
-			req.Log.Warn("failed to set ACP resumed config option", "config_id", configID, "value", value, "error", err)
-		}
+	if err := c.applySessionMode(req.Ctx, fromZedACPResumeSession(resp), req.RemoteSessionID, req.Log); err != nil {
+		return false, err
 	}
 	return true, nil
 }
@@ -310,14 +371,8 @@ func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionReq
 		return nil
 	}
 	c.markLoadedSession(req.RemoteSessionID)
-	if configID, value := pickAutoApproveConfigOption(fromZedACPLoadSession(resp)); configID != "" && value != "" {
-		if _, err := c.client.SetConfigOption(req.Ctx, acpSetConfigOptionRequest{
-			SessionID: req.RemoteSessionID,
-			ConfigID:  configID,
-			Value:     value,
-		}); err != nil {
-			req.Log.Warn("failed to set ACP loaded config option", "config_id", configID, "value", value, "error", err)
-		}
+	if err := c.applySessionMode(req.Ctx, fromZedACPLoadSession(resp), req.RemoteSessionID, req.Log); err != nil {
+		return err
 	}
 	obs.WaitIdle(req.Ctx, 150*time.Millisecond)
 	return nil

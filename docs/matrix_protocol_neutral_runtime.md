@@ -165,8 +165,11 @@ Matrix keeps two trust boundaries separate:
 
 - `agent.trust_mode=true` allows Matrix's ACP client-side file, terminal, and
   permission handlers to approve provider requests automatically.
-- Provider launch policy is passed to the agent process explicitly through the
-  SSOT endpoint command and args.
+- Provider launch policy enters through SSOT endpoint command and args, then
+  passes through a provider-policy adapter before process creation. Common
+  evidence records requested policy, effective policy, application mechanism,
+  and verification status. Provider details stay out of HTTP/session/channel
+  consumers.
 
 For Codex ACP, trusted local workspace mode is configured by appending Codex
 runtime config to the agent launch command:
@@ -176,18 +179,27 @@ matrix config set agent.trust_mode true
 matrix agent args set codex -- -c 'sandbox_mode="danger-full-access"' -c 'approval_policy="never"'
 ```
 
+Canonical Codex adapter removes recognized policy arguments from wrapper argv
+and translates them to provider-supported `INITIAL_AGENT_MODE` and
+`CODEX_CONFIG`. Trusted policy maps to `agent-full-access`; Matrix verifies or
+sets that exact mode through ACP session state after new, resume, and load.
 This leaves Matrix's ACP permission trust independent from Codex's internal
-sandbox and approval policy. `/v1/runs` records detected launch-policy evidence
-on the `routing.decision` event under
-`protocol_meta.agent_launch_policy`.
+sandbox and approval policy.
+
+`matrix install codex` marks installs supporting this contract. Configured
+policy against older/unmarked installs fails before dispatch;
+`matrix agent doctor codex` reports `launch_policy_invalid` with reinstall
+guidance. `/v1/runs` records evidence under
+`protocol_meta.agent_launch_policy`; `trusted_terminal=true` appears only for
+verified effective full-access policy.
 
 Codex `model_reasoning_effort` can also be set per run through
 `agent_config.model_reasoning_effort` or `codex_config.model_reasoning_effort`
 on `/v1/runs`. Matrix validates `low`, `medium`, `high`, and `xhigh`, translates
-the value to `-c model_reasoning_effort="<value>"`, and records the applied
-value in `protocol_meta.agent_launch_policy`. Because provider launch policy is
-part of the process contract, local client reuse is partitioned by these
-per-run launch args as well as by agent and workspace.
+the value through the same provider-policy adapter into `CODEX_CONFIG`, and
+records it under `protocol_meta.agent_launch_policy.effective`. Because
+provider launch policy is part of the process contract, local client reuse is
+partitioned by these per-run launch args as well as by agent and workspace.
 
 ## Inbound Surface
 
@@ -526,6 +538,9 @@ surface, but every provider action remains capability-gated and evidence-based.
 - Discovery code may depend on registry formats or Agent Card schemas, but not on the session manager or protocol adapters.
 - Channel gateways may depend on provider SDKs, but the daemon boot process must depend only on the channel runtime registry.
 - New protocols must be added by implementing `ConversationFactory`, not by branching the session manager.
+- New provider launch-policy mappings must be added through the
+  `agentlaunch` adapter registry, with requested/effective/mechanism/verification
+  evidence and a provider-owned test; consumers must not branch by provider.
 - New discovery backends must be added by implementing `agentdiscovery.Provider`, not by hardcoding another branch into the CLI.
 - New onboarding discovery policies must be expressed by source ordering and activation rules, not by embedding protocol-specific logic in the wizard.
 - New channels must be added by implementing a runtime `Factory`, not by editing the daemon startup flow with provider-specific code paths.

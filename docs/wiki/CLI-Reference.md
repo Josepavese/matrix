@@ -96,6 +96,10 @@ Run diagnostics on an agent. Checks binary, protocol, and configuration.
 matrix agent doctor opencode
 ```
 
+Configured launch policy adds requested/effective policy, application
+mechanism, and verification status. Inapplicable policy reports
+`launch_policy_invalid` and blocks dispatch.
+
 ### `matrix agent set-endpoint <agent-id> <address>`
 
 Set the network endpoint for an agent.
@@ -125,6 +129,10 @@ matrix agent args clear codex
 
 `set` replaces only the appended override arguments. It does not modify the
 seed command or seed args stored for the agent.
+
+Provider-policy adapters may translate recognized governed args to verified
+provider surfaces. Canonical Codex uses `codex-acp-env-v1`; unrecognized args
+remain ordinary wrapper argv.
 
 ### `matrix agent override`
 

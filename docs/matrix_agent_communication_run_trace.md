@@ -263,9 +263,19 @@ agents when Matrix can infer it from non-secret command arguments. Example:
 {
   "agent_launch_policy": {
     "source": "agent_args",
-    "sandbox_mode": "danger-full-access",
-    "approval_policy": "never",
-    "model_reasoning_effort": "xhigh",
+    "requested": {
+      "sandbox_mode": "danger-full-access",
+      "approval_policy": "never",
+      "model_reasoning_effort": "xhigh"
+    },
+    "effective": {
+      "sandbox_mode": "danger-full-access",
+      "approval_policy": "never",
+      "model_reasoning_effort": "xhigh"
+    },
+    "application_mechanism": "codex-acp-env-v1",
+    "verification_status": "verified",
+    "verified": true,
     "trusted_terminal": true
   }
 }
@@ -273,8 +283,10 @@ agents when Matrix can infer it from non-secret command arguments. Example:
 
 Recognized non-secret launch-policy keys are `sandbox_mode`,
 `approval_policy`, `sandbox_permissions`, `model_reasoning_effort`, and the
-Codex bypass flag. `model_reasoning_effort` may come from the stored Codex agent
-args or from a per-run `/v1/runs` `agent_config`/`codex_config` override.
+Codex bypass flag. `model_reasoning_effort` may come from stored Codex agent
+args or a per-run `/v1/runs` `agent_config`/`codex_config` override. Policy
+adapters emit the same requested/effective/mechanism/verification shape across
+providers; application details remain inside adapters.
 
 Streaming UI consumers can rely on these message channels in raw
 `/v1/runs/{run_id}/events` reads:

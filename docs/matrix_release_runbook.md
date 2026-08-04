@@ -115,7 +115,8 @@ Minimum criteria for a local release candidate:
 - high-confidence secret scan passes on tracked files
 - governance manifest and architecture guardrails pass
 - CI is green on `main`
-- the `CI` workflow jobs `governance`, `lint`, `test`, `build`, and `release-dry-run` are green
+- the `CI` workflow jobs `governance`, `lint`, `test`, `windows-codex-policy`,
+  `build`, and `release-dry-run` are green
 - tagged releases publish through the `Release` workflow `goreleaser` job
 - `matrix readiness` returns `ready` or `ready_with_warnings`
 - vault schema is `current`

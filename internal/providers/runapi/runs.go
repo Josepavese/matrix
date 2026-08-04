@@ -86,6 +86,12 @@ func (s *Server) prepareRunAgentConfig(w http.ResponseWriter, req *runRequest, a
 		return false
 	}
 	req.agentLaunchArgs = append(req.agentLaunchArgs, args...)
+	if s.endpointResolver != nil {
+		if _, err := agentlaunch.ResolveForAgent(s.endpointResolver, agentID, req.agentLaunchArgs...); err != nil {
+			http.Error(w, "Conflict: agent launch policy is not applicable: "+err.Error(), http.StatusConflict)
+			return false
+		}
+	}
 	return true
 }
 
@@ -117,8 +123,8 @@ func (s *Server) startRun(req runRequest, agentID string) (runtrace.Run, error) 
 
 func (s *Server) appendRouteEvents(run runtrace.Run, requestedAgentID, selectedAgentID string, launchArgs []string) {
 	protocolMeta := map[string]interface{}{"requested_agent_id": requestedAgentID, "selected_agent_id": selectedAgentID}
-	if launchPolicy := agentlaunch.MetadataForAgent(s.endpointResolver, selectedAgentID, launchArgs...); len(launchPolicy) > 0 {
-		protocolMeta["agent_launch_policy"] = launchPolicy
+	if resolved, err := agentlaunch.ResolveForAgent(s.endpointResolver, selectedAgentID, launchArgs...); err == nil && len(resolved.Metadata) > 0 {
+		protocolMeta["agent_launch_policy"] = resolved.Metadata
 	}
 	_, _ = s.runStore.AppendEvent(runtrace.Event{
 		RunID:        run.ID,

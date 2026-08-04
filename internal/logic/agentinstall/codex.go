@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -48,9 +49,10 @@ func InstallCanonicalCodex(ctx context.Context, cfg Config) (agentcfg.Config, er
 	if err := swapDir(cfg.FS, cfg.Target, staging); err != nil {
 		return agentcfg.Config{}, err
 	}
+	env := agentcfg.UpsertEnv(cfg.Env, agentlaunch.CodexPolicyContractEnv, agentlaunch.CodexPolicyContractV1)
 	return agentcfg.Config{
 		Command: nodePath, Args: []string{filepath.Join(cfg.Target, relativeScript)},
-		Env: cfg.Env, Kind: "acp", Transport: "stdio",
+		Env: env, Kind: "acp", Transport: "stdio",
 	}, nil
 }
 
