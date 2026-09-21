@@ -19,7 +19,15 @@ type sessionCleanupExecution struct {
 	ChannelID, CleanupPolicy                         string
 	Meta                                             SessionMeta
 	ForceForgetLocal, SuppressForkParentOwnerCleanup bool
+	// Visited and Depth guard the recursive fork cleanup: the fork graph comes
+	// from provider data and may contain cycles (a parent and its siblings can
+	// share a remote id), which would otherwise recurse until the stack dies.
+	Visited *cleanupVisited
+	Depth   int
 }
+
+// maxForkCleanupDepth bounds fork cleanup recursion independently of the
+// visited set, as a backstop for pathological graphs.
 
 func (m *Manager) handleSessionDeleteTyped(ctx context.Context, req sessionCleanupRequest) (middleware.SessionActionResult, error) {
 	req.Action = "delete"
@@ -126,6 +134,16 @@ func (m *Manager) cleanupSessionMirrorAndRemote(ctx context.Context, req session
 		policySource = req.Meta.CleanupPolicy
 	}
 	policy := sessioncleanup.NormalizePolicy(policySource)
+	req = m.prepareCleanupExecution(req)
+	if req.Depth > maxForkCleanupDepth {
+		return cleanupAlreadyHandledResult(req, policy, true)
+	}
+	if !req.Visited.enter(req.Meta) {
+		// This session is already being cleaned higher up the stack: recursing
+		// again would never terminate and would delete the same remote session
+		// repeatedly.
+		return cleanupAlreadyHandledResult(req, policy, false)
+	}
 	result := middleware.SessionCleanupResult{
 		LogicalSessionID: req.Meta.ID,
 		RemoteSessionID:  req.Meta.AgentSessionID,

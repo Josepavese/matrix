@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Josepavese/matrix/internal/logic/elicitation"
 	"github.com/Josepavese/matrix/internal/logic/orchestration"
 	"github.com/Josepavese/matrix/internal/logic/runconfig"
 	"github.com/Josepavese/matrix/internal/middleware"
@@ -67,6 +68,12 @@ func (s *Server) WithEndpointResolver(resolver middleware.AgentEndpointResolver)
 	return s
 }
 
+// WithElicitationService wires the shared elicitation SSOT into the HTTP API.
+func (s *Server) WithElicitationService(service *elicitation.Service) *Server {
+	s.runs.WithElicitationService(service)
+	return s
+}
+
 func (s *Server) StartRunSinkDeliveryWorker(ctx context.Context) {
 	s.runs.StartSinkDeliveryWorker(ctx)
 }
@@ -75,6 +82,7 @@ const (
 	RunPathV1                = runapi.RunPathV1
 	RunResourcePrefixV1      = runapi.RunResourcePrefixV1
 	EventSinksPathV1         = runapi.EventSinksPathV1
+	ElicitationPathV1        = runapi.ElicitationPathV1
 	SessionActionPathV1      = "/v1/session-actions"
 	WorkspaceActionPathV1    = "/v1/workspace-actions"
 	WorkspaceStatePathV1     = "/v1/workspace-state"

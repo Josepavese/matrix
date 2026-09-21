@@ -17,6 +17,7 @@ const WarningForkChildCleanupAlreadyMissing = "fork_child_cleanup_already_missin
 const WarningRunRelatedSessionRetained = "run_related_session_retained"
 const WarningRunRelatedSessionCleanupFailed = "run_related_session_cleanup_failed"
 const WarningRunAgentClientReconcileFailed = "run_agent_client_reconcile_failed"
+const WarningForkCleanupCycleSkipped = "fork_cleanup_cycle_skipped"
 const ReasonRunUnreferencedAgentClientReaped = "run_unreferenced_agent_client_reaped"
 const ReasonForkParentAgentClientOwner = "fork_parent_agent_client_owner"
 const ReasonSharedAgentClientOwner = "shared_agent_client_owner"

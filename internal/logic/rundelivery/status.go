@@ -1,21 +1,35 @@
 package rundelivery
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+// ErrDeliveryNotFound is returned when a status update targets a delivery that
+// is no longer stored. Reporting success here would hide a lost delivery.
+var ErrDeliveryNotFound = fmt.Errorf("delivery not found")
 
 func (s *Store) MarkSent(deliveryID string) error {
 	delivery, found, err := s.Load(deliveryID)
-	if err != nil || !found {
+	if err != nil {
 		return err
 	}
+	if !found {
+		return fmt.Errorf("%w: %s", ErrDeliveryNotFound, deliveryID)
+	}
 	delivery.Status = StatusSent
+	delivery.ClaimedUntil = time.Time{}
 	delivery.UpdatedAt = time.Now().UTC()
 	return s.Save(delivery)
 }
 
 func (s *Store) MarkFailed(deliveryID string, deliveryErr error, maxAttempts int) error {
 	delivery, found, err := s.Load(deliveryID)
-	if err != nil || !found {
+	if err != nil {
 		return err
+	}
+	if !found {
+		return fmt.Errorf("%w: %s", ErrDeliveryNotFound, deliveryID)
 	}
 	delivery.Attempts++
 	delivery.LastError = ""
@@ -26,6 +40,8 @@ func (s *Store) MarkFailed(deliveryID string, deliveryErr error, maxAttempts int
 	if delivery.Attempts >= maxAttempts {
 		delivery.Status = StatusDead
 	}
+	// Release the lease so the backoff, not the lease, decides the retry time.
+	delivery.ClaimedUntil = time.Time{}
 	delivery.NextAttemptAt = time.Now().UTC().Add(backoffForAttempt(delivery.Attempts))
 	delivery.UpdatedAt = time.Now().UTC()
 	return s.Save(delivery)

@@ -18,6 +18,10 @@ type Delivery struct {
 	Attempts      int       `json:"attempts"`
 	LastError     string    `json:"last_error,omitempty"`
 	NextAttemptAt time.Time `json:"next_attempt_at,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	// ClaimedUntil is the lease held by the worker that took this delivery.
+	// Without it two ticks (or two goroutines) can post the same event twice,
+	// because a send can outlive the poll interval.
+	ClaimedUntil time.Time `json:"claimed_until,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }

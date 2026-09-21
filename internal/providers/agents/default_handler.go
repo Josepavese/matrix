@@ -39,6 +39,16 @@ type defaultRequestHandler struct {
 	notifier   middleware.ThoughtNotifier
 	notifierMu sync.Mutex
 	extension  ExtensionRequestHandler
+	// elicitation is the neutral frontend port; nil means unsupported.
+	elicitation middleware.ElicitationFrontend
+	// turnCtxs holds the in-flight turn context per remote session, so an
+	// elicitation is bounded by the run that caused it: cancelling the run
+	// resolves the pending question instead of leaving it to expire.
+	turnMu   sync.Mutex
+	turnCtxs map[string]context.Context
+	// agentID identifies this handler's agent so elicitation requests can
+	// name the asking agent to the user, as the stable spec requires.
+	agentID string
 
 	// terminalRegistry holds active terminal sessions for async terminal methods.
 	terminals      map[string]*terminalSession
@@ -101,6 +111,49 @@ func (h *defaultRequestHandler) WithNotifier(notifier middleware.ThoughtNotifier
 	return h
 }
 
+// BindTurnContext records the context of the turn currently running on the
+// given remote session. Turns on different sessions may overlap, so the
+// binding is per session; beginPrompt guarantees at most one turn per session.
+func (h *defaultRequestHandler) BindTurnContext(ctx context.Context, sessionID string) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" || ctx == nil {
+		return
+	}
+	h.turnMu.Lock()
+	defer h.turnMu.Unlock()
+	if h.turnCtxs == nil {
+		h.turnCtxs = map[string]context.Context{}
+	}
+	h.turnCtxs[sessionID] = ctx
+}
+
+// ClearTurnContext drops the binding once the turn finished, so requests that
+// arrive between turns fall back to the connection context.
+func (h *defaultRequestHandler) ClearTurnContext(sessionID string) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return
+	}
+	h.turnMu.Lock()
+	defer h.turnMu.Unlock()
+	delete(h.turnCtxs, sessionID)
+}
+
+// turnContextFor returns the in-flight turn context for a session, falling back
+// to the connection context when no turn is bound.
+func (h *defaultRequestHandler) turnContextFor(fallback context.Context, sessionID string) context.Context {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return fallback
+	}
+	h.turnMu.Lock()
+	defer h.turnMu.Unlock()
+	if ctx, ok := h.turnCtxs[sessionID]; ok && ctx != nil {
+		return ctx
+	}
+	return fallback
+}
+
 func (h *defaultRequestHandler) isTrustMode() bool {
 	if h.trustMode == nil {
 		return false
@@ -136,6 +189,8 @@ func (h *defaultRequestHandler) HandleRequest(ctx context.Context, method string
 		return h.handleTerminalKill(ctx, log, params)
 	case "terminal/release":
 		return h.handleTerminalRelease(ctx, log, params)
+	case "elicitation/create":
+		return h.handleElicitationCreate(ctx, log, params)
 	default:
 		if h.extension != nil {
 			return h.extension(ctx, method, params)

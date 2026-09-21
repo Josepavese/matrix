@@ -17,16 +17,42 @@ func (m *Manager) cleanupForkChildren(ctx context.Context, req sessionCleanupExe
 		return
 	}
 	for _, child := range children {
+		if m.sessionActiveInAnyChannel(child.ID) {
+			// A fork child still in use by a channel must not be deleted as a
+			// side effect of cleaning its parent.
+			result.ForkChildren = append(result.ForkChildren, forkChildRetainedResult(child, policy, "fork child is active in a channel"))
+			result.ForkChildrenCleaned = len(result.ForkChildren)
+			continue
+		}
 		childCleanup := m.cleanupSessionMirrorAndRemote(ctx, sessionCleanupExecution{
 			ChannelID:                      req.ChannelID,
 			Meta:                           child,
 			CleanupPolicy:                  policy,
 			ForceForgetLocal:               true,
 			SuppressForkParentOwnerCleanup: true,
+			Visited:                        req.Visited,
+			Depth:                          req.Depth + 1,
 		})
 		result.ForkChildren = append(result.ForkChildren, childCleanup)
 		result.ForkChildrenCleaned = len(result.ForkChildren)
 	}
+}
+
+// forkChildRetainedResult reports a fork child deliberately left in place.
+func forkChildRetainedResult(child SessionMeta, policy, reason string) middleware.SessionCleanupResult {
+	result := middleware.SessionCleanupResult{
+		LogicalSessionID:  child.ID,
+		RemoteSessionID:   child.AgentSessionID,
+		AgentID:           child.AgentID,
+		ProtocolKind:      child.ProtocolKind,
+		CleanupPolicy:     policy,
+		Clean:             false,
+		CleanupStrength:   sessioncleanup.StrengthWeak,
+		WeakCleanupReason: sessioncleanup.WeakCleanupProcessRetained,
+		Error:             reason,
+	}
+	result.Warnings = sessioncleanup.AppendWarning(result.Warnings, sessioncleanup.WarningRunRelatedSessionRetained)
+	return result
 }
 
 func (m *Manager) markForkChildCleanupErrors(result *middleware.SessionCleanupResult) {

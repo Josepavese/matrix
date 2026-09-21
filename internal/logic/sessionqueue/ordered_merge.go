@@ -43,12 +43,19 @@ func (m *OrderedMerge) Submit(seq int, result RouteResult) {
 	m.mu.Lock()
 	m.pending[seq] = result
 	flushed := m.flushLocked()
+	// Read the counters while the lock is still held: another Submit may be
+	// mutating them concurrently for the same logical session.
+	lastMerged := m.lastMerged
+	pending := len(m.pending)
 	m.mu.Unlock()
 	if flushed > 0 {
-		slog.Debug("ordered merge flushed", "event", "merge_flush", "flushed", flushed, "last_merged", m.lastMerged, "pending", len(m.pending))
+		slog.Debug("ordered merge flushed", "event", "merge_flush", "flushed", flushed, "last_merged", lastMerged, "pending", pending)
 	}
 }
 
+// flushLocked replays every result that is now contiguous. Callbacks run while
+// the lock is held on purpose: that is what keeps flushes ordered by sequence
+// across concurrent submitters, and callers must not re-enter the merge.
 func (m *OrderedMerge) flushLocked() int {
 	flushed := 0
 	for {

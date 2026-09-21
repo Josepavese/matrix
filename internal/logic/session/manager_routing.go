@@ -108,10 +108,21 @@ func (m *Manager) applyPendingHandoff(meta *SessionMeta, channelID string, log *
 	if routeErr != nil || meta.PendingHandoff == nil {
 		return
 	}
-	meta.LastHandoff = meta.PendingHandoff
+	handoff := meta.PendingHandoff
+	meta.LastHandoff = handoff
 	m.recordWorkspaceEvent(*meta, "handoff.applied", channelID, "Applied specialist handoff", "specialist-handoff", handoffMetadata(*meta))
 	meta.PendingHandoff = nil
-	if err := m.saveSessionMeta(*meta); err != nil {
+	// Merge into the current record instead of writing back this snapshot: the
+	// caller took it before the turn ran, so it can predate a newer
+	// AgentSessionID written by the session queue, and writing it verbatim would
+	// silently drop that remote session.
+	latest, found, err := m.loadSessionMeta(meta.ID)
+	if err != nil || !found {
+		latest = *meta
+	}
+	latest.LastHandoff = handoff
+	latest.PendingHandoff = nil
+	if err := m.saveSessionMeta(latest); err != nil {
 		log.Warn("failed to clear pending handoff", "error", err, "logical_session", meta.ID)
 	}
 }

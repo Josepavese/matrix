@@ -185,6 +185,11 @@ type ConversationFactoryDeps struct {
 	Process    Process
 	TrustMode  func() bool
 	McpServers []McpServerConfig
+	// AgentID names the agent this client speaks for.
+	AgentID string
+	// ElicitationFrontend is the neutral port for agent-initiated
+	// elicitations. Nil disables the capability entirely.
+	ElicitationFrontend ElicitationFrontend
 }
 
 // AgentSessionController is an optional router capability for protocol-transparent

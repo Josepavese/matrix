@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/elicitation"
 	"github.com/Josepavese/matrix/internal/logic/memstore"
 	"github.com/Josepavese/matrix/internal/logic/rundelivery"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
@@ -18,6 +19,7 @@ const (
 	RunPathV1           = "/v1/runs"
 	RunResourcePrefixV1 = "/v1/runs/"
 	EventSinksPathV1    = "/v1/event-sinks"
+	ElicitationPathV1   = "/v1/elicitations"
 )
 
 type Router interface {
@@ -32,6 +34,7 @@ type Server struct {
 	runStore         *runtrace.Store
 	deliveryStore    *rundelivery.Store
 	sinkDelivery     *runsink.Service
+	elicitations     *elicitationsHandler
 	runCancels       map[string]context.CancelFunc
 	runMu            sync.Mutex
 }
@@ -116,6 +119,16 @@ func (s *Server) WithEndpointResolver(resolver middleware.AgentEndpointResolver)
 	return s
 }
 
+// WithElicitationService wires the shared elicitation SSOT service. The same
+// instance must also back the agents router frontend so API responses reach
+// the waiting protocol handler.
+func (s *Server) WithElicitationService(service *elicitation.Service) *Server {
+	if service != nil {
+		s.elicitations = &elicitationsHandler{service: service}
+	}
+	return s
+}
+
 func (s *Server) Store() *runtrace.Store {
 	return s.runStore
 }
@@ -128,6 +141,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(RunPathV1, s.HandleRuns)
 	mux.HandleFunc(RunResourcePrefixV1, s.HandleRunResource)
 	mux.HandleFunc(EventSinksPathV1, s.HandleEventSinks)
+	mux.HandleFunc(ElicitationPathV1, s.HandleElicitations)
 }
 
 func (s *Server) withRunStore(store *runtrace.Store) *Server {

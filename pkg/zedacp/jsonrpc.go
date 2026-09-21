@@ -34,6 +34,9 @@ type jsonRPCError struct {
 const (
 	ErrCodeMethodNotFound = -32601
 	ErrCodeInternal       = -32603
+	// ErrCodeInvalidRequest is returned when an inbound frame cannot be decoded
+	// into a request at all.
+	ErrCodeInvalidRequest = -32600
 )
 
 // RPCError lets request handlers return protocol-correct JSON-RPC error codes.

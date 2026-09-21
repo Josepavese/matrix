@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"strings"
 	"sync"
 	"time"
@@ -70,6 +71,25 @@ type Manager struct {
 
 	queues   map[string]*sessionqueue.OrderedMerge
 	queuesMu sync.Mutex
+
+	// channelLocks serialise the read-modify-write of one channel's state, so
+	// two concurrent first messages on a channel cannot both create a session
+	// and leave one of them unreferenced. Striped, so it cannot grow with the
+	// number of channels.
+	channelLocks [channelLockStripes]sync.Mutex
+}
+
+// channelLockStripes is the number of stripes guarding channel state.
+const channelLockStripes = 64
+
+// lockChannel takes the lock guarding one channel's state and returns its
+// release function.
+func (m *Manager) lockChannel(channelID string) func() {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(strings.TrimSpace(channelID)))
+	lock := &m.channelLocks[hash.Sum32()%channelLockStripes]
+	lock.Lock()
+	return lock.Unlock
 }
 
 const defaultAgentID = "opencode"
@@ -384,6 +404,14 @@ func historyPush(history []string, newID string) []string {
 
 // updateChannelState updates the channel's mapped active session and pushes it to history.
 func (m *Manager) updateChannelState(channelID, activeSessionID string) error {
+	unlock := m.lockChannel(channelID)
+	defer unlock()
+	return m.updateChannelStateLocked(channelID, activeSessionID)
+}
+
+// updateChannelStateLocked is updateChannelState for callers that already hold
+// the channel lock.
+func (m *Manager) updateChannelStateLocked(channelID, activeSessionID string) error {
 	state, err := m.getChannelState(channelID)
 	if err != nil {
 		return err
@@ -398,6 +426,17 @@ func (m *Manager) updateChannelState(channelID, activeSessionID string) error {
 }
 
 func (m *Manager) updateChannelWorkspaceState(channelID, workspaceID string) error {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil
+	}
+	unlock := m.lockChannel(channelID)
+	defer unlock()
+	return m.updateChannelWorkspaceStateLocked(channelID, workspaceID)
+}
+
+// updateChannelWorkspaceStateLocked is updateChannelWorkspaceState for callers
+// that already hold the channel lock.
+func (m *Manager) updateChannelWorkspaceStateLocked(channelID, workspaceID string) error {
 	if strings.TrimSpace(workspaceID) == "" {
 		return nil
 	}
@@ -420,11 +459,19 @@ func (m *Manager) updateChannelWorkspaceState(channelID, workspaceID string) err
 // GetOrCreateSession retrieves the active SessionID for a given channel,
 // or creates a new one if it doesn't exist, assigning it to the targetAgent.
 func (m *Manager) GetOrCreateSession(channelID, targetAgent string) (string, error) {
+	// The check and the creation must be atomic per channel: otherwise two
+	// concurrent first messages both observe an empty state and both create a
+	// session, and the second write makes the first session unreachable.
+	unlock := m.lockChannel(channelID)
+	defer unlock()
 	state, err := m.getChannelState(channelID)
 	if err == nil && state.ActiveSessionID != "" {
 		return state.ActiveSessionID, nil
 	}
-	return m.forceNewSessionWithWorkspace(channelID, targetAgent, "", "")
+	return m.forceNewSessionWithWorkspacePolicyLocked(newSessionPolicyRequest{
+		ChannelID:   channelID,
+		TargetAgent: targetAgent,
+	})
 }
 
 // AttachChannel forcefully maps an existing channel to a specific session ID.

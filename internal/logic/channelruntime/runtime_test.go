@@ -26,7 +26,7 @@ type fakeFactory struct {
 }
 
 func (f fakeFactory) Name() string { return f.name }
-func (f fakeFactory) Build(middleware.ConfigReader, *config.Manager, middleware.SessionRouter) (middleware.MessagingGateway, bool, error) {
+func (f fakeFactory) Build(middleware.ConfigReader, *config.Manager, middleware.SessionRouter, Deps) (middleware.MessagingGateway, bool, error) {
 	if f.err != nil {
 		return nil, false, f.err
 	}
@@ -91,7 +91,7 @@ func TestStartAllAndStopAll(t *testing.T) {
 	cfgMgr := config.NewManager(vault.NewVault(memStorage{values: map[string][]byte{}}))
 	gateway := &fakeGateway{}
 
-	started, err := StartAll(context.Background(), fakeReader{}, cfgMgr, fakeRouter{}, fakeFactory{name: "fake", gateway: gateway, enabled: true})
+	started, err := StartAll(context.Background(), fakeReader{}, cfgMgr, fakeRouter{}, Deps{}, fakeFactory{name: "fake", gateway: gateway, enabled: true})
 	if err != nil {
 		t.Fatalf("StartAll failed: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestStartAllAndStopAll(t *testing.T) {
 
 func TestStartAll_PropagatesFactoryError(t *testing.T) {
 	cfgMgr := config.NewManager(vault.NewVault(memStorage{values: map[string][]byte{}}))
-	_, err := StartAll(context.Background(), fakeReader{}, cfgMgr, fakeRouter{}, fakeFactory{name: "broken", err: errors.New("boom")})
+	_, err := StartAll(context.Background(), fakeReader{}, cfgMgr, fakeRouter{}, Deps{}, fakeFactory{name: "broken", err: errors.New("boom")})
 	if err == nil {
 		t.Fatal("expected error")
 	}

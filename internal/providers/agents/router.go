@@ -58,6 +58,10 @@ type Router struct {
 	// stdio client is evicted by keepalive before strict session cleanup runs.
 	clientTombstones map[string]agentClientTombstone
 
+	// elicitation is the neutral frontend port for agent-initiated
+	// elicitations; nil keeps the capability unadvertised.
+	elicitation middleware.ElicitationFrontend
+
 	// trustMode returns true when auto-approve is enabled.
 	// When false, permission requests from agents are denied.
 	// If nil, defaults to false (trust mode off).
@@ -279,6 +283,9 @@ func (r *Router) createClient(ctx context.Context, agentID string, cwd string, l
 		Cwd:       cwd,
 		Process:   r.proc,
 		TrustMode: r.trustMode,
+
+		AgentID:             agentID,
+		ElicitationFrontend: r.elicitation,
 	})
 	if err != nil {
 		return nil, "", annotateProviderFailureAgent(err, agentID)
@@ -414,4 +421,11 @@ func metadataWithContentBlocks(metadata middleware.ConversationMetadata, blocks 
 	}
 	metadata.Meta["content_blocks"] = append([]middleware.Content(nil), blocks...)
 	return metadata
+}
+
+// SetElicitationFrontend wires the neutral elicitation port. Passing nil
+// (or never calling) keeps clientCapabilities.elicitation unadvertised and
+// inbound requests answered with an explicit decline.
+func (r *Router) SetElicitationFrontend(frontend middleware.ElicitationFrontend) {
+	r.elicitation = frontend
 }

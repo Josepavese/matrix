@@ -3,6 +3,7 @@ package runtrace
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -20,32 +21,56 @@ func (s *Store) AppendEvent(event Event) (Event, error) {
 	}
 	s.eventMu.Lock()
 	defer s.eventMu.Unlock()
+
+	resolved, err := s.resolveEventSequence(event)
+	if err != nil {
+		return Event{}, err
+	}
+	event, err = normalizeEvent(resolved)
+	if err != nil {
+		return Event{}, err
+	}
+	if err := s.storeEvent(event); err != nil {
+		return Event{}, err
+	}
+	s.enqueueDispatch(event)
+	return event, nil
+}
+
+// resolveEventSequence fills in a missing sequence number and keeps the per-run
+// counter ahead of any explicitly numbered event, so a later automatic sequence
+// can never collide with an earlier explicit one.
+func (s *Store) resolveEventSequence(event Event) (Event, error) {
 	if event.Sequence <= 0 {
-		ids, err := s.loadEventIndex(event.RunID)
+		sequence, err := s.nextEventSequence(event.RunID)
 		if err != nil {
 			return Event{}, err
 		}
-		event.Sequence = len(ids) + 1
+		event.Sequence = sequence
+		return event, nil
 	}
-	event, err := normalizeEvent(event)
+	current, err := s.loadEventSequence(event.RunID)
 	if err != nil {
 		return Event{}, err
 	}
-	payload, err := json.Marshal(event)
-	if err != nil {
-		return Event{}, fmt.Errorf("failed to encode run event %s: %w", event.ID, err)
-	}
-	if err := s.storage.Set(EventKey(event.RunID, event.ID), payload); err != nil {
-		return Event{}, fmt.Errorf("failed to store run event %s: %w", event.ID, err)
-	}
-	err = s.updateEventIndex(event.RunID, event.ID)
-	if err != nil {
-		return Event{}, err
-	}
-	if s.dispatcher != nil {
-		go s.dispatcher(event)
+	if event.Sequence > current {
+		if err := s.saveEventSequence(event.RunID, event.Sequence); err != nil {
+			return Event{}, err
+		}
 	}
 	return event, nil
+}
+
+// storeEvent persists the payload and its index entry.
+func (s *Store) storeEvent(event Event) error {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to encode run event %s: %w", event.ID, err)
+	}
+	if err := s.storage.Set(EventKey(event.RunID, event.ID), payload); err != nil {
+		return fmt.Errorf("failed to store run event %s: %w", event.ID, err)
+	}
+	return s.updateEventIndex(event.RunID, event.ID)
 }
 
 func normalizeEvent(event Event) (Event, error) {
@@ -98,6 +123,10 @@ func (s *Store) LoadEventsAfter(runID, afterEventID string, limit int) ([]Event,
 	return events, nil
 }
 
+// idsAfter returns the ids following a cursor. When the cursor has been evicted
+// from the retained window it returns the whole window, which is at-least-once
+// delivery: a client may see an update twice, but never misses one that is still
+// retained.
 func idsAfter(ids []string, afterEventID string) []string {
 	if strings.TrimSpace(afterEventID) == "" {
 		return ids
@@ -158,6 +187,15 @@ func (s *Store) updateEventIndex(runID, eventID string) error {
 	}
 	ids = append(ids, eventID)
 	if len(ids) > maxRunEventRefs {
+		// The index keeps the newest window. Drop the payloads that fall out of
+		// it as well: leaving them behind grew storage without limit for the
+		// lifetime of a run while no reader could ever reach them again. The
+		// newest events — including the terminal ones — are the ones retained.
+		for _, evicted := range ids[:len(ids)-maxRunEventRefs] {
+			if err := s.storage.Delete(EventKey(runID, evicted)); err != nil {
+				slog.Warn("failed to delete evicted run event", "event", "run_event_evict_failed", "run_id", runID, "event_id", evicted, "error", err)
+			}
+		}
 		ids = ids[len(ids)-maxRunEventRefs:]
 	}
 	payload, err := json.Marshal(ids)

@@ -56,6 +56,14 @@ func (m *Manager) forceNewSessionWithWorkspace(channelID, targetAgent, workspace
 	})
 }
 
+// forceNewSessionWithWorkspacePolicy creates a session and points the channel at
+// it, holding the channel lock for the whole mutation.
+func (m *Manager) forceNewSessionWithWorkspacePolicy(req newSessionPolicyRequest) (string, error) {
+	unlock := m.lockChannel(req.ChannelID)
+	defer unlock()
+	return m.forceNewSessionWithWorkspacePolicyLocked(req)
+}
+
 type newSessionPolicyRequest struct {
 	ChannelID     string
 	TargetAgent   string
@@ -66,7 +74,9 @@ type newSessionPolicyRequest struct {
 	CleanupPolicy string
 }
 
-func (m *Manager) forceNewSessionWithWorkspacePolicy(req newSessionPolicyRequest) (string, error) {
+// forceNewSessionWithWorkspacePolicyLocked is the creation path for callers that
+// already hold the channel lock.
+func (m *Manager) forceNewSessionWithWorkspacePolicyLocked(req newSessionPolicyRequest) (string, error) {
 	sessionID := uuid.New().String()
 	cleanupPolicy := ""
 	if req.Ephemeral || strings.TrimSpace(req.CleanupPolicy) != "" {
@@ -88,10 +98,10 @@ func (m *Manager) forceNewSessionWithWorkspacePolicy(req newSessionPolicyRequest
 	if err := m.saveSessionMeta(meta); err != nil {
 		return "", fmt.Errorf("failed to store session meta: %w", err)
 	}
-	if err := m.updateChannelState(req.ChannelID, sessionID); err != nil {
+	if err := m.updateChannelStateLocked(req.ChannelID, sessionID); err != nil {
 		return "", fmt.Errorf("failed to store channel mapping: %w", err)
 	}
-	if err := m.updateChannelWorkspaceState(req.ChannelID, meta.WorkspaceID); err != nil {
+	if err := m.updateChannelWorkspaceStateLocked(req.ChannelID, meta.WorkspaceID); err != nil {
 		return "", fmt.Errorf("failed to store channel workspace mapping: %w", err)
 	}
 	if err := m.indexSessionWorkspace(meta); err != nil {

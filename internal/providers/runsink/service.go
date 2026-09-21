@@ -50,7 +50,7 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 func (s *Service) processDue() {
-	deliveries, err := s.deliveries.ListDue(time.Now().UTC(), batchLimit)
+	deliveries, err := s.deliveries.ClaimDue(time.Now().UTC(), batchLimit, rundelivery.DefaultClaimLease)
 	if err != nil {
 		slog.Warn("failed to load due run event deliveries", "error", err)
 		return

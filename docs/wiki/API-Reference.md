@@ -348,6 +348,71 @@ curl -X POST http://127.0.0.1:9091/v1/event-sinks \
 
 ---
 
+## Elicitations
+
+Agent-initiated requests for structured user input (stable ACP elicitation,
+projected into Matrix's neutral surface). An agent asks through the run; you
+answer through this endpoint. Pending requests expire as `cancel` after
+`agent.elicitation_timeout_seconds` (default 120).
+
+This surface is **opt-in**: enable it with
+`matrix config set agent.elicitation_enabled true`. While it is disabled,
+Matrix advertises no elicitation capability and these endpoints return `503`,
+which keeps the existing `session/request_permission` and `agent.trust_mode`
+behaviour untouched.
+
+### `GET /v1/elicitations`
+
+List pending requests.
+
+```bash
+curl http://127.0.0.1:9091/v1/elicitations
+```
+
+```json
+{
+  "pending": [
+    {
+      "id": "session:sess_abc",
+      "agent_id": "claude",
+      "mode": "form",
+      "message": "How should I approach this refactoring?",
+      "fields": [
+        {"name": "strategy", "type": "enum", "enum": ["conservative", "balanced", "aggressive"], "required": true}
+      ],
+      "session_id": "sess_abc",
+      "expires_at": "2026-09-21T20:52:11Z"
+    }
+  ]
+}
+```
+
+`id` is unique per request: concurrent questions sharing a session scope get
+suffixed IDs (`session:sess_abc#2`). `agent_id` names the asking agent, and
+`expires_at` is when an unanswered request resolves as `cancel`.
+
+### `POST /v1/elicitations`
+
+Answer a pending request. `action` is `accept` (with `values`), `decline`, or
+`cancel`. Unknown or already-answered IDs return `409` with the current
+pending IDs. Accepted `values` are validated against the schema that was
+shown: unknown fields, missing required fields, and type or enum mismatches
+return `400` and leave the request pending.
+
+URL-mode requests carry a `url` instead of `fields`. `accept` means the caller
+consented to the interaction at that URL; Matrix never opens or prefetches it,
+so the consent step belongs to the API caller.
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/elicitations   -H "Content-Type: application/json"   -d '{
+    "elicit_id": "session:sess_abc",
+    "action": "accept",
+    "values": {"strategy": "balanced"}
+  }'
+```
+
+---
+
 ## Sessions
 
 ### `POST /v1/session-actions`

@@ -123,5 +123,7 @@ func jsonContains(s, sub string) bool {
 }
 
 func TestMain(m *testing.M) {
-	os.Exit(m.Run())
+	code := m.Run()
+	cleanupMockACPAgent()
+	os.Exit(code)
 }

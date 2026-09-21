@@ -67,13 +67,50 @@ func handlePrompt(req jsonRPCRequest, scanner *bufio.Scanner) (json.RawMessage, 
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return nil, false
 	}
-	if promptHasText(params.Prompt, "__TERMINAL_TEST__") {
+	switch {
+	case promptHasText(params.Prompt, "__TERMINAL_TEST__"):
 		writeTerminalRequest()
 		writeTerminalNotification(scanner, params.SessionID)
-	} else {
+	case promptHasText(params.Prompt, "__ELICITATION_TEST__"):
+		handleElicitation(scanner, params.SessionID)
+	default:
 		writeMessageNotification(params.SessionID, "I am a mock agent responding via stdio.")
 	}
 	return json.RawMessage(`{"stopReason": "end_turn"}`), true
+}
+
+// handleElicitation exercises the stable ACP elicitation request as a real
+// peer: it asks the client for a form-scoped decision, then reports the
+// action it received so the caller can assert the full round trip.
+func handleElicitation(scanner *bufio.Scanner, sessionID string) {
+	result, ok := callClient(scanner, 200, "elicitation/create", map[string]interface{}{
+		"sessionId": sessionID,
+		"mode":      "form",
+		"message":   "Which database should I use?",
+		"requestedSchema": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"db": map[string]interface{}{
+					"type": "string",
+					"enum": []string{"postgres", "sqlite"},
+				},
+			},
+			"required": []string{"db"},
+		},
+	})
+	if !ok {
+		writeMessageNotification(sessionID, "elicitation: no client response")
+		return
+	}
+	var answer struct {
+		Action  string                 `json:"action"`
+		Content map[string]interface{} `json:"content"`
+	}
+	if err := json.Unmarshal(result, &answer); err != nil {
+		writeMessageNotification(sessionID, "elicitation: malformed response "+string(result))
+		return
+	}
+	writeMessageNotification(sessionID, fmt.Sprintf("elicitation action=%s db=%v", answer.Action, answer.Content["db"]))
 }
 
 func promptHasText(prompt []promptPart, text string) bool {

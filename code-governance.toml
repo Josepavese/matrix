@@ -25,9 +25,13 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # and PAL/vault initialization checks. 2026-06-23 adds SSOT agent launch
 # argument override commands for trusted local provider policy. 2026-08-04
 # adds fail-closed doctor/show evidence for effective provider policy.
-"cmd/matrix" = 3178
+# 2026-09-21: the elicitation surface, quality-gate wiring and the reliability
+# work below raise several package baselines. Every raise is feature growth, not
+# drift: file, function and branch budgets are clean after splitting the hot
+# files, and this exact baseline is not permission for further growth.
+"cmd/matrix" = 3225
 "internal/logic/onboarding" = 1400
-"internal/logic/runtrace" = 830
+"internal/logic/runtrace" = 1010
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
 # process reap; forced run-owned child cleanup can remediate parent-owner
 # retention without weakening inline parent-restore safety. Later same-day
@@ -38,10 +42,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # evidence when the target remote session has strong provider proof. 2026-07-24:
 # run-scoped cancellation forwards the run-bound remote session to provider
 # control before canceling the local execution context.
-"internal/logic/session" = 5270
+"internal/logic/session" = 5420
 # 2026-07-19: stable ACP v1.19/A2A v1.0.1 protocol-neutral request and
 # capability surfaces; retired credential models were deleted.
-"internal/middleware" = 980
+"internal/middleware" = 1140
 # 2026-04-27: workspace timeline event recording split validation/persistence/state update.
 "internal/logic/workspace" = 910
 # 2026-06-18: public-release hardening adds agent-id path validation for
@@ -58,7 +62,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # use one router-lifetime client; new routes move to a fresh cached client.
 # 2026-08-04: exact configured provider mode is verified on ACP new/resume/load
 # so wrapper policy cannot be downgraded before a turn.
-"internal/providers/agents" = 3784
+"internal/providers/agents" = 4150
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
@@ -67,11 +71,16 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-05-21 accepts and validates ACP additional_directories on run ingress.
 # 2026-06-18 rejects event sink localhost/private targets at HTTP ingress.
 # 2026-06-23 records trusted provider launch-policy evidence in routing traces.
-"internal/providers/runapi" = 1310
+"internal/providers/runapi" = 1460
+# 2026-09-21: the Telegram channel gained the elicitation frontend — prompt
+# rendering, inline-keyboard building, callback routing, answer coercion and
+# session-to-chat correlation — split across focused files (elicitation.go,
+# _flow, _render, _values, bot_elicitation) rather than one oversized file.
+"internal/providers/telegram" = 960
 # 2026-07-22: stable ACP messageId is retained on session updates. 2026-07-19:
 # stable ACP schema v1.19.0 only; retired auth credentials and response aliases
 # were deleted and draft-only methods are explicit opt-ins.
-"pkg/zedacp" = 1604
+"pkg/zedacp" = 1770
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390
@@ -114,7 +123,11 @@ exclude_dirs = ["vendor", "tests/mocks"]
 
 [function_param_overrides]
 "cmd/matrix/readiness.go::evaluateReadiness" = 5
-"internal/logic/channelruntime/runtime.go::StartAll" = 5
+# 2026-09-21: StartAll gained the channel-runtime Deps bundle (elicitation
+# service and gateway wiring) next to the existing reader/config/router
+# arguments. Grouping them would only move the same data behind a struct with
+# no other caller; the entry point keeps an explicit signature instead.
+"internal/logic/channelruntime/runtime.go::StartAll" = 6
 "internal/logic/session/manager.go::Manager.HandleWorkspaceRead" = 5
 "internal/logic/session/manager_commands.go::Manager.handleSessionNewTyped" = 5
 "internal/logic/session/manager_handoff.go::Manager.handleHandoffIntentTyped" = 7

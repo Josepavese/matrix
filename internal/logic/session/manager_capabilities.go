@@ -130,7 +130,11 @@ func (m *Manager) activeAgentClientRefs() ([]middleware.AgentClientRef, error) {
 		if dedupePath != "" {
 			dedupePath = cleanSessionWorkspacePath(dedupePath)
 		}
-		dedupe := agentID + "\x00" + dedupePath
+		// The remote session id is part of the identity on purpose: two live
+		// sessions for the same agent and workspace are distinct owners of
+		// distinct provider clients, and collapsing them here would let
+		// reconcile close the client of the session that was dropped.
+		dedupe := agentID + "\x00" + dedupePath + "\x00" + remoteSessionID
 		ref := middleware.AgentClientRef{
 			LogicalSessionID: strings.TrimSpace(meta.ID),
 			RemoteSessionID:  remoteSessionID,

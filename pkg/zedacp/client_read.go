@@ -37,6 +37,11 @@ func (c *Client) handleInboundBytes(log *slog.Logger, msgBytes []byte) {
 }
 
 func decodeInboundRaw(log *slog.Logger, msgBytes []byte) (map[string]interface{}, bool) {
+	if log == nil {
+		// This function exists to handle malformed input, so it must not depend
+		// on the caller having supplied a logger.
+		log = slog.Default()
+	}
 	var raw map[string]interface{}
 	if err := json.Unmarshal(msgBytes, &raw); err != nil {
 		log.Warn("acp transport received invalid json", "event", "invalid_json", "error", err, "bytes_len", len(msgBytes))
@@ -54,10 +59,39 @@ func (c *Client) handleInboundMethodMessage(msgBytes []byte, raw map[string]inte
 		return true
 	}
 	var req jsonRPCRequest
-	if err := json.Unmarshal(msgBytes, &req); err == nil {
-		go c.handleIncomingRequest(req)
+	if err := json.Unmarshal(msgBytes, &req); err != nil {
+		// The peer is waiting for an answer: staying silent makes it hang until
+		// its own timeout, so report the malformed request instead.
+		c.replyInvalidRequest(raw, err)
+		return true
 	}
+	go c.handleIncomingRequest(req)
 	return true
+}
+
+// replyInvalidRequest answers a request that could not be decoded, when the id
+// is still recoverable from the raw frame.
+func (c *Client) replyInvalidRequest(raw map[string]interface{}, cause error) {
+	id, ok := raw["id"]
+	if !ok || id == nil {
+		return
+	}
+	idBytes, err := json.Marshal(id)
+	if err != nil {
+		return
+	}
+	resp := jsonRPCResponse{
+		JSONRPC: "2.0",
+		ID:      idBytes,
+		Error:   &jsonRPCError{Code: ErrCodeInvalidRequest, Message: "invalid request: " + cause.Error()},
+	}
+	payload, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
+	if err := c.transport.Send(c.ctx, payload); err != nil {
+		slog.Warn("failed to report an invalid acp request", "event", "acp_invalid_request_send_failed", "error", err)
+	}
 }
 
 func (c *Client) handleInboundNotification(msgBytes []byte) {
@@ -89,7 +123,15 @@ func (c *Client) dispatchResponse(resp *jsonRPCResponse) {
 	c.mu.RLock()
 	ch, ok := c.pending[id]
 	c.mu.RUnlock()
-	if ok {
-		ch <- resp
+	if !ok {
+		return
+	}
+	// Never block: a peer that answers the same id twice, or answers after the
+	// caller gave up and left an undrained response buffered, would otherwise
+	// wedge the read loop and stall every later message.
+	select {
+	case ch <- resp:
+	default:
+		slog.Warn("dropping unexpected duplicate acp response", "event", "acp_duplicate_response", "id", id)
 	}
 }

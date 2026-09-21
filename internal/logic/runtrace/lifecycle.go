@@ -78,6 +78,10 @@ func startedEvent(run Run) Event {
 }
 
 func (s *Store) Complete(runID, output, stopReason string) (Run, error) {
+	lock := s.transitionLock(runID)
+	lock.Lock()
+	defer lock.Unlock()
+
 	run, found, err := s.LoadRun(runID)
 	if err != nil {
 		return Run{}, err
@@ -85,18 +89,34 @@ func (s *Store) Complete(runID, output, stopReason string) (Run, error) {
 	if !found {
 		return Run{}, fmt.Errorf("run %s not found", runID)
 	}
-	if run.Status == StatusCancelled {
+	// The first terminal transition wins and later ones are no-ops: a run that
+	// already failed or was cancelled must not be rewritten as completed, and a
+	// retried transition must not append a second terminal event.
+	if isTerminalStatus(run.Status) {
 		return run, nil
 	}
 	run = completeRun(run, output, stopReason)
 	if err := s.SaveRun(run); err != nil {
 		return Run{}, err
 	}
-	if err := s.appendFinalMessage(run, output); err != nil {
-		return Run{}, err
+	s.emitTerminalTrace(run,
+		func() error { return s.appendFinalMessage(run, output) },
+		func() error {
+			_, err := s.AppendEvent(Event{RunID: run.ID, Kind: "run.completed", Actor: "matrix", Status: StatusCompleted, Timestamp: run.CompletedAt})
+			return err
+		},
+	)
+	return run, nil
+}
+
+// isTerminalStatus reports whether a run has already reached a final state.
+func isTerminalStatus(status string) bool {
+	switch status {
+	case StatusCompleted, StatusFailed, StatusCancelled:
+		return true
+	default:
+		return false
 	}
-	_, err = s.AppendEvent(Event{RunID: run.ID, Kind: "run.completed", Actor: "matrix", Status: StatusCompleted, Timestamp: run.CompletedAt})
-	return run, err
 }
 
 func completeRun(run Run, output, stopReason string) Run {
@@ -131,6 +151,10 @@ func (s *Store) appendFinalMessage(run Run, output string) error {
 }
 
 func (s *Store) Fail(runID string, runErr error) (Run, error) {
+	lock := s.transitionLock(runID)
+	lock.Lock()
+	defer lock.Unlock()
+
 	run, found, err := s.LoadRun(runID)
 	if err != nil {
 		return Run{}, err
@@ -138,15 +162,18 @@ func (s *Store) Fail(runID string, runErr error) (Run, error) {
 	if !found {
 		return Run{}, fmt.Errorf("run %s not found", runID)
 	}
-	if run.Status == StatusCancelled {
+	if isTerminalStatus(run.Status) {
 		return run, nil
 	}
 	run = failRun(run, runErr)
 	if err := s.SaveRun(run); err != nil {
 		return Run{}, err
 	}
-	_, err = s.AppendEvent(Event{RunID: run.ID, Kind: "run.failed", Actor: "matrix", Status: StatusFailed, Timestamp: run.CompletedAt, Message: run.Error})
-	return run, err
+	s.emitTerminalTrace(run, func() error {
+		_, err := s.AppendEvent(Event{RunID: run.ID, Kind: "run.failed", Actor: "matrix", Status: StatusFailed, Timestamp: run.CompletedAt, Message: run.Error})
+		return err
+	})
+	return run, nil
 }
 
 func failRun(run Run, runErr error) Run {
@@ -162,6 +189,10 @@ func failRun(run Run, runErr error) Run {
 }
 
 func (s *Store) Cancel(runID, reason string) (Run, error) {
+	lock := s.transitionLock(runID)
+	lock.Lock()
+	defer lock.Unlock()
+
 	run, found, err := s.LoadRun(runID)
 	if err != nil {
 		return Run{}, err
@@ -169,6 +200,7 @@ func (s *Store) Cancel(runID, reason string) (Run, error) {
 	if !found {
 		return Run{}, fmt.Errorf("run %s not found", runID)
 	}
+	// Only a run that is still pending or running can be cancelled.
 	if run.Status != "" && run.Status != StatusRunning {
 		return run, nil
 	}
@@ -176,8 +208,11 @@ func (s *Store) Cancel(runID, reason string) (Run, error) {
 	if err := s.SaveRun(run); err != nil {
 		return Run{}, err
 	}
-	_, err = s.AppendEvent(Event{RunID: run.ID, Kind: "run.cancelled", Actor: "matrix", Status: StatusCancelled, Timestamp: run.CompletedAt, Message: reason})
-	return run, err
+	s.emitTerminalTrace(run, func() error {
+		_, err := s.AppendEvent(Event{RunID: run.ID, Kind: "run.cancelled", Actor: "matrix", Status: StatusCancelled, Timestamp: run.CompletedAt, Message: reason})
+		return err
+	})
+	return run, nil
 }
 
 func cancelRun(run Run, reason string) Run {

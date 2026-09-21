@@ -86,9 +86,16 @@ func IsTimeoutError(err error) bool {
 	return errors.Is(err, ErrTimeout)
 }
 
+// maxDurationSeconds keeps a large integer from overflowing the nanosecond
+// multiplication into a negative or nonsensically short timeout.
+const maxDurationSeconds = int64(1<<62) / int64(time.Second)
+
 func DurationSeconds(seconds int) time.Duration {
 	if seconds <= 0 {
 		return 0
+	}
+	if int64(seconds) > maxDurationSeconds {
+		return time.Duration(maxDurationSeconds) * time.Second
 	}
 	return time.Duration(seconds) * time.Second
 }
@@ -101,9 +108,18 @@ func Context(parent context.Context, timeout time.Duration) (context.Context, co
 }
 
 func IsDeadline(ctx context.Context, err error, timeout time.Duration) bool {
-	return timeout > 0 && (errors.Is(err, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded)
+	if timeout <= 0 {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	return ctx != nil && errors.Is(ctx.Err(), context.DeadlineExceeded)
 }
 
 func IsContextCancelled(ctx context.Context, err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled)
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	return ctx != nil && errors.Is(ctx.Err(), context.Canceled)
 }

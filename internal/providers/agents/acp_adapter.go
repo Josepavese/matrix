@@ -29,13 +29,28 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 	if err != nil {
 		return nil, err
 	}
+	return f.initializeConversation(ctx, endpoint, deps, transport)
+}
 
+// newACPClientWithHandler builds the client and the request handler that serves
+// everything the agent asks back: filesystem, processes, and elicitation.
+func newACPClientWithHandler(ctx context.Context, deps middleware.ConversationFactoryDeps, transport middleware.AgentTransport) (ACPClient, *defaultRequestHandler) {
 	client := NewACPClient(ctx, transport)
 	handler := NewDefaultRequestHandler(deps.TrustMode).WithFS(deps.FS, deps.Cwd)
 	if deps.Process != nil {
 		handler.WithProcess(deps.Process)
 	}
+	if deps.ElicitationFrontend != nil {
+		handler.WithElicitationFrontend(deps.ElicitationFrontend).WithAgentIdentity(deps.AgentID)
+	}
 	client.SetRequestHandler(handler)
+	return client, handler
+}
+
+// initializeConversation performs the ACP handshake and assembles the
+// conversation client, closing the transport on every failure path.
+func (f *acpConversationFactory) initializeConversation(ctx context.Context, endpoint middleware.ProtocolEndpoint, deps middleware.ConversationFactoryDeps, transport middleware.AgentTransport) (middleware.ConversationClient, error) {
+	client, handler := newACPClientWithHandler(ctx, deps, transport)
 
 	initReq := acpInitializeRequest{
 		ProtocolVersion:    1,
@@ -51,18 +66,13 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		_ = transport.Close()
 		return nil, classifyProviderFailure("", endpoint, "initialize", fmt.Errorf("ACP protocol version %d is not supported (matrix supports %d)", initResp.ProtocolVersion, supportedACPProtocolVersion))
 	}
-	caps := acpSessionCapabilities(initResp)
-	features := parseACPFeatureCapabilities(initResp)
-	features.fsRead = deps.FS != nil
-	features.fsWrite = deps.FS != nil
-	features.terminal = deps.Process != nil
 	conversation := &acpConversationClient{
 		client:              client,
 		handler:             handler,
 		cwd:                 deps.Cwd,
 		endpoint:            endpoint,
-		sessionCapabilities: caps,
-		featureCapabilities: features,
+		sessionCapabilities: acpSessionCapabilities(initResp),
+		featureCapabilities: acpFeatureCapabilitiesFromDeps(initResp, deps),
 		authMethods:         append([]acpAuthMethod(nil), initResp.AuthMethods...),
 		loadedSessions:      map[string]bool{},
 		mcpServers:          toZedACPMCPServers(deps.McpServers),
@@ -73,6 +83,16 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		return nil, classifyProviderFailure("", endpoint, "initialize", err)
 	}
 	return conversation, nil
+}
+
+// acpFeatureCapabilitiesFromDeps merges the provider's advertised capabilities
+// with what Matrix actually wired.
+func acpFeatureCapabilitiesFromDeps(initResp *acpInitializeResponse, deps middleware.ConversationFactoryDeps) acpFeatureCapabilities {
+	features := parseACPFeatureCapabilities(initResp)
+	features.fsRead = deps.FS != nil
+	features.fsWrite = deps.FS != nil
+	features.terminal = deps.Process != nil
+	return features
 }
 
 func acpClientCapabilitiesForDeps(deps middleware.ConversationFactoryDeps) *acpClientCapabilities {
@@ -87,6 +107,7 @@ func acpClientCapabilitiesForDeps(deps middleware.ConversationFactoryDeps) *acpC
 				Boolean: &acpBooleanConfigOptionCapabilities{},
 			},
 		},
+		Elicitation: elicitationAdvertisement(deps.ElicitationFrontend),
 	}
 }
 
@@ -129,6 +150,10 @@ func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware
 		return middleware.ConversationResult{RemoteSessionID: remoteSessionID}, err
 	}
 	defer endPrompt()
+	if c.handler != nil {
+		c.handler.BindTurnContext(ctx, remoteSessionID)
+		defer c.handler.ClearTurnContext(remoteSessionID)
+	}
 
 	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier}
 	resp, err := c.promptACP(ctx, remoteSessionID, turn, obs)

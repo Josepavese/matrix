@@ -79,11 +79,7 @@ func (m *Manager) cleanupRunOwnedForkParentOwnerFromStandaloneChild(ctx context.
 		markForkChildCleanupStrong(cleanup)
 		return
 	}
-	if req.SuppressForkParentOwnerCleanup {
-		appendForkParentRelatedSession(cleanup, forkParentRelatedSessionFromMeta(parent, true))
-		return
-	}
-	if !forkParentOwnerCleanupAllowed(req.Meta, parent, policy) {
+	if reason := m.forkParentCleanupRefusal(req, parent, policy); reason != "" {
 		appendForkParentRelatedSession(cleanup, forkParentRelatedSessionFromMeta(parent, true))
 		return
 	}
@@ -101,6 +97,24 @@ func (m *Manager) cleanupRunOwnedForkParentOwnerFromStandaloneChild(ctx context.
 	cleanup.ProcessReapAttempted = cleanup.ProcessReapAttempted || parentCleanup.ProcessReapAttempted
 	cleanup.ProcessReaped = cleanup.ProcessReaped || parentCleanup.ProcessReaped
 	markForkChildCleanupStrong(cleanup)
+}
+
+// forkParentCleanupRefusal returns why the parent must be left alone, or an empty
+// string when cleaning it is allowed.
+func (m *Manager) forkParentCleanupRefusal(req sessionCleanupExecution, parent SessionMeta, policy string) string {
+	if req.SuppressForkParentOwnerCleanup {
+		return "parent owner cleanup suppressed"
+	}
+	if !forkParentOwnerCleanupAllowed(req.Meta, parent, policy) {
+		return "parent owner cleanup not allowed by policy"
+	}
+	if m.sessionActiveInAnyChannel(parent.ID) {
+		// The parent owns the run that produced this child and is still in use:
+		// deleting it as a side effect of cleaning the child would destroy a
+		// live session.
+		return "parent is active in a channel"
+	}
+	return ""
 }
 
 func forkChildParentOwnerProofCandidate(req sessionCleanupExecution, cleanup *middleware.SessionCleanupResult) bool {

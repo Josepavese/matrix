@@ -206,6 +206,7 @@ func acpToolUpdateMeta(notif acpSessionNotification) map[string]interface{} {
 		"session_id":     notif.SessionID,
 		"session_update": notif.Update.SessionUpdate,
 		"tool_call_id":   notif.Update.ToolCallID,
+		"tool_name":      notif.Update.Name,
 		"tool_kind":      notif.Update.Kind,
 		"status":         notif.Update.Status,
 		"raw_input":      notif.Update.RawInput,
@@ -232,6 +233,9 @@ func addOptionalToolMetadata(meta map[string]interface{}, notif acpSessionNotifi
 	}
 	if strings.TrimSpace(notif.Update.ToolCallID) != "" {
 		meta["tool_call_id"] = notif.Update.ToolCallID
+	}
+	if strings.TrimSpace(notif.Update.Name) != "" {
+		meta["tool_name"] = notif.Update.Name
 	}
 	if strings.TrimSpace(notif.Update.Kind) != "" {
 		meta["tool_kind"] = notif.Update.Kind

@@ -21,6 +21,9 @@ func NormalizeAdditionalDirectories(values []string) ([]string, error) {
 		if !filepath.IsAbs(value) {
 			return nil, errors.New("additional_directories entries must be absolute paths")
 		}
+		// Normalise before de-duplicating: "/a", "/a/" and "/a/./" are the same
+		// directory and must not reach the agent as three entries.
+		value = filepath.Clean(value)
 		if _, ok := seen[value]; ok {
 			continue
 		}

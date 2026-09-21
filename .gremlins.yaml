@@ -1,0 +1,30 @@
+# Mutation testing configuration (go-gremlins, schema: unleash.* / mutants.<name>.enabled).
+#
+# Tier A (protocol, SSOT, channel frontends) is held to an explicit bar:
+# a surviving mutant is exactly the "test without teeth" this repository has
+# been bitten by, so the aggressive mutant types are enabled here rather than
+# left at their defaults.
+silent: false
+unleash:
+  workers: 6
+  test-cpu: 2
+  timeout-coefficient: 5
+  exclude-files:
+    - "_test\\.go$"
+    - "mock_.*\\.go$"
+  threshold:
+    efficacy: 80
+    mutant-coverage: 90
+mutants:
+  invert-assignments:
+    enabled: true
+  invert-bitwise:
+    enabled: true
+  invert-bwassign:
+    enabled: true
+  invert-logical:
+    enabled: true
+  invert-loopctrl:
+    enabled: true
+  remove-self-assignments:
+    enabled: true

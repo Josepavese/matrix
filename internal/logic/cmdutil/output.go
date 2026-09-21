@@ -2,6 +2,7 @@ package cmdutil
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/spf13/cobra"
 )
@@ -12,6 +13,9 @@ func PrintJSON(cmd *cobra.Command, payload any) error {
 	if err != nil {
 		return err
 	}
-	cmd.Println(string(out))
-	return nil
+	// cmd.Println writes to OutOrStderr, which on a command without an explicit
+	// output drains JSON to stderr: `matrix ... > out.json` would produce an
+	// empty file. Machine-readable output must go to stdout.
+	_, err = fmt.Fprintln(cmd.OutOrStdout(), string(out))
+	return err
 }

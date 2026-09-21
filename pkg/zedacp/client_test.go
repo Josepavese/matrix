@@ -30,6 +30,26 @@ func (o *recordingObserver) joined() string {
 	return out
 }
 
+// waitForObserverText polls until every observer's joined text matches, because
+// updates are delivered on a per-session worker rather than inline.
+func waitForObserverText(t *testing.T, want string, observers ...*recordingObserver) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		matched := true
+		for _, observer := range observers {
+			if observer.joined() != want {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestClientFansOutConcurrentSessionObservers(t *testing.T) {
 	client := &Client{observers: make(map[string]map[uint64]SessionObserver)}
 	main := &recordingObserver{}
@@ -38,6 +58,7 @@ func TestClientFansOutConcurrentSessionObservers(t *testing.T) {
 	removeMain := client.registerObserver("session-1", main)
 	removeAttach := client.registerObserver("session-1", attach)
 	client.handleNotification(sessionUpdateResponse(t, "session-1", "part-1"))
+	waitForObserverText(t, "part-1", main, attach)
 
 	if main.joined() != "part-1" || attach.joined() != "part-1" {
 		t.Fatalf("expected both observers to receive first chunk, main=%q attach=%q", main.joined(), attach.joined())
@@ -45,6 +66,7 @@ func TestClientFansOutConcurrentSessionObservers(t *testing.T) {
 
 	removeAttach()
 	client.handleNotification(sessionUpdateResponse(t, "session-1", "part-2"))
+	waitForObserverText(t, "part-1part-2", main)
 
 	if main.joined() != "part-1part-2" {
 		t.Fatalf("expected main observer to keep receiving chunks, got %q", main.joined())
@@ -55,6 +77,8 @@ func TestClientFansOutConcurrentSessionObservers(t *testing.T) {
 
 	removeMain()
 	client.handleNotification(sessionUpdateResponse(t, "session-1", "part-3"))
+	// Give the worker time to (not) deliver before asserting silence.
+	time.Sleep(50 * time.Millisecond)
 	if main.joined() != "part-1part-2" {
 		t.Fatalf("expected no updates after all observers removed, got %q", main.joined())
 	}

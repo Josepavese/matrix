@@ -27,6 +27,12 @@ func (c *acpConversationClient) ProtocolCapabilities() middleware.ProviderCapabi
 		"terminal/wait_for_exit":     acpCapability("terminal/wait_for_exit", c.featureCapabilities.terminal, "stable", "ACP v1 client capability"),
 		"terminal/kill":              acpCapability("terminal/kill", c.featureCapabilities.terminal, "stable", "ACP v1 client capability"),
 		"$/cancel_request":           acpCapability("$/cancel_request", true, "stable", "ACP v1 JSON-RPC cancellation"),
+		// Elicitation stabilized upstream on 2026-07-24. Availability follows
+		// the neutral frontend port: advertised in initialize only when the
+		// port is wired with a usable mode, otherwise inbound requests get an
+		// explicit decline. The report must use the same predicate as the wire
+		// advertisement, or it would promise a surface the adapter refuses.
+		"elicitation/create": acpCapability("elicitation/create", c.handler != nil && elicitationAdvertisement(c.handler.elicitation) != nil, "stable", "ACP v1 elicitation; advertised iff an elicitation frontend with a usable mode is wired"),
 	}
 	operations["session/fork"] = acpForkCapability(c.sessionCapabilities.Fork)
 	return middleware.ProviderCapabilityReport{

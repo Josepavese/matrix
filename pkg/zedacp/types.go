@@ -62,10 +62,24 @@ type InitializeRequest struct {
 }
 
 type ClientCapabilities struct {
-	Fs       *FsCapability              `json:"fs,omitempty"`
-	Terminal bool                       `json:"terminal,omitempty"`
-	Session  *ClientSessionCapabilities `json:"session,omitempty"`
-	Meta     map[string]interface{}     `json:"_meta,omitempty"`
+	Fs          *FsCapability              `json:"fs,omitempty"`
+	Terminal    bool                       `json:"terminal,omitempty"`
+	Session     *ClientSessionCapabilities `json:"session,omitempty"`
+	Elicitation *ElicitationCapabilities   `json:"elicitation,omitempty"`
+	Meta        map[string]interface{}     `json:"_meta,omitempty"`
+}
+
+// ElicitationCapabilities advertises stable ACP v1 elicitation support. Per
+// the stable spec each supported mode must be explicitly present and non-null;
+// an empty object advertises no modes.
+type ElicitationCapabilities struct {
+	Form *ElicitationModeCapability `json:"form,omitempty"`
+	URL  *ElicitationModeCapability `json:"url,omitempty"`
+	Meta map[string]interface{}     `json:"_meta,omitempty"`
+}
+
+type ElicitationModeCapability struct {
+	Meta map[string]interface{} `json:"_meta,omitempty"`
 }
 
 type ClientSessionCapabilities struct {
@@ -551,6 +565,7 @@ type SessionUpdate struct {
 	ToolContents      []ToolCallContent      `json:"-"`
 	RawContent        json.RawMessage        `json:"-"`
 	Title             string                 `json:"title,omitempty"`
+	Name              string                 `json:"name,omitempty"`
 	UpdatedAt         string                 `json:"updatedAt,omitempty"`
 	ToolCallID        string                 `json:"toolCallId,omitempty"`
 	Kind              string                 `json:"kind,omitempty"`
@@ -572,6 +587,7 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 		MessageID         string                 `json:"messageId,omitempty"`
 		Content           json.RawMessage        `json:"content,omitempty"`
 		Title             string                 `json:"title,omitempty"`
+		Name              string                 `json:"name,omitempty"`
 		UpdatedAt         string                 `json:"updatedAt,omitempty"`
 		ToolCallID        string                 `json:"toolCallId,omitempty"`
 		Kind              string                 `json:"kind,omitempty"`
@@ -593,6 +609,7 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 	u.SessionUpdate = raw.SessionUpdate
 	u.MessageID = raw.MessageID
 	u.Title = raw.Title
+	u.Name = raw.Name
 	u.UpdatedAt = raw.UpdatedAt
 	u.ToolCallID = raw.ToolCallID
 	u.Kind = raw.Kind
@@ -617,6 +634,7 @@ func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 		MessageID         string                 `json:"messageId,omitempty"`
 		Content           interface{}            `json:"content,omitempty"`
 		Title             string                 `json:"title,omitempty"`
+		Name              string                 `json:"name,omitempty"`
 		UpdatedAt         string                 `json:"updatedAt,omitempty"`
 		ToolCallID        string                 `json:"toolCallId,omitempty"`
 		Kind              string                 `json:"kind,omitempty"`
@@ -637,6 +655,7 @@ func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 		MessageID:         u.MessageID,
 		Content:           content,
 		Title:             u.Title,
+		Name:              u.Name,
 		UpdatedAt:         u.UpdatedAt,
 		ToolCallID:        u.ToolCallID,
 		Kind:              u.Kind,

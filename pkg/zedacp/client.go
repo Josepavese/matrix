@@ -23,6 +23,11 @@ type Client struct {
 	observers map[string]map[uint64]SessionObserver
 	nextObsID uint64
 
+	// notifyMu guards notifyQueues, the per-session ordered delivery of updates
+	// to observers.
+	notifyMu     sync.Mutex
+	notifyQueues map[string]*sessionNotifications
+
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -64,7 +69,7 @@ func (c *Client) handleIncomingRequest(req jsonRPCRequest) {
 	var result interface{}
 	var err error
 	if handler != nil {
-		result, err = handler.HandleRequest(c.ctx, req.Method, req.Params)
+		result, err = c.callHandlerSafely(handler, req)
 	} else {
 		err = fmt.Errorf("no request handler registered for method %s", req.Method)
 	}
@@ -94,6 +99,20 @@ func (c *Client) handleIncomingRequest(req jsonRPCRequest) {
 	}
 }
 
+// callHandlerSafely keeps a panicking request handler from taking the daemon
+// down: the agent gets an internal error instead of a dead process.
+func (c *Client) callHandlerSafely(handler RequestHandler, req jsonRPCRequest) (result interface{}, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			slog.Error("acp request handler panicked",
+				"event", "acp_request_handler_panic", "method", req.Method, "panic", recovered)
+			result = nil
+			err = &RPCError{Code: ErrCodeInternal, Message: fmt.Sprintf("handler panic: %v", recovered)}
+		}
+	}()
+	return handler.HandleRequest(c.ctx, req.Method, req.Params)
+}
+
 func (c *Client) handleNotification(notif *jsonRPCResponse) {
 	if notif.Method == nil {
 		return
@@ -102,9 +121,9 @@ func (c *Client) handleNotification(notif *jsonRPCResponse) {
 		var update SessionNotification
 		if err := json.Unmarshal(notif.Params, &update); err == nil {
 			if update.SessionID != "" {
-				for _, obs := range c.sessionObservers(update.SessionID) {
-					obs.OnUpdate(update)
-				}
+				// Hand off and return: observers may do network I/O, and the
+				// read loop must stay free to correlate JSON-RPC responses.
+				c.enqueueSessionUpdate(update)
 			}
 		}
 	}
@@ -226,7 +245,7 @@ func (c *Client) LoadSession(ctx context.Context, req LoadSessionRequest, observ
 	if err := decodeOptionalResult(resp.Result, &res); err != nil {
 		return nil, fmt.Errorf("failed to decode session/load response: %w", err)
 	}
-	waitObserverIdle(ctx, observer)
+	c.waitObserverIdle(ctx, req.SessionID, observer)
 	return &res, nil
 }
 
@@ -269,7 +288,7 @@ func (c *Client) Prompt(ctx context.Context, req PromptRequest, observer Session
 	if err := json.Unmarshal(resp.Result, &res); err != nil {
 		return nil, fmt.Errorf("failed to decode prompt response: %w", err)
 	}
-	waitObserverIdle(ctx, observer)
+	c.waitObserverIdle(ctx, req.SessionID, observer)
 	return &res, nil
 }
 

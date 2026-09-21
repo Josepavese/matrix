@@ -268,6 +268,43 @@ Options:
 terminal, and permission request handler. It does not automatically change a
 provider's own sandbox policy.
 
+Agents can also ask you structured questions mid-run (ACP elicitation). This is
+**opt-in and off by default**:
+
+```bash
+matrix config set agent.elicitation_enabled true
+matrix config set agent.elicitation_timeout_seconds 300
+```
+
+When enabled, Matrix advertises the capability, exposes pending requests at
+`GET`/`POST /v1/elicitations` (see the
+[API Reference](API-Reference.md#elicitations)), and asks in Telegram whenever
+the request belongs to a chat the bot owns. Unanswered requests expire as
+`cancel` after `agent.elicitation_timeout_seconds` (default 120); cancelling the
+run revokes its pending question immediately.
+
+In Telegram the question arrives as a message with inline buttons:
+
+- constrained fields (options, booleans) become one button per choice, with the
+  label the agent supplied;
+- press `Invia` to confirm, or `Rifiuta`/`Annulla` to decline or abort at any
+  time;
+- a question that needs free text is answered by replying with a message in the
+  chat (that next message is the answer, not a new prompt);
+- URL-mode requests show the target host and the full URL and only proceed on
+  explicit consent; Matrix never opens the link itself.
+
+A form that mixes free-text and other fields is not answerable from Telegram:
+the chat offers decline/cancel, and the HTTP API remains the complete surface.
+
+Why it is off by default: advertising the capability changes how conforming
+agents route their questions. `codex-acp` sends MCP-server input requests as
+elicitation instead of `session/request_permission` whenever the client
+advertises it, so enabling elicitation without a human actually answering turns
+approvals that `agent.trust_mode` used to settle immediately into requests that
+wait and then expire as `cancel`. Enable it when you are watching the
+elicitation surface; leave it off for unattended or auto-approved runs.
+
 For Codex ACP trusted local workspace runs, configure both layers explicitly:
 
 ```bash
