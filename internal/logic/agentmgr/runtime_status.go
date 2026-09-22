@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -35,6 +36,11 @@ type AgentRuntimeReport struct {
 	PID       int       `json:"pid,omitempty"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	Warnings  []string  `json:"warnings,omitempty"`
+	// ArtifactVerification is the install-time integrity evidence for the
+	// artifact Matrix downloaded from the registry, absent when no install
+	// recorded one. It is the machine-readable answer to "was the digest
+	// verified?" for consumers of `matrix doctor`.
+	ArtifactVerification *agentcfg.ArtifactVerification `json:"artifact_verification,omitempty"`
 }
 
 type inspectInput struct {
@@ -42,6 +48,7 @@ type inspectInput struct {
 	Config    AgentConfig
 	Installed bool
 	State     RuntimeState
+	Meta      agentcfg.Meta
 }
 
 func runtimeStateKey(agentID string) string {
@@ -98,12 +105,17 @@ func BuildRuntimeReports(store middleware.Storage, reg *Registry, proc middlewar
 			return nil, nil, err
 		}
 		endpoint := protocolEndpointFromAgentConfig(cfg)
+		meta, metaErr := agentcfg.LoadMeta(store, agentID)
 		report := buildRuntimeReport(inspectInput{
 			AgentID:   agentID,
 			Config:    cfg,
 			Installed: isInstalledEndpoint(cfg, endpoint, proc),
 			State:     states[agentID],
+			Meta:      meta,
 		}, canDial)
+		if metaErr != nil {
+			report.Warnings = append(report.Warnings, "agent metadata unavailable: "+metaErr.Error())
+		}
 		reports = append(reports, report)
 		if len(report.Warnings) > 0 {
 			warnings = append(warnings, report.AgentID+": "+report.Warnings[0])
@@ -115,12 +127,13 @@ func BuildRuntimeReports(store middleware.Storage, reg *Registry, proc middlewar
 func buildRuntimeReport(input inspectInput, canDial func(string) bool) AgentRuntimeReport {
 	endpoint := protocolEndpointFromAgentConfig(input.Config)
 	report := AgentRuntimeReport{
-		AgentID:   input.AgentID,
-		Protocol:  string(endpoint.Kind),
-		Mode:      runtimeMode(endpoint.Transport),
-		Active:    input.Config.IsActive(),
-		Installed: input.Installed,
-		Status:    "unknown",
+		AgentID:              input.AgentID,
+		Protocol:             string(endpoint.Kind),
+		Mode:                 runtimeMode(endpoint.Transport),
+		Active:               input.Config.IsActive(),
+		Installed:            input.Installed,
+		Status:               "unknown",
+		ArtifactVerification: input.Meta.ArtifactVerification,
 	}
 
 	switch {

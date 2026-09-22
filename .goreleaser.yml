@@ -34,6 +34,11 @@ archives:
         formats:
           - zip
     files:
+      # Setting `files` replaces GoReleaser's default file list, which already
+      # contained LICENSE*: naming it here is what keeps the license text in
+      # every published archive, as Apache-2.0 requires of a redistributed
+      # binary.
+      - LICENSE
       - configs/README.md
       - configs/agents.json
       - configs/node_env.json

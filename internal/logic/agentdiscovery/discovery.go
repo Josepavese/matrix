@@ -44,6 +44,9 @@ type Record struct {
 	Authors         []string                `json:"authors,omitempty"`
 	Distribution    []string                `json:"distribution,omitempty"`
 	Tags            []string                `json:"tags,omitempty"`
+	// ArtifactVerification is the install-time integrity evidence recorded in
+	// the vault, present only for the local source when an install recorded it.
+	ArtifactVerification *agentcfg.ArtifactVerification `json:"artifact_verification,omitempty"`
 }
 
 type Provider interface {
@@ -137,16 +140,17 @@ func (p *localProvider) Get(_ context.Context, ref string) (*Record, error) {
 		address = endpoint.Command
 	}
 	return &Record{
-		ID:              ref,
-		Name:            meta.Name,
-		Description:     meta.Description,
-		Source:          SourceLocal,
-		Kind:            endpoint.Kind,
-		Transport:       endpoint.Transport,
-		Address:         address,
-		CardURL:         endpoint.CardURL,
-		Tenant:          endpoint.Tenant,
-		ProtocolVersion: endpoint.ProtocolVersion,
+		ID:                   ref,
+		Name:                 meta.Name,
+		Description:          meta.Description,
+		Source:               SourceLocal,
+		Kind:                 endpoint.Kind,
+		Transport:            endpoint.Transport,
+		Address:              address,
+		CardURL:              endpoint.CardURL,
+		Tenant:               endpoint.Tenant,
+		ProtocolVersion:      endpoint.ProtocolVersion,
+		ArtifactVerification: meta.ArtifactVerification,
 	}, nil
 }
 

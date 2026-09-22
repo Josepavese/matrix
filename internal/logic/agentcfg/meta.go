@@ -6,12 +6,48 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // MetaKeyPrefix is the vault key prefix for agent metadata entries.
 const MetaKeyPrefix = "agent.meta."
+
+// ArtifactVerificationStatus is the outcome of the integrity check Matrix runs
+// on the artifact it downloads from the ACP registry.
+type ArtifactVerificationStatus string
+
+const (
+	// ArtifactVerified means the sha256 of the downloaded artifact matched the
+	// digest published by the registry index for this platform.
+	ArtifactVerified ArtifactVerificationStatus = "verified"
+	// ArtifactDigestNotPublished means the index published the distribution
+	// without a sha256 for this platform or agent: the install proceeds, but
+	// nothing was verified.
+	ArtifactDigestNotPublished ArtifactVerificationStatus = "digest_not_published"
+	// ArtifactNotApplicable means the distribution type downloads no artifact
+	// (npx/uvx): there is no byte range to hash.
+	ArtifactNotApplicable ArtifactVerificationStatus = "not_applicable"
+)
+
+// ArtifactVerification is the integrity evidence Matrix records at install time
+// for the artifact it downloaded. It is the single answer to "was the digest
+// verified?", read back by `matrix doctor`, `matrix agent doctor` and
+// `matrix agent info --source=local`.
+//
+// Verified is true only when the computed digest matched the published one: an
+// absent publication and an inapplicable distribution are both false, because
+// "not published" and "verified" are different facts.
+type ArtifactVerification struct {
+	Verified   bool                      `json:"verified"`
+	Status     ArtifactVerificationStatus `json:"status"`
+	Platform   string                    `json:"platform,omitempty"`
+	Artifact   string                    `json:"artifact,omitempty"`
+	Expected   string                    `json:"expected_sha256,omitempty"`
+	Actual     string                    `json:"actual_sha256,omitempty"`
+	VerifiedAt time.Time                 `json:"verified_at"`
+}
 
 // Meta holds display metadata for an agent (name, description, etc.).
 // Stored separately from Config to avoid bloating the runtime-critical Config struct.
@@ -26,6 +62,9 @@ type Meta struct {
 	License     string   `json:"license,omitempty"`
 	Icon        string   `json:"icon,omitempty"`
 	DistTypes   []string `json:"dist_types,omitempty"`
+	// ArtifactVerification is absent for agents that were not installed by the
+	// installer (seeded from config, registered A2A endpoints).
+	ArtifactVerification *ArtifactVerification `json:"artifact_verification,omitempty"`
 }
 
 // MetaKey returns the vault key for an agent's metadata.

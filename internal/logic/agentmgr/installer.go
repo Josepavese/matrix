@@ -80,7 +80,7 @@ func (inst *Installer) Install(ctx context.Context, agentID string) error {
 		return err
 	}
 
-	cfg, err := inst.installResolved(ctx, agentID, manifest, resolved)
+	cfg, verification, err := inst.installResolved(ctx, agentID, manifest, resolved)
 	if err != nil {
 		return err
 	}
@@ -93,73 +93,87 @@ func (inst *Installer) Install(ctx context.Context, agentID string) error {
 
 	// 5. Save metadata
 	meta := agentcfg.Meta{
-		ID:          manifest.ID,
-		Name:        manifest.Name,
-		Version:     manifest.Version,
-		Description: manifest.Description,
-		Repository:  manifest.Repository,
-		Website:     manifest.Website,
-		Authors:     manifest.Authors,
-		License:     manifest.License,
-		Icon:        manifest.Icon,
-		DistTypes:   manifest.DistTypes(),
+		ID:                   manifest.ID,
+		Name:                 manifest.Name,
+		Version:              manifest.Version,
+		Description:          manifest.Description,
+		Repository:           manifest.Repository,
+		Website:              manifest.Website,
+		Authors:              manifest.Authors,
+		License:              manifest.License,
+		Icon:                 manifest.Icon,
+		DistTypes:            manifest.DistTypes(),
+		ArtifactVerification: verification,
 	}
 	return agentcfg.SaveMeta(inst.storage, agentID, meta)
 }
 
-func (inst *Installer) installResolved(ctx context.Context, agentID string, manifest *AgentManifest, resolved *ResolvedDist) (agentcfg.Config, error) {
+func (inst *Installer) installResolved(ctx context.Context, agentID string, manifest *AgentManifest, resolved *ResolvedDist) (agentcfg.Config, *agentcfg.ArtifactVerification, error) {
 	if resolved.Type == "binary" {
-		binaryPath, err := inst.installBinary(ctx, manifest)
-		return agentcfg.Config{Command: binaryPath, Kind: "acp", Transport: "stdio"}, err
+		binaryPath, verification, err := inst.installBinary(ctx, manifest)
+		return agentcfg.Config{Command: binaryPath, Kind: "acp", Transport: "stdio"}, verification, err
 	}
 	if resolved.Type != "npx" && resolved.Type != "uvx" {
-		return agentcfg.Config{}, fmt.Errorf("unsupported distribution type: %s", resolved.Type)
+		return agentcfg.Config{}, nil, fmt.Errorf("unsupported distribution type: %s", resolved.Type)
 	}
 	if manifest.Distribution.Npx == nil || !agentidentity.IsCanonicalCodexPackage(manifest.Distribution.Npx.Package) {
 		fmt.Printf("Registering %s agent '%s' (v%s) via %s\n", resolved.Type, manifest.ID, manifest.Version, resolved.Command)
 		return agentcfg.Config{
 			Command: resolved.Command, Args: resolved.Args, Env: resolved.Env,
 			Kind: "acp", Transport: "stdio",
-		}, nil
+		}, artifactVerificationNotApplicable(), nil
 	}
 	target, err := agentinstall.AgentDir(inst.baseDir, agentID)
 	if err != nil {
-		return agentcfg.Config{}, err
+		return agentcfg.Config{}, nil, err
 	}
-	return agentinstall.InstallCanonicalCodex(ctx, agentinstall.Config{
+	cfg, err := agentinstall.InstallCanonicalCodex(ctx, agentinstall.Config{
 		FS: inst.fs, Process: inst.proc, Target: target,
 		Package: manifest.Distribution.Npx.Package, Env: agentinstall.EnvSlice(manifest.Distribution.Npx.Env),
 	})
+	return cfg, artifactVerificationNotApplicable(), err
 }
 
-// installBinary handles the binary distribution flow: download, extract, resolve path.
-func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifest) (string, error) {
+// installBinary handles the binary distribution flow: download, verify, extract,
+// resolve path.
+func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifest) (string, *agentcfg.ArtifactVerification, error) {
 	dist, err := inst.registry.ResolveDistribution(manifest)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
+	platform := inst.registry.PlatformKey()
 
 	agentPath, err := agentinstall.AgentDir(inst.baseDir, manifest.ID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	tmpFile, err := agentinstall.TempArchive(inst.fs.TempDir(), manifest.ID, manifest.Version, dist.Archive)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	fmt.Printf("Downloading %s %s from %s...\n", manifest.ID, manifest.Version, dist.Archive)
 	if err := inst.net.Download(ctx, dist.Archive, tmpFile); err != nil {
-		return "", fmt.Errorf("download failed: %w", err)
+		return "", nil, fmt.Errorf("download failed: %w", err)
 	}
 	defer func() { _ = inst.fs.RemoveAll(tmpFile) }()
 
+	// The digest gate runs before anything is written to the agent directory:
+	// a rejected artifact must not leave a half installation behind.
+	verification, err := inst.verifyArtifact(manifest.ID, tmpFile, platform, dist)
+	if err != nil {
+		return "", nil, err
+	}
+	if verification.Verified {
+		fmt.Printf("Verified sha256 of %s against the registry index for %s\n", manifest.ID, platform)
+	}
+
 	fmt.Printf("Extracting to %s...\n", agentPath)
 	if err := inst.fs.MkdirAll(agentPath, 0755); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if err := inst.archive.Extract(tmpFile, agentPath); err != nil {
-		return "", fmt.Errorf("extraction failed: %w", err)
+		return "", nil, fmt.Errorf("extraction failed: %w", err)
 	}
 
 	binaryPath := dist.Cmd
@@ -167,7 +181,7 @@ func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifes
 		binaryPath = filepath.Join(agentPath, binaryPath)
 	}
 
-	return binaryPath, nil
+	return binaryPath, verification, nil
 }
 
 // Uninstall removes the agent's files and its registration from the Vault.

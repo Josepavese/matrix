@@ -105,9 +105,15 @@ var agentDoctorCmd = &cobra.Command{
 				}
 				warnings = append(warnings, checkWarnings...)
 			}
-			_, metaErr := agentcfg.LoadMeta(ctx.Store, id)
+			meta, metaErr := agentcfg.LoadMeta(ctx.Store, id)
 			if metaErr != nil {
 				warnings = append(warnings, "agent metadata unavailable: "+metaErr.Error())
+			}
+			if meta.ArtifactVerification != nil {
+				item["artifact_verification"] = meta.ArtifactVerification
+				if meta.ArtifactVerification.Status == agentcfg.ArtifactDigestNotPublished {
+					warnings = append(warnings, "installed artifact was not verified: the registry index publishes no sha256 for this platform")
+				}
 			}
 			if !cfg.IsActive() {
 				warnings = append(warnings, "agent disabled by effective configuration")

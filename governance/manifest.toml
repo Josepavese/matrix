@@ -86,6 +86,7 @@ required = [
   "goarch:",
   "amd64",
   "arm64",
+  "LICENSE",
   "install/install.sh",
   "install/install.ps1",
   "checksums.txt"

@@ -34,7 +34,9 @@ The preflight includes GoReleaser config validation. Before tagging a release, a
 goreleaser release --snapshot --clean
 ```
 
-Each archive must contain the executable, `configs/`, installers, and installation docs.
+Each archive must contain the executable, the `LICENSE` text (Apache-2.0 requires
+it to travel with a redistributed binary), `configs/`, installers, and
+installation docs.
 
 After artifacts are generated, install the host-matching archive into the local PAL home:
 

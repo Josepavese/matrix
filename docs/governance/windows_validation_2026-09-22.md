@@ -70,6 +70,13 @@ Two defects were found in the harness itself, not in Matrix:
   the warning that the fresh-host fix deliberately writes to stderr. The check
   relaxes the preference for that one call.
 
+## Installed tooling
+
+Nido on this workstation was v4.5.12 from February 2026 and was updated to
+v4.5.27 from the repository source during this work, with the previous binary
+kept at `~/go/bin/nido.v4.5.12.bak`. `nido doctor` reports every check passing
+with the new binary.
+
 ## Defects found in the tooling
 
 - **Nido v4.5.12, the installed binary, predates the blueprint variable
@@ -87,8 +94,14 @@ Two defects were found in the harness itself, not in Matrix:
 - `nido spawn --port 2222:22` produced `hostfwd=tcp:127.0.0.1:22-:2222`, that is,
   the mapping is interpreted as `guest:host`, not `host:guest`. Not a blocker,
   but it fails in a way that reads like a port conflict.
-- `nido build` names its working VM from the pool of freed names: the Windows
-  build ran in a VM named after a QA VM deleted minutes earlier.
+- A VM named `qa-native-01` was deleted as part of the disk cleanup and then
+  reappeared on its own within a minute. This was first recorded here as Nido
+  reusing a freed name, and that was wrong: the name belongs to a native-QA bench
+  driven by **another agent session working on the same workstation**, which
+  recreates its guest and later renamed it to `qa-installer-01` to stop the
+  conflict. One `nido delete` of an unrelated session destroyed that bench in the
+  middle of a validation. Nido behaved correctly throughout; the mistake was
+  deleting VMs without checking who owned them.
 
 ## What this does not cover
 

@@ -136,6 +136,7 @@ GitHub Actions and GoReleaser produce:
 Archives include:
 
 - `matrix` or `matrix.exe`
+- `LICENSE` (Apache-2.0: it travels with the redistributed binary)
 - `configs/`
 - installer scripts
 - installation and timeout/recovery docs

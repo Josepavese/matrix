@@ -59,6 +59,11 @@ type BinaryDist struct {
 	Archive string   `json:"archive"`
 	Cmd     string   `json:"cmd"`
 	Args    []string `json:"args,omitempty"`
+	// SHA256 is the digest that the registry index publishes for Archive.
+	// Empty means the index publishes the distribution without a digest for
+	// this platform: that is not an integrity failure, but it is not a
+	// verification either, and the two outcomes stay distinguishable.
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 // NpxDist represents an NPX-based distribution.
@@ -189,19 +194,22 @@ func (c *RegistryClient) FetchManifestCached(ctx context.Context, agentID string
 	return findAgent(index.Agents, agentID)
 }
 
-// ResolveDistribution finds the best binary distribution for the current host.
-func (c *RegistryClient) ResolveDistribution(manifest *AgentManifest) (*BinaryDist, error) {
-	goos := c.goos
+// PlatformKey returns the registry platform key for the host Matrix runs on,
+// using the same mapping the registry index uses: amd64→x86_64, arm64→aarch64.
+func (c *RegistryClient) PlatformKey() string {
 	arch := c.arch
-
 	switch arch {
 	case "amd64":
 		arch = "x86_64"
 	case "arm64":
 		arch = "aarch64"
 	}
+	return fmt.Sprintf("%s-%s", c.goos, arch)
+}
 
-	platform := fmt.Sprintf("%s-%s", goos, arch)
+// ResolveDistribution finds the best binary distribution for the current host.
+func (c *RegistryClient) ResolveDistribution(manifest *AgentManifest) (*BinaryDist, error) {
+	platform := c.PlatformKey()
 	dist, ok := manifest.Distribution.Binary[platform]
 	if !ok {
 		return nil, fmt.Errorf("no compatible binary distribution found for platform %s", platform)
