@@ -20,6 +20,9 @@ func TestReadOnlyProviderRequiresAnExistingVault(t *testing.T) {
 // TestNewProviderCreatesAUsableVault covers the write path: the file appears, the
 // store answers, and closing it twice is safe.
 func TestNewProviderCreatesAUsableVault(t *testing.T) {
+	// The vault refuses to store without a key, and the operator's home must not
+	// be what supplies one: this test failed on CI for exactly that reason.
+	setTestVaultKey(t)
 	path := filepath.Join(t.TempDir(), "vault.db")
 	provider, err := NewProvider(path)
 	if err != nil {
