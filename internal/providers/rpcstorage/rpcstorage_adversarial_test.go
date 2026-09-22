@@ -43,7 +43,7 @@ func (b *broker) Get(args runtimebroker.StorageArgs, reply *runtimebroker.Storag
 	return nil
 }
 
-func (b *broker) Set(args runtimebroker.StorageArgs, reply *runtimebroker.StorageReply) error {
+func (b *broker) Set(args runtimebroker.StorageArgs, _ *runtimebroker.StorageReply) error {
 	if err := b.record(args.Token); err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func (b *broker) Set(args runtimebroker.StorageArgs, reply *runtimebroker.Storag
 	return nil
 }
 
-func (b *broker) Delete(args runtimebroker.StorageArgs, reply *runtimebroker.StorageReply) error {
+func (b *broker) Delete(args runtimebroker.StorageArgs, _ *runtimebroker.StorageReply) error {
 	if err := b.record(args.Token); err != nil {
 		return err
 	}

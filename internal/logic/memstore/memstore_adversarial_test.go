@@ -103,7 +103,7 @@ func TestStorageConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 	for worker := 0; worker < 8; worker++ {
 		wg.Add(1)
-		go func(worker int) {
+		go func(_ int) {
 			defer wg.Done()
 			for i := 0; i < 25; i++ {
 				key := fmt.Sprintf("key-%d", i%5)

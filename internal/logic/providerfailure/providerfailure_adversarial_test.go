@@ -114,7 +114,7 @@ func TestNewPreflightIsIdempotentAndPreservesTypedFailures(t *testing.T) {
 		t.Fatalf("a nil error must stay nil, got %v", got)
 	}
 	original := &Failure{Code: ModelUnavailable, Message: "already typed"}
-	if got := NewPreflight("codex", middleware.ProtocolEndpoint{}, "initialize", original); got != original {
+	if got := NewPreflight("codex", middleware.ProtocolEndpoint{}, "initialize", original); !errors.Is(got, original) {
 		t.Fatal("an already typed failure must be returned unchanged")
 	}
 	plain := errors.New("spawn failed")

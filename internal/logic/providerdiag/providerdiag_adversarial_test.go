@@ -41,7 +41,9 @@ func TestProcessFailureErrorDescribesTheExit(t *testing.T) {
 // trace without bound, which is a memory and log-flooding risk.
 func TestStderrCaptureRespectsItsLimit(t *testing.T) {
 	capture := NewStderrCapture(64, "codex")
-	capture.Write([]byte(strings.Repeat("x", 200)))
+	if _, err := capture.Write([]byte(strings.Repeat("x", 200))); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 	if got := capture.Sanitized(); len(got) > 64 {
 		t.Fatalf("captured %d bytes, limit was 64", len(got))
 	}

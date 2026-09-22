@@ -35,7 +35,11 @@ func TestEvaluateRequiresTheDaemonOnlyWhenAsked(t *testing.T) {
 		t.Fatalf("an expected-but-absent runtime must be not_ready, got %v", strict["status"])
 	}
 	found := false
-	for _, blocker := range strict["blockers"].([]string) {
+	blockers, ok := strict["blockers"].([]string)
+	if !ok {
+		t.Fatalf("the report must carry a blocker list: %v", strict)
+	}
+	for _, blocker := range blockers {
 		if blocker == "jsonrpc daemon is not reachable" {
 			found = true
 		}

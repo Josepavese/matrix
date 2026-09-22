@@ -82,7 +82,7 @@ func TestOrderedMergeCarriesTheResultThrough(t *testing.T) {
 
 // TestOrderedMergeWithoutCallbackStillDrains keeps a nil callback from turning
 // into a panic or a blocked merge.
-func TestOrderedMergeWithoutCallbackStillDrains(t *testing.T) {
+func TestOrderedMergeWithoutCallbackStillDrains(_ *testing.T) {
 	merge := New(nil)
 	seq := merge.NextSeq()
 	merge.Submit(seq, RouteResult{Content: "x"})
