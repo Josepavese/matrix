@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/Josepavese/matrix/internal/logic/cmdutil"
@@ -19,35 +20,10 @@ var readinessCmd = &cobra.Command{
 	Short: "Evaluate whether Matrix meets the current local production-readiness baseline",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
-		runtimeReport, err := buildRuntimeDoctorReport()
+		report, err := buildReadinessReport(readinessExpectRuntimeUp)
 		if err != nil {
-			exitf("Runtime doctor failed: %v", err)
+			exitf("%v", err)
 		}
-		loggingReport, err := buildLogsDoctorReport()
-		if err != nil {
-			exitf("Logging doctor failed: %v", err)
-		}
-		storageReport, err := buildStorageDoctorReport()
-		if err != nil {
-			exitf("Storage doctor failed: %v", err)
-		}
-		vaultStore, err := runtimevault.OpenReadOnly(DefaultVaultPath)
-		if err != nil {
-			exitf("Vault storage inspection failed: %v", err)
-		}
-		defer func() { _ = vaultStore.Close() }()
-		vaultReport, err := vaultsec.BuildReport(osfs.NewFSProvider(), DefaultVaultPath, vaultStore)
-		if err != nil {
-			exitf("Vault doctor failed: %v", err)
-		}
-
-		report := readinesslogic.Evaluate(readinesslogic.Input{
-			RuntimeReport:   runtimeReport,
-			LoggingReport:   loggingReport,
-			StorageReport:   storageReport,
-			VaultReport:     vaultReport,
-			ExpectRuntimeUp: readinessExpectRuntimeUp,
-		})
 		if err := cmdutil.PrintJSON(cmd, report); err != nil {
 			exitf("failed to print readiness report: %v", err)
 		}
@@ -55,6 +31,47 @@ var readinessCmd = &cobra.Command{
 			os.Exit(code)
 		}
 	},
+}
+
+// buildReadinessReport assembles every local signal into one readiness result.
+//
+// A vault that cannot be inspected is reported as a blocker rather than as a
+// command failure: on a machine that has never run Matrix the vault does not
+// exist yet, and exiting here would hide the rest of the report exactly when an
+// operator needs it most.
+func buildReadinessReport(expectRuntimeUp bool) (map[string]any, error) {
+	runtimeReport, err := buildRuntimeDoctorReport()
+	if err != nil {
+		return nil, fmt.Errorf("runtime doctor failed: %w", err)
+	}
+	loggingReport, err := buildLogsDoctorReport()
+	if err != nil {
+		return nil, fmt.Errorf("logging doctor failed: %w", err)
+	}
+	storageReport, err := buildStorageDoctorReport()
+	if err != nil {
+		return nil, fmt.Errorf("storage doctor failed: %w", err)
+	}
+
+	var vaultReport map[string]any
+	vaultStore, vaultErr := runtimevault.OpenReadOnly(DefaultVaultPath)
+	if vaultErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: vault was not inspected: %v\n", vaultErr)
+	} else {
+		defer func() { _ = vaultStore.Close() }()
+		vaultReport, err = vaultsec.BuildReport(osfs.NewFSProvider(), DefaultVaultPath, vaultStore)
+		if err != nil {
+			return nil, fmt.Errorf("vault doctor failed: %w", err)
+		}
+	}
+
+	return readinesslogic.Evaluate(readinesslogic.Input{
+		RuntimeReport:   runtimeReport,
+		LoggingReport:   loggingReport,
+		StorageReport:   storageReport,
+		VaultReport:     vaultReport,
+		ExpectRuntimeUp: expectRuntimeUp,
+	}), nil
 }
 
 func readinessExitCode(status any, strict bool) int {

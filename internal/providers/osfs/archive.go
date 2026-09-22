@@ -36,6 +36,29 @@ func (p *ArchiveProvider) Extract(src, dest string) error {
 	return fmt.Errorf("unsupported archive format: %s", src)
 }
 
+// maxExtractedBytes bounds the total uncompressed size of one extraction. An
+// archive is a compressed input from outside the process, so without a ceiling a
+// small file can fill the disk: the limit is generous enough for a real agent
+// distribution and turns a decompression bomb into a clear error.
+const maxExtractedBytes = int64(2) << 30 // 2 GiB
+
+// copyBounded copies an archive entry while charging it against a shared budget.
+func copyBounded(dst io.Writer, src io.Reader, budget *int64) error {
+	remaining := *budget
+	if remaining <= 0 {
+		return fmt.Errorf("archive expands beyond the %d byte extraction limit", maxExtractedBytes)
+	}
+	written, err := io.Copy(dst, io.LimitReader(src, remaining+1))
+	*budget -= written
+	if err != nil {
+		return err
+	}
+	if written > remaining {
+		return fmt.Errorf("archive expands beyond the %d byte extraction limit", maxExtractedBytes)
+	}
+	return nil
+}
+
 // isSafePath checks that candidate is within dest (prevents path traversal / zip slip).
 func isSafePath(dest, candidate string) bool {
 	abs, err := filepath.Abs(candidate)
@@ -52,6 +75,7 @@ func isSafePath(dest, candidate string) bool {
 }
 
 func extractZip(src, dest string) error {
+	budget := maxExtractedBytes
 	r, err := zip.OpenReader(src)
 	if err != nil {
 		return err
@@ -81,14 +105,14 @@ func extractZip(src, dest string) error {
 			continue
 		}
 
-		if err := extractZipFile(f, dest, fpath); err != nil {
+		if err := extractZipFile(f, dest, fpath, &budget); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func extractZipFile(f *zip.File, dest, fpath string) error {
+func extractZipFile(f *zip.File, dest, fpath string, budget *int64) error {
 	if err := ensureSafeArchivePath(dest, filepath.Dir(fpath)); err != nil {
 		return err
 	}
@@ -111,7 +135,7 @@ func extractZipFile(f *zip.File, dest, fpath string) error {
 		return err
 	}
 
-	_, err = io.Copy(outFile, rc)
+	err = copyBounded(outFile, rc, budget)
 	_ = outFile.Close()
 	_ = rc.Close()
 	if err != nil {
@@ -147,6 +171,7 @@ func extractTarBz2(src, dest string) error {
 }
 
 func extractTar(dest string, tr *tar.Reader) error {
+	budget := maxExtractedBytes
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -156,14 +181,14 @@ func extractTar(dest string, tr *tar.Reader) error {
 			return err
 		}
 
-		if err := extractTarEntry(dest, header, tr); err != nil {
+		if err := extractTarEntry(dest, header, tr, &budget); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func extractTarEntry(dest string, header *tar.Header, tr *tar.Reader) error {
+func extractTarEntry(dest string, header *tar.Header, tr *tar.Reader, budget *int64) error {
 	target := filepath.Join(dest, header.Name)
 
 	if !isSafePath(dest, target) {
@@ -193,7 +218,7 @@ func extractTarEntry(dest string, header *tar.Header, tr *tar.Reader) error {
 			return err
 		}
 		defer func() { _ = f.Close() }()
-		if _, err := io.Copy(f, tr); err != nil {
+		if err := copyBounded(f, tr, budget); err != nil {
 			return err
 		}
 		return os.Chmod(target, safeMode)

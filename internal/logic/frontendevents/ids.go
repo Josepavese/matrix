@@ -1,7 +1,7 @@
 package frontendevents
 
 import (
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 )
 
@@ -26,7 +26,12 @@ func StablePermissionID(runID, content string) string {
 	return "perm-" + shortHash(runID+"|"+content)
 }
 
+// shortHash derives a stable correlation identifier. It is an identity, not a
+// security primitive: nothing is authenticated or hidden by it, and collision
+// resistance only has to be good enough that two calls in one run do not share a
+// label. SHA-256 is used anyway so that a reader does not have to reason about
+// whether a weak hash matters here.
 func shortHash(raw string) string {
-	sum := sha1.Sum([]byte(raw))
+	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])[:16]
 }

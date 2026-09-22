@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -160,8 +161,10 @@ func (s *Server) HandleOpenRouterCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html")
-	_, _ = fmt.Fprintf(w, "<html><body><h1>%s</h1><p>You can close this window and go back to Telegram.</p></body></html>", res)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The message comes from a router implementation, so it is treated as text:
+	// this page runs on the local origin and any markup in it would execute.
+	_, _ = fmt.Fprintf(w, "<html><body><h1>%s</h1><p>You can close this window and go back to Telegram.</p></body></html>", html.EscapeString(res))
 }
 
 // HandleSessionActions is the typed HTTP handler for session lifecycle actions.

@@ -201,7 +201,15 @@ var runCmd = &cobra.Command{
 		}
 
 		// Start Matrix HTTP API server
-		httpServer := &http.Server{Addr: matrixHTTPAddr, Handler: matrixapi.LocalCORSHandler(mux)}
+		httpServer := &http.Server{
+			Addr:    matrixHTTPAddr,
+			Handler: matrixapi.LocalCORSHandler(mux),
+			// The local API is reachable by any process on the machine, so a
+			// connection that never finishes its headers must not be able to hold
+			// a worker (Slowloris).
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		}
 		go func() {
 			log.Info("starting matrix http server", "event", "matrix_http_starting", "addr", matrixHTTPAddr)
 			if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {

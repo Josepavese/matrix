@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,5 +100,38 @@ func TestBuildRuntimeDoctorReportWithoutAVaultStillAnswers(t *testing.T) {
 	}
 	if len(report) == 0 {
 		t.Fatal("the report must not be empty")
+	}
+}
+
+// TestBuildReadinessReportOnAFreshMachine is the first-run contract: with no vault
+// at all the command must still produce the structured report, with the missing
+// vault as a blocker, instead of failing with a raw storage error.
+func TestBuildReadinessReportOnAFreshMachine(t *testing.T) {
+	t.Setenv("MATRIX_HOME", t.TempDir())
+
+	report, err := buildReadinessReport(false)
+	if err != nil {
+		t.Fatalf("a missing vault must not fail the command: %v", err)
+	}
+	if report["status"] != "not_ready" {
+		t.Fatalf("a fresh machine is not ready, got %v", report["status"])
+	}
+	blockers, ok := report["blockers"].([]string)
+	if !ok || len(blockers) == 0 {
+		t.Fatalf("the report must explain what blocks it: %v", report)
+	}
+	found := false
+	for _, blocker := range blockers {
+		if strings.Contains(blocker, "vault") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the blocker must name the vault, got %v", blockers)
+	}
+	// Expecting a live runtime must not turn the missing vault into an error
+	// either: it is still a blocker, reported the same way.
+	if _, err := buildReadinessReport(true); err != nil {
+		t.Fatalf("expecting a runtime must not fail the command: %v", err)
 	}
 }

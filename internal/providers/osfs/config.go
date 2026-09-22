@@ -18,5 +18,7 @@ func (p *ConfigProvider) ReadConfig(path string) ([]byte, error) {
 
 // WriteConfig writes the provided data to the file at the given path.
 func (p *ConfigProvider) WriteConfig(path string, data []byte) error {
-	return os.WriteFile(path, data, 0644)
+	// Channel configuration can carry identifiers and tokens, and Matrix is
+	// single-user: there is no reader that needs group or world access.
+	return os.WriteFile(path, data, 0o600)
 }

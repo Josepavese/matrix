@@ -106,6 +106,22 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 	}
 }
 
+// sseEventName reduces an event kind to a single safe SSE field value.
+func sseEventName(kind string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		switch r {
+		case '\r', '\n':
+			return -1
+		default:
+			return r
+		}
+	}, kind)
+	if cleaned == "" {
+		return "message"
+	}
+	return cleaned
+}
+
 func (s *Server) writeSSEBatch(w http.ResponseWriter, runID, cursor string) (bool, string) {
 	events, err := s.runStore.LoadEventsAfter(runID, cursor, 100)
 	if err != nil {
@@ -114,7 +130,10 @@ func (s *Server) writeSSEBatch(w http.ResponseWriter, runID, cursor string) (boo
 	}
 	for _, event := range events {
 		payload, _ := json.Marshal(event)
-		_, _ = fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.ID, event.Kind, payload)
+		// The event name is written into a line-oriented protocol, so a newline
+		// in it would forge additional fields or events. Names are internal
+		// constants today; this keeps that true if one ever stops being one.
+		_, _ = fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.ID, sseEventName(event.Kind), payload)
 		cursor = event.ID
 	}
 	if flusher, ok := w.(http.Flusher); ok {
