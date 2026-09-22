@@ -33,10 +33,25 @@ func RenderAction(result middleware.SessionActionResult, lang string, deps Rende
 
 func renderStatus(result middleware.SessionActionResult, lookup StringLookup) string {
 	if result.Session == nil {
-		return lookup("session_not_found_db")
+		return lookupText(lookup, "session_not_found_db", "session not found")
 	}
 	details := statusDetails(result.Session)
-	return fmt.Sprintf(lookup("session_status"), result.Session.LogicalSessionID, details, result.Session.AgentID, result.Session.CreatedAt)
+	format := lookupText(lookup, "session_status", "Session %s%s\nAgent: %s\nCreated: %s")
+	return fmt.Sprintf(format, result.Session.LogicalSessionID, details, result.Session.AgentID, result.Session.CreatedAt)
+}
+
+// lookupText resolves a translation without trusting the caller: RenderAction is
+// exported, so a frontend that has no translations wired must degrade to a
+// readable default instead of dereferencing a nil lookup and taking the chat
+// handler down with it.
+func lookupText(lookup StringLookup, key, fallback string) string {
+	if lookup == nil {
+		return fallback
+	}
+	if text := lookup(key); text != "" {
+		return text
+	}
+	return fallback
 }
 
 func statusDetails(session *middleware.SessionEntry) string {

@@ -12,7 +12,12 @@ func StableToolCallID(runID, name, content string, metadata map[string]interface
 		StringValue(metadata, "call_id"),
 	)
 	if raw == "" {
-		raw = runID + "|" + name + "|" + content + "|" + StringValue(metadata, "title")
+		// The path takes part in the identity: two calls to the same tool with
+		// the same description but different arguments are different calls, and
+		// collapsing them would mis-link a result to the wrong request. Only
+		// identity-bearing fields are hashed, never the whole metadata map, so a
+		// replayed update keeps hashing to the same value.
+		raw = runID + "|" + name + "|" + content + "|" + StringValue(metadata, "title") + "|" + StringValue(metadata, "path")
 	}
 	return "tool-" + shortHash(raw)
 }

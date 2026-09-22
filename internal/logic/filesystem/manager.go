@@ -19,6 +19,16 @@ func NewManager(fs middleware.FS) *Manager {
 
 // MountVirtualFS ensures the directory exists and mounts the pseudo-FS
 func (m *Manager) MountVirtualFS(mountPoint string) error {
+	if m == nil || m.fs == nil {
+		// The manager is constructed by callers that may not have a provider yet;
+		// an unusable filesystem is an error to report, never a panic in the
+		// middle of a run.
+		return &middleware.Error{
+			Code:    "ERR_FS_UNAVAILABLE",
+			Message: "Virtual filesystem provider is not available",
+			Op:      "filesystem.MountVirtualFS",
+		}
+	}
 	log := slog.With("component", "filesystem")
 
 	if err := m.fs.CreateDirectory(mountPoint); err != nil {
@@ -36,6 +46,13 @@ func (m *Manager) MountVirtualFS(mountPoint string) error {
 
 // UnmountVirtualFS cleanly unmounts the system
 func (m *Manager) UnmountVirtualFS() error {
+	if m == nil || m.fs == nil {
+		return &middleware.Error{
+			Code:    "ERR_FS_UNAVAILABLE",
+			Message: "Virtual filesystem provider is not available",
+			Op:      "filesystem.UnmountVirtualFS",
+		}
+	}
 	slog.With("component", "filesystem").Info("unmounting virtual fs", "event", "unmount_start")
 	return m.fs.Unmount()
 }

@@ -66,13 +66,26 @@ func A2APartFromContent(content middleware.Content) *a2a.Part {
 func a2aPartPayload(content middleware.Content) *a2a.Part {
 	switch strings.ToLower(strings.TrimSpace(content.Type)) {
 	case "text":
+		// An empty text block must not become a real part: the peer would see a
+		// message that says nothing, while the fallback path below already drops
+		// empty content. Keeping the two paths consistent matters more than
+		// preserving an empty part.
+		if strings.TrimSpace(content.Text) == "" {
+			return fallbackPart(content)
+		}
 		return a2a.NewTextPart(content.Text)
 	case "image", "audio", "file", "resource_link":
 		return filePart(content)
 	case "resource":
 		return resourcePart(content)
 	case "data":
-		return a2a.NewDataPart(decodeStructuredData(content.Data))
+		// Same rule as text: an empty payload must not become a part with a nil
+		// value, which the peer would read as a data message that carries
+		// nothing.
+		if decoded := decodeStructuredData(content.Data); decoded != nil {
+			return a2a.NewDataPart(decoded)
+		}
+		return fallbackPart(content)
 	default:
 		return fallbackPart(content)
 	}

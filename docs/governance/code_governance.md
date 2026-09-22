@@ -60,7 +60,9 @@ baseline (`baseline_test_functions`, `baseline_behavior_tests`,
 - a new package is never allowed a baseline: it must meet the policy minimum
   from its first commit.
 
-Regenerate the block after real improvement:
+The baseline sections are empty as of 2026-09-22: every package with production
+code meets the policy minimum, and the mechanism remains as the ratchet that keeps
+it that way. Regenerate the block after real improvement:
 
 ```bash
 go run ./scripts/code_governance.go -config code-governance.toml -print-test-baseline

@@ -46,27 +46,20 @@ interop_required_packages = ["internal/providers/agents"]
 # is a floor, never a licence: the checker fails if the package drops below it,
 # nags when the value rises above it so the number gets recorded, and reports the
 # entry for deletion once the policy minimum is met. So the list can only shrink.
+#
+# 2026-09-22: the sections below are empty. Every package with production code now
+# meets the policy minimum; the mechanism stays because a new package must meet it
+# from its first commit, and a regression must be visible rather than absorbed.
 # Regenerate after real improvement with:
 #   go run ./scripts/code_governance.go -config code-governance.toml -print-test-baseline
 [test_policy.baseline_test_functions]
-"internal/logic/bootstrap" = 1
-"internal/logic/filesystem" = 1
-"internal/providers/agentprobe" = 1
+# (none)
 
 [test_policy.baseline_behavior_tests]
-"internal/logic/agentcatalog" = 0
-"internal/logic/frontendevents" = 0
-"internal/logic/logging" = 0
-"internal/logic/runnotifier" = 0
-"internal/logic/sessionview" = 0
-"internal/providers/a2aclient" = 0
-"internal/providers/bolt" = 0
-"internal/providers/network" = 0
-"internal/providers/runtimevault" = 0
-"internal/providers/sidecarprojection" = 0
+# (none)
 
 [test_policy.baseline_ratio]
-"internal/logic/frontendevents" = 0.05
+# (none)
 [budgets]
 package_loc = 800
 file_loc = 280
