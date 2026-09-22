@@ -74,7 +74,10 @@ Check "PAL home created" { (Get-ChildItem $home_dir -Directory | Select-Object -
 Check "matrix.exe runs" { & $binary version | Select-Object -First 1 }
 Check "matrix.exe reports the release version" {
   $out = & $binary version
-  if (-not ($out -match "0\.1\.34")) { throw "unexpected version output: $out" }
+  # The expected version comes from -Version: this script is reused for every
+  # release, and a hard-coded one silently pins it to the release it was written for.
+  $expected = $version.TrimStart("v")
+  if (-not ($out -match [regex]::Escape($expected))) { throw "unexpected version output: $out" }
   ($out | Select-Object -First 1)
 }
 Check "doctor runs on Windows" {

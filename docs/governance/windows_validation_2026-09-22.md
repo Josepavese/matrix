@@ -103,6 +103,15 @@ with the new binary.
   middle of a validation. Nido behaved correctly throughout; the mistake was
   deleting VMs without checking who owned them.
 
+## Second release checked the same day
+
+The same guest and the same script were re-run for v0.1.35 with
+`-Version v0.1.35`, and all nine checks passed again, including `matrix.exe`
+reporting `matrix 0.1.35`. That run exposed a defect in the script rather than in
+the release: the version assertion was hard-coded to `0.1.34`, which pinned the
+script to the release it was written for. It now derives the expected version from
+`-Version`.
+
 ## What this does not cover
 
 - No interactive desktop use of Matrix on Windows: the checks are the installer,
