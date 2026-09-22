@@ -21,9 +21,6 @@ func A2AMessageParts(turn middleware.ConversationTurn) []*a2a.Part {
 			parts = append(parts, part)
 		}
 	}
-	if len(parts) == 0 {
-		parts = append(parts, a2a.NewTextPart(""))
-	}
 	for _, capsule := range capsules {
 		dataPart := a2a.NewDataPart(map[string]any{"sidecar": map[string]any{
 			"provider":   capsule.Provider,
@@ -46,6 +43,12 @@ func A2AMessageParts(turn middleware.ConversationTurn) []*a2a.Part {
 		if capsule.Visibility == middleware.SidecarVisibilityLLMVisible && capsule.Content != "" {
 			parts = append(parts, a2a.NewTextPart(capsule.Content))
 		}
+	}
+	// The fallback belongs after the capsules: a message must never be sent with
+	// no parts at all, but a capsule-only turn must not gain an empty text part
+	// alongside its data parts.
+	if len(parts) == 0 {
+		parts = append(parts, a2a.NewTextPart(""))
 	}
 	return parts
 }

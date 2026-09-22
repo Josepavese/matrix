@@ -35,9 +35,13 @@ fuzz_required_packages = ["pkg/zedacp", "pkg/zedacpstdio", "internal/providers/a
 # they must carry an end-to-end test against a real or mock peer.
 interop_required_packages = ["internal/providers/agents"]
 
+# 2026-09-22: down to the two exemptions that describe a real limitation of the
+# environment rather than a choice. The CLI and the mock agent were removed from
+# this list by testing them: the CLI through its argument, path and authorisation
+# contracts, the mock agent through its protocol handshake and its elicitation
+# round trip, which is the only place the elicitation contract is exercised from
+# the peer side.
 [test_policy.exemptions]
-"cmd/matrix" = "2026-09-22: CLI flag and command wiring. Behaviour is verified end to end by the deploy preflight (doctor, readiness, vault smoke) and by the release install smoke, not by unit tests."
-"cmd/mock-agent" = "2026-09-22: test double for the interop tests, not shipped behaviour; it is exercised end to end through tests/integration."
 "internal/providers/fusefs" = "2026-09-22: requires a FUSE mount, which the local sandbox cannot provide; tests would be meaningless without a privileged runner."
 "internal/providers/signal" = "2026-09-22: process-level signal handling cannot be asserted without signalling the test binary itself; the shutdown path is verified through runtime_signal_received evidence in the release runbook."
 
