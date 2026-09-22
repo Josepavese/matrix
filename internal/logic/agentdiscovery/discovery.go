@@ -140,15 +140,20 @@ func (p *localProvider) Get(_ context.Context, ref string) (*Record, error) {
 		address = endpoint.Command
 	}
 	return &Record{
-		ID:                   ref,
-		Name:                 meta.Name,
-		Description:          meta.Description,
-		Source:               SourceLocal,
-		Kind:                 endpoint.Kind,
-		Transport:            endpoint.Transport,
-		Address:              address,
-		CardURL:              endpoint.CardURL,
-		Tenant:               endpoint.Tenant,
+		ID:          ref,
+		Name:        meta.Name,
+		Description: meta.Description,
+		Source:      SourceLocal,
+		Kind:        endpoint.Kind,
+		Transport:   endpoint.Transport,
+		Address:     address,
+		CardURL:     endpoint.CardURL,
+		Tenant:      endpoint.Tenant,
+		// The version recorded at install time. Leaving it empty made
+		// `agent info --source=local` print a blank Version even though the
+		// catalogue already reported the persisted one, so the two paths
+		// disagreed about the same fact.
+		Version:              meta.Version,
 		ProtocolVersion:      endpoint.ProtocolVersion,
 		ArtifactVerification: meta.ArtifactVerification,
 	}, nil

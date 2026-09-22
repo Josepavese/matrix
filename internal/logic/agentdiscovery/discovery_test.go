@@ -196,3 +196,42 @@ func TestA2ACatalogProviderSearch(t *testing.T) {
 		t.Fatalf("Tenant = %q, want project-7", records[0].Tenant)
 	}
 }
+
+// TestLocalProviderReportsTheInstalledVersion pins the fact the catalogue and the
+// discovery path must agree on: `agent info --source=local` reports the version
+// recorded at install time, not a blank line next to a populated one.
+func TestLocalProviderReportsTheInstalledVersion(t *testing.T) {
+	store := &memStorage{values: make(map[string][]byte)}
+	if err := agentcfg.SaveEntry(store, "planner", agentcfg.Entry{
+		Config: agentcfg.Config{
+			Kind:      "a2a",
+			Transport: "JSONRPC",
+			Address:   "https://planner.example.com/a2a",
+		},
+	}); err != nil {
+		t.Fatalf("SaveEntry: %v", err)
+	}
+	if err := agentcfg.SaveMeta(store, "planner", agentcfg.Meta{
+		ID:      "planner",
+		Name:    "Planner",
+		Version: "1.18.32",
+	}); err != nil {
+		t.Fatalf("SaveMeta: %v", err)
+	}
+
+	registry, err := agentmgr.NewRegistry(nil, store)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	provider, err := NewProvider(SourceLocal, Options{Registry: registry, Storage: store})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	record, err := provider.Get(context.Background(), "planner")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if record.Version != "1.18.32" {
+		t.Fatalf("Version = %q, want the installed version %q", record.Version, "1.18.32")
+	}
+}
