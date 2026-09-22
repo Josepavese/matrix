@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/logic/agentdiscovery"
 	networkprovider "github.com/Josepavese/matrix/internal/providers/network"
 	"github.com/spf13/cobra"
@@ -85,7 +84,7 @@ var agentInfoCmd = &cobra.Command{
 			fmt.Printf("License:      %s\n", record.License)
 		}
 		if verification := record.ArtifactVerification; verification != nil {
-			fmt.Printf("Integrity:    %s\n", describeArtifactVerification(verification))
+			fmt.Printf("Integrity:    %s\n", verification.Describe())
 			if verification.Actual != "" {
 				fmt.Printf("Artifact sha: %s\n", verification.Actual)
 			}
@@ -103,20 +102,4 @@ func init() {
 	agentInfoCmd.Flags().StringVar(&agentInfoSource, "source", string(agentdiscovery.SourceACPRegistry), "Discovery source: acp_registry, local, a2a_card, or a2a_catalog")
 	agentInfoCmd.Flags().StringVar(&agentInfoCatalogURL, "catalog-url", "", "Catalog URL used when --source=a2a_catalog")
 	agentCmd.AddCommand(agentInfoCmd)
-}
-
-// describeArtifactVerification turns the recorded integrity evidence into one
-// line. "not published" and "not applicable" never read as "verified".
-func describeArtifactVerification(verification *agentcfg.ArtifactVerification) string {
-	platform := verification.Platform
-	switch verification.Status {
-	case agentcfg.ArtifactVerified:
-		return fmt.Sprintf("sha256 verified against the registry index for %s", platform)
-	case agentcfg.ArtifactDigestNotPublished:
-		return fmt.Sprintf("not verified: the registry index publishes no sha256 for %s", platform)
-	case agentcfg.ArtifactNotApplicable:
-		return "not applicable: this distribution downloads no artifact"
-	default:
-		return fmt.Sprintf("not verified (%s)", verification.Status)
-	}
 }

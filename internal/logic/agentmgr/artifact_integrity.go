@@ -58,6 +58,7 @@ func (inst *Installer) verifyArtifact(agentID, tmpFile, platform string, dist *B
 	evidence.Verified = true
 	evidence.Status = agentcfg.ArtifactVerified
 	evidence.Expected = published
+	fmt.Printf("Verified sha256 %s of %s against the registry index for %s\n", published, agentID, platform)
 	return evidence, nil
 }
 
@@ -90,13 +91,6 @@ func isHexSHA256(value string) bool {
 	if len(value) != sha256HexLength {
 		return false
 	}
-	for _, char := range value {
-		switch {
-		case char >= '0' && char <= '9':
-		case char >= 'a' && char <= 'f':
-		default:
-			return false
-		}
-	}
-	return true
+	_, err := hex.DecodeString(value)
+	return err == nil
 }

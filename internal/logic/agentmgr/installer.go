@@ -141,39 +141,14 @@ func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifes
 	if err != nil {
 		return "", nil, err
 	}
-	platform := inst.registry.PlatformKey()
-
 	agentPath, err := agentinstall.AgentDir(inst.baseDir, manifest.ID)
 	if err != nil {
 		return "", nil, err
 	}
-	tmpFile, err := agentinstall.TempArchive(inst.fs.TempDir(), manifest.ID, manifest.Version, dist.Archive)
+
+	verification, err := inst.fetchVerifiedArchive(ctx, manifest, agentPath, dist)
 	if err != nil {
 		return "", nil, err
-	}
-
-	fmt.Printf("Downloading %s %s from %s...\n", manifest.ID, manifest.Version, dist.Archive)
-	if err := inst.net.Download(ctx, dist.Archive, tmpFile); err != nil {
-		return "", nil, fmt.Errorf("download failed: %w", err)
-	}
-	defer func() { _ = inst.fs.RemoveAll(tmpFile) }()
-
-	// The digest gate runs before anything is written to the agent directory:
-	// a rejected artifact must not leave a half installation behind.
-	verification, err := inst.verifyArtifact(manifest.ID, tmpFile, platform, dist)
-	if err != nil {
-		return "", nil, err
-	}
-	if verification.Verified {
-		fmt.Printf("Verified sha256 of %s against the registry index for %s\n", manifest.ID, platform)
-	}
-
-	fmt.Printf("Extracting to %s...\n", agentPath)
-	if err := inst.fs.MkdirAll(agentPath, 0755); err != nil {
-		return "", nil, err
-	}
-	if err := inst.archive.Extract(tmpFile, agentPath); err != nil {
-		return "", nil, fmt.Errorf("extraction failed: %w", err)
 	}
 
 	binaryPath := dist.Cmd
@@ -182,6 +157,39 @@ func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifes
 	}
 
 	return binaryPath, verification, nil
+}
+
+// fetchVerifiedArchive downloads the artifact the index publishes, refuses it
+// unless its digest matches, and only then extracts it into agentPath. The
+// temporary download is always removed, on every outcome.
+func (inst *Installer) fetchVerifiedArchive(ctx context.Context, manifest *AgentManifest, agentPath string, dist *BinaryDist) (*agentcfg.ArtifactVerification, error) {
+	tmpFile, err := agentinstall.TempArchive(inst.fs.TempDir(), manifest.ID, manifest.Version, dist.Archive)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("Downloading %s %s from %s...\n", manifest.ID, manifest.Version, dist.Archive)
+	if err := inst.net.Download(ctx, dist.Archive, tmpFile); err != nil {
+		return nil, fmt.Errorf("download failed: %w", err)
+	}
+	defer func() { _ = inst.fs.RemoveAll(tmpFile) }()
+
+	// The digest gate runs before anything is written to the agent directory,
+	// so a rejected artifact leaves no half installation behind.
+	verification, err := inst.verifyArtifact(manifest.ID, tmpFile, inst.registry.PlatformKey(), dist)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("Extracting to %s...\n", agentPath)
+	if err := inst.fs.MkdirAll(agentPath, 0755); err != nil {
+		return nil, err
+	}
+	if err := inst.archive.Extract(tmpFile, agentPath); err != nil {
+		return nil, fmt.Errorf("extraction failed: %w", err)
+	}
+
+	return verification, nil
 }
 
 // Uninstall removes the agent's files and its registration from the Vault.

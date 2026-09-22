@@ -17,10 +17,10 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/logic/memstore"
+	"github.com/Josepavese/matrix/internal/middleware"
 	execprovider "github.com/Josepavese/matrix/internal/providers/exec"
 	networkprovider "github.com/Josepavese/matrix/internal/providers/network"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
-	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // testPlatform is the registry platform key the fixture installs for. The
@@ -184,6 +184,7 @@ func TestInstallRefusesArtifactWithMismatchedDigest(t *testing.T) {
 	if err == nil {
 		t.Fatal("a mismatched digest must refuse the installation")
 	}
+	t.Logf("refused install: %v", err)
 	if !strings.Contains(err.Error(), "sha256 mismatch") || !strings.Contains(err.Error(), "refusing to install") {
 		t.Fatalf("the error must state the mismatch and the refusal, got %v", err)
 	}

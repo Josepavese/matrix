@@ -40,13 +40,31 @@ const (
 // absent publication and an inapplicable distribution are both false, because
 // "not published" and "verified" are different facts.
 type ArtifactVerification struct {
-	Verified   bool                      `json:"verified"`
+	Verified   bool                       `json:"verified"`
 	Status     ArtifactVerificationStatus `json:"status"`
-	Platform   string                    `json:"platform,omitempty"`
-	Artifact   string                    `json:"artifact,omitempty"`
-	Expected   string                    `json:"expected_sha256,omitempty"`
-	Actual     string                    `json:"actual_sha256,omitempty"`
-	VerifiedAt time.Time                 `json:"verified_at"`
+	Platform   string                     `json:"platform,omitempty"`
+	Artifact   string                     `json:"artifact,omitempty"`
+	Expected   string                     `json:"expected_sha256,omitempty"`
+	Actual     string                     `json:"actual_sha256,omitempty"`
+	VerifiedAt time.Time                  `json:"verified_at"`
+}
+
+// Describe renders the outcome as one human-readable line. "not published" and
+// "not applicable" never read as "verified".
+func (v *ArtifactVerification) Describe() string {
+	if v == nil {
+		return "not recorded"
+	}
+	switch v.Status {
+	case ArtifactVerified:
+		return fmt.Sprintf("sha256 verified against the registry index for %s", v.Platform)
+	case ArtifactDigestNotPublished:
+		return fmt.Sprintf("not verified: the registry index publishes no sha256 for %s", v.Platform)
+	case ArtifactNotApplicable:
+		return "not applicable: this distribution downloads no artifact"
+	default:
+		return fmt.Sprintf("not verified (%s)", v.Status)
+	}
 }
 
 // Meta holds display metadata for an agent (name, description, etc.).
