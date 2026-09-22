@@ -629,21 +629,15 @@ func printTestBaseline(cfg config, pkgs map[string]*packageReport) {
 		}
 		quoted := `"` + name + `"`
 		if policy.MinTestFunctions > 0 && pkg.TestFunctions < policy.MinTestFunctions {
-			if recorded, ok := policy.BaselineTestFunctions[name]; !ok || pkg.TestFunctions > recorded {
-				functions = append(functions, fmt.Sprintf("%s = %d", quoted, pkg.TestFunctions))
-			}
+			functions = append(functions, fmt.Sprintf("%s = %d", quoted, pkg.TestFunctions))
 		}
 		if policy.MinBehaviorTests > 0 && pkg.LOC >= policy.BehaviorMinProdLOC && pkg.BehaviorTests < policy.MinBehaviorTests {
-			if recorded, ok := policy.BaselineBehaviorTests[name]; !ok || pkg.BehaviorTests > recorded {
-				behaviour = append(behaviour, fmt.Sprintf("%s = %d", quoted, pkg.BehaviorTests))
-			}
+			behaviour = append(behaviour, fmt.Sprintf("%s = %d", quoted, pkg.BehaviorTests))
 		}
 		if policy.MinTestLOCRatio > 0 && pkg.LOC >= policy.RatioMinProdLOC {
 			ratio := float64(pkg.TestLOC) / float64(pkg.LOC)
 			if ratio < policy.MinTestLOCRatio {
-				if recorded, ok := policy.BaselineTestLOCRatio[name]; !ok || ratio > recorded+0.005 {
-					ratios = append(ratios, fmt.Sprintf("%s = %.2f", quoted, ratio))
-				}
+				ratios = append(ratios, fmt.Sprintf("%s = %.2f", quoted, ratio))
 			}
 		}
 	}

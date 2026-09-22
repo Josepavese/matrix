@@ -51,37 +51,22 @@ interop_required_packages = ["internal/providers/agents"]
 [test_policy.baseline_test_functions]
 "internal/logic/bootstrap" = 1
 "internal/logic/filesystem" = 1
-"internal/logic/providerdiag" = 1
-"internal/logic/readiness" = 1
-"internal/logic/sessioncmd" = 1
-"internal/logic/setupstate" = 1
-"internal/providers/a2astate" = 1
 "internal/providers/agentprobe" = 1
-"internal/providers/runpayload" = 1
 
 [test_policy.baseline_behavior_tests]
 "internal/logic/agentcatalog" = 0
-"internal/logic/agentdiscovery" = 0
 "internal/logic/frontendevents" = 0
 "internal/logic/logging" = 0
-"internal/logic/providerdiag" = 0
-"internal/logic/readiness" = 0
 "internal/logic/runnotifier" = 0
-"internal/logic/runtimebroker" = 0
-"internal/logic/sessioncmd" = 0
 "internal/logic/sessionview" = 0
-"internal/logic/sidecar" = 0
 "internal/providers/a2aclient" = 0
 "internal/providers/bolt" = 0
 "internal/providers/network" = 0
-"internal/providers/oslog" = 0
 "internal/providers/runtimevault" = 0
 "internal/providers/sidecarprojection" = 0
 
 [test_policy.baseline_ratio]
 "internal/logic/frontendevents" = 0.05
-
-
 [budgets]
 package_loc = 800
 file_loc = 280
