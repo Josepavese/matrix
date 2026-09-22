@@ -137,7 +137,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-05-21 accepts and validates ACP additional_directories on run ingress.
 # 2026-06-18 rejects event sink localhost/private targets at HTTP ingress.
 # 2026-06-23 records trusted provider launch-policy evidence in routing traces.
-"internal/providers/runapi" = 1460
+# 2026-09-22: the SSE event-name guard from the security pass adds three lines
+# to the run stream endpoint.
+"internal/providers/runapi" = 1465
 # 2026-09-21: the Telegram channel gained the elicitation frontend — prompt
 # rendering, inline-keyboard building, callback routing, answer coercion and
 # session-to-chat correlation — split across focused files (elicitation.go,
