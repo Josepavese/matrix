@@ -10,6 +10,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -36,6 +37,45 @@ type config struct {
 		Roots       []string
 		ExcludeDirs []string
 	}
+	TestPolicy struct {
+		// MinTestFunctions is the floor every package with production code must
+		// reach. Test* and Fuzz* count; benchmarks and examples do not, because
+		// they verify nothing.
+		MinTestFunctions int
+		// MinBehaviorTests requires at least this many tests that assert a
+		// rejection, failure, or degraded path. Happy-path-only packages are the
+		// ones that break in production.
+		MinBehaviorTests int
+		// BehaviorMinProdLOC gates the behaviour minimum to packages that carry
+		// real logic. A package that only declares data has no rejection path to
+		// assert, and demanding one would be theatre.
+		BehaviorMinProdLOC int
+		// BehaviorNamePattern is the SSOT list of name fragments that mark a
+		// behaviour test, so the rule is tunable without touching the checker.
+		BehaviorNamePattern string
+		// MinTestLOCRatio and RatioMinProdLOC apply a per-package test/production
+		// line ratio, but only to packages big enough for the ratio to mean
+		// something.
+		MinTestLOCRatio float64
+		RatioMinProdLOC int
+		// FuzzRequiredPackages must each carry at least one fuzz target: they
+		// decode bytes that arrive from outside the process.
+		FuzzRequiredPackages []string
+		// InteropRequiredPackages must each carry at least one end-to-end test
+		// against a peer, because their contract is a wire protocol.
+		InteropRequiredPackages []string
+		// Exemptions records packages where a minimum cannot be met yet. The
+		// value must carry a date and a reason; the exemption is printed, and a
+		// package that no longer needs one is reported so the list can shrink.
+		Exemptions map[string]string
+		// Baselines record, per package, the value reached today for a metric
+		// that is still below the policy minimum. A baseline is a floor that may
+		// only rise: it keeps legacy debt visible and prevents regression while
+		// the absolute minimum applies to every package that is not listed.
+		BaselineTestFunctions map[string]int
+		BaselineBehaviorTests map[string]int
+		BaselineTestLOCRatio  map[string]float64
+	}
 	PackageOverrides       map[string]int
 	FileOverrides          map[string]int
 	FunctionOverrides      map[string]int
@@ -61,14 +101,20 @@ type funcReport struct {
 }
 
 type packageReport struct {
-	Name    string
-	LOC     int
-	TestLOC int
-	Files   int
+	Name          string
+	LOC           int
+	TestLOC       int
+	Files         int
+	TestFiles     int
+	TestFunctions int
+	BehaviorTests int
+	FuzzTargets   int
+	InteropTests  int
 }
 
 func main() {
 	configPath := flag.String("config", "code-governance.toml", "path to governance config")
+	printBaseline := flag.Bool("print-test-baseline", false, "print the test baseline block for the current tree and exit")
 	flag.Parse()
 
 	cfg, err := loadConfig(*configPath)
@@ -81,6 +127,11 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "analysis error: %v\n", err)
 		os.Exit(1)
+	}
+
+	if *printBaseline {
+		printTestBaseline(cfg, pkgs)
+		return
 	}
 
 	failures, warnings := evaluate(cfg, files, funcs, pkgs)
@@ -153,6 +204,33 @@ func loadConfig(path string) (config, error) {
 			case "exclude_dirs":
 				cfg.Scope.ExcludeDirs, err = parseStringList(val)
 			}
+		case "test_policy":
+			switch key {
+			case "min_test_functions_per_package":
+				cfg.TestPolicy.MinTestFunctions, err = atoi(val)
+			case "min_behavior_tests_per_package":
+				cfg.TestPolicy.MinBehaviorTests, err = atoi(val)
+			case "behavior_min_prod_loc":
+				cfg.TestPolicy.BehaviorMinProdLOC, err = atoi(val)
+			case "behavior_name_pattern":
+				cfg.TestPolicy.BehaviorNamePattern, err = parseString(val)
+			case "min_test_loc_ratio":
+				cfg.TestPolicy.MinTestLOCRatio, err = atof(val)
+			case "ratio_min_prod_loc":
+				cfg.TestPolicy.RatioMinProdLOC, err = atoi(val)
+			case "fuzz_required_packages":
+				cfg.TestPolicy.FuzzRequiredPackages, err = parseStringList(val)
+			case "interop_required_packages":
+				cfg.TestPolicy.InteropRequiredPackages, err = parseStringList(val)
+			}
+		case "test_policy.exemptions":
+			err = ensureTestExemption(&cfg.TestPolicy.Exemptions, key, val)
+		case "test_policy.baseline_test_functions":
+			err = ensureTestBaselineInt(&cfg.TestPolicy.BaselineTestFunctions, key, val)
+		case "test_policy.baseline_behavior_tests":
+			err = ensureTestBaselineInt(&cfg.TestPolicy.BaselineBehaviorTests, key, val)
+		case "test_policy.baseline_ratio":
+			err = ensureTestBaselineFloat(&cfg.TestPolicy.BaselineTestLOCRatio, key, val)
 		case "package_overrides":
 			err = ensureMap(&cfg.PackageOverrides, key, val)
 		case "file_overrides":
@@ -212,6 +290,7 @@ func analyze(cfg config) ([]fileReport, []funcReport, map[string]*packageReport,
 			pkg.Files++
 			if report.Test {
 				pkg.TestLOC += report.LOC
+				pkg.TestFiles++
 			} else {
 				pkg.LOC += report.LOC
 			}
@@ -222,6 +301,7 @@ func analyze(cfg config) ([]fileReport, []funcReport, map[string]*packageReport,
 		}
 	}
 
+	classifyTests(pkgs, funcs, behaviorPattern(cfg))
 	sort.Slice(files, func(i, j int) bool { return files[i].LOC > files[j].LOC })
 	sort.Slice(funcs, func(i, j int) bool { return funcs[i].LOC > funcs[j].LOC })
 	return files, funcs, pkgs, nil
@@ -270,6 +350,165 @@ func analyzeFile(fset *token.FileSet, path string) (fileReport, []funcReport, er
 	}
 
 	return report, funcs, nil
+}
+
+// behaviorPattern compiles the configured behaviour-test name fragments. An
+// empty pattern disables the behaviour minimum rather than matching everything.
+func behaviorPattern(cfg config) *regexp.Regexp {
+	pattern := strings.TrimSpace(cfg.TestPolicy.BehaviorNamePattern)
+	if pattern == "" {
+		return nil
+	}
+	compiled, err := regexp.Compile(pattern)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid test_policy.behavior_name_pattern %q: %v\n", pattern, err)
+		os.Exit(1)
+	}
+	return compiled
+}
+
+// classifyTests fills the per-package test inventory. A test is classified as
+// interop when its file is an interop/integration file, and as a behaviour test
+// when either the file is adversarial or its name names a rejection or failure
+// path. A behaviour test also counts as a regular test function.
+func classifyTests(pkgs map[string]*packageReport, funcs []funcReport, behavior *regexp.Regexp) {
+	for _, fn := range funcs {
+		if !fn.Test {
+			continue
+		}
+		pkg := pkgs[fn.Package]
+		if pkg == nil {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(fn.Name, "Fuzz"):
+			pkg.FuzzTargets++
+			pkg.TestFunctions++
+		case strings.HasPrefix(fn.Name, "Test"):
+			pkg.TestFunctions++
+			if strings.Contains(fn.Path, "interop") || strings.Contains(fn.Path, "integration") {
+				pkg.InteropTests++
+			}
+			if behavior != nil && (strings.Contains(fn.Path, "adversarial") || behavior.MatchString(fn.Name)) {
+				pkg.BehaviorTests++
+			}
+		}
+	}
+}
+
+// evaluateTestPolicy enforces the per-package test minima. A package may sit on
+// a recorded baseline instead of the absolute minimum, but the baseline is a
+// floor: dropping below it fails, rising above it must be recorded, and a
+// baseline that is no longer needed is reported so the debt list shrinks.
+func evaluateTestPolicy(cfg config, pkgs map[string]*packageReport) ([]string, []string) {
+	var failures []string
+	var warnings []string
+	policy := cfg.TestPolicy
+	if policy.MinTestFunctions == 0 && policy.MinBehaviorTests == 0 && policy.MinTestLOCRatio == 0 &&
+		len(policy.FuzzRequiredPackages) == 0 && len(policy.InteropRequiredPackages) == 0 {
+		return nil, nil
+	}
+	names := make([]string, 0, len(pkgs))
+	for name := range pkgs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		pkg := pkgs[name]
+		if pkg.LOC == 0 {
+			continue
+		}
+		short := trimPackageName(name)
+		if reason, ok := policy.Exemptions[name]; ok {
+			if !regexp.MustCompile(`20[0-9]{2}-[0-9]{2}-[0-9]{2}`).MatchString(reason) {
+				failures = append(failures, fmt.Sprintf("test exemption for %s must carry an ISO date and a reason", short))
+			}
+			continue
+		}
+		// Test function floor.
+		if _, recorded := policy.BaselineTestFunctions[name]; recorded {
+			baseline := policy.BaselineTestFunctions[name]
+			if pkg.TestFunctions < baseline {
+				failures = append(failures, fmt.Sprintf("test baseline regressed: %s has %d test functions (baseline %d)", short, pkg.TestFunctions, baseline))
+			}
+			if pkg.TestFunctions > baseline {
+				warnings = append(warnings, fmt.Sprintf("test baseline can be raised for %s: %d to %d", short, baseline, pkg.TestFunctions))
+			}
+			if baseline >= policy.MinTestFunctions && policy.MinTestFunctions > 0 {
+				warnings = append(warnings, fmt.Sprintf("test baseline for %s is at or above the policy minimum and can be deleted", short))
+			}
+		} else if policy.MinTestFunctions > 0 && pkg.TestFunctions < policy.MinTestFunctions {
+			failures = append(failures, fmt.Sprintf("test minimum not met: %s has %d test functions (minimum %d)", short, pkg.TestFunctions, policy.MinTestFunctions))
+		}
+
+		// Behaviour floor, gated to packages that carry real logic.
+		if policy.MinBehaviorTests > 0 && pkg.LOC >= policy.BehaviorMinProdLOC {
+			if _, recorded := policy.BaselineBehaviorTests[name]; recorded {
+				baseline := policy.BaselineBehaviorTests[name]
+				if pkg.BehaviorTests < baseline {
+					failures = append(failures, fmt.Sprintf("behaviour baseline regressed: %s has %d rejection/failure tests (baseline %d)", short, pkg.BehaviorTests, baseline))
+				}
+				if pkg.BehaviorTests > baseline {
+					warnings = append(warnings, fmt.Sprintf("behaviour baseline can be raised for %s: %d to %d", short, baseline, pkg.BehaviorTests))
+				}
+			} else if pkg.BehaviorTests < policy.MinBehaviorTests {
+				failures = append(failures, fmt.Sprintf("behaviour test minimum not met: %s has %d rejection/failure tests (minimum %d)", short, pkg.BehaviorTests, policy.MinBehaviorTests))
+			}
+		}
+
+		// Test/production ratio floor.
+		if policy.MinTestLOCRatio > 0 && pkg.LOC >= policy.RatioMinProdLOC {
+			ratio := float64(pkg.TestLOC) / float64(pkg.LOC)
+			if _, recorded := policy.BaselineTestLOCRatio[name]; recorded {
+				baseline := policy.BaselineTestLOCRatio[name]
+				if ratio+0.005 < baseline {
+					failures = append(failures, fmt.Sprintf("test ratio baseline regressed: %s is at %.2f (baseline %.2f)", short, ratio, baseline))
+				}
+				if baseline >= policy.MinTestLOCRatio {
+					warnings = append(warnings, fmt.Sprintf("test ratio baseline for %s is at or above the policy minimum and can be deleted", short))
+				}
+			} else if ratio < policy.MinTestLOCRatio {
+				failures = append(failures, fmt.Sprintf("test ratio below minimum: %s has %.2f test/production lines (minimum %.2f)", short, ratio, policy.MinTestLOCRatio))
+			}
+		}
+	}
+
+	for _, name := range policy.FuzzRequiredPackages {
+		if pkg := pkgs[name]; pkg == nil || pkg.FuzzTargets == 0 {
+			failures = append(failures, fmt.Sprintf("fuzz target missing: %s decodes external input and must carry one", trimPackageName(name)))
+		}
+	}
+	for _, name := range policy.InteropRequiredPackages {
+		if pkg := pkgs[name]; pkg == nil || pkg.InteropTests == 0 {
+			failures = append(failures, fmt.Sprintf("interop test missing: %s defines a wire contract and must carry an end-to-end test", trimPackageName(name)))
+		}
+	}
+
+	for name, reason := range policy.Exemptions {
+		pkg := pkgs[name]
+		if pkg == nil {
+			warnings = append(warnings, fmt.Sprintf("test exemption for %s matches no package (stale entry: %s)", trimPackageName(name), reason))
+		}
+	}
+	return failures, warnings
+}
+
+// trimPackageName shortens a relative package path for reports.
+func trimPackageName(name string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(name, "./"), "./")
+}
+
+func ensureTestExemption(target *map[string]string, key, val string) error {
+	if *target == nil {
+		*target = map[string]string{}
+	}
+	reason, err := parseString(val)
+	if err != nil {
+		return err
+	}
+	(*target)[strings.Trim(key, `"`)] = reason
+	return nil
 }
 
 func evaluate(cfg config, files []fileReport, funcs []funcReport, pkgs map[string]*packageReport) ([]string, []string) {
@@ -332,6 +571,10 @@ func evaluate(cfg config, files []fileReport, funcs []funcReport, pkgs map[strin
 
 	failures = append(failures, evaluateWarningBudget(cfg, warnings, prodFuncs)...)
 
+	testFailures, testWarnings := evaluateTestPolicy(cfg, pkgs)
+	failures = append(failures, testFailures...)
+	warnings = append(warnings, testWarnings...)
+
 	sort.Strings(failures)
 	sort.Strings(warnings)
 	return failures, warnings
@@ -364,6 +607,147 @@ func maxBranchPointFunction(funcs []funcReport) (funcReport, int) {
 	return maxFn, maxBranchPoints
 }
 
+// printTestBaseline emits the baseline block for every package that is still
+// below a policy minimum. Raising a baseline after real improvement is a
+// copy-paste of this output; lowering one is a deliberate, reviewed act.
+func printTestBaseline(cfg config, pkgs map[string]*packageReport) {
+	policy := cfg.TestPolicy
+	names := make([]string, 0, len(pkgs))
+	for name := range pkgs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var functions, behaviour, ratios []string
+	for _, name := range names {
+		pkg := pkgs[name]
+		if pkg.LOC == 0 {
+			continue
+		}
+		if _, exempt := policy.Exemptions[name]; exempt {
+			continue
+		}
+		quoted := `"` + name + `"`
+		if policy.MinTestFunctions > 0 && pkg.TestFunctions < policy.MinTestFunctions {
+			if recorded, ok := policy.BaselineTestFunctions[name]; !ok || pkg.TestFunctions > recorded {
+				functions = append(functions, fmt.Sprintf("%s = %d", quoted, pkg.TestFunctions))
+			}
+		}
+		if policy.MinBehaviorTests > 0 && pkg.LOC >= policy.BehaviorMinProdLOC && pkg.BehaviorTests < policy.MinBehaviorTests {
+			if recorded, ok := policy.BaselineBehaviorTests[name]; !ok || pkg.BehaviorTests > recorded {
+				behaviour = append(behaviour, fmt.Sprintf("%s = %d", quoted, pkg.BehaviorTests))
+			}
+		}
+		if policy.MinTestLOCRatio > 0 && pkg.LOC >= policy.RatioMinProdLOC {
+			ratio := float64(pkg.TestLOC) / float64(pkg.LOC)
+			if ratio < policy.MinTestLOCRatio {
+				if recorded, ok := policy.BaselineTestLOCRatio[name]; !ok || ratio > recorded+0.005 {
+					ratios = append(ratios, fmt.Sprintf("%s = %.2f", quoted, ratio))
+				}
+			}
+		}
+	}
+	printSection := func(header string, lines []string) {
+		fmt.Println(header)
+		if len(lines) == 0 {
+			fmt.Println("# (none)")
+		}
+		for _, line := range lines {
+			fmt.Println(line)
+		}
+		fmt.Println()
+	}
+	printSection("[test_policy.baseline_test_functions]", functions)
+	printSection("[test_policy.baseline_behavior_tests]", behaviour)
+	printSection("[test_policy.baseline_ratio]", ratios)
+}
+
+// printTestInventory reports what the test minima see: production and test
+// lines are kept apart, tests are counted per type, and every exemption is
+// printed with its reason so the debt stays visible.
+func printTestInventory(cfg config, pkgs map[string]*packageReport) {
+	if cfg.TestPolicy.MinTestFunctions == 0 && cfg.TestPolicy.MinBehaviorTests == 0 && cfg.TestPolicy.MinTestLOCRatio == 0 {
+		return
+	}
+	prodLOC, testLOC, tests, behavior, fuzz, interop, testFiles := 0, 0, 0, 0, 0, 0, 0
+	type shortfall struct {
+		name    string
+		missing string
+	}
+	var short []shortfall
+	for _, pkg := range pkgs {
+		prodLOC += pkg.LOC
+		testLOC += pkg.TestLOC
+		tests += pkg.TestFunctions
+		behavior += pkg.BehaviorTests
+		fuzz += pkg.FuzzTargets
+		interop += pkg.InteropTests
+		testFiles += pkg.TestFiles
+		if pkg.LOC == 0 {
+			continue
+		}
+		if _, ok := cfg.TestPolicy.Exemptions[pkg.Name]; ok {
+			continue
+		}
+		var missing []string
+		if cfg.TestPolicy.MinTestFunctions > 0 && pkg.TestFunctions < cfg.TestPolicy.MinTestFunctions {
+			missing = append(missing, fmt.Sprintf("tests %d<%d", pkg.TestFunctions, cfg.TestPolicy.MinTestFunctions))
+		}
+		if cfg.TestPolicy.MinBehaviorTests > 0 && pkg.LOC >= cfg.TestPolicy.BehaviorMinProdLOC && pkg.BehaviorTests < cfg.TestPolicy.MinBehaviorTests {
+			missing = append(missing, fmt.Sprintf("behaviour %d<%d", pkg.BehaviorTests, cfg.TestPolicy.MinBehaviorTests))
+		}
+		if len(missing) > 0 {
+			short = append(short, shortfall{name: trimPackageName(pkg.Name), missing: strings.Join(missing, " ")})
+		}
+	}
+	sort.Slice(short, func(i, j int) bool { return short[i].name < short[j].name })
+
+	fmt.Println("Test Inventory:")
+	ratio := 0.0
+	if prodLOC > 0 {
+		ratio = float64(testLOC) / float64(prodLOC)
+	}
+	fmt.Printf("- production_loc=%d test_loc=%d ratio=%.2f test_files=%d\n", prodLOC, testLOC, ratio, testFiles)
+	fmt.Printf("- types: unit+other=%d behaviour=%d fuzz=%d interop=%d\n", tests-behavior-fuzz, behavior, fuzz, interop)
+	if len(short) > 0 {
+		fmt.Printf("- below the policy minimum: %d (each sits on a recorded baseline)\n", len(short))
+		for _, item := range short {
+			fmt.Printf("    %s (%s)\n", item.name, item.missing)
+		}
+	} else {
+		fmt.Println("- below the policy minimum: 0")
+	}
+	onBaseline := 0
+	for _, pkg := range pkgs {
+		if _, ok := cfg.TestPolicy.BaselineTestFunctions[pkg.Name]; ok {
+			onBaseline++
+			continue
+		}
+		if _, ok := cfg.TestPolicy.BaselineBehaviorTests[pkg.Name]; ok {
+			onBaseline++
+			continue
+		}
+		if _, ok := cfg.TestPolicy.BaselineTestLOCRatio[pkg.Name]; ok {
+			onBaseline++
+		}
+	}
+	fmt.Printf("- policy minimum: tests>=%d behaviour>=%d (packages >=%d prod loc) ratio>=%.2f\n",
+		cfg.TestPolicy.MinTestFunctions, cfg.TestPolicy.MinBehaviorTests, cfg.TestPolicy.BehaviorMinProdLOC, cfg.TestPolicy.MinTestLOCRatio)
+	fmt.Printf("- on a baseline: %d packages\n", onBaseline)
+	if len(cfg.TestPolicy.Exemptions) > 0 {
+		names := make([]string, 0, len(cfg.TestPolicy.Exemptions))
+		for name := range cfg.TestPolicy.Exemptions {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		fmt.Printf("- exemptions: %d\n", len(names))
+		for _, name := range names {
+			fmt.Printf("    %s: %s\n", trimPackageName(name), cfg.TestPolicy.Exemptions[name])
+		}
+	}
+	fmt.Println()
+}
+
 func printReport(cfg config, files []fileReport, funcs []funcReport, pkgs map[string]*packageReport, failures, warnings []string) {
 	fmt.Println("Matrix Code Governance Report")
 	fmt.Println()
@@ -373,6 +757,8 @@ func printReport(cfg config, files []fileReport, funcs []funcReport, pkgs map[st
 		fmt.Printf("Warning budget: total<=%d max_branch_points<=%d\n", cfg.WarningBudget.MaxTotalWarnings, cfg.WarningBudget.MaxBranchPoints)
 	}
 	fmt.Println()
+
+	printTestInventory(cfg, pkgs)
 
 	fmt.Println("Top Packages:")
 	pkgList := make([]packageReport, 0, len(pkgs))
@@ -594,6 +980,34 @@ func parseStringList(raw string) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+func ensureTestBaselineInt(target *map[string]int, key, val string) error {
+	if *target == nil {
+		*target = map[string]int{}
+	}
+	n, err := atoi(val)
+	if err != nil {
+		return err
+	}
+	(*target)[strings.Trim(key, `"`)] = n
+	return nil
+}
+
+func ensureTestBaselineFloat(target *map[string]float64, key, val string) error {
+	if *target == nil {
+		*target = map[string]float64{}
+	}
+	f, err := atof(val)
+	if err != nil {
+		return err
+	}
+	(*target)[strings.Trim(key, `"`)] = f
+	return nil
+}
+
+func parseString(raw string) (string, error) {
+	return strings.Trim(strings.TrimSpace(raw), `"`), nil
 }
 
 func ensureMap(target *map[string]int, key, val string) error {

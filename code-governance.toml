@@ -1,3 +1,87 @@
+# ----------------------------------------------------------------------------
+# Test policy
+#
+# Size budgets measure production code only (test lines are counted separately),
+# so writing tests can never push a package towards a budget failure. These
+# minimums are the other half: they say what must be tested, not how large it may
+# grow. They deliberately ask for safety rather than volume.
+#
+# 2026-09-22: introduced together with the ACP elicitation work, after a survey
+# found 12 packages carrying production code with no tests at all. Nine of them
+# were covered in the same pass; the remaining exemptions below are visible debt,
+# not permission, and the checker reports any exemption that is no longer needed
+# so the list is forced to shrink.
+# ----------------------------------------------------------------------------
+[test_policy]
+# Every package with production code must carry at least this many Test*/Fuzz*
+# functions. Benchmarks and examples do not count: they verify nothing.
+min_test_functions_per_package = 2
+# Packages with real logic must also assert at least one rejection, failure or
+# degraded path. Happy-path-only packages are the ones that break in production.
+min_behavior_tests_per_package = 1
+behavior_min_prod_loc = 80
+# The SSOT list of name fragments that mark a behaviour test. Tune it here, not
+# in the checker.
+behavior_name_pattern = "Adversarial|Reject|Refus|Invalid|Hostile|Malformed|Nil|Missing|Unreadable|Unavailable|Unreachable|Failure|Failed|Denied|Cancel|Timeout|Unknown|Empty|Degenerate|Conflict|Cycle|Corrupt|Stale|Duplicate|Expired|Exhausted|Absent|Blank|Mismatch|Overflow|Unsupported"
+# Test lines must reach this fraction of production lines, but only for packages
+# big enough for the ratio to mean something.
+min_test_loc_ratio = 0.10
+ratio_min_prod_loc = 80
+# These decode bytes arriving from outside the process, so they must carry a fuzz
+# target: a green example-based suite never finds the malformed case nobody
+# imagined.
+fuzz_required_packages = ["pkg/zedacp", "pkg/zedacpstdio", "internal/providers/agents", "internal/providers/telegram", "internal/providers/runapi"]
+# These define a wire contract with a peer, so an in-process test is not enough:
+# they must carry an end-to-end test against a real or mock peer.
+interop_required_packages = ["internal/providers/agents"]
+
+[test_policy.exemptions]
+"cmd/matrix" = "2026-09-22: CLI flag and command wiring. Behaviour is verified end to end by the deploy preflight (doctor, readiness, vault smoke) and by the release install smoke, not by unit tests."
+"cmd/mock-agent" = "2026-09-22: test double for the interop tests, not shipped behaviour; it is exercised end to end through tests/integration."
+"internal/providers/fusefs" = "2026-09-22: requires a FUSE mount, which the local sandbox cannot provide; tests would be meaningless without a privileged runner."
+"internal/providers/signal" = "2026-09-22: process-level signal handling cannot be asserted without signalling the test binary itself; the shutdown path is verified through runtime_signal_received evidence in the release runbook."
+
+
+# Baselines for packages that do not yet reach the absolute minimum. A baseline
+# is a floor, never a licence: the checker fails if the package drops below it,
+# nags when the value rises above it so the number gets recorded, and reports the
+# entry for deletion once the policy minimum is met. So the list can only shrink.
+# Regenerate after real improvement with:
+#   go run ./scripts/code_governance.go -config code-governance.toml -print-test-baseline
+[test_policy.baseline_test_functions]
+"internal/logic/bootstrap" = 1
+"internal/logic/filesystem" = 1
+"internal/logic/providerdiag" = 1
+"internal/logic/readiness" = 1
+"internal/logic/sessioncmd" = 1
+"internal/logic/setupstate" = 1
+"internal/providers/a2astate" = 1
+"internal/providers/agentprobe" = 1
+"internal/providers/runpayload" = 1
+
+[test_policy.baseline_behavior_tests]
+"internal/logic/agentcatalog" = 0
+"internal/logic/agentdiscovery" = 0
+"internal/logic/frontendevents" = 0
+"internal/logic/logging" = 0
+"internal/logic/providerdiag" = 0
+"internal/logic/readiness" = 0
+"internal/logic/runnotifier" = 0
+"internal/logic/runtimebroker" = 0
+"internal/logic/sessioncmd" = 0
+"internal/logic/sessionview" = 0
+"internal/logic/sidecar" = 0
+"internal/providers/a2aclient" = 0
+"internal/providers/bolt" = 0
+"internal/providers/network" = 0
+"internal/providers/oslog" = 0
+"internal/providers/runtimevault" = 0
+"internal/providers/sidecarprojection" = 0
+
+[test_policy.baseline_ratio]
+"internal/logic/frontendevents" = 0.05
+
+
 [budgets]
 package_loc = 800
 file_loc = 280
