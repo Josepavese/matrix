@@ -114,7 +114,10 @@ the first-run path, but not a second operating system.
   API's optional key, the vault broker token, and the channel webhooks were
   reviewed by inspection, not attacked.
 - No load, soak, or resource-exhaustion testing beyond the archive budget.
-- `install.ps1` was packaged and checksummed but never executed: PowerShell is not
-  installed on this workstation.
+- `install.ps1` is now exercised, but only in part: its checksum and archive-path
+  guards are tested by `tests/install_ps1_security_test.ps1`, which runs locally
+  under PowerShell Core and on every push in the `install-ps1-security` CI job.
+  The rest of the script (release download, PAL home creation, PATH update) still
+  needs a Windows host.
 - The `gosec` run is a point-in-time snapshot; it is installed ad hoc and is not
   yet part of the preflight.
