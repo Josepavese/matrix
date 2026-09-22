@@ -100,3 +100,15 @@ jobs:
         distribution: goreleaser
         version: v2.15.3
         args: release --snapshot --clean
+
+  install-ps1-security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+    # The Windows installer is the one release artifact that cannot be exercised
+    # on this workstation. Its security-relevant guards (checksum verification
+    # and archive path rejection) are platform independent, so they are tested
+    # here; PowerShell ships with the runner image.
+    - name: Test install.ps1 security guards
+      shell: pwsh
+      run: ./tests/install_ps1_security_test.ps1
