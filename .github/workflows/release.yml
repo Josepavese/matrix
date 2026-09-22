@@ -27,7 +27,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tagged_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
-          git fetch origin main --depth=1
+          # The history must not be truncated: a shallow fetch makes the
+          # ancestor check below impossible to satisfy unless the tag is exactly
+          # the tip of main, which is not how release commits are tagged.
+          git fetch origin main
           if ! git merge-base --is-ancestor "$tagged_commit" origin/main; then
             echo "Tagged commit $tagged_commit is not reachable from origin/main." >&2
             exit 1
