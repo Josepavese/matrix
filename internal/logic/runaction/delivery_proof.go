@@ -178,19 +178,37 @@ func (s Service) watchRunTerminal(ctx context.Context, watch deliveryWatch) {
 	for {
 		select {
 		case <-watch.done:
+			s.recordLateProofIfRunStopped(watch)
 			return
 		case <-ctx.Done():
+			s.recordLateProofIfRunStopped(watch)
 			return
 		case <-ticker.C:
-			current, ok := s.currentRunningRun(watch.run)
-			if ok {
-				continue
+			if s.recordLateProofIfRunStopped(watch) {
+				return
 			}
-			watch.cancel()
-			watch.recordLate(current, deliveryState{ID: watch.deliveryID, Status: deliveryStatusLate, Message: "Live context delivery was still pending when the run completed.", Class: deliveryClassRunCompletedBeforeReturn}, false)
-			return
 		}
 	}
+}
+
+// recordLateProofIfRunStopped writes the terminal proof that a live-context
+// delivery never returned before its run ended, and reports whether the run had
+// stopped.
+//
+// It runs on every exit path of the watcher, not only on the tick: completing a run
+// cancels the watcher, and if that cancellation is observed before the next tick the
+// watcher used to leave without recording anything, after which the failed attach
+// recorded a cancellation instead. The proof an operator reads was therefore decided
+// by a race. Recording is idempotent - the recorder is wrapped in sync.Once - so a
+// tick and a cancellation cannot both produce an event.
+func (s Service) recordLateProofIfRunStopped(watch deliveryWatch) bool {
+	current, ok := s.currentRunningRun(watch.run)
+	if ok {
+		return false
+	}
+	watch.cancel()
+	watch.recordLate(current, deliveryState{ID: watch.deliveryID, Status: deliveryStatusLate, Message: "Live context delivery was still pending when the run completed.", Class: deliveryClassRunCompletedBeforeReturn}, false)
+	return true
 }
 
 func (s Service) currentRunningRun(run runtrace.Run) (runtrace.Run, bool) {

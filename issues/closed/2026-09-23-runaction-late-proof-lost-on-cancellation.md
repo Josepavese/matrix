@@ -1,7 +1,7 @@
 # Flaky: the terminal-proof watcher can exit without recording that a delivery was late
 
 Date observed: 2026-09-23
-Status: open, diagnosed, not fixed
+Status: fixed
 
 ## Symptom
 
@@ -70,9 +70,19 @@ A regression test should cancel the run's context immediately after the run
 completes and assert the event is still recorded — with the current code, that test
 fails deterministically instead of only under load.
 
-## Not done here, deliberately
+## Resolution (2026-09-23)
 
-No change was made to `internal/logic/runaction`: the delivery accounting path is
-subtle, the fix must not produce duplicate events, and it deserves its own change
-with the deterministic test above rather than a rushed edit at the end of an
-unrelated workstream.
+Fixed as suggested. `watchRunTerminal` now records the terminal proof on every exit
+path through `recordLateProofIfRunStopped`, which checks whether the run is still
+running before writing, and the ticker branch uses the same helper. The recording is
+idempotent by construction: the recorder is wrapped in `sync.Once`
+(`internal/logic/runaction/service.go:157-159`), so a tick and a cancellation cannot
+both produce an event — which is what made this safe to fix rather than merely
+plausible.
+
+`TestLateProofIsRecordedWhenTheWatcherLeavesOnCancellation` calls the exit-path
+helper with an already-completed run, so it is deterministic where the original race
+was not: it asserts the proof is written exactly once, and that a run still in flight
+is not marked. With the helper short-circuited to the old behaviour, the test fails.
+
+The original flaky test is unchanged and still passes.
