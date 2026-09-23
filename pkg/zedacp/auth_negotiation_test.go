@@ -113,13 +113,27 @@ func TestIsAuthenticationRequiredReadsTheStructuredSignal(t *testing.T) {
 	quiet := []error{
 		nil,
 		errors.New("authentication required"), // text only: v1 agents, handled by the caller's fallback
-		&RPCError{Code: -32000, Message: "nope", Data: map[string]any{"kind": "rate_limited"}},
-		&RPCError{Code: -32000, Message: "nope"},
+		&RPCError{Code: ErrCodeResourceNotFound, Message: "nope", Data: map[string]any{"kind": "rate_limited"}},
+		&RPCError{Code: ErrCodeMethodNotFound, Message: "nope"},
 	}
 	for _, err := range quiet {
 		if IsAuthenticationRequired(err) {
 			t.Fatalf("false positive on %v", err)
 		}
+	}
+}
+
+// TestIsAuthenticationRequiredReadsTheSpecificationErrorCode pins the shape the
+// ACP schema itself defines: -32000 is "Authentication required", in both
+// generations. A peer that sends only that code is gated even though its data
+// carries no marker, and an unrelated code stays quiet whatever its data says.
+func TestIsAuthenticationRequiredReadsTheSpecificationErrorCode(t *testing.T) {
+	bare := &RPCError{Code: ErrCodeAuthenticationRequired, Message: "nope"}
+	if !IsAuthenticationRequired(bare) {
+		t.Fatalf("the code the specification assigns to a gated request must be recognised: %v", bare)
+	}
+	if IsAuthenticationRequired(&RPCError{Code: ErrCodeInternal, Message: "nope"}) {
+		t.Fatal("an unrelated error code must stay quiet")
 	}
 }
 

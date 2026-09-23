@@ -165,7 +165,10 @@ func (c *acpConversationClient) Authenticate(ctx context.Context, methodID strin
 	methodID = strings.TrimSpace(methodID)
 	offered, ok := c.offeredAuthenticationMethod(methodID)
 	if !ok {
-		return fmt.Errorf("ACP agent does not advertise stable authentication method %q", methodID)
+		// The refusal has to be actionable: an operator who sees only "not
+		// advertised" cannot tell a method the agent never published from one
+		// Matrix filtered out because the opt-in is off.
+		return fmt.Errorf("ACP agent does not advertise authentication method %q as one Matrix can run: a terminal method requires agent.terminal_auth_enabled and a process backend, and a reserved type is never run", methodID)
 	}
 	switch offered.Type {
 	case zedacp.AuthMethodTypeAgent:
@@ -346,7 +349,7 @@ func (c *acpConversationClient) withAuthenticationRetry(ctx context.Context, op 
 	}
 	method, ok := c.retryAuthenticationMethod()
 	if !ok {
-		return fmt.Errorf("%w (the agent advertises no authentication method Matrix can run)", err)
+		return fmt.Errorf("%w (the agent advertises no authentication method Matrix can run: a terminal method requires agent.terminal_auth_enabled and a process backend, and a reserved type is never run)", err)
 	}
 	if authErr := c.Authenticate(ctx, method.ID); authErr != nil {
 		return fmt.Errorf("authentication required; method %q failed: %w", method.ID, authErr)

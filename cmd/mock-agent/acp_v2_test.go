@@ -280,3 +280,190 @@ func TestTerminalLoginRequestedNeedsTheExactFlag(t *testing.T) {
 		t.Fatal("an empty argument vector must not select the login program")
 	}
 }
+
+// ----------------------------------------------------------------------------
+// The authentication types, the logout gate and the observed capability keys
+// ----------------------------------------------------------------------------
+
+// TestACPv2AgentLoginAuthenticatesTheRunningProcessAndLogoutGatesItAgain is the
+// protocol-driven flow end to end at the peer: an agent-type method is completed
+// by auth/login on the running process, the gated prompt then succeeds, and
+// auth/logout puts the gate back — which is what the specification says happens
+// to authentication-gated requests after a logout.
+func TestACPv2AgentLoginAuthenticatesTheRunningProcessAndLogoutGatesItAgain(t *testing.T) {
+	t.Setenv(envAuthType, authTypeAgent)
+	peer, logPath, credentialPath := newTestV2Peer(t)
+
+	resp := peer.initialize(initializeRequest(1, `{"protocolVersion":2,"capabilities":{},"info":{"name":"matrix"}}`))
+	if resp.Error != nil {
+		t.Fatalf("the handshake must be accepted: %+v", resp.Error)
+	}
+	var result struct {
+		AuthMethods []struct {
+			Type     string `json:"type"`
+			MethodID string `json:"methodId"`
+		} `json:"authMethods"`
+	}
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		t.Fatalf("decode initialize result: %v", err)
+	}
+	if len(result.AuthMethods) != 1 || result.AuthMethods[0].Type != authTypeAgent || result.AuthMethods[0].MethodID != agentMethodID {
+		t.Fatalf("the agent type must advertise exactly the agent method, got %+v", result.AuthMethods)
+	}
+
+	if gated := peer.prompt(promptRequest(2, "hello")); gated.Error == nil || gated.Error.Code != -32000 {
+		t.Fatalf("an unauthenticated prompt must be gated with -32000, got %+v", gated)
+	}
+
+	login := peer.handle(jsonRPCRequest{ID: 3, Method: "auth/login", Params: json.RawMessage(`{"methodId":"agent-login"}`)})
+	if login.Error != nil {
+		t.Fatalf("auth/login for the advertised agent method must succeed: %+v", login.Error)
+	}
+	if accepted := peer.prompt(promptRequest(4, "hello again")); accepted.Error != nil {
+		t.Fatalf("the process must be authenticated after the login, got %+v", accepted.Error)
+	}
+
+	logout := peer.handle(jsonRPCRequest{ID: 5, Method: "auth/logout", Params: json.RawMessage(`{}`)})
+	if logout.Error != nil {
+		t.Fatalf("auth/logout must succeed while a method is advertised: %+v", logout.Error)
+	}
+	if gatedAgain := peer.prompt(promptRequest(6, "hello after logout")); gatedAgain.Error == nil || gatedAgain.Error.Code != -32000 {
+		t.Fatalf("the gate must come back after a logout, got %+v", gatedAgain)
+	}
+
+	if fileExists(credentialPath) {
+		t.Fatal("the agent-handled flow must not leave a terminal credential")
+	}
+	records := readPeerRecords(t, logPath)
+	methods := []string{}
+	for _, record := range records {
+		if record.Kind == "request" {
+			methods = append(methods, record.Method)
+		}
+	}
+	want := []string{"session/prompt", "auth/login", "session/prompt", "auth/logout", "session/prompt"}
+	if strings.Join(methods, ",") != strings.Join(want, ",") {
+		t.Fatalf("peer saw methods %v, want %v", methods, want)
+	}
+}
+
+// TestACPv2GatedFailureCanBeTheSpecificationCodeAlone pins the shape the
+// specification defines: -32000 with no data at all. A client that only reads a
+// marker out of the data would miss this gate entirely.
+func TestACPv2GatedFailureCanBeTheSpecificationCodeAlone(t *testing.T) {
+	t.Setenv(envAuthType, authTypeAgent)
+	t.Setenv(envErrorShape, errorShapeCode)
+	peer, _, _ := newTestV2Peer(t)
+
+	gated := peer.prompt(promptRequest(1, "hello"))
+	if gated.Error == nil || gated.Error.Code != -32000 {
+		t.Fatalf("the gate must carry the specification's code, got %+v", gated.Error)
+	}
+	if gated.Error.Data != nil {
+		t.Fatalf("the code-only shape must not carry data, got %+v", gated.Error.Data)
+	}
+}
+
+// TestACPv2AdvertisesOnlyTheMethodsItsTypeAllows keeps each type honest: the
+// agent type never offers a terminal method (even when the client advertised the
+// capability) and the terminal type never offers a wire login.
+func TestACPv2AdvertisesOnlyTheMethodsItsTypeAllows(t *testing.T) {
+	cases := []struct {
+		authType string
+		want     []string
+	}{
+		{authType: authTypeAgent, want: []string{authTypeAgent}},
+		{authType: authTypeTerminal, want: []string{"terminal"}},
+		{authType: authTypeBoth, want: []string{authTypeAgent, "terminal"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.authType, func(t *testing.T) {
+			t.Setenv(envAuthType, tc.authType)
+			peer, _, _ := newTestV2Peer(t)
+			resp := peer.initialize(initializeRequest(1, `{"protocolVersion":2,"capabilities":{"auth":{"terminal":{}}},"info":{"name":"matrix"}}`))
+			if resp.Error != nil {
+				t.Fatalf("handshake refused: %+v", resp.Error)
+			}
+			var result struct {
+				AuthMethods []struct {
+					Type string `json:"type"`
+				} `json:"authMethods"`
+			}
+			if err := json.Unmarshal(resp.Result, &result); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			got := make([]string, 0, len(result.AuthMethods))
+			for _, method := range result.AuthMethods {
+				got = append(got, method.Type)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("advertised types %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	t.Setenv(envAuthType, authTypeTerminal)
+	peer, _, _ := newTestV2Peer(t)
+	resp := peer.initialize(initializeRequest(1, `{"protocolVersion":2,"capabilities":{},"info":{"name":"matrix"}}`))
+	if resp.Error != nil {
+		t.Fatalf("handshake refused: %+v", resp.Error)
+	}
+	var withoutCapability struct {
+		AuthMethods []json.RawMessage `json:"authMethods"`
+	}
+	if err := json.Unmarshal(resp.Result, &withoutCapability); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(withoutCapability.AuthMethods) != 0 {
+		t.Fatalf("a client without the capability must not be offered a terminal method: %+v", withoutCapability.AuthMethods)
+	}
+}
+
+// TestACPv2RecordsTheCapabilityKeysTheClientAdvertised is the observation the
+// client-capability audit needs: the peer reports which capability names it was
+// allowed to act on, so a request that advertises a removed surface is visible
+// instead of being inferred from the client code.
+func TestACPv2RecordsTheCapabilityKeysTheClientAdvertised(t *testing.T) {
+	peer, logPath, _ := newTestV2Peer(t)
+
+	resp := peer.initialize(initializeRequest(1, `{"protocolVersion":2,"capabilities":{"auth":{"terminal":{}},"elicitation":{"form":{}}},"info":{"name":"matrix"}}`))
+	if resp.Error != nil {
+		t.Fatalf("handshake refused: %+v", resp.Error)
+	}
+	seen, ok := findPeerRecord(readPeerRecords(t, logPath), "initialize_seen")
+	if !ok {
+		t.Fatal("the handshake must be recorded")
+	}
+	keys, _ := seen.Details["capabilityKeys"].([]interface{})
+	if len(keys) != 2 || keys[0] != "auth" || keys[1] != "elicitation" {
+		t.Fatalf("the advertised capability keys must be recorded, got %+v", seen.Details["capabilityKeys"])
+	}
+}
+
+// TestACPv2ImplementsTheSessionSurfaceItAdvertises keeps the peer honest about
+// capabilities.session: the baseline methods it claims are the ones it answers.
+func TestACPv2ImplementsTheSessionSurfaceItAdvertises(t *testing.T) {
+	peer, logPath, _ := newTestV2Peer(t)
+
+	for id, method := range map[int]string{1: "session/list", 2: "session/resume", 3: "session/close"} {
+		resp := peer.handle(jsonRPCRequest{ID: id, Method: method, Params: json.RawMessage(`{"sessionId":"mock-session-id"}`)})
+		if resp.Error != nil {
+			t.Fatalf("%s must be answered, got %+v", method, resp.Error)
+		}
+		if len(resp.Result) == 0 {
+			t.Fatalf("%s must answer with a result, got none", method)
+		}
+	}
+	records := readPeerRecords(t, logPath)
+	for _, method := range []string{"session/list", "session/resume", "session/close"} {
+		found := false
+		for _, record := range records {
+			if record.Kind == "request" && record.Method == method {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s must be recorded as received: %+v", method, records)
+		}
+	}
+}

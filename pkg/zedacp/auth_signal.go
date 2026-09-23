@@ -28,7 +28,7 @@ func IsAuthenticationRequired(err error) bool {
 	if !errors.As(err, &rpcErr) || rpcErr == nil {
 		return false
 	}
-	return marksAuthenticationRequired(rpcErr.Data, 0)
+	return rpcErr.Code == ErrCodeAuthenticationRequired || marksAuthenticationRequired(rpcErr.Data, 0)
 }
 
 const (

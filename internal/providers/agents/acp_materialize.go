@@ -41,6 +41,7 @@ func (c *acpConversationClient) materializeRemoteSessionOnce(ctx context.Context
 	return info, middleware.ConversationMetadata{}, nil
 }
 
+// createACPRemoteSession asks the peer for a new session.
 func (c *acpConversationClient) createACPRemoteSession(ctx context.Context, req middleware.SessionMaterializeRequest) (*acpNewSessionResponse, error) {
 	cwd := strings.TrimSpace(req.WorkspacePath)
 	if cwd == "" {

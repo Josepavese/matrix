@@ -687,3 +687,126 @@ func TestInitializeConversationRejectsAnUnsupportedNegotiatedVersion(t *testing.
 		t.Fatalf("an unsupported negotiated version must fail closed, got %v", err)
 	}
 }
+
+// ----------------------------------------------------------------------------
+// Logging out of a version 2 agent
+// ----------------------------------------------------------------------------
+
+// TestLogoutCapabilityFollowsTheAdvertisedMethodsOnVersionTwo pins where the
+// logout capability comes from in each generation. Version 1 gated logout behind
+// a capability marker; version 2 has no marker at all and instead makes a
+// non-empty authMethods list an obligation to implement both auth/login and
+// auth/logout. Reading only the version 1 marker refused to log out of a
+// conforming version 2 agent, and the empty-methods cases must stay refused
+// because the specification forbids calling either method then.
+func TestLogoutCapabilityFollowsTheAdvertisedMethodsOnVersionTwo(t *testing.T) {
+	agentMethod := []acpAuthMethod{{Type: zedacp.AuthMethodTypeAgent, MethodID: "agent-login", Name: "Agent login"}}
+	cases := []struct {
+		name string
+		resp *acpInitializeResponse
+		want bool
+	}{
+		{
+			name: "version 2 with advertised methods",
+			resp: &acpInitializeResponse{ProtocolVersion: zedacp.ProtocolVersionV2, AuthMethods: agentMethod},
+			want: true,
+		},
+		{
+			name: "version 2 without advertised methods",
+			resp: &acpInitializeResponse{ProtocolVersion: zedacp.ProtocolVersionV2},
+		},
+		{
+			name: "version 1 with the logout marker",
+			resp: &acpInitializeResponse{
+				ProtocolVersion: zedacp.ProtocolVersionV1,
+				Capabilities:    map[string]interface{}{"auth": map[string]interface{}{"logout": map[string]interface{}{}}},
+			},
+			want: true,
+		},
+		{
+			name: "version 1 without the logout marker",
+			resp: &acpInitializeResponse{ProtocolVersion: zedacp.ProtocolVersionV1},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			features := acpFeatureCapabilitiesFromDeps(tc.resp, middleware.ConversationFactoryDeps{AgentID: "codex"})
+			if features.logout != tc.want {
+				t.Fatalf("logout available=%v, want %v", features.logout, tc.want)
+			}
+		})
+	}
+}
+
+// TestLogoutReachesAVersionTwoAgentThatAdvertisesMethods is the call half: the
+// capability above must actually let the logout through to the client.
+func TestLogoutReachesAVersionTwoAgentThatAdvertisesMethods(t *testing.T) {
+	fake := newScriptedAuthACPClient(zedacp.ProtocolVersionV2)
+	conversation := &acpConversationClient{
+		client: fake,
+		deps:   middleware.ConversationFactoryDeps{AgentID: "codex"},
+		featureCapabilities: acpFeatureCapabilitiesFromDeps(
+			&acpInitializeResponse{
+				ProtocolVersion: zedacp.ProtocolVersionV2,
+				AuthMethods:     []acpAuthMethod{{Type: zedacp.AuthMethodTypeAgent, MethodID: "agent-login"}},
+			}, middleware.ConversationFactoryDeps{AgentID: "codex"}),
+	}
+	if err := conversation.Logout(context.Background()); err != nil {
+		t.Fatalf("a version 2 agent that advertises authMethods must be loggable-out: %v", err)
+	}
+	if fake.logouts != 1 {
+		t.Fatalf("logout must reach the agent exactly once, got %d", fake.logouts)
+	}
+}
+
+// TestLogoutStaysRefusedWhenNoMethodIsAdvertised keeps the other direction: with
+// no advertised method the specification forbids the call, so it must not reach
+// the wire.
+func TestLogoutStaysRefusedWhenNoMethodIsAdvertised(t *testing.T) {
+	fake := newScriptedAuthACPClient(zedacp.ProtocolVersionV2)
+	conversation := &acpConversationClient{
+		client:              fake,
+		deps:                middleware.ConversationFactoryDeps{AgentID: "codex"},
+		featureCapabilities: acpFeatureCapabilitiesFromDeps(&acpInitializeResponse{ProtocolVersion: zedacp.ProtocolVersionV2}, middleware.ConversationFactoryDeps{AgentID: "codex"}),
+	}
+	if err := conversation.Logout(context.Background()); err == nil {
+		t.Fatal("an agent that advertises no method must not be asked to log out")
+	}
+	if fake.logouts != 0 {
+		t.Fatalf("a refused logout must not reach the agent, got %d calls", fake.logouts)
+	}
+}
+
+// TestAuthenticationRefusalNamesTheOptInThatWouldRunATerminalMethod covers the
+// actionable half of the operator opt-in: a peer whose only method is terminal,
+// with terminal authentication off, must be refused with the setting that would
+// enable it rather than a message that reads as if the agent published nothing.
+func TestAuthenticationRefusalNamesTheOptInThatWouldRunATerminalMethod(t *testing.T) {
+	client := &acpConversationClient{
+		client:      newScriptedAuthACPClient(zedacp.ProtocolVersionV2),
+		deps:        middleware.ConversationFactoryDeps{AgentID: "codex", Process: &recordingProcess{}},
+		endpoint:    middleware.ProtocolEndpoint{Command: "/opt/codex-acp"},
+		authMethods: []acpAuthMethod{terminalMethod()},
+	}
+	err := client.Authenticate(context.Background(), "terminal-login")
+	if err == nil || !strings.Contains(err.Error(), "agent.terminal_auth_enabled") {
+		t.Fatalf("the refusal must name the opt-in that would run the method: %v", err)
+	}
+
+	gated := newScriptedAuthACPClient(zedacp.ProtocolVersionV2)
+	gated.failPrompts(99, authenticationRequiredError())
+	conversation := &acpConversationClient{
+		client:         gated,
+		deps:           middleware.ConversationFactoryDeps{AgentID: "codex", Process: &recordingProcess{}},
+		endpoint:       middleware.ProtocolEndpoint{Command: "/opt/codex-acp"},
+		authMethods:    []acpAuthMethod{terminalMethod()},
+		loadedSessions: map[string]bool{},
+	}
+	_, turnErr := conversation.ExecuteTurn(context.Background(), middleware.ConversationTurn{AgentID: "codex", Message: "hello"})
+	if turnErr == nil || !strings.Contains(turnErr.Error(), "agent.terminal_auth_enabled") {
+		t.Fatalf("a gated turn with no runnable method must name the opt-in: %v", turnErr)
+	}
+	if count := gated.promptCount(); count != 1 {
+		t.Fatalf("no retry may happen without a runnable method, got %d prompts", count)
+	}
+}

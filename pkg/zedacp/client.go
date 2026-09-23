@@ -323,17 +323,9 @@ func logoutMethodName(version int) string {
 	return "logout"
 }
 
-func (c *Client) loginMethod() string {
-	return authenticationMethodName(c.AuthenticatedProtocolVersion())
-}
-
-func (c *Client) logoutMethod() string {
-	return logoutMethodName(c.AuthenticatedProtocolVersion())
-}
-
 func (c *Client) Authenticate(ctx context.Context, methodID string) error {
 	params := map[string]interface{}{"methodId": methodID}
-	_, err := c.doCall(ctx, c.loginMethod(), params)
+	_, err := c.doCall(ctx, authenticationMethodName(c.AuthenticatedProtocolVersion()), params)
 	return err
 }
 
@@ -506,7 +498,7 @@ func (c *Client) DisableProvider(ctx context.Context, req DisableProvidersReques
 }
 
 func (c *Client) Logout(ctx context.Context, req LogoutRequest) (*LogoutResponse, error) {
-	resp, err := c.doCall(ctx, c.logoutMethod(), req)
+	resp, err := c.doCall(ctx, logoutMethodName(c.AuthenticatedProtocolVersion()), req)
 	if err != nil {
 		return nil, err
 	}

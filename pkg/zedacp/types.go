@@ -77,13 +77,26 @@ func (r InitializeRequest) MarshalJSON() ([]byte, error) {
 	if r.ProtocolVersion >= ProtocolVersionV2 {
 		payload["info"] = r.ClientInfo
 		if r.ClientCapabilities != nil {
-			payload["capabilities"] = r.ClientCapabilities
+			// Version 2 deleted the client file system and terminal execution
+			// surfaces, so the capabilities that describe them are not sent to a
+			// version 2 agent: advertising them would claim a surface that
+			// generation does not define.
+			capabilities := *r.ClientCapabilities
+			capabilities.Fs, capabilities.Terminal, capabilities.Session = nil, false, nil
+			payload["capabilities"] = capabilities
 		}
 		return json.Marshal(payload)
 	}
 	payload["clientInfo"] = r.ClientInfo
 	if r.ClientCapabilities != nil {
-		payload["clientCapabilities"] = r.ClientCapabilities
+		// Version 1 defines clientCapabilities.auth.terminal as a boolean, and
+		// Matrix runs terminal methods only on a version 2 connection, so the
+		// capability is not advertised here: claiming a flow this client would
+		// refuse is worse than claiming nothing, and an object where version 1
+		// reads a boolean would not be understood as support anyway.
+		capabilities := *r.ClientCapabilities
+		capabilities.Auth = nil
+		payload["clientCapabilities"] = capabilities
 	}
 	return json.Marshal(payload)
 }
@@ -245,7 +258,7 @@ type LoadSessionRequest struct {
 func (r LoadSessionRequest) MarshalJSON() ([]byte, error) {
 	type wireRequest LoadSessionRequest
 	out := wireRequest(r)
-	out.McpServers = nonNilMCPServers(r.McpServers)
+	out.McpServers = nonNil(r.McpServers)
 	return json.Marshal(out)
 }
 
@@ -266,7 +279,7 @@ type ResumeSessionRequest struct {
 func (r ResumeSessionRequest) MarshalJSON() ([]byte, error) {
 	type wireRequest ResumeSessionRequest
 	out := wireRequest(r)
-	out.McpServers = nonNilMCPServers(r.McpServers)
+	out.McpServers = nonNil(r.McpServers)
 	return json.Marshal(out)
 }
 
@@ -287,7 +300,7 @@ type ForkSessionRequest struct {
 func (r ForkSessionRequest) MarshalJSON() ([]byte, error) {
 	type wireRequest ForkSessionRequest
 	out := wireRequest(r)
-	out.McpServers = nonNilMCPServers(r.McpServers)
+	out.McpServers = nonNil(r.McpServers)
 	return json.Marshal(out)
 }
 

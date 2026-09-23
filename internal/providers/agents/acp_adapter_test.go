@@ -7,6 +7,7 @@ import (
 
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/exec"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 func TestSupportsSessionCapabilityAcceptsZedObjectStyle(t *testing.T) {
@@ -20,13 +21,14 @@ func TestSupportsSessionCapabilityAcceptsZedObjectStyle(t *testing.T) {
 		},
 	}
 
-	if !supportsSessionCapability(resp, "list") {
+	caps := acpSessionCapabilities(resp)
+	if !caps.List {
 		t.Fatalf("expected object-style list capability")
 	}
-	if !supportsSessionCapability(resp, "close") {
+	if !caps.Close {
 		t.Fatalf("expected object-style close capability")
 	}
-	if !supportsSessionCapability(resp, "delete") {
+	if !caps.Delete {
 		t.Fatalf("expected object-style delete capability")
 	}
 }
@@ -444,5 +446,107 @@ func TestACPProtocolCapabilitiesExposeStableSurface(t *testing.T) {
 	}
 	if !report.Content["image"].Supported || report.Content["audio"].Supported {
 		t.Fatalf("content capability gates lost: %#v", report.Content)
+	}
+}
+
+// TestACPSessionCapabilitiesComeFromTheVersionTwoSurface is the version 2 half
+// of the session capability read: version 2 makes the baseline methods implicit
+// in capabilities.session, nests the optional markers under it, and removed
+// session/load. Reading only the version 1 markers reported every one of them as
+// unsupported, so a conforming version 2 agent could never be listed, resumed or
+// closed.
+func TestACPSessionCapabilitiesComeFromTheVersionTwoSurface(t *testing.T) {
+	resp := &acpInitializeResponse{
+		ProtocolVersion: zedacp.ProtocolVersionV2,
+		Capabilities: map[string]interface{}{
+			"session": map[string]interface{}{
+				"delete":                map[string]interface{}{},
+				"additionalDirectories": map[string]interface{}{},
+			},
+		},
+	}
+	caps := acpSessionCapabilities(resp)
+	if !caps.List || !caps.Resume || !caps.Close || !caps.Cancel || !caps.InfoUpdate {
+		t.Fatalf("capabilities.session advertises the baseline methods: %#v", caps)
+	}
+	if !caps.Delete || !caps.AdditionalDirectories {
+		t.Fatalf("the nested optional markers must be read: %#v", caps)
+	}
+	if caps.Load {
+		t.Fatalf("version 2 removed session/load and must not report it: %#v", caps)
+	}
+	if caps.Fork {
+		t.Fatalf("fork stays unsupported until the unstable marker is advertised: %#v", caps)
+	}
+}
+
+// TestACPSessionCapabilitiesReportNoSurfaceWhenVersionTwoOmitsIt is the other
+// half: an agent that omits capabilities.session says it has no session surface,
+// so nothing may be reported as supported.
+func TestACPSessionCapabilitiesReportNoSurfaceWhenVersionTwoOmitsIt(t *testing.T) {
+	resp := &acpInitializeResponse{
+		ProtocolVersion: zedacp.ProtocolVersionV2,
+		Capabilities: map[string]interface{}{
+			// A version 1 spelling in a version 2 reply is not read: the reply is
+			// decoded by the generation that produced it.
+			"sessionCapabilities": map[string]interface{}{"list": map[string]interface{}{}},
+		},
+	}
+	caps := acpSessionCapabilities(resp)
+	if caps.List || caps.Resume || caps.Close {
+		t.Fatalf("no session surface was advertised: %#v", caps)
+	}
+}
+
+// TestSessionNotFoundIsRecognisedFromTheSpecificationErrorCode pins the second
+// structured error shape: both generations assign -32002 to "resource not
+// found", which is how a peer reports a session that is gone, so recovery must
+// not depend on the wording of the message.
+func TestSessionNotFoundIsRecognisedFromTheSpecificationErrorCode(t *testing.T) {
+	coded := &zedacp.RPCError{Code: zedacp.ErrCodeResourceNotFound, Message: "no such session"}
+	if !isSessionNotFoundError(coded) {
+		t.Fatalf("the resource-not-found code must be recognised: %v", coded)
+	}
+	if isSessionNotFoundError(&zedacp.RPCError{Code: zedacp.ErrCodeInternal, Message: "boom"}) {
+		t.Fatal("an unrelated error code must not be read as a lost session")
+	}
+}
+
+// TestACPProtocolCapabilitiesFollowTheNegotiatedGeneration pins the card against
+// the generation the connection agreed on: version 1 names and surfaces for a
+// version 1 connection, and the version 2 names with the removed surfaces
+// reported unsupported for a version 2 one.
+func TestACPProtocolCapabilitiesFollowTheNegotiatedGeneration(t *testing.T) {
+	v1 := &acpConversationClient{
+		client:              newScriptedAuthACPClient(zedacp.ProtocolVersionV1),
+		endpoint:            middleware.ProtocolEndpoint{Transport: "stdio"},
+		authMethods:         []acpAuthMethod{{Type: zedacp.AuthMethodTypeAgent, MethodID: "agent-login"}},
+		featureCapabilities: acpFeatureCapabilities{fsRead: true, terminal: true, logout: true},
+		sessionCapabilities: middleware.ConversationSessionCapabilities{List: true, Load: true},
+	}
+	v1Report := v1.ProtocolCapabilities()
+	for _, operation := range []string{"authenticate", "logout", "session/load", "session/set_mode", "fs/read_text_file", "terminal/create"} {
+		if !v1Report.Operations[operation].Supported {
+			t.Fatalf("a version 1 connection reports %s as supported: %#v", operation, v1Report.Operations)
+		}
+	}
+
+	v2 := &acpConversationClient{
+		client:              newScriptedAuthACPClient(zedacp.ProtocolVersionV2),
+		endpoint:            middleware.ProtocolEndpoint{Transport: "stdio"},
+		authMethods:         []acpAuthMethod{{Type: zedacp.AuthMethodTypeAgent, MethodID: "agent-login"}},
+		featureCapabilities: acpFeatureCapabilities{fsRead: true, terminal: true, logout: true},
+		sessionCapabilities: middleware.ConversationSessionCapabilities{List: true, Resume: true, Close: true},
+	}
+	v2Report := v2.ProtocolCapabilities()
+	for _, operation := range []string{"auth/login", "auth/logout", "session/list", "session/resume", "session/close"} {
+		if !v2Report.Operations[operation].Supported {
+			t.Fatalf("a version 2 connection reports %s as supported: %#v", operation, v2Report.Operations)
+		}
+	}
+	for _, removed := range []string{"session/load", "session/set_mode", "fs/read_text_file", "terminal/create", "authenticate"} {
+		if descriptor, ok := v2Report.Operations[removed]; ok && descriptor.Supported {
+			t.Fatalf("version 2 removed %s: %#v", removed, descriptor)
+		}
 	}
 }

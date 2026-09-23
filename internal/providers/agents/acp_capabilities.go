@@ -2,38 +2,24 @@ package agents
 
 import "github.com/Josepavese/matrix/internal/middleware"
 
-func supportsLoadSession(resp *acpInitializeResponse) bool {
-	if resp == nil || resp.Capabilities == nil {
-		return false
-	}
-	enabled, _ := resp.Capabilities["loadSession"].(bool)
-	return enabled
-}
-
-func supportsSessionCapability(resp *acpInitializeResponse, name string) bool {
-	if resp == nil || resp.Capabilities == nil {
-		return false
-	}
-	caps, _ := resp.Capabilities["sessionCapabilities"].(map[string]interface{})
-	if caps == nil {
-		return false
-	}
-	return capabilityEnabled(caps[name])
-}
-
 func capabilityEnabled(raw interface{}) bool {
 	value, ok := raw.(map[string]interface{})
 	return ok && value != nil
 }
 
+// acpSessionCapabilities reads what the initialize response advertised. The
+// generation difference is resolved by pkg/zedacp, which knows both the version
+// 1 per-method markers and version 2's implicit baseline, so this adapter never
+// has to guess which generation answered.
 func acpSessionCapabilities(resp *acpInitializeResponse) middleware.ConversationSessionCapabilities {
-	list := supportsSessionCapability(resp, "list")
-	load := supportsLoadSession(resp)
-	closeSession := supportsSessionCapability(resp, "close")
-	deleteSession := supportsSessionCapability(resp, "delete")
-	resume := supportsSessionCapability(resp, "resume")
-	fork := supportsSessionCapability(resp, "fork")
-	additionalDirectories := supportsSessionCapability(resp, "additionalDirectories")
+	surface := resp.SessionSurface()
+	list := surface.List
+	load := surface.Load
+	closeSession := surface.Close
+	deleteSession := surface.Delete
+	resume := surface.Resume
+	fork := surface.Fork
+	additionalDirectories := surface.AdditionalDirectories
 	return middleware.ConversationSessionCapabilities{
 		List:                  list,
 		Load:                  load,

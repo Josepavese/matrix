@@ -14,7 +14,7 @@ type NewSessionRequest struct {
 func (r NewSessionRequest) MarshalJSON() ([]byte, error) {
 	type wireRequest NewSessionRequest
 	out := wireRequest(r)
-	out.McpServers = nonNilMCPServers(r.McpServers)
+	out.McpServers = nonNil(r.McpServers)
 	return json.Marshal(out)
 }
 
@@ -34,42 +34,24 @@ func (c McpServerConfig) MarshalJSON() ([]byte, error) {
 	case "http", "sse":
 		out["type"] = c.Type
 		out["url"] = c.URL
-		out["headers"] = nonNilHeaders(c.Headers)
+		out["headers"] = nonNil(c.Headers)
 	default:
 		if c.Type != "" && c.Type != "stdio" {
 			out["type"] = c.Type
 		}
 		out["command"] = c.Command
-		out["args"] = nonNilStrings(c.Args)
-		out["env"] = nonNilEnvVars(c.Env)
+		out["args"] = nonNil(c.Args)
+		out["env"] = nonNil(c.Env)
 	}
 	return json.Marshal(out)
 }
 
-func nonNilStrings(values []string) []string {
+// nonNil emits an empty slice where a nil one was supplied, because these
+// fields are required on the wire in both generations: an absent array is not
+// the same as an empty one to the agents that read them.
+func nonNil[T any](values []T) []T {
 	if values == nil {
-		return []string{}
-	}
-	return values
-}
-
-func nonNilEnvVars(values []EnvVar) []EnvVar {
-	if values == nil {
-		return []EnvVar{}
-	}
-	return values
-}
-
-func nonNilHeaders(values []Header) []Header {
-	if values == nil {
-		return []Header{}
-	}
-	return values
-}
-
-func nonNilMCPServers(values []McpServerConfig) []McpServerConfig {
-	if values == nil {
-		return []McpServerConfig{}
+		return []T{}
 	}
 	return values
 }

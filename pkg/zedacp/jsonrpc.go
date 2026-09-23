@@ -37,6 +37,14 @@ const (
 	// ErrCodeInvalidRequest is returned when an inbound frame cannot be decoded
 	// into a request at all.
 	ErrCodeInvalidRequest = -32600
+	// ErrCodeAuthenticationRequired is ACP's "authentication is required before
+	// this operation can be performed". Both generations define it, so a gated
+	// request is recognised from the code the specification assigns it and not
+	// only from the shape of the error data.
+	ErrCodeAuthenticationRequired = -32000
+	// ErrCodeResourceNotFound is ACP's "a given resource, such as a file, was
+	// not found", which is how both generations report a session that is gone.
+	ErrCodeResourceNotFound = -32002
 )
 
 // RPCError lets request handlers return protocol-correct JSON-RPC error codes.

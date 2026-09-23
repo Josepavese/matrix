@@ -13,25 +13,31 @@ import (
 //
 // The default mock is a version 1 peer: that is what the elicitation and
 // terminal interop tests drive. This file turns the same binary into a version 2
-// peer when it is started with --acp-v2, because the v2 authentication contract
-// needs a peer that really refuses what v2 forbids rather than a fake that
-// agrees with whatever the client sent:
+// peer when it is started with --acp-v2, because the v2 contract needs a peer
+// that really refuses what v2 forbids rather than a fake that agrees with
+// whatever the client sent:
 //
 //   - initialize negotiates version 2 only and requires the parameter names v2
 //     defined, capabilities and info. A request still carrying v1's
 //     clientCapabilities/clientInfo is answered with a JSON-RPC error, so a
 //     client that keeps the old wire names cannot complete the handshake at all.
-//   - the handshake advertises one authentication method of type "terminal",
-//     carrying the args and env that tell the client how to run the login
-//     program itself, and only when the client advertised
-//     capabilities.auth.terminal, which is the condition v2 puts on offering
-//     one. ACP v2 forbids auth/login for that type, so the peer answers
-//     auth/login with an error instead of accepting it.
-//   - session/prompt is gated behind that login: until the credential file the
-//     login program writes exists, a prompt fails with the structured
-//     auth_required marker v2 defines for exactly this case. The gate is read
-//     once, at process startup, so a login that runs without the connection
-//     being rebuilt leaves the peer unauthenticated.
+//     The names, and the capability keys, that arrived are recorded, because
+//     what a peer may call is decided by what the client actually advertised.
+//   - the handshake advertises the authentication methods
+//     MOCK_AGENT_V2_AUTH_TYPE selects. The methods themselves, the
+//     protocol-driven login, the logout and the gated failure live in
+//     acp_v2_auth.go.
+//   - session/prompt is gated behind the login: until the peer is authenticated
+//     a prompt fails with the structured auth_required error v2 defines for
+//     exactly this case. The terminal method's credential file is read once, at
+//     process startup, so a terminal login that runs without the connection
+//     being rebuilt leaves the peer unauthenticated; an agent login takes effect
+//     on the running process, as the protocol-driven flow requires.
+//     MOCK_AGENT_V2_ERROR_SHAPE=code sends the failure with no data at all, so a
+//     test can prove the specification's error code alone is understood.
+//   - the session surface the handshake advertises is the one the peer really
+//     answers: session/new, session/list, session/resume, session/close and
+//     session/prompt.
 //
 // Every observation is appended as one JSON object per line to the file named by
 // MOCK_AGENT_LOG_PATH and echoed to stderr, so a test can assert what actually
@@ -46,8 +52,11 @@ const (
 	// terminalLoginFlag is the login program's second mode: the terminal
 	// authentication method advertises it as an extra argument.
 	terminalLoginFlag = "--terminal-login"
-	// terminalMethodID is the identifier the handshake advertises.
+	// terminalMethodID is the identifier of the terminal method.
 	terminalMethodID = "terminal-login"
+	// agentMethodID is the identifier of the method the agent handles itself
+	// through auth/login.
+	agentMethodID = "agent-login"
 
 	// envCredentialPath is where the login program writes what it saw and where
 	// the peer reads whether a login has happened.
@@ -60,6 +69,25 @@ const (
 	envBaseToken = "MOCK_AGENT_TERMINAL_TOKEN"
 	// envPeerLogPath names the file every observation is appended to.
 	envPeerLogPath = "MOCK_AGENT_LOG_PATH"
+	// envAuthType selects which authentication methods the peer advertises.
+	envAuthType = "MOCK_AGENT_V2_AUTH_TYPE"
+	// envErrorShape selects how the gated failure is reported.
+	envErrorShape = "MOCK_AGENT_V2_ERROR_SHAPE"
+	// envForceTerminal makes the peer offer its terminal method even when the
+	// client did not advertise the capability. The specification forbids that,
+	// which is the point: it models the peer the client has to refuse when the
+	// operator has not opted in.
+	envForceTerminal = "MOCK_AGENT_V2_FORCE_TERMINAL"
+
+	// authTypeAgent advertises only the agent-handled method, authTypeTerminal
+	// only the terminal one (the default, so the existing terminal interop test
+	// keeps driving the same peer), and authTypeBoth advertises both.
+	authTypeAgent    = "agent"
+	authTypeTerminal = "terminal"
+	authTypeBoth     = "both"
+	// errorShapeCode reports the gated failure with the specification's code and
+	// no data; every other value also carries the auth_required marker.
+	errorShapeCode = "code"
 
 	// promptAcceptedText is what an authenticated prompt answers, so a caller can
 	// tell the retried request apart from the gated one.
@@ -67,22 +95,33 @@ const (
 )
 
 // jsonRPCError is the error half of a JSON-RPC 2.0 response. The v1 paths never
-// needed one; the v2 peer uses it for the refused handshake and the gated
-// prompt, which the client must see as failures rather than as empty results.
+// needed one; the v2 peer uses it for the refused handshake, the forbidden wire
+// login and the gated prompt, which the client must see as failures rather than
+// as empty results.
 type jsonRPCError struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
 }
 
-// acpV2Peer is the per-process state of the version 2 peer. Authentication is
+// acpV2Peer is the per-process state of the version 2 peer. A terminal login is
 // resolved once at startup from the credential file, which is what makes a
 // reconnect observable: only a new process can see a credential written after
-// the old one started.
+// the old one started. An agent login is protocol-driven, so it changes this
+// state in place, and auth/logout clears it again.
 type acpV2Peer struct {
 	credentialPath string
 	logPath        string
+	authType       string
+	errorShape     string
 	authenticated  bool
+	// forceTerminal makes the peer offer a terminal method the client did not
+	// advertise the capability for, which is how the client's refusal of that
+	// method is exercised.
+	forceTerminal bool
+	// clientTerminalCapable records what the client advertised, because an agent
+	// may offer a terminal method only when the capability is present.
+	clientTerminalCapable bool
 }
 
 // newACPV2PeerFromArgs builds the peer for a --acp-v2 process and returns nil
@@ -94,11 +133,15 @@ func newACPV2PeerFromArgs(args []string) *acpV2Peer {
 	peer := &acpV2Peer{
 		credentialPath: strings.TrimSpace(os.Getenv(envCredentialPath)),
 		logPath:        strings.TrimSpace(os.Getenv(envPeerLogPath)),
+		authType:       authTypeFromEnv(),
+		errorShape:     strings.ToLower(strings.TrimSpace(os.Getenv(envErrorShape))),
+		forceTerminal:  strings.EqualFold(strings.TrimSpace(os.Getenv(envForceTerminal)), "true"),
 	}
 	peer.authenticated = fileExists(peer.credentialPath)
 	peer.record("startup", "", map[string]interface{}{
 		"authenticated": peer.authenticated,
 		"credential":    peer.credentialPath,
+		"authType":      peer.authType,
 	})
 	return peer
 }
@@ -116,14 +159,19 @@ func (p *acpV2Peer) handle(req jsonRPCRequest) jsonRPCResponse {
 	case "session/new":
 		p.record("request", req.Method, nil)
 		resp.Result = json.RawMessage(`{"sessionId": "mock-session-id"}`)
-	case "auth/login", "authenticate":
+	case "session/list":
 		p.record("request", req.Method, nil)
-		resp.Error = &jsonRPCError{
-			Code:    -32601,
-			Message: "a terminal authentication method is completed by running the agent program, not by " + req.Method,
-		}
+		resp.Result = json.RawMessage(`{"sessions": [{"sessionId": "mock-session-id", "title": "mock session"}]}`)
+	case "session/resume", "session/close":
+		p.record("request", req.Method, nil)
+		resp.Result = json.RawMessage(`{}`)
+	case "auth/login", "authenticate":
+		return p.login(req)
+	case "auth/logout":
+		return p.logout(req)
 	default:
 		p.record("request", req.Method, nil)
+		resp.Error = &jsonRPCError{Code: -32601, Message: "this peer does not implement " + req.Method}
 	}
 	return resp
 }
@@ -139,7 +187,8 @@ func (p *acpV2Peer) initialize(req jsonRPCRequest) jsonRPCResponse {
 	observed["accepted"] = rejection == ""
 	p.record("initialize_seen", "initialize", observed)
 	if rejection == "" {
-		resp.Result = p.initializeResult(observed["authTerminalCapability"] == true)
+		p.clientTerminalCapable = observed["authTerminalCapability"] == true
+		resp.Result = p.initializeResult()
 		return resp
 	}
 	p.record("initialize_rejected", "initialize", map[string]interface{}{"reason": rejection})
@@ -164,6 +213,7 @@ func decodeV2InitializeParams(raw json.RawMessage) (map[string]interface{}, stri
 	observed := map[string]interface{}{
 		"protocolVersion":        version,
 		"paramNames":             sortedFieldNames(fields),
+		"capabilityKeys":         sortedCapabilityKeys(fields["capabilities"]),
 		"hasCapabilities":        capabilities,
 		"hasInfo":                info,
 		"hasV1Capabilities":      v1Capabilities,
@@ -198,25 +248,28 @@ func terminalAuthAdvertised(fields map[string]json.RawMessage) bool {
 	return terminal != "" && terminal != "null"
 }
 
-// initializeResult advertises version 2 and, when the client advertised that it
-// can reproduce the agent invocation, one terminal method. Version 2 renamed the
+// initializeResult advertises version 2, the session surface this peer really
+// implements, and the configured authentication methods. Version 2 renamed the
 // response's capability and implementation fields to capabilities and info, so an
 // answer carrying v1's agentCapabilities/agentInfo would not be answering this
-// generation. The method's args are appended to this peer's own launch arguments
-// and its env overrides a same-named variable of the base launch configuration,
-// so a client that really runs the method reproduces the invocation asked for.
-func (p *acpV2Peer) initializeResult(terminalCapable bool) json.RawMessage {
+// generation.
+func (p *acpV2Peer) initializeResult() json.RawMessage {
 	result := map[string]interface{}{
 		"protocolVersion": 2,
-		"capabilities":    map[string]interface{}{},
+		"capabilities": map[string]interface{}{
+			// The baseline session methods v2 makes implicit in this object:
+			// session/new, session/list, session/resume, session/close,
+			// session/prompt, session/cancel and session/update.
+			"session": map[string]interface{}{},
+		},
 		"info": map[string]interface{}{
 			"name":    "mock-agent",
 			"title":   "Matrix mock ACP agent",
 			"version": "0.0.0-test",
 		},
 	}
-	if terminalCapable {
-		result["authMethods"] = []interface{}{p.terminalMethod()}
+	if methods := p.advertisedMethods(); len(methods) > 0 {
+		result["authMethods"] = methods
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
@@ -225,27 +278,9 @@ func (p *acpV2Peer) initializeResult(terminalCapable bool) json.RawMessage {
 	return encoded
 }
 
-// terminalMethod is the advertised terminal login. The env entry names the same
-// variable the base launch configuration carries on purpose: overriding it is
-// what the client has to reproduce, and the login program reports the value it
-// actually saw.
-func (p *acpV2Peer) terminalMethod() map[string]interface{} {
-	return map[string]interface{}{
-		"type":        "terminal",
-		"methodId":    terminalMethodID,
-		"name":        "Terminal login",
-		"description": "Runs the agent program with " + terminalLoginFlag + " to leave a credential.",
-		"args":        []string{terminalLoginFlag},
-		"env": []map[string]string{{
-			"name":  envBaseToken,
-			"value": os.Getenv(envMethodToken),
-		}},
-	}
-}
-
 // prompt is the gated operation. An unauthenticated peer answers with the
-// structured auth_required marker in the error data, which is what a v2 client
-// reads to decide that a login has to happen before the request is retried.
+// structured auth_required error, which is what a v2 client reads to decide that
+// a login has to happen before the request is retried.
 func (p *acpV2Peer) prompt(req jsonRPCRequest) jsonRPCResponse {
 	resp := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID}
 	var params struct {
@@ -261,15 +296,7 @@ func (p *acpV2Peer) prompt(req jsonRPCRequest) jsonRPCResponse {
 		"authenticated": p.authenticated,
 	})
 	if !p.authenticated {
-		resp.Error = &jsonRPCError{
-			Code:    -32000,
-			Message: "authentication required",
-			Data: map[string]interface{}{
-				"kind":     "auth_required",
-				"methodId": terminalMethodID,
-				"message":  "run the terminal authentication method before prompting",
-			},
-		}
+		resp.Error = p.authenticationRequiredError()
 		return resp
 	}
 	writeMessageNotification(params.SessionID, promptAcceptedText)
@@ -302,6 +329,16 @@ func sortedFieldNames(fields map[string]json.RawMessage) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// sortedCapabilityKeys reports the top-level capability names a client
+// advertised, so a test can assert what the peer was actually allowed to call.
+func sortedCapabilityKeys(raw json.RawMessage) []string {
+	var capabilities map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &capabilities); err != nil {
+		return []string{}
+	}
+	return sortedFieldNames(capabilities)
 }
 
 func decodeIntField(fields map[string]json.RawMessage, name string) int {

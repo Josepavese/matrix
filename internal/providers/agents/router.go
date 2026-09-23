@@ -12,6 +12,7 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/a2aclient"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 // ----------------------------------------------------------------------------
@@ -313,6 +314,12 @@ func (r *Router) providerClientContext(fallback context.Context) context.Context
 
 func isSessionNotFoundError(err error) bool {
 	if errors.Is(err, middleware.ErrSessionNotFound) {
+		return true
+	}
+	// ACP assigns "resource not found" a code, so a peer that reports a lost
+	// session the documented way is recognised without reading its prose.
+	var rpcErr *zedacp.RPCError
+	if errors.As(err, &rpcErr) && rpcErr != nil && rpcErr.Code == zedacp.ErrCodeResourceNotFound {
 		return true
 	}
 	// Fallback for agents that return plain text errors

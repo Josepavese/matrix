@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 type acpFeatureCapabilities struct {
@@ -27,13 +28,19 @@ func parseACPFeatureCapabilities(resp *acpInitializeResponse) acpFeatureCapabili
 	prompt, _ := resp.Capabilities["promptCapabilities"].(map[string]interface{})
 	mcp, _ := resp.Capabilities["mcpCapabilities"].(map[string]interface{})
 	auth, _ := resp.Capabilities["auth"].(map[string]interface{})
+	// Version 2 has no logout capability marker: returning one or more valid
+	// authMethods entries obliges the agent to implement auth/logout as well as
+	// auth/login, so the advertised methods are the marker. Reading only the
+	// version 1 capability would refuse to log out of a conforming v2 agent.
+	logout := capabilityEnabled(auth["logout"]) ||
+		(resp.ProtocolVersion >= zedacp.ProtocolVersionV2 && len(resp.AuthMethods) > 0)
 	return acpFeatureCapabilities{
 		promptImage:           boolCapability(prompt["image"]),
 		promptAudio:           boolCapability(prompt["audio"]),
 		promptEmbeddedContext: boolCapability(prompt["embeddedContext"]),
 		mcpHTTP:               boolCapability(mcp["http"]),
 		mcpSSE:                boolCapability(mcp["sse"]),
-		logout:                capabilityEnabled(auth["logout"]),
+		logout:                logout,
 	}
 }
 
