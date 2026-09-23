@@ -1,11 +1,23 @@
 # Security findings from the first threat model
 
 Date observed: 2026-09-23
+Status: two of the three bugs fixed; the design decisions are still open
 Source: `docs/governance/security_threat_model_2026-09-23.md` (14 gaps, each with
 file:line evidence). This issue exists so the actionable ones are tracked as work
 rather than living only inside a document.
 
-## Bugs with a small, clear fix — do these first
+## Fixed (2026-09-23)
+
+- **The Telegram admins list is now enforced** (`7e71bf3`): the allow-list is
+  threaded into the provider and checked before every dispatch path — messages,
+  groups, edits, callbacks, elicitation answers — with an enabled channel and an
+  empty list refusing to start, and the three wiki pages corrected.
+- **Config_Set is confined** (`2485004`): a config write is accepted only when the
+  resolved path is the PAL home's `configs/` directory or below it, with absolute,
+  `..` and symlink escapes rejected by an error naming the path and the root, and
+  the security review's accepted-risk paragraph corrected.
+
+## Bugs still open
 
 **1. The Telegram `admins` list is never enforced.** Any Telegram user who can
 reach the bot drives the operator's agents and receives their answers, and
@@ -34,7 +46,7 @@ the tool.** `internal/providers/agents/acp_adapter.go:178` and
 *Fix*: refuse a tool call the session did not advertise for that turn, and record
 the refusal.
 
-## Design decisions to take deliberately, not by default
+## Design decisions still to take deliberately, not by default
 
 **4. The local HTTP API and A2A ingress are unauthenticated when
 `matrix_api_key` is unset** — the shipped default. An empty key means "allow"
