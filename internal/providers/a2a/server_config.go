@@ -40,7 +40,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 		options = append(options, a2asrv.WithExtendedAgentCard(s.extendedCard))
 	}
 	handler := a2asrv.NewHandler(&executor{router: s.router, defaultAgent: s.defaultAgent}, options...)
-	mux.Handle("/a2a", s.authMiddleware(a2asrv.NewJSONRPCHandler(handler), true))
+	mux.Handle("/a2a", s.authMiddleware(withSpecJSONRPCMethodNames(a2asrv.NewJSONRPCHandler(handler)), true))
 	mux.Handle("/a2a/rest/", http.StripPrefix("/a2a/rest", s.authMiddleware(a2asrv.NewRESTHandler(handler), false)))
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(s.agentCard()))
 }
