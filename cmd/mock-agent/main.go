@@ -54,7 +54,7 @@ func main() {
 // drives, unchanged.
 func dispatch(req jsonRPCRequest, scanner *bufio.Scanner, peer *acpV2Peer) (jsonRPCResponse, bool) {
 	if peer != nil {
-		return peer.handle(req), true
+		return peer.handle(req)
 	}
 	return handleRequest(req, scanner)
 }

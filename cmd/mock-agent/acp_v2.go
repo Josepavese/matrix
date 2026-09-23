@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ----------------------------------------------------------------------------
@@ -78,6 +79,13 @@ const (
 	// which is the point: it models the peer the client has to refuse when the
 	// operator has not opted in.
 	envForceTerminal = "MOCK_AGENT_V2_FORCE_TERMINAL"
+	// envPromptMode selects what an authenticated prompt does after it
+	// acknowledges insertion. The default drives the version 2 lifecycle the
+	// specification defines; the others model the peers a client has to survive.
+	envPromptMode = "MOCK_AGENT_V2_PROMPT_MODE"
+	// envTerminalDelay delays the terminal state update, in Go duration syntax,
+	// so a caller can prove a turn waits for it rather than for a quiet moment.
+	envTerminalDelay = "MOCK_AGENT_V2_TERMINAL_DELAY"
 
 	// authTypeAgent advertises only the agent-handled method, authTypeTerminal
 	// only the terminal one (the default, so the existing terminal interop test
@@ -114,6 +122,8 @@ type acpV2Peer struct {
 	logPath        string
 	authType       string
 	errorShape     string
+	promptMode     string
+	terminalDelay  time.Duration
 	authenticated  bool
 	// forceTerminal makes the peer offer a terminal method the client did not
 	// advertise the capability for, which is how the client's refusal of that
@@ -136,12 +146,15 @@ func newACPV2PeerFromArgs(args []string) *acpV2Peer {
 		authType:       authTypeFromEnv(),
 		errorShape:     strings.ToLower(strings.TrimSpace(os.Getenv(envErrorShape))),
 		forceTerminal:  strings.EqualFold(strings.TrimSpace(os.Getenv(envForceTerminal)), "true"),
+		promptMode:     promptModeFromEnv(),
+		terminalDelay:  durationFromEnv(envTerminalDelay),
 	}
 	peer.authenticated = fileExists(peer.credentialPath)
 	peer.record("startup", "", map[string]interface{}{
 		"authenticated": peer.authenticated,
 		"credential":    peer.credentialPath,
 		"authType":      peer.authType,
+		"promptMode":    peer.promptMode,
 	})
 	return peer
 }
@@ -149,11 +162,11 @@ func newACPV2PeerFromArgs(args []string) *acpV2Peer {
 // handle answers one request as a version 2 peer. Every method name is recorded
 // before it is answered, because that recording is the evidence a test asserts
 // against: a terminal login must never show up there as auth/login.
-func (p *acpV2Peer) handle(req jsonRPCRequest) jsonRPCResponse {
+func (p *acpV2Peer) handle(req jsonRPCRequest) (jsonRPCResponse, bool) {
 	resp := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID}
 	switch req.Method {
 	case "initialize":
-		return p.initialize(req)
+		return p.initialize(req), true
 	case "session/prompt":
 		return p.prompt(req)
 	case "session/new":
@@ -166,14 +179,14 @@ func (p *acpV2Peer) handle(req jsonRPCRequest) jsonRPCResponse {
 		p.record("request", req.Method, nil)
 		resp.Result = json.RawMessage(`{}`)
 	case "auth/login", "authenticate":
-		return p.login(req)
+		return p.login(req), true
 	case "auth/logout":
-		return p.logout(req)
+		return p.logout(req), true
 	default:
 		p.record("request", req.Method, nil)
 		resp.Error = &jsonRPCError{Code: -32601, Message: "this peer does not implement " + req.Method}
 	}
-	return resp
+	return resp, true
 }
 
 // initialize accepts exactly what version 2 defines. The parameter names that
@@ -276,32 +289,6 @@ func (p *acpV2Peer) initializeResult() json.RawMessage {
 		return json.RawMessage(`{"protocolVersion": 2, "capabilities": {}, "info": {"name": "mock-agent"}}`)
 	}
 	return encoded
-}
-
-// prompt is the gated operation. An unauthenticated peer answers with the
-// structured auth_required error, which is what a v2 client reads to decide that
-// a login has to happen before the request is retried.
-func (p *acpV2Peer) prompt(req jsonRPCRequest) jsonRPCResponse {
-	resp := jsonRPCResponse{JSONRPC: "2.0", ID: req.ID}
-	var params struct {
-		SessionID string       `json:"sessionId"`
-		Prompt    []promptPart `json:"prompt"`
-	}
-	if err := json.Unmarshal(req.Params, &params); err != nil {
-		resp.Error = &jsonRPCError{Code: -32602, Message: "session/prompt params must be a JSON object"}
-		return resp
-	}
-	p.record("request", "session/prompt", map[string]interface{}{
-		"sessionId":     params.SessionID,
-		"authenticated": p.authenticated,
-	})
-	if !p.authenticated {
-		resp.Error = p.authenticationRequiredError()
-		return resp
-	}
-	writeMessageNotification(params.SessionID, promptAcceptedText)
-	resp.Result = json.RawMessage(`{"stopReason": "end_turn"}`)
-	return resp
 }
 
 // record appends one observation to the peer log and echoes it to stderr.

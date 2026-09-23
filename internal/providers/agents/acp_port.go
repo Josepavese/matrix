@@ -48,6 +48,7 @@ type (
 	acpPromptResponse                   = zedacp.PromptResponse
 	acpToolCall                         = zedacp.ToolCall
 	acpToolCallContent                  = zedacp.ToolCallContent
+	acpDiffChange                       = zedacp.DiffChange
 	acpContent                          = zedacp.Content
 )
 

@@ -10,9 +10,7 @@ import (
 	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
-	"github.com/Josepavese/matrix/internal/logic/sidecar"
 	"github.com/Josepavese/matrix/internal/middleware"
-	"github.com/Josepavese/matrix/internal/providers/sidecarprojection"
 )
 
 type acpConversationFactory struct{}
@@ -158,8 +156,10 @@ func (c *acpConversationClient) executeTurnOnce(ctx context.Context, turn middle
 		defer c.handler.ClearTurnContext(remoteSessionID)
 	}
 
-	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier}
-	resp, err := c.promptACP(ctx, remoteSessionID, turn, obs)
+	turnObs := c.observeTurn(remoteSessionID, turn)
+	defer turnObs.stop()
+	obs := turnObs.observer
+	resp, err := c.promptACP(ctx, remoteSessionID, turn, turnObs.prompt)
 	if err != nil && remoteSessionID != "" && isSessionNotFoundError(err) {
 		log.Warn("ACP session lost, recreating", "agent_session", remoteSessionID)
 		return c.retryTurnWithFreshSession(ctx, turn)
@@ -173,7 +173,18 @@ func (c *acpConversationClient) executeTurnOnce(ctx context.Context, turn middle
 		}, classifyProviderFailure(turn.AgentID, c.endpoint, "session/prompt", fmt.Errorf("ACP prompt failed: %w", err))
 	}
 
-	obs.WaitIdle(ctx, 150*time.Millisecond)
+	if turnObs.terminal {
+		// The prompt response acknowledges insertion; the turn ends on the idle
+		// state update, which may still be coming. Wait for it, and record the
+		// timeout in the result when it never arrives rather than returning a
+		// partial answer that looks complete.
+		if budget := acpV2TurnBudget(); !obs.AwaitTerminal(ctx, budget) {
+			log.Warn("ACP v2 turn ended without a terminal state update",
+				"event", "acp_v2_turn_budget_exhausted", "agent_session", remoteSessionID, "budget", budget)
+		}
+	} else {
+		obs.WaitIdle(ctx, 150*time.Millisecond)
+	}
 	return middleware.ConversationResult{
 		Output:          obs.GetContent(),
 		ContentBlocks:   obs.ContentBlocks(),
@@ -413,15 +424,6 @@ func (c *acpConversationClient) prepareTurnCallbacks(turn middleware.Conversatio
 	if c.handler != nil {
 		c.handler.WithNotifier(turn.ThoughtNotifier)
 	}
-}
-
-func (c *acpConversationClient) promptACP(ctx context.Context, remoteSessionID string, turn middleware.ConversationTurn, obs *simpleObserver) (*acpPromptResponse, error) {
-	promptText := sidecar.ProjectPrompt(turn.Message, turn.SidecarCapsules)
-	return c.currentACPClient().Prompt(ctx, acpPromptRequest{
-		SessionID: remoteSessionID,
-		Prompt:    acpPromptContent(promptText, turn.ContentBlocks),
-		Meta:      sidecarprojection.ACPMeta(turn.SidecarCapsules),
-	}, obs)
 }
 
 func (c *acpConversationClient) retryTurnWithFreshSession(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {

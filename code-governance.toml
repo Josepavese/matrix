@@ -161,7 +161,14 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-09-23: full ACP v2 support - terminal auth methods launched through the
 # process backend with reconnection and reinitialization, structured auth_required
 # retry, and the negotiation gate accepting both generations.
-"internal/providers/agents" = 4420
+# 2026-09-23: the ACP v2 prompt lifecycle - the turn waits for the terminal
+# state_update instead of the prompt acknowledgement, with a visible budget, and the
+# streaming shapes the v2 session carries (message upserts, tool-call content chunks,
+# plan and terminal updates, diffs) are projected instead of dropped in silence.
+# The feature is 262 net lines and the package had 11 lines of headroom; the streaming
+# projection cannot move to another package without putting protocol SDK usage outside
+# pkg/zedacp and internal/providers/agents, which the governance manifest forbids.
+"internal/providers/agents" = 4680
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.

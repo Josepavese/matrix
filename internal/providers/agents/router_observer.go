@@ -23,27 +23,111 @@ type simpleObserver struct {
 	updates          chan struct{}
 	notifier         middleware.ThoughtNotifier
 	metadata         middleware.ConversationMetadata
+	// messages holds what each messageId contributed. A version 2 message upsert
+	// replaces that message's content where a chunk appends to it, so the flat
+	// accumulators above are rebuilt from these contributions the first time an
+	// upsert arrives. Until then they stay authoritative, which keeps a version 1
+	// peer's output exactly what it was.
+	messages map[string]*acpMessageContribution
+	order    []string
+	// terminal and stopReason record the version 2 terminal state update, which
+	// is what ends a turn that the prompt response only acknowledged.
+	terminal   bool
+	stopReason string
 }
 
 func (o *simpleObserver) OnUpdate(notif acpSessionNotification) {
 	log := slog.With("component", "acp_observer", "session", notif.SessionID, "update_type", notif.Update.SessionUpdate)
 	text := updateContentText(notif.Update)
 	log.Info("session update received", "event", "session_update", "update_type", notif.Update.SessionUpdate, "text_len", len(text), "text_preview", truncate(text, 120))
+	if reason, terminal := notif.Update.TurnTerminal(); terminal {
+		o.mu.Lock()
+		o.stopReason, o.terminal = reason, true
+		o.mu.Unlock()
+		o.signalUpdate()
+	}
 	o.handleStreamUpdate(log, notif)
 	o.mergeUpdateMetadata(notif.Update)
+}
+
+// AwaitTerminal waits for the version 2 terminal state update, the budget, or
+// the turn context, and records in the turn metadata how the turn ended: a peer
+// that never reports idle has to be visible to the operator instead of looking
+// like a complete answer. It reports whether the terminal state arrived.
+func (o *simpleObserver) AwaitTerminal(ctx context.Context, budget time.Duration) bool {
+	deadline := time.NewTimer(budget)
+	defer deadline.Stop()
+	for {
+		if reason, terminal := o.terminalState(); terminal {
+			o.recordCompletion("idle", reason, budget)
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			o.recordCompletion("context_done", "", budget)
+			return false
+		case <-deadline.C:
+			o.recordCompletion("timeout", "", budget)
+			return false
+		case <-o.updates:
+		}
+	}
+}
+
+func (o *simpleObserver) terminalState() (string, bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.stopReason, o.terminal
+}
+
+func (o *simpleObserver) recordCompletion(outcome, reason string, budget time.Duration) {
+	meta := map[string]interface{}{
+		"acp_turn_completion": outcome,
+		"acp_turn_budget_ms":  budget.Milliseconds(),
+	}
+	if reason != "" {
+		meta["acp_stop_reason"] = reason
+	}
+	o.mergeMetadataMap(meta)
 }
 
 func (o *simpleObserver) handleStreamUpdate(log *slog.Logger, notif acpSessionNotification) {
 	text := updateContentText(notif.Update)
 	switch notif.Update.SessionUpdate {
 	case "agent_message_chunk":
-		o.appendMessageChunk(text, notif.Update.Contents, streamUpdateMetadata(notif))
+		o.appendMessageChunk(text, notif.Update.Contents, streamUpdateMetadata(notif), notif.Update.MessageID)
+	case "agent_message":
+		o.applyMessageUpsert(notif, text)
 	case "agent_thought_chunk":
 		o.forwardThought(middleware.ThoughtTypeThinking, text, "", streamUpdateMetadata(notif))
-	case "tool_call", "tool_call_update":
+	case "agent_thought":
+		// A version 2 thought upsert patches the stored thought the same way an
+		// agent_message upsert patches a message. Matrix keeps no stored thought
+		// to patch: reasoning is forwarded live and never becomes turn content,
+		// so the update is projected onto the live surface and nothing else.
+		o.forwardThought(middleware.ThoughtTypeThinking, text, notif.Update.Title, streamUpdateMetadata(notif))
+	case "tool_call", "tool_call_update", "tool_call_content_chunk":
 		o.forwardToolUpdate(log, notif)
-	case "plan", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update", "usage_update":
+	default:
+		o.handleSessionScopedUpdate(notif)
+	}
+}
+
+// handleSessionScopedUpdate projects the updates that describe the session or
+// its surroundings rather than its answer: plans and commands, configuration and
+// usage, and the agent-owned terminals.
+func (o *simpleObserver) handleSessionScopedUpdate(notif acpSessionNotification) {
+	text := updateContentText(notif.Update)
+	switch notif.Update.SessionUpdate {
+	case "plan", "plan_update", "available_commands_update", "current_mode_update", "config_option_update", "session_info_update", "usage_update":
 		o.forwardThought(middleware.ThoughtTypeThinking, text, notif.Update.Title, structuralUpdateMetadata(notif))
+	case "terminal_update", "terminal_output_chunk":
+		// Agent-owned terminals are display-only: Matrix never created them and
+		// cannot attach to or read them, and their bytes are not part of the
+		// turn's answer. They are projected onto the structured surface so the
+		// terminal, its command, its exit status and its output snapshot stay
+		// visible to the operator instead of vanishing.
+		o.forwardThought(middleware.ThoughtTypeToolResult, terminalSummary(notif.Update), notif.Update.TerminalID, terminalUpdateMetadata(notif))
 	}
 }
 
@@ -184,165 +268,6 @@ func (o *simpleObserver) Metadata() middleware.ConversationMetadata {
 		}
 	}
 	return meta
-}
-
-func toolUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
-	meta := make(map[string]interface{}, len(notif.Update.Meta)+4)
-	meta["source_update_type"] = notif.Update.SessionUpdate
-	meta["content_type"] = notif.Update.Content.Type
-	meta["protocol"] = "acp"
-	meta["protocol_method"] = "session/update"
-	meta["acp"] = acpToolUpdateMeta(notif)
-	addOptionalToolMetadata(meta, notif)
-	addToolContentProjection(meta, notif.Update.ToolContents)
-	for k, v := range notif.Update.Meta {
-		meta[k] = v
-	}
-	return meta
-}
-
-func acpToolUpdateMeta(notif acpSessionNotification) map[string]interface{} {
-	return map[string]interface{}{
-		"session_id":     notif.SessionID,
-		"session_update": notif.Update.SessionUpdate,
-		"tool_call_id":   notif.Update.ToolCallID,
-		"tool_name":      notif.Update.Name,
-		"tool_kind":      notif.Update.Kind,
-		"status":         notif.Update.Status,
-		"raw_input":      notif.Update.RawInput,
-		"raw_output":     notif.Update.RawOutput,
-		"locations":      notif.Update.Locations,
-		"content": map[string]interface{}{
-			"type": notif.Update.Content.Type,
-			"text": updateContentText(notif.Update),
-		},
-		"content_blocks": notif.Update.Contents,
-		"tool_contents":  notif.Update.ToolContents,
-		"title":          notif.Update.Title,
-		"updated_at":     notif.Update.UpdatedAt,
-		"_meta":          notif.Update.Meta,
-	}
-}
-
-func addOptionalToolMetadata(meta map[string]interface{}, notif acpSessionNotification) {
-	if strings.TrimSpace(notif.Update.Title) != "" {
-		meta["title"] = notif.Update.Title
-	}
-	if strings.TrimSpace(notif.SessionID) != "" {
-		meta["remote_session_id"] = notif.SessionID
-	}
-	if strings.TrimSpace(notif.Update.ToolCallID) != "" {
-		meta["tool_call_id"] = notif.Update.ToolCallID
-	}
-	if strings.TrimSpace(notif.Update.Name) != "" {
-		meta["tool_name"] = notif.Update.Name
-	}
-	if strings.TrimSpace(notif.Update.Kind) != "" {
-		meta["tool_kind"] = notif.Update.Kind
-		meta["acp_tool_kind"] = notif.Update.Kind
-	}
-	if strings.TrimSpace(notif.Update.Status) != "" {
-		meta["status"] = notif.Update.Status
-	}
-	if len(notif.Update.RawInput) > 0 {
-		meta["raw_input"] = notif.Update.RawInput
-	}
-	if notif.Update.RawOutput != nil {
-		meta["raw_output"] = notif.Update.RawOutput
-	}
-	if len(notif.Update.Locations) > 0 {
-		meta["locations"] = notif.Update.Locations
-	}
-}
-
-func structuralUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
-	meta := map[string]interface{}{
-		"source_update_type": notif.Update.SessionUpdate,
-		"protocol":           "acp",
-		"protocol_method":    "session/update",
-		"acp": map[string]interface{}{
-			"session_id":         notif.SessionID,
-			"session_update":     notif.Update.SessionUpdate,
-			"entries":            notif.Update.Entries,
-			"available_commands": notif.Update.AvailableCommands,
-			"current_mode_id":    notif.Update.CurrentModeID,
-			"config_options":     notif.Update.ConfigOptions,
-			"usage":              notif.Update.Usage,
-			"title":              notif.Update.Title,
-			"updated_at":         notif.Update.UpdatedAt,
-			"_meta":              notif.Update.Meta,
-		},
-	}
-	if len(notif.Update.Entries) > 0 {
-		meta["plan_entries"] = notif.Update.Entries
-	}
-	if len(notif.Update.AvailableCommands) > 0 {
-		meta["available_commands"] = notif.Update.AvailableCommands
-	}
-	if len(notif.Update.ConfigOptions) > 0 {
-		meta["config_options"] = notif.Update.ConfigOptions
-	}
-	if len(notif.Update.Usage) > 0 {
-		meta["usage"] = notif.Update.Usage
-	}
-	if strings.TrimSpace(notif.Update.CurrentModeID) != "" {
-		meta["current_mode_id"] = notif.Update.CurrentModeID
-	}
-	if strings.TrimSpace(notif.Update.Title) != "" {
-		meta["title"] = notif.Update.Title
-	}
-	if strings.TrimSpace(notif.Update.UpdatedAt) != "" {
-		meta["updated_at"] = notif.Update.UpdatedAt
-	}
-	for k, v := range notif.Update.Meta {
-		meta[k] = v
-	}
-	return meta
-}
-
-func updateContentText(update acpSessionUpdate) string {
-	if update.Content.Text != "" {
-		return update.Content.Text
-	}
-	if len(update.Contents) == 0 && len(update.ToolContents) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, content := range update.Contents {
-		if strings.TrimSpace(content.Text) == "" {
-			continue
-		}
-		b.WriteString(content.Text)
-	}
-	for _, item := range update.ToolContents {
-		if item.Content == nil || strings.TrimSpace(item.Content.Text) == "" {
-			continue
-		}
-		b.WriteString(item.Content.Text)
-	}
-	return b.String()
-}
-
-func addToolContentProjection(meta map[string]interface{}, contents []acpToolCallContent) {
-	if len(contents) == 0 {
-		return
-	}
-	meta["tool_contents"] = contents
-	var types []string
-	for _, content := range contents {
-		if strings.TrimSpace(content.Type) != "" {
-			types = append(types, content.Type)
-		}
-		if strings.TrimSpace(content.Path) != "" && meta["path"] == nil {
-			meta["path"] = content.Path
-		}
-		if strings.TrimSpace(content.TerminalID) != "" {
-			meta["terminal_id"] = content.TerminalID
-		}
-	}
-	if len(types) > 0 {
-		meta["tool_content_types"] = types
-	}
 }
 
 func truncate(s string, maxLen int) string {

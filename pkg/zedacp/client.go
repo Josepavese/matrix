@@ -384,6 +384,18 @@ func (c *Client) ListSessionsWithRequest(ctx context.Context, req ListSessionsRe
 	return &res, nil
 }
 
+// WatchSession delivers a session's updates to an observer outside any call.
+//
+// Version 2 prompt work outlives the session/prompt request: the response only
+// acknowledges that the user message was inserted, and the turn ends on the idle
+// state_update that follows. An observer registered for the duration of the
+// prompt call would therefore be gone before the terminal update arrives, so a
+// caller that owns a whole turn registers here and stops with the returned
+// function.
+func (c *Client) WatchSession(sessionID string, observer SessionObserver) func() {
+	return c.registerObserver(sessionID, observer)
+}
+
 func (c *Client) Prompt(ctx context.Context, req PromptRequest, observer SessionObserver) (*PromptResponse, error) {
 	removeObserver := c.registerObserver(req.SessionID, observer)
 	defer removeObserver()

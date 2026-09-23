@@ -617,7 +617,12 @@ type PromptResponse struct {
 	ToolCalls     []ToolCall             `json:"toolCalls,omitempty"`
 	Usage         map[string]interface{} `json:"usage,omitempty"`
 	UserMessageID string                 `json:"userMessageId,omitempty"`
-	Meta          map[string]interface{} `json:"_meta,omitempty"`
+	// MessageID is the version 2 acknowledgement: the identifier of the user
+	// message the prompt inserted, which is the only thing that response
+	// carries. Version 1 named the same idea userMessageId, and a version 2
+	// response has no stop reason at all.
+	MessageID string                 `json:"messageId,omitempty"`
+	Meta      map[string]interface{} `json:"_meta,omitempty"`
 }
 
 type ToolCall struct {
@@ -653,97 +658,81 @@ type SessionUpdate struct {
 	ConfigOptions     []ConfigOption         `json:"configOptions,omitempty"`
 	Usage             map[string]interface{} `json:"usage,omitempty"`
 	Meta              map[string]interface{} `json:"_meta,omitempty"`
+	// State and StopReason are the version 2 state_update lifecycle. An idle
+	// state is the terminal signal that ends the foreground work a prompt
+	// started, and the stop reason says why it ended. Version 1 has neither
+	// field, which is why a version 1 turn cannot end on them.
+	State      string `json:"state,omitempty"`
+	StopReason string `json:"stopReason,omitempty"`
+	// Plan is the version 2 plan payload: plan_update nests the entries under
+	// "plan", where version 1's plan update carried them at the top level.
+	Plan *PlanUpdateContent `json:"plan,omitempty"`
+	// TerminalID, Command, Cwd, Output, ExitStatus and Data carry the version 2
+	// agent-owned terminal variants. The pointers distinguish an omitted field,
+	// which leaves the stored value alone, from an explicit null, which clears
+	// it.
+	TerminalID string              `json:"terminalId,omitempty"`
+	Command    *string             `json:"command,omitempty"`
+	Cwd        *string             `json:"cwd,omitempty"`
+	Output     *TerminalOutput     `json:"output,omitempty"`
+	ExitStatus *TerminalExitStatus `json:"exitStatus,omitempty"`
+	Data       string              `json:"data,omitempty"`
+	// ContentSet and ContentCleared describe how a message upsert's content
+	// field arrived. An omitted content leaves the stored message unchanged, an
+	// explicit null clears it, and an array replaces it.
+	ContentSet     bool `json:"-"`
+	ContentCleared bool `json:"-"`
 }
 
-func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
-	type rawUpdate struct {
-		SessionUpdate     string                 `json:"sessionUpdate"`
-		MessageID         string                 `json:"messageId,omitempty"`
-		Content           json.RawMessage        `json:"content,omitempty"`
-		Title             string                 `json:"title,omitempty"`
-		Name              string                 `json:"name,omitempty"`
-		UpdatedAt         string                 `json:"updatedAt,omitempty"`
-		ToolCallID        string                 `json:"toolCallId,omitempty"`
-		Kind              string                 `json:"kind,omitempty"`
-		Status            string                 `json:"status,omitempty"`
-		RawInput          map[string]interface{} `json:"rawInput,omitempty"`
-		RawOutput         interface{}            `json:"rawOutput,omitempty"`
-		Locations         []interface{}          `json:"locations,omitempty"`
-		Entries           []PlanEntry            `json:"entries,omitempty"`
-		AvailableCommands []AvailableCommand     `json:"availableCommands,omitempty"`
-		CurrentModeID     string                 `json:"currentModeId,omitempty"`
-		ConfigOptions     []ConfigOption         `json:"configOptions,omitempty"`
-		Usage             map[string]interface{} `json:"usage,omitempty"`
-		Meta              map[string]interface{} `json:"_meta,omitempty"`
+// TurnTerminal reports the version 2 terminal signal: an idle state_update ends
+// the foreground work the prompt started, and the stop reason says why.
+func (u SessionUpdate) TurnTerminal() (string, bool) {
+	if u.SessionUpdate != "state_update" || u.State != "idle" {
+		return "", false
 	}
-	var raw rawUpdate
-	if err := json.Unmarshal(data, &raw); err != nil {
+	return u.StopReason, true
+}
+
+// PlanEntries reports a plan update's entries in whichever generation's shape
+// the peer sent: version 2 nests them under "plan".
+func (u SessionUpdate) PlanEntries() []PlanEntry {
+	if u.Plan != nil && len(u.Entries) == 0 {
+		return u.Plan.Entries
+	}
+	return u.Entries
+}
+
+// wireUpdate is the on-the-wire shape of a session update without the decoded
+// content fields, which cannot round-trip through the struct tags: the local
+// type keeps its JSON tags and loses its methods, so decoding cannot recurse
+// into UnmarshalJSON.
+type wireUpdate SessionUpdate
+
+func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		*wireUpdate
+		Content json.RawMessage `json:"content,omitempty"`
+	}
+	wire.wireUpdate = (*wireUpdate)(u)
+	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
-	u.SessionUpdate = raw.SessionUpdate
-	u.MessageID = raw.MessageID
-	u.Title = raw.Title
-	u.Name = raw.Name
-	u.UpdatedAt = raw.UpdatedAt
-	u.ToolCallID = raw.ToolCallID
-	u.Kind = raw.Kind
-	u.Status = raw.Status
-	u.RawInput = raw.RawInput
-	u.RawOutput = raw.RawOutput
-	u.Locations = raw.Locations
-	u.Entries = raw.Entries
-	u.AvailableCommands = raw.AvailableCommands
-	u.CurrentModeID = raw.CurrentModeID
-	u.ConfigOptions = raw.ConfigOptions
-	u.Usage = raw.Usage
-	u.Meta = raw.Meta
-	u.RawContent = cloneRawMessage(raw.Content)
-	u.Content, u.Contents, u.ToolContents = decodeUpdateContent(raw.Content)
+	u.RawContent = cloneRawMessage(wire.Content)
+	u.ContentSet = len(wire.Content) > 0
+	u.ContentCleared = u.ContentSet && string(wire.Content) == "null"
+	u.Content, u.Contents, u.ToolContents = decodeUpdateContent(wire.Content)
 	return nil
 }
 
 func (u SessionUpdate) MarshalJSON() ([]byte, error) {
-	type rawUpdate struct {
-		SessionUpdate     string                 `json:"sessionUpdate"`
-		MessageID         string                 `json:"messageId,omitempty"`
-		Content           interface{}            `json:"content,omitempty"`
-		Title             string                 `json:"title,omitempty"`
-		Name              string                 `json:"name,omitempty"`
-		UpdatedAt         string                 `json:"updatedAt,omitempty"`
-		ToolCallID        string                 `json:"toolCallId,omitempty"`
-		Kind              string                 `json:"kind,omitempty"`
-		Status            string                 `json:"status,omitempty"`
-		RawInput          map[string]interface{} `json:"rawInput,omitempty"`
-		RawOutput         interface{}            `json:"rawOutput,omitempty"`
-		Locations         []interface{}          `json:"locations,omitempty"`
-		Entries           []PlanEntry            `json:"entries,omitempty"`
-		AvailableCommands []AvailableCommand     `json:"availableCommands,omitempty"`
-		CurrentModeID     string                 `json:"currentModeId,omitempty"`
-		ConfigOptions     []ConfigOption         `json:"configOptions,omitempty"`
-		Usage             map[string]interface{} `json:"usage,omitempty"`
-		Meta              map[string]interface{} `json:"_meta,omitempty"`
-	}
 	content := encodeUpdateContent(u.Content, u.Contents, u.ToolContents, u.RawContent)
-	return json.Marshal(rawUpdate{
-		SessionUpdate:     u.SessionUpdate,
-		MessageID:         u.MessageID,
-		Content:           content,
-		Title:             u.Title,
-		Name:              u.Name,
-		UpdatedAt:         u.UpdatedAt,
-		ToolCallID:        u.ToolCallID,
-		Kind:              u.Kind,
-		Status:            u.Status,
-		RawInput:          u.RawInput,
-		RawOutput:         u.RawOutput,
-		Locations:         u.Locations,
-		Entries:           u.Entries,
-		AvailableCommands: u.AvailableCommands,
-		CurrentModeID:     u.CurrentModeID,
-		ConfigOptions:     u.ConfigOptions,
-		Usage:             u.Usage,
-		Meta:              u.Meta,
-	})
+	if content == nil {
+		return json.Marshal(wireUpdate(u))
+	}
+	return json.Marshal(struct {
+		wireUpdate
+		Content interface{} `json:"content"`
+	}{wireUpdate(u), content})
 }
 
 func decodeUpdateContent(data json.RawMessage) (Content, []Content, []ToolCallContent) {
@@ -866,6 +855,46 @@ type PlanEntry struct {
 	Meta     map[string]interface{} `json:"_meta,omitempty"`
 }
 
+// PlanUpdateContent is the version 2 plan payload. Version 2 identifies a plan
+// by planId and requires every update to carry the complete entry list, so a
+// receiver replaces the plan it stored rather than merging into it.
+type PlanUpdateContent struct {
+	Type    string      `json:"type"`
+	PlanID  string      `json:"planId,omitempty"`
+	Entries []PlanEntry `json:"entries,omitempty"`
+}
+
+// TerminalOutput is an authoritative replacement snapshot of an agent-owned
+// terminal's output bytes, base64-encoded as the specification defines them.
+type TerminalOutput struct {
+	Data string `json:"data"`
+}
+
+// TerminalExitStatus reports that an agent-owned terminal exited, and how.
+// A concrete object marks the terminal as exited.
+type TerminalExitStatus struct {
+	ExitCode *int    `json:"exitCode,omitempty"`
+	Signal   *string `json:"signal,omitempty"`
+}
+
+// DiffChange is one file-level change of a version 2 diff. The operation names
+// which fields are meaningful: add, delete and modify carry path, while move and
+// copy carry oldPath as well.
+type DiffChange struct {
+	Operation string `json:"operation"`
+	Path      string `json:"path,omitempty"`
+	OldPath   string `json:"oldPath,omitempty"`
+	FileType  string `json:"fileType,omitempty"`
+	MimeType  string `json:"mimeType,omitempty"`
+}
+
+// DiffPatch is renderable patch text for a version 2 diff. The specification
+// defines git_patch as the only named format; anything else is a future variant.
+type DiffPatch struct {
+	Format string `json:"format"`
+	Text   string `json:"text"`
+}
+
 type AvailableCommand struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
@@ -900,6 +929,9 @@ type Content struct {
 
 // ToolCallContent preserves ACP tool-call payload variants losslessly enough for
 // Matrix projections while keeping the public package independent from codegen.
+// Path/OldText/NewText are the version 1 diff shape; Changes/Patch are the
+// version 2 one, where the affected files are authoritative and the text patch
+// is optional.
 type ToolCallContent struct {
 	Type       string                 `json:"type"`
 	Content    *Content               `json:"content,omitempty"`
@@ -907,5 +939,7 @@ type ToolCallContent struct {
 	OldText    *string                `json:"oldText,omitempty"`
 	NewText    string                 `json:"newText,omitempty"`
 	TerminalID string                 `json:"terminalId,omitempty"`
+	Changes    []DiffChange           `json:"changes,omitempty"`
+	Patch      *DiffPatch             `json:"patch,omitempty"`
 	Meta       map[string]interface{} `json:"_meta,omitempty"`
 }

@@ -2,25 +2,9 @@ package agents
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/Josepavese/matrix/internal/middleware"
 )
-
-type jsonRPCRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      int64           `json:"id"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
-
-type jsonRPCResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      *int64          `json:"id,omitempty"`
-	Method  *string         `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-}
 
 type ACPClient = acpClient
 

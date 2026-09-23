@@ -14,6 +14,24 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// jsonRPCRequest and jsonRPCResponse are the shapes the fake peer in this file
+// speaks. They live here rather than in production code because the mock peer is
+// the only thing that uses them.
+type jsonRPCRequest struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      int64           `json:"id"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+type jsonRPCResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      *int64          `json:"id,omitempty"`
+	Method  *string         `json:"method,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+}
+
 type mockResolver struct {
 	protocol string
 	address  string

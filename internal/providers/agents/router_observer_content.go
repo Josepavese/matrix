@@ -6,11 +6,29 @@ import (
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
-func (o *simpleObserver) appendMessageChunk(text string, contents []acpContent, metadata map[string]interface{}) {
+// acpMessageContribution is what one messageId contributed to the turn. A
+// version 2 message upsert replaces this content where a chunk appends to it.
+type acpMessageContribution struct {
+	text        string
+	blocks      []middleware.Content
+	final       bool
+	finalText   string
+	finalBlocks []middleware.Content
+}
+
+func (o *simpleObserver) appendMessageChunk(text string, contents []acpContent, metadata map[string]interface{}, messageID string) {
 	phase := messagePhase(metadata)
-	o.mu.Lock()
-	o.content += text
 	converted := middlewareContents(contents)
+	o.mu.Lock()
+	contribution := o.contributionLocked(messageID)
+	contribution.text += text
+	contribution.blocks = append(contribution.blocks, converted...)
+	if phase == "final_answer" {
+		contribution.final = true
+		contribution.finalText += text
+		contribution.finalBlocks = append(contribution.finalBlocks, converted...)
+	}
+	o.content += text
 	o.blocks = append(o.blocks, converted...)
 	if phase == "final_answer" {
 		o.hasExplicitFinal = true
@@ -20,6 +38,69 @@ func (o *simpleObserver) appendMessageChunk(text string, contents []acpContent, 
 	o.mu.Unlock()
 	o.forwardThought(middleware.ThoughtTypeThinking, text, "", metadata)
 	o.signalUpdate()
+}
+
+// contributionLocked returns the contribution buffer for a message, remembering
+// the order messages were first seen in. Callers hold the lock.
+func (o *simpleObserver) contributionLocked(messageID string) *acpMessageContribution {
+	if o.messages == nil {
+		o.messages = map[string]*acpMessageContribution{}
+	}
+	contribution, ok := o.messages[messageID]
+	if !ok {
+		contribution = &acpMessageContribution{}
+		o.messages[messageID] = contribution
+		o.order = append(o.order, messageID)
+	}
+	return contribution
+}
+
+// applyMessageUpsert applies the version 2 message upsert: concrete content
+// replaces everything stored for that messageId, omitted content leaves it
+// unchanged, and an explicit null clears it. Later chunks with the same id
+// append to whatever the upsert left behind.
+func (o *simpleObserver) applyMessageUpsert(notif acpSessionNotification, text string) {
+	metadata := streamUpdateMetadata(notif)
+	phase := messagePhase(metadata)
+	o.mu.Lock()
+	contribution := o.contributionLocked(notif.Update.MessageID)
+	switch {
+	case !notif.Update.ContentSet:
+	case notif.Update.ContentCleared:
+		*contribution = acpMessageContribution{}
+	default:
+		*contribution = acpMessageContribution{
+			text:   text,
+			blocks: middlewareContents(notif.Update.Contents),
+			final:  phase == "final_answer",
+		}
+		if contribution.final {
+			contribution.finalText, contribution.finalBlocks = contribution.text, contribution.blocks
+		}
+	}
+	o.rebuildLocked()
+	o.mu.Unlock()
+	o.forwardThought(middleware.ThoughtTypeThinking, text, notif.Update.Title, metadata)
+	o.signalUpdate()
+}
+
+// rebuildLocked recomposes the flat accumulators from the per-message
+// contributions, in the order the messages first appeared. A peer that never
+// sends an upsert never reaches this, so its output is the flat accumulation the
+// observer always produced.
+func (o *simpleObserver) rebuildLocked() {
+	o.content, o.finalContent, o.hasExplicitFinal = "", "", false
+	o.blocks, o.finalBlocks = nil, nil
+	for _, id := range o.order {
+		contribution := o.messages[id]
+		o.content += contribution.text
+		o.blocks = append(o.blocks, contribution.blocks...)
+		o.finalContent += contribution.finalText
+		o.finalBlocks = append(o.finalBlocks, contribution.finalBlocks...)
+		if contribution.final {
+			o.hasExplicitFinal = true
+		}
+	}
 }
 
 func (o *simpleObserver) ContentBlocks() []middleware.Content {

@@ -182,7 +182,7 @@ func TestACPv2InitializeOmitsTheTerminalMethodWhenTheClientCapabilityIsMissing(t
 func TestACPv2RejectsWireLoginForATerminalMethod(t *testing.T) {
 	peer, logPath, _ := newTestV2Peer(t)
 
-	resp := peer.handle(jsonRPCRequest{ID: 3, Method: "auth/login", Params: json.RawMessage(`{"methodId":"terminal-login"}`)})
+	resp, _ := peer.handle(jsonRPCRequest{ID: 3, Method: "auth/login", Params: json.RawMessage(`{"methodId":"terminal-login"}`)})
 	if resp.Error == nil {
 		t.Fatalf("auth/login must not be accepted for a terminal method, got result %s", resp.Result)
 	}
@@ -204,7 +204,7 @@ func TestACPv2RejectsWireLoginForATerminalMethod(t *testing.T) {
 func TestACPv2PromptIsGatedUntilAReconnectingProcessSeesTheCredential(t *testing.T) {
 	peer, _, credentialPath := newTestV2Peer(t)
 
-	gated := peer.prompt(promptRequest(4, "hello"))
+	gated, _ := peer.prompt(promptRequest(4, "hello"))
 	if gated.Error == nil {
 		t.Fatalf("an unauthenticated prompt must fail, got result %s", gated.Result)
 	}
@@ -215,14 +215,14 @@ func TestACPv2PromptIsGatedUntilAReconnectingProcessSeesTheCredential(t *testing
 	if err := os.WriteFile(credentialPath, []byte(`{"token":"late"}`), 0o600); err != nil {
 		t.Fatalf("write the credential: %v", err)
 	}
-	if resp := peer.prompt(promptRequest(5, "hello again")); resp.Error == nil {
+	if resp, _ := peer.prompt(promptRequest(5, "hello again")); resp.Error == nil {
 		t.Fatal("the running process must stay unauthenticated until it is reconnected")
 	}
 
 	reconnected := newACPV2PeerFromArgs([]string{acpV2Flag})
 	var accepted jsonRPCResponse
 	output := captureStdout(t, func() {
-		accepted = reconnected.prompt(promptRequest(6, "hello after login"))
+		accepted, _ = reconnected.prompt(promptRequest(6, "hello after login"))
 	})
 	if accepted.Error != nil {
 		t.Fatalf("a process that starts with the credential must accept the prompt, got %+v", accepted.Error)
@@ -311,23 +311,23 @@ func TestACPv2AgentLoginAuthenticatesTheRunningProcessAndLogoutGatesItAgain(t *t
 		t.Fatalf("the agent type must advertise exactly the agent method, got %+v", result.AuthMethods)
 	}
 
-	if gated := peer.prompt(promptRequest(2, "hello")); gated.Error == nil || gated.Error.Code != -32000 {
+	if gated, _ := peer.prompt(promptRequest(2, "hello")); gated.Error == nil || gated.Error.Code != -32000 {
 		t.Fatalf("an unauthenticated prompt must be gated with -32000, got %+v", gated)
 	}
 
-	login := peer.handle(jsonRPCRequest{ID: 3, Method: "auth/login", Params: json.RawMessage(`{"methodId":"agent-login"}`)})
+	login, _ := peer.handle(jsonRPCRequest{ID: 3, Method: "auth/login", Params: json.RawMessage(`{"methodId":"agent-login"}`)})
 	if login.Error != nil {
 		t.Fatalf("auth/login for the advertised agent method must succeed: %+v", login.Error)
 	}
-	if accepted := peer.prompt(promptRequest(4, "hello again")); accepted.Error != nil {
+	if accepted, _ := peer.prompt(promptRequest(4, "hello again")); accepted.Error != nil {
 		t.Fatalf("the process must be authenticated after the login, got %+v", accepted.Error)
 	}
 
-	logout := peer.handle(jsonRPCRequest{ID: 5, Method: "auth/logout", Params: json.RawMessage(`{}`)})
+	logout, _ := peer.handle(jsonRPCRequest{ID: 5, Method: "auth/logout", Params: json.RawMessage(`{}`)})
 	if logout.Error != nil {
 		t.Fatalf("auth/logout must succeed while a method is advertised: %+v", logout.Error)
 	}
-	if gatedAgain := peer.prompt(promptRequest(6, "hello after logout")); gatedAgain.Error == nil || gatedAgain.Error.Code != -32000 {
+	if gatedAgain, _ := peer.prompt(promptRequest(6, "hello after logout")); gatedAgain.Error == nil || gatedAgain.Error.Code != -32000 {
 		t.Fatalf("the gate must come back after a logout, got %+v", gatedAgain)
 	}
 
@@ -355,7 +355,7 @@ func TestACPv2GatedFailureCanBeTheSpecificationCodeAlone(t *testing.T) {
 	t.Setenv(envErrorShape, errorShapeCode)
 	peer, _, _ := newTestV2Peer(t)
 
-	gated := peer.prompt(promptRequest(1, "hello"))
+	gated, _ := peer.prompt(promptRequest(1, "hello"))
 	if gated.Error == nil || gated.Error.Code != -32000 {
 		t.Fatalf("the gate must carry the specification's code, got %+v", gated.Error)
 	}
@@ -446,7 +446,7 @@ func TestACPv2ImplementsTheSessionSurfaceItAdvertises(t *testing.T) {
 	peer, logPath, _ := newTestV2Peer(t)
 
 	for id, method := range map[int]string{1: "session/list", 2: "session/resume", 3: "session/close"} {
-		resp := peer.handle(jsonRPCRequest{ID: id, Method: method, Params: json.RawMessage(`{"sessionId":"mock-session-id"}`)})
+		resp, _ := peer.handle(jsonRPCRequest{ID: id, Method: method, Params: json.RawMessage(`{"sessionId":"mock-session-id"}`)})
 		if resp.Error != nil {
 			t.Fatalf("%s must be answered, got %+v", method, resp.Error)
 		}
