@@ -29,6 +29,21 @@ if ($Version -ne "latest") {
 }
 
 $release = Invoke-RestMethod -Uri $api -Headers @{ "User-Agent" = "matrix-installer" }
+
+# The release document addressed by tag can be served with an empty asset list
+# for a while after a release is published, while the assets themselves are
+# already downloadable. Observed on v0.1.36: releases/tags/v0.1.36 reported no
+# assets twenty minutes after publish while releases/<id>/assets reported all
+# nine. The id-addressed endpoint is therefore used when the tag view shows
+# nothing, instead of failing the install on a stale index.
+if (@($release.assets).Count -eq 0 -and $release.id) {
+  $freshAssets = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/$($release.id)/assets" -Headers @{ "User-Agent" = "matrix-installer" }
+  if (@($freshAssets).Count -gt 0) {
+    Write-Host "Release metadata was stale for $Version; read $($freshAssets.Count) assets by release id."
+    $release.assets = @($freshAssets)
+  }
+}
+
 $assets = @($release.assets | Where-Object {
   $_.name -match "^matrix_.+_windows_$arch\.zip$"
 })

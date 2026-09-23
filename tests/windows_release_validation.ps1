@@ -14,7 +14,10 @@ param(
   [string]$Version = "v0.1.34",
   [string]$Repo = "Josepavese/matrix",
   [string]$HomeDir = "C:\matrix-test",
-  [string]$ReportUrl = ""
+  [string]$ReportUrl = "",
+  # Optional installer URL, used to exercise a corrected installer before it is
+  # published. Empty means the installer published with the release.
+  [string]$InstallerUrl = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,8 +48,9 @@ Write-Host "Arch: $env:PROCESSOR_ARCHITECTURE"
 
 # The installer is taken from the published release, exactly as a user would.
 $installer = Join-Path $env:TEMP "install.ps1"
-Check "download install.ps1 from the published release" {
-  Invoke-WebRequest -Uri "https://github.com/$repo/releases/download/$version/install.ps1" -OutFile $installer -UseBasicParsing
+$installerSource = if ($InstallerUrl) { $InstallerUrl } else { "https://github.com/$repo/releases/download/$version/install.ps1" }
+Check "download install.ps1 from $(if ($InstallerUrl) { 'the supplied URL' } else { 'the published release' })" {
+  Invoke-WebRequest -Uri $installerSource -OutFile $installer -UseBasicParsing
   (Get-Item $installer).Length
 }
 
