@@ -112,6 +112,30 @@ the release: the version assertion was hard-coded to `0.1.34`, which pinned the
 script to the release it was written for. It now derives the expected version from
 `-Version`.
 
+## Rebuilding the guest
+
+The guest's writable overlay was deleted on 2026-09-23 to reclaim 4.9 GB on a
+disk that runs near capacity; the base image and the blueprint were kept, so the
+validation capability is intact and only the guest's own state is gone. To rebuild
+it:
+
+```
+nido spawn matrix-win-validation --blueprint windows-11-iot-ltsc-eval
+nido start matrix-win-validation --gui
+```
+
+That boots a fresh Windows 11 IoT Enterprise LTSC guest. It then needs the same
+one-time setup this document assumed: create the `vmuser` account, log in, and note
+that the console is reachable over VNC on `127.0.0.1:59000` while the HTTP server
+that serves this script must listen on the QEMU user-network gateway, reachable
+from the guest as `10.0.2.2`. Budget roughly half an hour, most of it Windows
+first-boot.
+
+Two things learned the hard way, worth keeping: the guest's console locks itself,
+and typing into a locked screen sends the keystrokes to the password field, so
+check the screen before typing; and `vncdo` mangles shifted characters unless it is
+run with `--force-caps`.
+
 ## What this does not cover
 
 - No interactive desktop use of Matrix on Windows: the checks are the installer,
