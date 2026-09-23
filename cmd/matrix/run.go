@@ -114,6 +114,11 @@ var runCmd = &cobra.Command{
 			log.Info("agent elicitation disabled", "event", "elicitation_disabled",
 				"enable_with", "matrix config set agent.elicitation_enabled true")
 		}
+		// The onboarding wizard authenticates through the same protocol controls
+		// the runtime uses, so the methods it offers are the ones the agent
+		// actually advertises. Wired here because the router above is only fully
+		// configured at this point.
+		wizard.SetAgentAuthController(agentRouter)
 		agentRouter.StartKeepalive(ctx)
 		sessionMgr := session.NewManager(d.App.Store, agentRouter, wizard, sysTools)
 		sessionMgr.SetEndpointResolver(d.Supervisor)

@@ -5,40 +5,115 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
-// acpAuthHandler is the generic fallback AuthHandler for agents that use ACP protocol.
-// It supports three auth method types discovered from the agent's initialize response:
-//   - env_var:    prompts user for the required environment variable(s)
-//   - terminal:   instructs user to run a terminal command (from args)
-//   - agent:      agent-specific flow described by _meta.terminal-auth or _meta.api-key
+// acpAuthHandler is the generic AuthHandler for agents that use the ACP protocol.
+//
+// The methods it offers are the ones the agent itself publishes in its initialize
+// response, read through AgentAuthController. It knows how to run three shapes of
+// method locally:
+//   - env_var:  prompts for the required environment variable(s)
+//   - terminal: instructs the user to run a terminal command (from args)
+//   - agent:    agent-specific flow described by _meta.terminal-auth or _meta.api-key
+//
+// The generic API-key method is a fallback for agents that publish no method at
+// all, or whose protocol cannot be reached. It is never offered in place of a
+// method the agent did advertise, because that would describe something the agent
+// never claimed.
 type acpAuthHandler struct {
-	wizard *Wizard
+	wizard  *Wizard
+	agentID string
+
+	// advertised remembers the ids the agent published, so Authenticate can tell
+	// the agent's own method from the generic fallback and only ask the agent to
+	// authenticate when the method is its own.
+	advertised map[string]bool
 }
 
-func (h *acpAuthHandler) Methods(_ context.Context) ([]AuthMethod, error) {
-	// Default for unknown agents: prompt for a generic API key
-	return []AuthMethod{
-		{
-			ID:   "api_key",
-			Name: "API Key",
-			Type: "env_var",
-			Vars: []string{"API_KEY"},
-		},
-	}, nil
+func (h *acpAuthHandler) Methods(ctx context.Context) ([]AuthMethod, error) {
+	advertised := h.agentMethods(ctx)
+	if len(advertised) == 0 {
+		return []AuthMethod{
+			{
+				ID:   "api_key",
+				Name: "API Key",
+				Type: "env_var",
+				Vars: []string{"API_KEY"},
+			},
+		}, nil
+	}
+
+	h.advertised = make(map[string]bool, len(advertised))
+	methods := make([]AuthMethod, 0, len(advertised))
+	for _, method := range advertised {
+		h.advertised[method.ID] = true
+		methods = append(methods, AuthMethod{
+			ID:          method.ID,
+			Name:        method.Name,
+			Type:        "agent",
+			Description: method.Description,
+			Meta:        method.Metadata,
+		})
+	}
+	return methods, nil
 }
 
-func (h *acpAuthHandler) Authenticate(_ context.Context, method AuthMethod, input string) (*AuthResult, string, error) {
+// agentMethods asks the agent what it advertises, and tolerates every reason not
+// to know: no controller wired, an agent that is not reachable, a protocol that
+// does not answer. Not knowing falls back to the generic method; it never invents
+// an agent method.
+func (h *acpAuthHandler) agentMethods(ctx context.Context) []middleware.AuthenticationMethod {
+	controller := h.controller()
+	if controller == nil || h.agentID == "" {
+		return nil
+	}
+	methods, err := controller.AgentAuthenticationMethods(ctx, h.agentID)
+	if err != nil {
+		return nil
+	}
+	return methods
+}
+
+func (h *acpAuthHandler) controller() AgentAuthController {
+	if h.wizard == nil {
+		return nil
+	}
+	return h.wizard.agentAuthController()
+}
+
+func (h *acpAuthHandler) Authenticate(ctx context.Context, method AuthMethod, input string) (*AuthResult, string, error) {
+	var (
+		result *AuthResult
+		prompt string
+		err    error
+	)
 	switch method.Type {
 	case "env_var":
-		return h.authenticateEnvVar(method, input)
+		result, prompt, err = h.authenticateEnvVar(method, input)
 	case "terminal":
-		return h.authenticateTerminal(method, input)
-	case "agent", "":
-		return h.authenticateAgent(method, input)
+		result, prompt, err = h.authenticateTerminal(method, input)
 	default:
-		return h.authenticateAgent(method, input)
+		result, prompt, err = h.authenticateAgent(method, input)
 	}
+	if err != nil || prompt != "" || result == nil {
+		return result, prompt, err
+	}
+
+	// The local step is finished. When the method is the agent's own, the
+	// authorization itself happens over the protocol: authenticate(methodID) is
+	// what the agent acts on, so a failure here is reported instead of being
+	// dressed up as a successful login.
+	if h.advertised[method.ID] {
+		controller := h.controller()
+		if controller != nil {
+			if authErr := controller.AuthenticateAgent(ctx, h.agentID, method.ID); authErr != nil {
+				return nil, "", fmt.Errorf("agent rejected authenticate(%q): %w", method.ID, authErr)
+			}
+		}
+	}
+	return result, "", nil
 }
 
 // authenticateEnvVar handles type=env_var methods (e.g. OPENAI_API_KEY, CODEX_API_KEY).

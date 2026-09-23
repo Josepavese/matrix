@@ -99,8 +99,15 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # structured outputs that already existed (`agent info --source=local` and
 # `agent doctor`), six lines of CLI glue over the evidence recorded at install
 # time.
-"cmd/matrix" = 3231
-"internal/logic/onboarding" = 1400
+# 2026-09-23: the onboarding wizard is handed the protocol auth controller right
+# after the router is configured, so the methods it offers are the ones the agent
+# advertises.
+"cmd/matrix" = 3235
+# 2026-09-23: the generic ACP handler reads the agent's own authMethods through
+# AgentAuthController instead of always returning a hardcoded method, and performs
+# the protocol authenticate for a method the agent published. The port gained its
+# first consumer; the fallback is now reserved for agents that advertise none.
+"internal/logic/onboarding" = 1415
 "internal/logic/runtrace" = 1010
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
 # process reap; forced run-owned child cleanup can remediate parent-owner

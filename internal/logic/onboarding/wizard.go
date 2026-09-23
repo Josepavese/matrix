@@ -50,6 +50,22 @@ type Wizard struct {
 	fs        middleware.FS
 	net       middleware.Network
 	handlers  *authHandlerRegistry
+
+	// authControl is the protocol side of authentication. It is wired after the
+	// router that implements it has been configured, so it is a setter rather
+	// than a constructor dependency.
+	authControl AgentAuthController
+}
+
+// SetAgentAuthController wires the protocol-side authentication control. Until it
+// is set, the generic handler falls back to its own method instead of claiming
+// to know what the agent advertises.
+func (w *Wizard) SetAgentAuthController(controller AgentAuthController) {
+	w.authControl = controller
+}
+
+func (w *Wizard) agentAuthController() AgentAuthController {
+	return w.authControl
 }
 
 // NewWizard creates a new onboarding Wizard with the given dependencies.

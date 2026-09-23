@@ -2,6 +2,8 @@ package onboarding
 
 import (
 	"context"
+
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // AuthMethod represents a single authentication method declared by an ACP agent
@@ -21,6 +23,20 @@ type AuthMethod struct {
 type AuthResult struct {
 	Env     map[string]string // Environment variable credentials (for stdio transport)
 	Headers map[string]string // HTTP headers (for HTTP/SSE transport)
+}
+
+// AgentAuthController is the protocol side of agent authentication: the methods
+// the agent itself publishes in its initialize response, and the authenticate
+// call that executes one of them.
+//
+// It exists because ACP's authenticate operation was advertised as an available
+// capability while the only code able to perform it had no consumer, and the path
+// that actually authenticated agents returned a method the agent had never
+// claimed. The generic handler consumes this port, which is what makes the
+// advertised capability reachable.
+type AgentAuthController interface {
+	AgentAuthenticationMethods(ctx context.Context, agentID string) ([]middleware.AuthenticationMethod, error)
+	AuthenticateAgent(ctx context.Context, agentID, methodID string) error
 }
 
 // AuthHandler is the interface for an authentication flow.
@@ -45,12 +61,14 @@ type AuthHandler interface {
 // Custom handlers (codex, openrouter) are registered for specific agents.
 // Agents without a custom handler use the generic ACP handler.
 type authHandlerRegistry struct {
+	wizard   *Wizard
 	handlers map[string]AuthHandler
 	fallback AuthHandler // generic ACP handler
 }
 
 func newAuthHandlerRegistry(w *Wizard) *authHandlerRegistry {
 	return &authHandlerRegistry{
+		wizard: w,
 		handlers: map[string]AuthHandler{
 			"codex":    &codexAuthHandler{wizard: w},
 			"opencode": &openrouterAuthHandler{wizard: w},
@@ -62,6 +80,13 @@ func newAuthHandlerRegistry(w *Wizard) *authHandlerRegistry {
 func (r *authHandlerRegistry) get(agentID string) AuthHandler {
 	if h, ok := r.handlers[agentID]; ok {
 		return h
+	}
+	// The generic handler answers for whichever agent asks it, because the
+	// methods it offers come from that agent's own initialize response.
+	if generic, ok := r.fallback.(*acpAuthHandler); ok {
+		bound := *generic
+		bound.agentID = agentID
+		return &bound
 	}
 	return r.fallback
 }
