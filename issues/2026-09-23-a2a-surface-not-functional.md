@@ -1,7 +1,7 @@
 # The A2A surface does not work end to end, and fails without a diagnostic
 
 Date observed: 2026-09-23
-Status: open — found by a real end-to-end run, not covered by any test
+Status: half fixed — the JSON-RPC binding dispatches (ec451a8); the task still fails
 
 ## How it was found
 
@@ -25,7 +25,45 @@ WARN task moved to failed state due to a processor error None
 
 An error of `None`. The task fails and the runtime records nothing that says why.
 
-## Two separate defects
+## Defect 1 is fixed (ec451a8)
+
+The JSON-RPC binding answered `-32601` because the protocol SDK dispatches PascalCase
+identifiers (`MethodMessageSend = "SendMessage"`) while the A2A specification's
+JSON-RPC binding - the one the card advertises as `protocolVersion: "1.0"` with
+`protocolBinding: JSONRPC` - uses slash-separated names (`message/send`, `tasks/get`,
+...). The route was wired correctly; the names simply never matched. The names are now
+translated on the way in, over the decoded request rather than the raw text, and the
+tests drive a spec-named `message/send` through the real handler and executor: with the
+translation removed the test fails with the production error, `code=-32601 message=method
+not found`, and it passes live against the real agent (the request now reaches the
+executor instead of being rejected).
+
+This also explains the second symptom in the table: the REST binding worked because the
+SDK's REST handler takes its method from the HTTP path, which already matched.
+
+## Defect 2 is still open, now with a cause
+
+The task fails while the agent is working, and the runtime says why:
+
+```
+INFO resolved agent endpoint
+INFO conversation client initialized
+INFO session update received
+WARN task moved to failed state due to a processor error
+INFO evicted agent client after cancellable turn failure
+     [agent_preflight_failed] ... phase=session/prompt: ACP prompt failed: context canceled
+```
+
+The A2A request context is canceled while the turn runs. The same prompt through
+`POST /v1/runs` completes with the same agent, and that path is asynchronous: it
+returns a run id immediately and the turn continues on its own context, whereas the
+A2A `message/send` turn runs on the caller's request context. There is no
+`WriteTimeout` on the runtime's HTTP server (`cmd/matrix/run.go:209-210` sets only
+`ReadHeaderTimeout` and `IdleTimeout`), so this is not a timeout: the executor is
+handed a context that does not outlive the request. The fix is to detach the turn from
+the request context the way the runtime path already does.
+
+## The original two defects
 
 1. **The JSON-RPC binding dispatches nothing.** The agent card lists it first
    (`supportedInterfaces[0]`, `protocolBinding: JSONRPC`, `protocolVersion: 1.0`,
