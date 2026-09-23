@@ -27,13 +27,17 @@ func BuildReport(store middleware.Storage, cfgMgr *config.Manager, registry *age
 		"telegram_source":     tgSource,
 		"active_agents":       activeAgents,
 		"can_run":             len(activeAgents) > 0,
-		"guide":               BuildGuide(systemConfigured, tgCfg.Enabled, tgCfg.Token != "", activeAgents),
+		"guide":               BuildGuide(configuredIngress(cfgMgr), systemConfigured, tgCfg.Enabled, tgCfg.Token != "", activeAgents),
 	}
 	return report, nil
 }
 
 // BuildGuide returns setup guidance steps based on bootstrap state.
-func BuildGuide(systemConfigured, telegramEnabled, telegramConfigured bool, activeAgents []string) []string {
+// BuildGuide returns the ordered first-run steps. matrixHTTPAddr is the configured
+// ingress address and is used in the step that tells the operator where to POST: the
+// guide used to name 127.0.0.1:9091 unconditionally, so anyone who moved the port was
+// sent to an address nothing was listening on - which is how it was found.
+func BuildGuide(matrixHTTPAddr string, systemConfigured, telegramEnabled, telegramConfigured bool, activeAgents []string) []string {
 	steps := []string{
 		"Inspect the current bootstrap state with `matrix bootstrap doctor`.",
 	}
@@ -54,9 +58,26 @@ func BuildGuide(systemConfigured, telegramEnabled, telegramConfigured bool, acti
 	steps = append(steps,
 		"Run `matrix doctor` before starting the daemon if you want a full local health snapshot.",
 		"Start the runtime with `matrix run`.",
-		"Validate the path end-to-end with `matrix doctor` and, if needed, a POST to `http://127.0.0.1:9091/v1/runs`.",
+		"Validate the path end-to-end with `matrix doctor` and, if needed, a POST to `http://"+ingressAddress(matrixHTTPAddr)+"/v1/runs`.",
 	)
 	return steps
+}
+
+// configuredIngress reads the address the runtime will actually bind.
+func configuredIngress(cfgMgr *config.Manager) string {
+	if cfgMgr == nil {
+		return ""
+	}
+	return cfgMgr.GetWithDefault("matrix_http_addr", "")
+}
+
+// ingressAddress falls back to the shipped default so a caller that has no configured
+// address still produces a usable step.
+func ingressAddress(configured string) string {
+	if addr := strings.TrimSpace(configured); addr != "" {
+		return addr
+	}
+	return "127.0.0.1:9091"
 }
 
 func readConfigured(store middleware.Storage) bool {
