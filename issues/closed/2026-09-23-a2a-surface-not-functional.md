@@ -231,3 +231,37 @@ specifies -32004. Both are asserted by
 `TestTerminalStateErrorsAreTheProtocolSDKsOwn`, which records the deviation so an SDK
 upgrade that fixes it is noticed. Remapping them would mean replacing the SDK's
 `RequestHandler` for both transports.
+
+
+## Resolution (2026-09-23, c3cfb4d)
+
+The cause was none of the guesses recorded above. There is no Matrix `cancel()` in this
+path and the request context was never the source - the SDK already runs the execution on
+a detached context, which is exactly why the two fixes that were tried and reverted could
+not have worked.
+
+Matrix's A2A notifier put the agent's progress payload into a status message verbatim,
+and that payload carries a protocol SDK type while A2A metadata is a JSON object. The
+SDK's task-store validator rejected the value, the task was stored failed with no message
+and no artifacts, and the SDK's execution errgroup then canceled the context - surfacing
+as "ACP prompt failed: context canceled" and the client eviction that this issue recorded
+as the symptom. The eviction was the last link in the chain, not the first.
+
+Metadata is now projected per value through JSON, the data model the field is defined
+over: a value with no JSON representation is dropped instead of failing the turn.
+Reverting the projection reproduces the live symptom exactly, in the message, REST and
+streaming regression tests.
+
+The same work audited every operation against the specification: each is either served
+and tested or refused with the code the specification requires, `streaming: true` is
+backed by a test of the event sequence, push notifications and the extended card answer
+-32003 and -32004 when unconfigured, and a dispatch-table test asserts that none of the
+twelve method names answers -32601.
+
+Two error codes remain deviations and are recorded rather than hidden: send-to-terminal
+answers -32602 and resubscribe-to-terminal -32001 where the specification requires
+-32004. Both are decided inside the SDK's request handler before Matrix code runs.
+
+A claim in this issue was also wrong and is corrected: A2A 1.0 uses PascalCase JSON-RPC
+method names, and the slash-separated names belong to the previous generation. The
+translation added in ec451a8 is backward compatibility, not what a 1.0 client sends.
