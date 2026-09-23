@@ -1,7 +1,7 @@
 # ACP v2 authentication: Matrix speaks the previous generation of the protocol
 
 Date observed: 2026-09-23
-Status: partially done — the negotiated surface shipped, the terminal flow did not
+Status: closed — the migration is complete
 
 ## What is true today
 
@@ -94,7 +94,41 @@ never-exceed-requested rule, the undeclared-version default, the narrow version
 rejection trigger, the structured signal in five shapes plus false positives, and a
 5000-deep payload against the depth bound.
 
-## Still open: the terminal flow and retry-after-login
+## Resolution (2026-09-23): the terminal flow and retry-after-login shipped
+
+Commit `58a302a` completes the migration:
+
+- **Terminal methods**, opt-in and v2-only: `capabilities.auth.terminal` is
+  advertised only when the operator enables `agent.terminal_auth_enabled` and a
+  process backend exists, and the same predicate decides whether the method can be
+  run, so Matrix cannot advertise a flow it would refuse. Running one launches the
+  configured program with the method's `args` and `env` (overriding same-named base
+  variables), treats a non-zero or signalled exit, a run error or a cancellation as
+  failure, never sends `auth/login`, and on success rebuilds the connection from the
+  same endpoint and reinitializes before the gated operation is retried.
+- **Structured `auth_required`**: one login and exactly one retry, with a second
+  failure surfaced and the original signal still wrapped; without a runnable method
+  the gate stays visible.
+- **Everything runnable is offered**: terminal methods on v2 connections, custom
+  underscore-prefixed types reported generically without invented semantics.
+- **Two pre-existing gaps had to be fixed for any of it to be reachable**: `doCall`
+  flattened RPC errors, so the structured `auth_required` data could never survive a
+  real error, and the adapter rejected any initialize response whose raw
+  `protocolVersion` was not 1, which refused every v2 agent and even v1 agents that
+  omit the field.
+- **The initialize request now uses the parameter names of the generation it
+  requests**: v2 renamed `clientCapabilities`/`clientInfo`, so a spec-strict v2 agent
+  previously read no advertisement at all.
+
+### What remains true and is not a defect to fix
+
+- Matrix does not implement a TTY surface, so a terminal login that requires an
+  interactive terminal cannot complete through the daemon; the method runs through
+  the process provider with piped stdio and is bounded by the caller's context.
+- No v2 agent exists on this workstation, so the flow is verified against the
+  specification and test doubles, not against a real peer.
+
+## Original scope note: what this issue covered
 
 ## What is already done, so it is not re-done
 
