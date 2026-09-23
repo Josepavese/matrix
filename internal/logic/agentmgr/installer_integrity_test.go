@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -50,8 +51,16 @@ type fakeRegistry struct {
 
 func startFakeRegistry(t *testing.T, publication digestPublication) *fakeRegistry {
 	t.Helper()
+	return startFakeRegistryEntry(t, publication, "./opencode", map[string]string{"opencode": "#!/bin/sh\nexec opencode-acp\n"})
+}
 
-	artifact := testArtifact(t, "opencode", "#!/bin/sh\nexec opencode-acp\n")
+// startFakeRegistryEntry is startFakeRegistry with the launcher path and the
+// archive contents under the test's control, so the command gate is exercised
+// against the same real HTTP download, hash and extraction path as production.
+func startFakeRegistryEntry(t *testing.T, publication digestPublication, cmd string, files map[string]string) *fakeRegistry {
+	t.Helper()
+
+	artifact := testArtifactFiles(t, files)
 	digest := sha256Hex(artifact)
 	registry := &fakeRegistry{artifact: artifact, digest: digest}
 
@@ -68,7 +77,7 @@ func startFakeRegistry(t *testing.T, publication digestPublication) *fakeRegistr
 		// the download always share the loopback base URL.
 		entry := map[string]any{
 			"archive": "http://" + r.Host + "/artifact.tar.gz",
-			"cmd":     "./opencode",
+			"cmd":     cmd,
 			"args":    []string{"acp"},
 		}
 		if publication != publishNoDigest {
@@ -99,6 +108,12 @@ func startFakeRegistry(t *testing.T, publication digestPublication) *fakeRegistr
 
 func (r *fakeRegistry) registryURL() string {
 	return r.server.URL + "/registry.json"
+}
+
+// artifactURL is the archive URL the served index advertises, so a test can
+// assert that a refusal or a warning names the artifact.
+func (r *fakeRegistry) artifactURL() string {
+	return r.server.URL + "/artifact.tar.gz"
 }
 
 // newTestInstaller wires the production providers against an isolated vault,
@@ -208,12 +223,48 @@ func TestInstallRefusesMalformedPublishedDigest(t *testing.T) {
 	assertNoHalfInstallation(t, baseDir, tempDir, store)
 }
 
-func TestInstallProceedsWhenDigestIsNotPublishedButStaysDistinguishable(t *testing.T) {
+// TestInstallRefusesArtifactWithoutPublishedDigest is the fail-closed default:
+// when the index publishes no sha256 there is nothing to compare the download
+// against, so the install stops and says which artifact is missing what. It
+// replaces the earlier contract, where this case installed silently.
+func TestInstallRefusesArtifactWithoutPublishedDigest(t *testing.T) {
+	registry := startFakeRegistry(t, publishNoDigest)
+	installer, store, baseDir, tempDir := newTestInstaller(t, registry.registryURL())
+
+	err := installer.Install(context.Background(), "opencode")
+	if err == nil {
+		t.Fatal("an artifact whose registry entry publishes no digest must refuse the installation by default")
+	}
+	t.Logf("refused install: %v", err)
+	for _, want := range []string{"publishes no sha256", registry.artifactURL(), testPlatform, "opencode", "refusing to install", "--allow-unverified"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the refusal must contain %q, got %v", want, err)
+		}
+	}
+	assertNoHalfInstallation(t, baseDir, tempDir, store)
+}
+
+// TestInstallAllowUnverifiedOptsIntoAnArtifactWithoutPublishedDigest pins the
+// documented opt-in: the operator can accept an unverified artifact, the
+// override is printed with the artifact it applies to, and the evidence keeps
+// saying nothing was verified.
+func TestInstallAllowUnverifiedOptsIntoAnArtifactWithoutPublishedDigest(t *testing.T) {
 	registry := startFakeRegistry(t, publishNoDigest)
 	installer, store, _, tempDir := newTestInstaller(t, registry.registryURL())
 
+	var progress bytes.Buffer
+	installer.SetProgressWriter(&progress)
+	installer.SetAllowUnverified(true)
+
 	if err := installer.Install(context.Background(), "opencode"); err != nil {
-		t.Fatalf("an unpublished digest must not block the install, got %v", err)
+		t.Fatalf("--allow-unverified must let the install proceed, got %v", err)
+	}
+
+	out := progress.String()
+	for _, want := range []string{"--allow-unverified", registry.artifactURL(), testPlatform} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("the override must be visible with %q, got:\n%s", want, out)
+		}
 	}
 
 	meta, err := agentcfg.LoadMeta(store, "opencode")
@@ -230,6 +281,9 @@ func TestInstallProceedsWhenDigestIsNotPublishedButStaysDistinguishable(t *testi
 	if verification.Status != agentcfg.ArtifactDigestNotPublished {
 		t.Fatalf("status = %q, want %q", verification.Status, agentcfg.ArtifactDigestNotPublished)
 	}
+	if verification.Override != agentcfg.ArtifactOverrideAllowUnverified {
+		t.Fatalf("override = %q, want %q", verification.Override, agentcfg.ArtifactOverrideAllowUnverified)
+	}
 	if verification.Expected != "" {
 		t.Fatalf("no published digest exists, got %q", verification.Expected)
 	}
@@ -245,6 +299,26 @@ func TestInstallProceedsWhenDigestIsNotPublishedButStaysDistinguishable(t *testi
 		t.Fatalf("the artifact must still be extracted, stat failed: %v", err)
 	}
 	assertTemporaryDownloadRemoved(t, tempDir)
+}
+
+// TestAllowUnverifiedDoesNotAcceptADigestMismatch keeps the opt-in narrow: it
+// answers "the index publishes nothing", not "the index publishes something the
+// artifact does not match". A mismatch and a malformed digest stay refusals.
+func TestAllowUnverifiedDoesNotAcceptADigestMismatch(t *testing.T) {
+	for _, publication := range []digestPublication{publishWrongDigest, publishMalformedDigest} {
+		registry := startFakeRegistry(t, publication)
+		installer, store, baseDir, tempDir := newTestInstaller(t, registry.registryURL())
+		installer.SetAllowUnverified(true)
+
+		err := installer.Install(context.Background(), "opencode")
+		if err == nil {
+			t.Fatal("--allow-unverified must not accept an artifact whose published digest does not match")
+		}
+		if !strings.Contains(err.Error(), "refusing to install") {
+			t.Fatalf("the refusal must keep its reason, got %v", err)
+		}
+		assertNoHalfInstallation(t, baseDir, tempDir, store)
+	}
 }
 
 // assertNoHalfInstallation checks that a refused install left nothing behind:
@@ -291,22 +365,31 @@ func assertTemporaryDownloadRemoved(t *testing.T, tempDir string) {
 	}
 }
 
-// testArtifact builds a real .tar.gz holding one executable so the install path
-// runs the same extraction code as a production download.
-func testArtifact(t *testing.T, name, body string) []byte {
+// testArtifactFiles builds a real .tar.gz holding the given files in a stable
+// order, so the install path runs the same extraction code as a production
+// download and a command-resolution test extracts the layout it asserts on.
+func testArtifactFiles(t *testing.T, files map[string]string) []byte {
 	t.Helper()
+
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
 
 	var buffer bytes.Buffer
 	gzipWriter := gzip.NewWriter(&buffer)
 	tarWriter := tar.NewWriter(gzipWriter)
-	payload := []byte(body)
-	if err := tarWriter.WriteHeader(&tar.Header{
-		Name: name, Mode: 0o755, Size: int64(len(payload)), Typeflag: tar.TypeReg,
-	}); err != nil {
-		t.Fatalf("tar header failed: %v", err)
-	}
-	if _, err := tarWriter.Write(payload); err != nil {
-		t.Fatalf("tar body failed: %v", err)
+	for _, name := range names {
+		payload := []byte(files[name])
+		if err := tarWriter.WriteHeader(&tar.Header{
+			Name: name, Mode: 0o755, Size: int64(len(payload)), Typeflag: tar.TypeReg,
+		}); err != nil {
+			t.Fatalf("tar header failed: %v", err)
+		}
+		if _, err := tarWriter.Write(payload); err != nil {
+			t.Fatalf("tar body failed: %v", err)
+		}
 	}
 	if err := tarWriter.Close(); err != nil {
 		t.Fatalf("closing the tar writer failed: %v", err)

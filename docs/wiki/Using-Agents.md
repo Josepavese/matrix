@@ -52,6 +52,24 @@ matrix install <agent-id>
 
 Matrix downloads the agent binary (supports npm/npx, Python/uvx, and direct binary distributions) and registers it in the vault.
 
+For a binary distribution Matrix verifies the downloaded archive against the
+`sha256` the registry index publishes for this platform, and extracts it only
+after the match. When the index publishes no digest there is nothing to verify,
+so the install is refused and says which artifact is missing what. If you have
+checked such an entry yourself and accept an unverified artifact, opt in
+explicitly:
+
+```bash
+matrix install <agent-id> --allow-unverified
+```
+
+The override is printed during the install and recorded in the install evidence,
+which `matrix agent doctor <agent-id>` and
+`matrix agent info <agent-id> --source=local` keep reporting as not verified.
+The launcher path a binary distribution names must resolve inside the agent's own
+directory, and the package identifier of an npx/uvx distribution must be a
+package name: an index entry that points elsewhere is refused.
+
 Uninstall:
 
 ```bash

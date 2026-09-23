@@ -29,16 +29,24 @@ const (
 	// ArtifactNotApplicable means the distribution type downloads no artifact
 	// (npx/uvx): there is no byte range to hash.
 	ArtifactNotApplicable ArtifactVerificationStatus = "not_applicable"
+	// ArtifactOverrideAllowUnverified is the override recorded when the
+	// operator's explicit `matrix install --allow-unverified` opt-in let an
+	// artifact with no published digest through. It is an override, not a
+	// verification: the status stays digest_not_published.
+	ArtifactOverrideAllowUnverified = "allow-unverified"
 )
 
 // ArtifactVerification is the integrity evidence Matrix records at install time
 // for the artifact it downloaded. It is the single answer to "was the digest
-// verified?", read back by `matrix doctor`, `matrix agent doctor` and
+// verified?", read back by `matrix agent doctor` and
 // `matrix agent info --source=local`.
 //
 // Verified is true only when the computed digest matched the published one: an
 // absent publication and an inapplicable distribution are both false, because
 // "not published" and "verified" are different facts.
+//
+// Override names the operator opt-in that allowed an install the default policy
+// would have refused. It never sets Verified.
 type ArtifactVerification struct {
 	Verified   bool                       `json:"verified"`
 	Status     ArtifactVerificationStatus `json:"status"`
@@ -46,6 +54,7 @@ type ArtifactVerification struct {
 	Artifact   string                     `json:"artifact,omitempty"`
 	Expected   string                     `json:"expected_sha256,omitempty"`
 	Actual     string                     `json:"actual_sha256,omitempty"`
+	Override   string                     `json:"override,omitempty"`
 	VerifiedAt time.Time                  `json:"verified_at"`
 }
 
@@ -59,6 +68,9 @@ func (v *ArtifactVerification) Describe() string {
 	case ArtifactVerified:
 		return fmt.Sprintf("sha256 verified against the registry index for %s", v.Platform)
 	case ArtifactDigestNotPublished:
+		if v.Override != "" {
+			return fmt.Sprintf("not verified: the registry index publishes no sha256 for %s (installed with --%s)", v.Platform, v.Override)
+		}
 		return fmt.Sprintf("not verified: the registry index publishes no sha256 for %s", v.Platform)
 	case ArtifactNotApplicable:
 		return "not applicable: this distribution downloads no artifact"

@@ -463,3 +463,19 @@ guessed.
 | Event sink SSRF guard | on | `internal/logic/runtrace/sinks.go:46-64` |
 | Archive extraction budget | 2 GiB | `internal/providers/osfs/archive.go:43` |
 | HTTP header/idle timeouts | 10s / 60s | `cmd/matrix/run.go:219-220` |
+
+## Appendix B — Decisions taken after this review (2026-09-23)
+
+G5 and G6 were classified above as decisions rather than defects. Both are now
+settled in the safe-by-default direction; the findings and the posture table stay
+as the record of what the code did when this review was written.
+
+| Finding | Decision | Where the control lives now |
+| --- | --- | --- |
+| G5 — a binary install proceeded with no published digest | Refused by default. `matrix install <agent-id> --allow-unverified` is the explicit operator opt-in; when it is used the override is printed, emitted as `install_allow_unverified`, and recorded as `artifact_verification.override` while the status stays `digest_not_published` | `internal/logic/agentmgr/artifact_integrity.go:49-58`, `internal/logic/agentmgr/installer.go:38-48`, `cmd/matrix/install.go:64,80`, `internal/logic/agentcfg/meta.go:32-56` |
+| G6 — the index supplied the executable path | The binary `cmd` must be a local relative path inside the agent directory, free of shell metacharacters, and must exist there after extraction; an npx/uvx package identifier must be a package name, so an option-shaped value can no longer become argv | `internal/logic/agentinstall/registry_input.go:52-119`, `internal/logic/agentmgr/installer.go:186-201,205-217`, `internal/logic/agentmgr/registry_client.go:230-253` |
+
+The full record, including the revert experiment that fails each test, is in
+`issues/closed/2026-09-23-agent-install-fail-closed-and-command-containment.md`.
+G7 is untouched by both decisions: registry-supplied arguments and environment
+for npx/uvx remain unconstrained.

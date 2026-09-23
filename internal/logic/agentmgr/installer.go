@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/logic/agentidentity"
@@ -31,6 +30,21 @@ type Installer struct {
 	// (a future `matrix install --json`) can send progress elsewhere and keep
 	// stdout parseable.
 	progress io.Writer
+
+	// allowUnverified is the operator's explicit acceptance of a binary
+	// distribution whose registry entry publishes no sha256. It is off by
+	// default: an install with nothing to verify is refused, and only
+	// `matrix install --allow-unverified` turns it on, for that install. The
+	// override is recorded in the install evidence and logged when it is used.
+	allowUnverified bool
+}
+
+// SetAllowUnverified turns the explicit opt-in for digest-less binary
+// distributions on or off. It exists for the operator who has checked that the
+// index publishes no digest and accepts the artifact unverified; leaving it
+// alone keeps the fail-closed default.
+func (inst *Installer) SetAllowUnverified(allow bool) {
+	inst.allowUnverified = allow
 }
 
 // SetProgressWriter redirects human-readable install progress. A nil writer
@@ -158,8 +172,8 @@ func (inst *Installer) installResolved(ctx context.Context, agentID string, mani
 	return cfg, artifactVerificationNotApplicable(), err
 }
 
-// installBinary handles the binary distribution flow: download, verify, extract,
-// resolve path.
+// installBinary handles the binary distribution flow: validate the launcher the
+// index names, download, verify, extract, resolve path.
 func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifest) (string, *agentcfg.ArtifactVerification, error) {
 	dist, err := inst.registry.ResolveDistribution(manifest)
 	if err != nil {
@@ -170,17 +184,37 @@ func (inst *Installer) installBinary(ctx context.Context, manifest *AgentManifes
 		return "", nil, err
 	}
 
+	// The launcher is resolved before the download: a cmd that escapes the
+	// agent directory costs no bytes and leaves nothing behind.
+	binaryPath, err := agentinstall.ResolveLauncherPath(agentPath, dist.Cmd)
+	if err != nil {
+		return "", nil, fmt.Errorf("refusing %s: %w", manifest.ID, err)
+	}
+
 	verification, err := inst.fetchVerifiedArchive(ctx, manifest, agentPath, dist)
 	if err != nil {
 		return "", nil, err
 	}
-
-	binaryPath := dist.Cmd
-	if filepath.IsLocal(binaryPath) || (len(binaryPath) > 2 && binaryPath[:2] == "./") {
-		binaryPath = filepath.Join(agentPath, binaryPath)
+	if err := inst.requireExtractedLauncher(manifest.ID, dist.Cmd, binaryPath); err != nil {
+		return "", nil, err
 	}
 
 	return binaryPath, verification, nil
+}
+
+// requireExtractedLauncher proves the launcher the index names really is inside
+// the extracted agent directory. It is the last gate before registration: a cmd
+// that resolves inside the directory but matches nothing in the archive would
+// otherwise register an agent that cannot start.
+func (inst *Installer) requireExtractedLauncher(agentID, cmd, resolved string) error {
+	info, err := inst.fs.Stat(resolved)
+	if err != nil {
+		return fmt.Errorf("agent %q: the registry index publishes cmd %q, but %s does not exist after extraction; refusing to register the agent", agentID, cmd, resolved)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("agent %q: the registry index publishes cmd %q, which resolves to the directory %s; refusing to register the agent", agentID, cmd, resolved)
+	}
+	return nil
 }
 
 // fetchVerifiedArchive downloads the artifact the index publishes, refuses it

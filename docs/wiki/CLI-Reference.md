@@ -437,6 +437,18 @@ Install an agent from the registry.
 matrix install claude
 ```
 
+A binary distribution whose registry entry publishes no `sha256` is refused:
+there is nothing to verify the download against. To accept such an artifact
+anyway, opt in explicitly. The override is logged, recorded in the install
+evidence, and the agent keeps reporting as not verified:
+
+```bash
+matrix install <agent-id> --allow-unverified
+```
+
+`--allow-unverified` applies only to a missing digest: a digest that mismatches
+or is malformed always refuses the install.
+
 ### `matrix uninstall <agent-id>`
 
 Uninstall an agent.

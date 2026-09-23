@@ -18,6 +18,7 @@ var (
 	installA2ACardURL         string
 	installA2ATenant          string
 	installA2AHeaders         []string
+	installAllowUnverified    bool
 )
 
 var installCmd = &cobra.Command{
@@ -60,6 +61,7 @@ var installCmd = &cobra.Command{
 		}
 
 		// 2. Execute Install
+		ctx.Installer.SetAllowUnverified(installAllowUnverified)
 		if err := ctx.Installer.Install(context.Background(), agentID); err != nil {
 			fmt.Fprintf(os.Stderr, "Installation failed: %v\n", err)
 			os.Exit(1)
@@ -76,5 +78,6 @@ func init() {
 	installCmd.Flags().StringVar(&installA2ACardURL, "a2a-card-url", "", "A2A agent card URL or base URL used to discover a remote endpoint")
 	installCmd.Flags().StringVar(&installA2ATenant, "a2a-tenant", "", "Optional A2A tenant for direct endpoint registration")
 	installCmd.Flags().StringArrayVar(&installA2AHeaders, "a2a-header", nil, "Governed A2A header as Name=Value (repeatable; stored only in the Vault)")
+	installCmd.Flags().BoolVar(&installAllowUnverified, "allow-unverified", false, "Install a binary distribution whose registry entry publishes no sha256 (recorded in the install evidence; refused by default)")
 	rootCmd.AddCommand(installCmd)
 }

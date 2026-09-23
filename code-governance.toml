@@ -137,7 +137,13 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-09-23: install progress goes through an injectable writer (SetProgressWriter)
 # so a machine-readable install can keep stdout parseable, and integrity messages
 # use it too.
-"internal/logic/agentmgr" = 1055
+# 2026-09-23: fail-closed installation. An artifact whose index entry publishes no
+# sha256 is now refused unless the operator passes --allow-unverified, the opt-in is
+# surfaced and persisted, and the registry-supplied launch command is validated and
+# confined to the agent directory before the download and again after extraction.
+# The package had two lines of headroom, so this could not be done inside the old
+# budget; the alternative was to split a package whose parts all change together.
+"internal/logic/agentmgr" = 1085
 # 2026-07-22: ACP message identity and structured final/progress projection add
 # lossless messageId/phase handling without provider-text heuristics. 2026-07-19:
 # stable ACP v1.19 and A2A v1.0.1 coverage expansion adds

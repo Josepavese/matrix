@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -25,8 +26,10 @@ const sha256HexLength = 64
 // Three outcomes, and they stay distinguishable:
 //
 //   - the published digest matches: the install proceeds, verified=true;
-//   - the index publishes no digest for this platform: the install proceeds,
-//     but the evidence says "digest_not_published", never "verified";
+//   - the index publishes no digest for this platform: the install is refused,
+//     because there is nothing to verify against, unless the operator opted in
+//     with --allow-unverified; then it proceeds and the evidence says
+//     "digest_not_published" plus the override, never "verified";
 //   - the digest differs, or the published value is not a valid sha256: the
 //     install is refused with the reason.
 func (inst *Installer) verifyArtifact(agentID, tmpFile, platform string, dist *BinaryDist) (*agentcfg.ArtifactVerification, error) {
@@ -45,7 +48,12 @@ func (inst *Installer) verifyArtifact(agentID, tmpFile, platform string, dist *B
 
 	published := strings.ToLower(strings.TrimSpace(dist.SHA256))
 	if published == "" {
-		inst.progressf("Registry index publishes no sha256 for %s (%s): installing without integrity verification\n", agentID, platform)
+		if !inst.allowUnverified {
+			return nil, fmt.Errorf("artifact integrity check failed for %q: the registry index publishes no sha256 for %s (%s), so the downloaded artifact cannot be verified; refusing to install (re-run `matrix install %s --allow-unverified` to accept it unverified)", agentID, dist.Archive, platform, agentID)
+		}
+		evidence.Override = agentcfg.ArtifactOverrideAllowUnverified
+		inst.progressf("WARNING: --allow-unverified is in effect: installing %s without integrity verification because the registry index publishes no sha256 for %s (%s)\n", agentID, dist.Archive, platform)
+		slog.Warn("installing an agent artifact without integrity verification", "event", "install_allow_unverified", "agent", agentID, "platform", platform, "artifact", dist.Archive)
 		return evidence, nil
 	}
 	if !isHexSHA256(published) {

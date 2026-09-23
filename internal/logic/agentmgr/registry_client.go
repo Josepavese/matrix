@@ -230,6 +230,9 @@ func (c *RegistryClient) ResolveAnyDistribution(manifest *AgentManifest) (*Resol
 	// Fallback to npx
 	if manifest.Distribution.Npx != nil {
 		npx := manifest.Distribution.Npx
+		if err := agentinstall.ValidatePackageSpec("npx", npx.Package); err != nil {
+			return nil, err
+		}
 		return &ResolvedDist{
 			Type:    "npx",
 			Command: "npx",
@@ -241,6 +244,9 @@ func (c *RegistryClient) ResolveAnyDistribution(manifest *AgentManifest) (*Resol
 	// Fallback to uvx
 	if manifest.Distribution.Uvx != nil {
 		uvx := manifest.Distribution.Uvx
+		if err := agentinstall.ValidatePackageSpec("uvx", uvx.Package); err != nil {
+			return nil, err
+		}
 		return &ResolvedDist{
 			Type:    "uvx",
 			Command: "uvx",

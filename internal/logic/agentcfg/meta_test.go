@@ -2,6 +2,7 @@ package agentcfg
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,5 +83,75 @@ func TestMetaOmitsArtifactVerificationWhenAbsent(t *testing.T) {
 	}
 	if _, ok := decoded["artifact_verification"]; ok {
 		t.Fatalf("meta without evidence must not carry the field, got %v", decoded)
+	}
+}
+
+// TestArtifactVerificationOverrideIsRecordedAndNeverVerified pins the opt-in
+// evidence: an install the operator forced with --allow-unverified records the
+// override, stays digest_not_published, and says so in the line `matrix agent
+// info` prints. A verified install carries no override key at all.
+func TestArtifactVerificationOverrideIsRecordedAndNeverVerified(t *testing.T) {
+	plain := ArtifactVerification{Status: ArtifactDigestNotPublished, Platform: "linux-x86_64"}
+	if strings.Contains(plain.Describe(), "--") {
+		t.Fatalf("an install that was never overridden must not name an override, got %q", plain.Describe())
+	}
+
+	overridden := Meta{
+		ID: "cursor", Name: "Cursor", DistTypes: []string{"binary"},
+		ArtifactVerification: &ArtifactVerification{
+			Status:     ArtifactDigestNotPublished,
+			Platform:   "linux-x86_64",
+			Artifact:   "https://example.invalid/cursor.tar.gz",
+			Actual:     "3046e0404fdc60fb80307e7a47824ba07477364178a4d09baa8548496dd6d43b",
+			Override:   ArtifactOverrideAllowUnverified,
+			VerifiedAt: time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	if overridden.ArtifactVerification.Verified {
+		t.Fatal("an override is not a verification")
+	}
+	described := overridden.ArtifactVerification.Describe()
+	for _, want := range []string{"not verified", "--" + ArtifactOverrideAllowUnverified} {
+		if !strings.Contains(described, want) {
+			t.Fatalf("Describe() must contain %q, got %q", want, described)
+		}
+	}
+
+	store := memstore.New()
+	if err := SaveMeta(store, "cursor", overridden); err != nil {
+		t.Fatalf("SaveMeta failed: %v", err)
+	}
+	raw, err := store.Get(MetaKey("cursor"))
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("the stored meta must be JSON: %v", err)
+	}
+	evidence, ok := decoded["artifact_verification"].(map[string]any)
+	if !ok {
+		t.Fatalf("the stored meta must expose artifact_verification, got %v", decoded)
+	}
+	if evidence["override"] != ArtifactOverrideAllowUnverified {
+		t.Fatalf("override = %v, want %q", evidence["override"], ArtifactOverrideAllowUnverified)
+	}
+	if evidence["verified"] != false {
+		t.Fatalf("verified = %v, want false", evidence["verified"])
+	}
+
+	if err := SaveMeta(store, "opencode", Meta{ID: "opencode", ArtifactVerification: &ArtifactVerification{Verified: true, Status: ArtifactVerified, VerifiedAt: time.Now().UTC()}}); err != nil {
+		t.Fatalf("SaveMeta failed: %v", err)
+	}
+	raw, err = store.Get(MetaKey("opencode"))
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("the stored meta must be JSON: %v", err)
+	}
+	evidence, _ = decoded["artifact_verification"].(map[string]any)
+	if _, ok := evidence["override"]; ok {
+		t.Fatalf("a verified install must not record an override, got %v", evidence)
 	}
 }
