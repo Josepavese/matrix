@@ -5,6 +5,7 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/channelcfg"
 	"github.com/Josepavese/matrix/internal/logic/config"
 	"github.com/Josepavese/matrix/internal/middleware"
+	"strings"
 )
 
 // BuildInput holds the full set of dependencies for building a runtime report.
@@ -34,19 +35,20 @@ func BuildReport(input BuildInput) (map[string]any, error) {
 	}
 
 	report := map[string]any{
-		"vault_path":          "data/matrix-vault.db",
-		"vault_exists":        true,
-		"jsonrpc_daemon_addr": input.JSONRPCAddr,
-		"jsonrpc_daemon_up":   CanDial(input.Net, input.JSONRPCAddr),
-		"matrix_http_addr":    input.MatrixHTTPAddr,
-		"matrix_http_up":      CanDial(input.Net, input.MatrixHTTPAddr),
-		"a2a_http_addr":       input.A2AHTTPAddr,
-		"a2a_http_up":         CanDial(input.Net, input.A2AHTTPAddr),
-		"telegram_enabled":    tgCfg.Enabled,
-		"telegram_configured": tgCfg.Token != "",
-		"telegram_source":     source,
-		"agents":              reports,
-		"warnings":            warnings,
+		"vault_path":                "data/matrix-vault.db",
+		"vault_exists":              true,
+		"jsonrpc_daemon_addr":       input.JSONRPCAddr,
+		"jsonrpc_daemon_up":         CanDial(input.Net, input.JSONRPCAddr),
+		"matrix_http_addr":          input.MatrixHTTPAddr,
+		"matrix_http_up":            CanDial(input.Net, input.MatrixHTTPAddr),
+		"matrix_http_authenticated": strings.TrimSpace(input.ConfigManager.GetWithDefault("matrix_api_key", "")) != "",
+		"a2a_http_addr":             input.A2AHTTPAddr,
+		"a2a_http_up":               CanDial(input.Net, input.A2AHTTPAddr),
+		"telegram_enabled":          tgCfg.Enabled,
+		"telegram_configured":       tgCfg.Token != "",
+		"telegram_source":           source,
+		"agents":                    reports,
+		"warnings":                  warnings,
 	}
 	AppendRuntimeWarnings(report, &warnings)
 	report["warnings"] = warnings

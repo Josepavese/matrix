@@ -26,6 +26,16 @@ func AppendRuntimeWarnings(report map[string]any, warnings *[]string) {
 	if !ReportBool(report, "a2a_http_up") {
 		*warnings = append(*warnings, "a2a http server is not reachable on 127.0.0.1:9091")
 	}
+	// The shipped default accepts unauthenticated requests on loopback. Nothing warned
+	// about it, so an operator who later fronted the port with a reverse proxy had no
+	// signal that the proxy had become the only thing between the internet and an agent
+	// that installs software and writes configuration. A non-loopback bind without a key
+	// is already refused at startup, so this speaks only about the accepted case.
+	if addr, ok := report["matrix_http_addr"].(string); ok && !ReportBool(report, "matrix_http_authenticated") {
+		if warning := UnauthenticatedLoopbackWarning(addr, "", "matrix_http_addr", "matrix_api_key"); warning != "" {
+			*warnings = append(*warnings, warning)
+		}
+	}
 }
 
 // ValidateRuntimeReport checks that a runtime report has expected boolean fields.
