@@ -24,7 +24,7 @@ func (c *acpConversationClient) ForkRemoteSession(ctx context.Context, req middl
 	if err != nil {
 		return middleware.RemoteSessionInfo{}, err
 	}
-	resp, err := c.client.ForkSession(ctx, acpForkSessionRequest{
+	resp, err := c.currentACPClient().ForkSession(ctx, acpForkSessionRequest{
 		SessionID:             parent,
 		Cwd:                   cwd,
 		AdditionalDirectories: additionalDirectories,

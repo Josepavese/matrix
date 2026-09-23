@@ -48,10 +48,11 @@ func (c *acpConversationClient) Close() error {
 }
 
 func (c *acpConversationClient) closeUnderlyingClient() error {
-	if c.client == nil {
+	client := c.currentACPClient()
+	if client == nil {
 		return nil
 	}
-	err := c.client.Close()
+	err := client.Close()
 	c.mu.Lock()
 	c.closeErr = err
 	c.mu.Unlock()

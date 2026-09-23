@@ -56,6 +56,10 @@ type acpClient interface {
 	Close() error
 	SetRequestHandler(handler acpRequestHandler)
 	Initialize(ctx context.Context, req acpInitializeRequest) (*acpInitializeResponse, error)
+	// AuthenticatedProtocolVersion is the generation agreed during initialize.
+	// It is what every version-conditional surface reads, because the raw
+	// response field is what the agent declared and a v1 agent may omit it.
+	AuthenticatedProtocolVersion() int
 	Authenticate(ctx context.Context, methodID string) error
 	Logout(ctx context.Context, req acpLogoutRequest) (*acpLogoutResponse, error)
 	NewSession(ctx context.Context, req acpNewSessionRequest) (*acpNewSessionResponse, error)

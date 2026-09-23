@@ -9,7 +9,21 @@ import (
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
+// MaterializeRemoteSession creates a remote session without running a turn.
+// Like a turn it applies the authentication retry, because session/new is one of
+// the requests ACP version 2 gates behind a login.
 func (c *acpConversationClient) MaterializeRemoteSession(ctx context.Context, req middleware.SessionMaterializeRequest) (middleware.RemoteSessionInfo, middleware.ConversationMetadata, error) {
+	var info middleware.RemoteSessionInfo
+	var metadata middleware.ConversationMetadata
+	err := c.withAuthenticationRetry(ctx, func() error {
+		var createErr error
+		info, metadata, createErr = c.materializeRemoteSessionOnce(ctx, req)
+		return createErr
+	})
+	return info, metadata, err
+}
+
+func (c *acpConversationClient) materializeRemoteSessionOnce(ctx context.Context, req middleware.SessionMaterializeRequest) (middleware.RemoteSessionInfo, middleware.ConversationMetadata, error) {
 	resp, err := c.createACPRemoteSession(ctx, req)
 	if err != nil {
 		return middleware.RemoteSessionInfo{}, middleware.ConversationMetadata{}, err
@@ -40,7 +54,7 @@ func (c *acpConversationClient) createACPRemoteSession(ctx context.Context, req 
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.client.NewSession(ctx, acpNewSessionRequest{
+	resp, err := c.currentACPClient().NewSession(ctx, acpNewSessionRequest{
 		ClientTitle:           strings.TrimSpace(req.LogicalSessionID),
 		Cwd:                   cwd,
 		AdditionalDirectories: additionalDirectories,

@@ -52,26 +52,15 @@ func newACPClientWithHandler(ctx context.Context, deps middleware.ConversationFa
 func (f *acpConversationFactory) initializeConversation(ctx context.Context, endpoint middleware.ProtocolEndpoint, deps middleware.ConversationFactoryDeps, transport middleware.AgentTransport) (middleware.ConversationClient, error) {
 	client, handler := newACPClientWithHandler(ctx, deps, transport)
 
-	initReq := acpInitializeRequest{
-		// Zero asks the client to negotiate: it requests the highest version Matrix
-		// supports and drops to v1 if the agent refuses it, so an installed agent
-		// that only speaks the previous generation keeps working.
-		ProtocolVersion:    0,
-		ClientInfo:         map[string]interface{}{"name": "matrix", "version": "1.0"},
-		ClientCapabilities: acpClientCapabilitiesForDeps(deps),
-	}
-	initResp, err := client.Initialize(ctx, initReq)
+	initResp, err := initializeACPConnection(ctx, client, deps)
 	if err != nil {
 		_ = transport.Close()
-		return nil, classifyProviderFailure("", endpoint, "initialize", fmt.Errorf("ACP initialize failed: %w", err))
-	}
-	if initResp.ProtocolVersion != supportedACPProtocolVersion {
-		_ = transport.Close()
-		return nil, classifyProviderFailure("", endpoint, "initialize", fmt.Errorf("ACP protocol version %d is not supported (matrix supports %d)", initResp.ProtocolVersion, supportedACPProtocolVersion))
+		return nil, classifyProviderFailure("", endpoint, "initialize", err)
 	}
 	conversation := &acpConversationClient{
 		client:              client,
 		handler:             handler,
+		deps:                deps,
 		cwd:                 deps.Cwd,
 		endpoint:            endpoint,
 		sessionCapabilities: acpSessionCapabilities(initResp),
@@ -81,6 +70,9 @@ func (f *acpConversationFactory) initializeConversation(ctx context.Context, end
 		mcpServers:          toZedACPMCPServers(deps.McpServers),
 		preferredMode:       agentlaunch.PreferredSessionMode(endpoint),
 	}
+	// A terminal login has to reconnect with the same endpoint and dependencies
+	// this connection was built from, so the factory owns that rebuild.
+	conversation.reconnect = conversation.reconnectACPConnection
 	if err := conversation.validateMCPServers(conversation.mcpServers); err != nil {
 		_ = transport.Close()
 		return nil, classifyProviderFailure("", endpoint, "initialize", err)
@@ -111,12 +103,14 @@ func acpClientCapabilitiesForDeps(deps middleware.ConversationFactoryDeps) *acpC
 			},
 		},
 		Elicitation: elicitationAdvertisement(deps.ElicitationFrontend),
+		Auth:        terminalAuthAdvertisement(deps),
 	}
 }
 
 type acpConversationClient struct {
 	client              ACPClient
 	handler             *defaultRequestHandler
+	deps                middleware.ConversationFactoryDeps
 	cwd                 string
 	endpoint            middleware.ProtocolEndpoint
 	sessionCapabilities middleware.ConversationSessionCapabilities
@@ -124,20 +118,26 @@ type acpConversationClient struct {
 	authMethods         []acpAuthMethod
 	mcpServers          []acpMcpServerConfig
 	preferredMode       string
-	mu                  sync.Mutex
-	loadedSessions      map[string]bool
-	activePrompts       map[string]chan struct{}
-	activeClientLeases  int
-	closeRequested      bool
-	closed              bool
-	closeErr            error
+	// reconnect rebuilds the connection after a terminal authentication method
+	// ran the configured agent program; nil means this client cannot reconnect.
+	reconnect          func(context.Context) error
+	mu                 sync.Mutex
+	loadedSessions     map[string]bool
+	activePrompts      map[string]chan struct{}
+	activeClientLeases int
+	closeRequested     bool
+	closed             bool
+	closeErr           error
 }
 
 func (c *acpConversationClient) Alive() bool {
-	return c.client != nil && c.client.Context().Err() == nil
+	client := c.currentACPClient()
+	return client != nil && client.Context().Err() == nil
 }
 
-func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
+// executeTurnOnce runs one turn. ExecuteTurn wraps it with the authentication
+// retry, so this body owns the turn itself and nothing about logging in again.
+func (c *acpConversationClient) executeTurnOnce(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
 	log := slog.With("component", "acp_adapter", "logical_session", turn.LogicalSessionID, "agent", turn.AgentID)
 	if err := c.validatePromptContent(turn.ContentBlocks); err != nil {
 		return middleware.ConversationResult{}, err
@@ -273,7 +273,7 @@ func (c *acpConversationClient) applySessionMode(ctx context.Context, session *m
 		return c.applyPreferredSessionMode(ctx, session, sessionID)
 	}
 	if configID, value := pickAutoApproveConfigOption(session); configID != "" && value != "" {
-		if _, err := c.client.SetConfigOption(ctx, acpSetConfigOptionRequest{
+		if _, err := c.currentACPClient().SetConfigOption(ctx, acpSetConfigOptionRequest{
 			SessionID: sessionID,
 			ConfigID:  configID,
 			Value:     value,
@@ -286,7 +286,7 @@ func (c *acpConversationClient) applySessionMode(ctx context.Context, session *m
 	if modeID == "" {
 		return nil
 	}
-	if err := c.client.SetMode(ctx, sessionID, modeID); err != nil {
+	if err := c.currentACPClient().SetMode(ctx, sessionID, modeID); err != nil {
 		log.Warn("failed to set ACP mode", "mode", modeID, "error", err)
 	}
 	return nil
@@ -300,13 +300,13 @@ func (c *acpConversationClient) applyPreferredSessionMode(ctx context.Context, s
 		return nil
 	}
 	if configID, value := findSessionConfigMode(session, c.preferredMode); configID != "" {
-		_, err := c.client.SetConfigOption(ctx, acpSetConfigOptionRequest{SessionID: sessionID, ConfigID: configID, Value: value})
+		_, err := c.currentACPClient().SetConfigOption(ctx, acpSetConfigOptionRequest{SessionID: sessionID, ConfigID: configID, Value: value})
 		return wrapConfiguredModeError(c.preferredMode, err)
 	}
 	if !hasSessionMode(session, c.preferredMode) {
 		return fmt.Errorf("configured provider mode %q is unavailable in ACP session state", c.preferredMode)
 	}
-	err := c.client.SetMode(ctx, sessionID, c.preferredMode)
+	err := c.currentACPClient().SetMode(ctx, sessionID, c.preferredMode)
 	return wrapConfiguredModeError(c.preferredMode, err)
 }
 
@@ -365,7 +365,7 @@ func (c *acpConversationClient) resumeACPRemoteSession(req acpLoadRemoteSessionR
 	if err != nil {
 		return false, err
 	}
-	resp, err := c.client.ResumeSession(req.Ctx, acpResumeSessionRequest{
+	resp, err := c.currentACPClient().ResumeSession(req.Ctx, acpResumeSessionRequest{
 		SessionID:             req.RemoteSessionID,
 		Cwd:                   req.Cwd,
 		AdditionalDirectories: additionalDirectories,
@@ -388,7 +388,7 @@ func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionReq
 	if err != nil {
 		return err
 	}
-	resp, err := c.client.LoadSession(req.Ctx, acpLoadSessionRequest{
+	resp, err := c.currentACPClient().LoadSession(req.Ctx, acpLoadSessionRequest{
 		SessionID:             req.RemoteSessionID,
 		Cwd:                   req.Cwd,
 		AdditionalDirectories: additionalDirectories,
@@ -417,7 +417,7 @@ func (c *acpConversationClient) prepareTurnCallbacks(turn middleware.Conversatio
 
 func (c *acpConversationClient) promptACP(ctx context.Context, remoteSessionID string, turn middleware.ConversationTurn, obs *simpleObserver) (*acpPromptResponse, error) {
 	promptText := sidecar.ProjectPrompt(turn.Message, turn.SidecarCapsules)
-	return c.client.Prompt(ctx, acpPromptRequest{
+	return c.currentACPClient().Prompt(ctx, acpPromptRequest{
 		SessionID: remoteSessionID,
 		Prompt:    acpPromptContent(promptText, turn.ContentBlocks),
 		Meta:      sidecarprojection.ACPMeta(turn.SidecarCapsules),
@@ -425,7 +425,10 @@ func (c *acpConversationClient) promptACP(ctx context.Context, remoteSessionID s
 }
 
 func (c *acpConversationClient) retryTurnWithFreshSession(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
-	return c.ExecuteTurn(ctx, middleware.ConversationTurn{
+	// executeTurnOnce, not ExecuteTurn: this retry is about a lost session, and
+	// nesting the authentication retry inside it would give one caller-visible
+	// operation more than the single authentication attempt it is allowed.
+	return c.executeTurnOnce(ctx, middleware.ConversationTurn{
 		AgentID:                  turn.AgentID,
 		LogicalSessionID:         turn.LogicalSessionID,
 		WorkspacePath:            turn.WorkspacePath,
@@ -535,7 +538,7 @@ func (c *acpConversationClient) ListRemoteSessions(ctx context.Context) ([]middl
 	var out []middleware.RemoteSessionInfo
 	cursor := ""
 	for page := 0; page < 100; page++ {
-		resp, err := c.client.ListSessionsWithRequest(ctx, acpListSessionsRequest{Cursor: cursor})
+		resp, err := c.currentACPClient().ListSessionsWithRequest(ctx, acpListSessionsRequest{Cursor: cursor})
 		if err != nil {
 			return nil, err
 		}
@@ -575,7 +578,7 @@ func (c *acpConversationClient) GetRemoteSession(ctx context.Context, remoteSess
 		}
 	}
 	if c.sessionCapabilities.Resume {
-		if _, err := c.client.ResumeSession(ctx, acpResumeSessionRequest{
+		if _, err := c.currentACPClient().ResumeSession(ctx, acpResumeSessionRequest{
 			SessionID:  remoteSessionID,
 			Cwd:        c.cwd,
 			McpServers: cloneACPMCPServers(c.mcpServers),
@@ -591,7 +594,7 @@ func (c *acpConversationClient) GetRemoteSession(ctx context.Context, remoteSess
 		}
 	}
 	if c.sessionCapabilities.Load {
-		if _, err := c.client.LoadSession(ctx, acpLoadSessionRequest{
+		if _, err := c.currentACPClient().LoadSession(ctx, acpLoadSessionRequest{
 			SessionID:  remoteSessionID,
 			Cwd:        c.cwd,
 			McpServers: cloneACPMCPServers(c.mcpServers),
@@ -613,7 +616,7 @@ func (c *acpConversationClient) DeleteRemoteSession(ctx context.Context, remoteS
 	if !c.sessionCapabilities.Delete {
 		return fmt.Errorf("ACP agent does not advertise session/delete")
 	}
-	if err := c.client.DeleteSession(ctx, remoteSessionID); err != nil {
+	if err := c.currentACPClient().DeleteSession(ctx, remoteSessionID); err != nil {
 		return err
 	}
 	c.unmarkLoadedSession(remoteSessionID)
@@ -624,7 +627,7 @@ func (c *acpConversationClient) CancelRemoteSession(ctx context.Context, remoteS
 	if strings.TrimSpace(remoteSessionID) == "" {
 		return fmt.Errorf("ACP session id is required")
 	}
-	return c.client.CancelSession(ctx, remoteSessionID)
+	return c.currentACPClient().CancelSession(ctx, remoteSessionID)
 }
 
 func (c *acpConversationClient) CloseRemoteSession(ctx context.Context, remoteSessionID string) error {
@@ -634,7 +637,7 @@ func (c *acpConversationClient) CloseRemoteSession(ctx context.Context, remoteSe
 	if strings.TrimSpace(remoteSessionID) == "" {
 		return fmt.Errorf("ACP session id is required")
 	}
-	if err := c.client.CloseSession(ctx, remoteSessionID); err != nil {
+	if err := c.currentACPClient().CloseSession(ctx, remoteSessionID); err != nil {
 		return err
 	}
 	c.unmarkLoadedSession(remoteSessionID)

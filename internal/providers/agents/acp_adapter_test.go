@@ -129,23 +129,29 @@ func TestACPClientCapabilitiesAdvertiseStableBooleanConfig(t *testing.T) {
 }
 
 type pagedListACPClient struct {
-	ctx           context.Context
-	cursors       []string
-	listReqs      []acpListSessionsRequest
-	newReq        *acpNewSessionRequest
-	resumeReq     *acpResumeSessionRequest
-	promptReq     *acpPromptRequest
-	promptUpdates []acpSessionNotification
-	authID        string
-	logouts       int
-	setModeID     string
-	setConfigReq  *acpSetConfigOptionRequest
+	ctx                context.Context
+	protocolVersion    int
+	initializeResponse *acpInitializeResponse
+	cursors            []string
+	listReqs           []acpListSessionsRequest
+	newReq             *acpNewSessionRequest
+	resumeReq          *acpResumeSessionRequest
+	promptReq          *acpPromptRequest
+	promptUpdates      []acpSessionNotification
+	authID             string
+	logouts            int
+	setModeID          string
+	setConfigReq       *acpSetConfigOptionRequest
 }
 
 func (c *pagedListACPClient) Context() context.Context            { return c.ctx }
 func (c *pagedListACPClient) Close() error                        { return nil }
 func (c *pagedListACPClient) SetRequestHandler(acpRequestHandler) {}
+func (c *pagedListACPClient) AuthenticatedProtocolVersion() int   { return c.protocolVersion }
 func (c *pagedListACPClient) Initialize(context.Context, acpInitializeRequest) (*acpInitializeResponse, error) {
+	if c.initializeResponse != nil {
+		return c.initializeResponse, nil
+	}
 	return &acpInitializeResponse{ProtocolVersion: supportedACPProtocolVersion}, nil
 }
 

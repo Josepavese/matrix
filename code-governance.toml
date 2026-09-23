@@ -102,7 +102,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-09-23: the onboarding wizard is handed the protocol auth controller right
 # after the router is configured, so the methods it offers are the ones the agent
 # advertises.
-"cmd/matrix" = 3235
+# 2026-09-23: the agent capability opt-ins (elicitation and terminal auth) moved into
+# their own file so run.go stays inside its file budget.
+"cmd/matrix" = 3245
 # 2026-09-23: the generic ACP handler reads the agent's own authMethods through
 # AgentAuthController instead of always returning a hardcoded method, and performs
 # the protocol authenticate for a method the agent published. The port gained its
@@ -150,7 +152,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-09-23: the adapter resolves an advertised method's identifier across both
 # protocol generations and classifies ACP v2's structured auth_required signal
 # before the text heuristics.
-"internal/providers/agents" = 4160
+# 2026-09-23: full ACP v2 support - terminal auth methods launched through the
+# process backend with reconnection and reinitialization, structured auth_required
+# retry, and the negotiation gate accepting both generations.
+"internal/providers/agents" = 4420
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
@@ -176,7 +181,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-09-23: the ACP client negotiates the protocol generation (v1 "authenticate"
 # and "logout" with "id" versus v2 "auth/login" and "auth/logout" with "methodId")
 # and recognises v2's structured "auth_required" error data.
-"pkg/zedacp" = 1880
+# 2026-09-23: the client advertises the terminal auth capability in the parameter
+# names of the generation it requests, and keeps structured RPC error data so the
+# auth_required signal survives the client.
+"pkg/zedacp" = 1925
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390
@@ -202,7 +210,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "pkg/zedacp/client.go" = 510
 # 2026-09-23: AuthMethod carries methodId alongside id, because protocol version 2
 # renamed the identifier field and reading one name loses every method of the other.
-"pkg/zedacp/types.go" = 745
+# 2026-09-23: InitializeRequest marshals the parameter names of the generation it
+# requests, so a v2 agent sees the capabilities Matrix advertises.
+"pkg/zedacp/types.go" = 762
 
 [function_overrides]
 "cmd/mock-agent/main.go::main" = 100

@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/channelruntime"
 	"github.com/Josepavese/matrix/internal/logic/config"
 	"github.com/Josepavese/matrix/internal/logic/daemon"
-	"github.com/Josepavese/matrix/internal/logic/elicitation"
 	"github.com/Josepavese/matrix/internal/logic/logging"
 	"github.com/Josepavese/matrix/internal/logic/onboarding"
 	"github.com/Josepavese/matrix/internal/logic/runtimecheck"
@@ -103,17 +101,9 @@ var runCmd = &cobra.Command{
 		// of session/request_permission whenever the client advertises it, so
 		// enabling it without a human actually answering would let governed
 		// approvals expire as cancel. Default off keeps prior behaviour exact.
-		var elicitSvc *elicitation.Service
-		if elicitationEnabled(d.App.Config.GetWithDefault) {
-			elicitSvc = elicitation.NewService(elicitTimeout(d.App.Config.GetWithDefault))
-			agentRouter.SetElicitationFrontend(elicitSvc)
-			log.Info("agent elicitation enabled", "event", "elicitation_enabled",
-				"http_path", matrixapi.ElicitationPathV1,
-				"timeout_key", "agent.elicitation_timeout_seconds")
-		} else {
-			log.Info("agent elicitation disabled", "event", "elicitation_disabled",
-				"enable_with", "matrix config set agent.elicitation_enabled true")
-		}
+		// Terminal authentication is opt-in for the same reason and is wired in
+		// the same place.
+		elicitSvc := configureAgentCapabilities(agentRouter, d.App.Config.GetWithDefault, log)
 		// The onboarding wizard authenticates through the same protocol controls
 		// the runtime uses, so the methods it offers are the ones the agent
 		// actually advertises. Wired here because the router above is only fully
@@ -311,22 +301,4 @@ func splitCommaList(raw string) []string {
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-}
-
-// elicitationEnabled reads agent.elicitation_enabled. Elicitation is off
-// unless the operator opts in, because advertising the capability changes how
-// conforming agents (codex-acp among them) route input requests.
-func elicitationEnabled(get func(key, fallback string) string) bool {
-	return strings.EqualFold(strings.TrimSpace(get("agent.elicitation_enabled", "false")), "true")
-}
-
-// elicitTimeout reads agent.elicitation_timeout_seconds through the given
-// getter. Zero or invalid keeps the elicitation service default, so a bad
-// config value degrades to the safe bounded window instead of failing startup.
-func elicitTimeout(get func(key, fallback string) string) time.Duration {
-	seconds, err := strconv.Atoi(get("agent.elicitation_timeout_seconds", "0"))
-	if err != nil || seconds <= 0 {
-		return 0
-	}
-	return time.Duration(seconds) * time.Second
 }

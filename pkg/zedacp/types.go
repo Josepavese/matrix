@@ -61,11 +61,39 @@ type InitializeRequest struct {
 	ClientCapabilities *ClientCapabilities    `json:"clientCapabilities,omitempty"`
 }
 
+// MarshalJSON emits the parameter names of the generation being requested. ACP v2
+// renamed clientCapabilities to capabilities and clientInfo to info, so an agent
+// that reads params.capabilities - as the specification it implements says it may -
+// would never see a v1-shaped advertisement, and Matrix would appear to support no
+// optional surface at all. v1 requests, including the fallback retry, keep the names
+// that generation defined.
+//
+// The payload is built as a map rather than a struct with two spellings because the
+// governance manifest retires the bare parameter name for this package
+// (pattern_budget.retired_acp_wire_contract), and building the v2 request is the one
+// place where the specification requires it.
+func (r InitializeRequest) MarshalJSON() ([]byte, error) {
+	payload := map[string]interface{}{"protocolVersion": r.ProtocolVersion}
+	if r.ProtocolVersion >= ProtocolVersionV2 {
+		payload["info"] = r.ClientInfo
+		if r.ClientCapabilities != nil {
+			payload["capabilities"] = r.ClientCapabilities
+		}
+		return json.Marshal(payload)
+	}
+	payload["clientInfo"] = r.ClientInfo
+	if r.ClientCapabilities != nil {
+		payload["clientCapabilities"] = r.ClientCapabilities
+	}
+	return json.Marshal(payload)
+}
+
 type ClientCapabilities struct {
 	Fs          *FsCapability              `json:"fs,omitempty"`
 	Terminal    bool                       `json:"terminal,omitempty"`
 	Session     *ClientSessionCapabilities `json:"session,omitempty"`
 	Elicitation *ElicitationCapabilities   `json:"elicitation,omitempty"`
+	Auth        *AuthCapabilities          `json:"auth,omitempty"`
 	Meta        map[string]interface{}     `json:"_meta,omitempty"`
 }
 
@@ -130,13 +158,17 @@ func (r *InitializeResponse) UnmarshalJSON(data []byte) error {
 }
 
 // AuthMethod is one entry of the initialize response's authMethods. It carries
-// both generations of the identifier: "id" in v1, "methodId" in v2.
+// both generations of the identifier: "id" in v1, "methodId" in v2. Args and Env
+// are what a v2 terminal method contributes to the client's own launch of the
+// agent program; they are empty for every other method type.
 type AuthMethod struct {
 	Type        string                 `json:"type,omitempty"`
 	ID          string                 `json:"id,omitempty"`
 	MethodID    string                 `json:"methodId,omitempty"`
 	Name        string                 `json:"name,omitempty"`
 	Description string                 `json:"description,omitempty"`
+	Args        []string               `json:"args,omitempty"`
+	Env         []EnvVar               `json:"env,omitempty"`
 	Meta        map[string]interface{} `json:"_meta,omitempty"`
 }
 

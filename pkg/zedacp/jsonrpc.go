@@ -75,6 +75,22 @@ func rpcErrorFromError(err error) *jsonRPCError {
 	return &jsonRPCError{Code: ErrCodeInternal, Message: err.Error()}
 }
 
+// rpcErrorFromWire rebuilds the typed error an inbound JSON-RPC error response
+// carries. It keeps the exact text an inbound error always produced, and what it
+// adds is that the error stays typed: ACP version 2 puts structured signals in
+// the data field — "auth_required" above all — and a caller cannot recognize
+// what a flattened string no longer carries.
+func rpcErrorFromWire(err *jsonRPCError) error {
+	if err == nil {
+		return nil
+	}
+	text := fmt.Sprintf("RPC error %d: %s", err.Code, err.Message)
+	if err.Data != nil {
+		text = fmt.Sprintf("%s (%v)", text, err.Data)
+	}
+	return &RPCError{Code: err.Code, Message: text, Data: err.Data}
+}
+
 func newJSONRPCID(id int64) json.RawMessage {
 	return json.RawMessage(strconv.FormatInt(id, 10))
 }

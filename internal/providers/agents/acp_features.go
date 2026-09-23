@@ -84,42 +84,15 @@ func (c *acpConversationClient) validateMCPServers(servers []acpMcpServerConfig)
 	return nil
 }
 
-// AuthenticationMethods reports the advertised methods Matrix can run: the "agent"
-// type, plus a missing type (v1 agents omit it). ACP v2's "terminal" type needs a
-// process relaunch Matrix does not implement, so it is not offered.
-func (c *acpConversationClient) AuthenticationMethods() []middleware.AuthenticationMethod {
-	out := make([]middleware.AuthenticationMethod, 0, len(c.authMethods))
-	for _, method := range c.authMethods {
-		methodType := strings.ToLower(strings.TrimSpace(method.Type))
-		if methodType != "" && methodType != "agent" {
-			continue
-		}
-		out = append(out, middleware.AuthenticationMethod{
-			ID:          method.Identifier(),
-			Type:        "agent",
-			Name:        method.Name,
-			Description: method.Description,
-			Metadata:    method.Meta,
-		})
-	}
-	return out
-}
-
-func (c *acpConversationClient) Authenticate(ctx context.Context, methodID string) error {
-	methodID = strings.TrimSpace(methodID)
-	for _, method := range c.AuthenticationMethods() {
-		if method.ID == methodID {
-			return c.client.Authenticate(ctx, methodID)
-		}
-	}
-	return fmt.Errorf("ACP agent does not advertise stable authentication method %q", methodID)
-}
+// AuthenticationMethods, Authenticate and the rest of the ACP v2 authentication
+// surface live in acp_authentication.go; this file keeps the capability and
+// content validation the adapter performs before a turn.
 
 func (c *acpConversationClient) Logout(ctx context.Context) error {
 	if !c.featureCapabilities.logout {
 		return fmt.Errorf("ACP agent does not advertise auth.logout")
 	}
-	_, err := c.client.Logout(ctx, acpLogoutRequest{})
+	_, err := c.currentACPClient().Logout(ctx, acpLogoutRequest{})
 	return err
 }
 

@@ -62,6 +62,11 @@ type Router struct {
 	// elicitations; nil keeps the capability unadvertised.
 	elicitation middleware.ElicitationFrontend
 
+	// terminalAuth is the operator opt-in for ACP v2 terminal authentication.
+	// False keeps capabilities.auth.terminal unadvertised, which is the default
+	// because advertising it changes what a real agent offers.
+	terminalAuth bool
+
 	// trustMode returns true when auto-approve is enabled.
 	// When false, permission requests from agents are denied.
 	// If nil, defaults to false (trust mode off).
@@ -286,6 +291,7 @@ func (r *Router) createClient(ctx context.Context, agentID string, cwd string, l
 
 		AgentID:             agentID,
 		ElicitationFrontend: r.elicitation,
+		TerminalAuth:        r.terminalAuth,
 	})
 	if err != nil {
 		return nil, "", annotateProviderFailureAgent(err, agentID)
@@ -428,4 +434,12 @@ func metadataWithContentBlocks(metadata middleware.ConversationMetadata, blocks 
 // inbound requests answered with an explicit decline.
 func (r *Router) SetElicitationFrontend(frontend middleware.ElicitationFrontend) {
 	r.elicitation = frontend
+}
+
+// SetTerminalAuth enables ACP v2 terminal authentication, where Matrix runs the
+// configured agent program itself to complete a login. Off unless an operator
+// turns it on: advertising capabilities.auth.terminal changes what real agents
+// offer, and the login process is interactive, so it is a deliberate choice.
+func (r *Router) SetTerminalAuth(enabled bool) {
+	r.terminalAuth = enabled
 }

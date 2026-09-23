@@ -75,3 +75,31 @@ func TestElicitationIsOptInByDefault(t *testing.T) {
 		}
 	}
 }
+
+// TestTerminalAuthIsOptInByDefault pins the second opt-in. Advertising
+// capabilities.auth.terminal changes which methods a v2 agent offers, so it must
+// take an explicit configuration value and nothing else.
+func TestTerminalAuthIsOptInByDefault(t *testing.T) {
+	get := func(key, fallback string) string {
+		if key != "agent.terminal_auth_enabled" {
+			t.Fatalf("unexpected key %q", key)
+		}
+		if fallback != "false" {
+			t.Fatalf("terminal authentication must default to disabled, got fallback %q", fallback)
+		}
+		return fallback
+	}
+	if terminalAuthEnabled(get) {
+		t.Fatal("terminal authentication must stay disabled unless the operator opts in")
+	}
+	for _, value := range []string{"true", "TRUE", " true "} {
+		if !terminalAuthEnabled(func(string, string) string { return value }) {
+			t.Fatalf("value %q must enable terminal authentication", value)
+		}
+	}
+	for _, value := range []string{"false", "", "yes", "1", "enabled"} {
+		if terminalAuthEnabled(func(string, string) string { return value }) {
+			t.Fatalf("value %q must not enable terminal authentication", value)
+		}
+	}
+}

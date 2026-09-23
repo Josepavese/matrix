@@ -174,10 +174,7 @@ func (c *Client) doCall(ctx context.Context, method string, params interface{}) 
 		return nil, fmt.Errorf("client context cancelled")
 	case resp := <-ch:
 		if resp.Error != nil {
-			if resp.Error.Data != nil {
-				return nil, fmt.Errorf("RPC error %d: %s (%v)", resp.Error.Code, resp.Error.Message, resp.Error.Data)
-			}
-			return nil, fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
+			return nil, rpcErrorFromWire(resp.Error)
 		}
 		return resp, nil
 	}
@@ -216,9 +213,10 @@ func (c *Client) sendNotification(ctx context.Context, method string, params int
 // whose flow is relaunching the agent process, reconnecting and reinitializing.
 //
 // Matrix speaks both, choosing by the version the agent agrees to in initialize.
-// It does not implement the terminal relaunch, so it neither advertises
-// capabilities.auth.terminal nor offers terminal methods: advertising a flow it
-// cannot run would be a claim, not a capability.
+// This client owns the wire half of that choice — the method names, the version
+// record and the structured error data a caller needs to recognize
+// "auth_required" — while the policy half, including whether a terminal method
+// may be run at all, belongs to the adapter that configured the connection.
 const (
 	ProtocolVersionV1 = 1
 	ProtocolVersionV2 = 2

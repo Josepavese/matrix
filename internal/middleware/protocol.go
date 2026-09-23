@@ -190,6 +190,13 @@ type ConversationFactoryDeps struct {
 	// ElicitationFrontend is the neutral port for agent-initiated
 	// elicitations. Nil disables the capability entirely.
 	ElicitationFrontend ElicitationFrontend
+	// TerminalAuth is the operator opt-in for ACP v2 terminal authentication,
+	// where Matrix runs the configured agent program itself to complete a
+	// login. It stays false unless someone turns it on, because advertising
+	// capabilities.auth.terminal changes what a real agent offers, and because
+	// the login process is interactive: a provider without a process backend
+	// cannot honour it even when the flag is set.
+	TerminalAuth bool
 }
 
 // AgentSessionController is an optional router capability for protocol-transparent
