@@ -69,6 +69,23 @@ record says which method it invoked and when; it cannot say which writer produce
 the file's current contents. Detecting that conflict would require the agent to
 report it, and no agent in the registry does.
 
+## Reading and revoking the state, from outside the process
+
+The daemon owns the agent clients and holds the vault, so a second process cannot
+build its own router: bbolt refuses the second writer, and a CLI process would
+talk to a different agent process than the one serving sessions. Authentication
+controls therefore live on the runtime API:
+
+```
+GET  /v1/agent-auth?agent=<id>          the methods the agent advertises
+POST /v1/agent-auth/logout?agent=<id>   ask the agent to end its authenticated state
+```
+
+Both accept the runtime API key (`X-Matrix-Key`) when one is configured. An empty
+`methods` list means the agent advertises no authentication at all. Logout is the
+only state-changing operation offered: performing a login needs a human in the
+loop, which belongs to the onboarding flow and not to an API call.
+
 ## Reading the state
 
 - `matrix agent info <id> --source=local` reports the installed version and the

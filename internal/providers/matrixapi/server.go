@@ -75,6 +75,14 @@ func (s *Server) WithElicitationService(service *elicitation.Service) *Server {
 	return s
 }
 
+// WithAgentAuthController exposes the protocol's authentication controls: the
+// methods an agent advertises, and logging it out. The daemon owns the agent
+// clients, so this is the only place those calls can be served from.
+func (s *Server) WithAgentAuthController(controller middleware.AgentAuthenticationController) *Server {
+	s.runs.WithAgentAuthController(controller)
+	return s
+}
+
 func (s *Server) StartRunSinkDeliveryWorker(ctx context.Context) {
 	s.runs.StartSinkDeliveryWorker(ctx)
 }

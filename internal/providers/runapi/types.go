@@ -16,10 +16,12 @@ import (
 )
 
 const (
-	RunPathV1           = "/v1/runs"
-	RunResourcePrefixV1 = "/v1/runs/"
-	EventSinksPathV1    = "/v1/event-sinks"
-	ElicitationPathV1   = "/v1/elicitations"
+	RunPathV1             = "/v1/runs"
+	RunResourcePrefixV1   = "/v1/runs/"
+	EventSinksPathV1      = "/v1/event-sinks"
+	ElicitationPathV1     = "/v1/elicitations"
+	AgentAuthPathV1       = "/v1/agent-auth"
+	AgentAuthLogoutPathV1 = "/v1/agent-auth/logout"
 )
 
 type Router interface {
@@ -35,6 +37,7 @@ type Server struct {
 	deliveryStore    *rundelivery.Store
 	sinkDelivery     *runsink.Service
 	elicitations     *elicitationsHandler
+	agentAuth        *agentAuthHandler
 	runCancels       map[string]context.CancelFunc
 	runMu            sync.Mutex
 }
@@ -129,6 +132,16 @@ func (s *Server) WithElicitationService(service *elicitation.Service) *Server {
 	return s
 }
 
+// WithAgentAuthController wires the protocol's authentication controls into the
+// runtime API, so an operator or orchestrator can read an agent's advertised
+// methods and ask it to log out while the daemon owns the agent clients.
+func (s *Server) WithAgentAuthController(controller middleware.AgentAuthenticationController) *Server {
+	if controller != nil {
+		s.agentAuth = &agentAuthHandler{controller: controller}
+	}
+	return s
+}
+
 func (s *Server) Store() *runtrace.Store {
 	return s.runStore
 }
@@ -142,6 +155,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(RunResourcePrefixV1, s.HandleRunResource)
 	mux.HandleFunc(EventSinksPathV1, s.HandleEventSinks)
 	mux.HandleFunc(ElicitationPathV1, s.HandleElicitations)
+	mux.HandleFunc(AgentAuthPathV1, s.HandleAgentAuth)
+	mux.HandleFunc(AgentAuthLogoutPathV1, s.HandleAgentAuth)
 }
 
 func (s *Server) withRunStore(store *runtrace.Store) *Server {

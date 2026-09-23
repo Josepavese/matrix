@@ -150,6 +150,10 @@ var runCmd = &cobra.Command{
 			matrixAPIServer.WithElicitationService(elicitSvc)
 		}
 		matrixAPIServer.WithEndpointResolver(d.Supervisor)
+		// The daemon owns the agent clients, so the protocol's authentication
+		// controls are exposed here rather than built again by a CLI process,
+		// which cannot hold the vault while the runtime has it open.
+		matrixAPIServer.WithAgentAuthController(agentRouter)
 		matrixAPIServer.WithDefaultAgent(d.App.Config.GetWithDefault("default_agent", DefaultAgent))
 		if matrixAPIKey != "" {
 			matrixAPIServer.WithAPIKey(matrixAPIKey)
