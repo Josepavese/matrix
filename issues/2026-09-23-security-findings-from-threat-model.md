@@ -1,7 +1,7 @@
 # Security findings from the first threat model
 
 Date observed: 2026-09-23
-Status: two of the three bugs fixed; the design decisions are still open
+Status: all three bugs fixed; the design decisions are still open
 Source: `docs/governance/security_threat_model_2026-09-23.md` (14 gaps, each with
 file:line evidence). This issue exists so the actionable ones are tracked as work
 rather than living only inside a document.
@@ -16,6 +16,16 @@ rather than living only inside a document.
   resolved path is the PAL home's `configs/` directory or below it, with absolute,
   `..` and symlink escapes rejected by an error naming the path and the root, and
   the security review's accepted-risk paragraph corrected.
+
+## Fixed (2026-09-23, later the same day)
+
+- **Agent-returned tool calls are authorized** (`880f898`): `ExecuteTool` now requires
+  the list the turn advertised and refuses a call whose name is outside the published
+  contract, whose arguments do not carry every schema-required field, or whose name
+  was never advertised for that turn. The evidence settled the shape: system tools are
+  advertised only on `/action` turns, and that path executes its own calls, so
+  entitlement is turn-scoped rather than uniform. A system tool call arriving on any
+  other turn is now refused and logged instead of executed.
 
 ## Bugs still open
 
