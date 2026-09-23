@@ -33,6 +33,24 @@ export MATRIX_TELEGRAM_ADMINS="your-telegram-user-id"
 matrix run
 ```
 
+### Access control
+
+`telegram.admins` is enforced, not decorative: it is the allow-list of Telegram
+user ids that may drive the bot. Matrix checks the sender before dispatching an
+update, so a message, a group message, an edited message or an inline-button
+press from anyone else is dropped before it can reach an agent or a system
+tool, and the rejection is logged with the sender's user id.
+
+The value is a comma-separated list of numeric Telegram user ids (a JSON array
+works too):
+
+```bash
+matrix channel set telegram admins "111111111,222222222"
+```
+
+An enabled Telegram channel with an empty admin list refuses to start, so a
+missing or blank list can never leave the bot open to everyone.
+
 ### Using Telegram
 
 Once configured, talk to your bot directly:

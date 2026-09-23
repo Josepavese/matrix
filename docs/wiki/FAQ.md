@@ -100,7 +100,7 @@ See [Using Agents](Using-Agents.md) and [Handoff](Handoff.md).
 
 ### How do I use Telegram?
 
-Configure the bot token and admin ID, then restart:
+Configure the bot token and your admin user ID, then restart:
 
 ```bash
 matrix channel set telegram token "your-bot-token"
@@ -110,7 +110,9 @@ matrix channel show telegram
 matrix run
 ```
 
-See [Channels](Channels.md#telegram) for full instructions.
+`telegram.admins` is enforced: only the listed user ids can drive the bot, and
+an enabled channel with an empty list refuses to start. See
+[Channels](Channels.md#access-control) for full instructions.
 
 ### Can I use Matrix from my phone?
 
@@ -183,7 +185,9 @@ Check that the agent binary is in your PATH and the command is correct.
 
 1. Verify the token and supported keys: `matrix channel show telegram`
 2. Check that `telegram.enabled` is `true`
-3. Make sure your Telegram user ID is in the admin list
+3. Make sure your Telegram user ID is in the admin list: the bot drops updates
+   from anyone else and logs the rejection, and an enabled channel with an empty
+   list refuses to start
 4. Restart Matrix: `matrix run`
 
 ### Vault corrupted

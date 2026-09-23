@@ -350,6 +350,13 @@ matrix channel set telegram enabled true
 matrix channel set telegram admins "123456789"
 ```
 
+`telegram.admins` is the enforced allow-list of Telegram user ids that may
+drive the bot. A comma-separated list is accepted (`"111111111,222222222"`), as
+is a JSON array. Matrix checks the sender before dispatching any update, so
+messages, group messages, edited messages and inline-button presses from any
+other user are dropped and logged with the sender's user id. An enabled channel
+with an empty admin list refuses to start rather than accepting everyone.
+
 ### `matrix channel delete <provider> <key>`
 
 Delete a channel override from the SSOT vault.

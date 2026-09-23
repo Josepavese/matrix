@@ -3,6 +3,8 @@ package channelruntime
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Josepavese/matrix/internal/logic/config"
@@ -111,5 +113,59 @@ func TestStartAll_PropagatesFactoryError(t *testing.T) {
 	_, err := StartAll(context.Background(), fakeReader{}, cfgMgr, fakeRouter{}, Deps{}, fakeFactory{name: "broken", err: errors.New("boom")})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// staticReader serves the given config files by path.
+type staticReader map[string][]byte
+
+func (r staticReader) ReadConfig(path string) ([]byte, error) {
+	if data, ok := r[path]; ok {
+		return data, nil
+	}
+	return nil, fmt.Errorf("config %q not found", path)
+}
+
+const enabledTelegramSeed = `{"token":"","enabled":true,"admins":[]}`
+
+// TestTelegramFactoryRefusesEnabledChannelWithEmptyAdmins is the fail-closed
+// boundary: an enabled channel without admins must not start, and the error
+// must name the missing key instead of leaving an open bot running.
+func TestTelegramFactoryRefusesEnabledChannelWithEmptyAdmins(t *testing.T) {
+	t.Setenv("MATRIX_TELEGRAM_CONFIG", "")
+	t.Setenv("MATRIX_TELEGRAM_ENABLED", "true")
+	t.Setenv("MATRIX_TELEGRAM_TOKEN", "test-token")
+	t.Setenv("MATRIX_TELEGRAM_ADMINS", "")
+
+	cfgMgr := config.NewManager(vault.NewVault(memStorage{values: map[string][]byte{}}))
+	gateway, enabled, err := telegramFactory{}.Build(
+		staticReader{"configs/telegram.json": []byte(enabledTelegramSeed)}, cfgMgr, fakeRouter{}, Deps{})
+	if err == nil {
+		t.Fatal("enabled telegram channel with empty admins must be refused")
+	}
+	if gateway != nil || enabled {
+		t.Fatalf("refused channel must not start: gateway=%v enabled=%v", gateway, enabled)
+	}
+	if !strings.Contains(err.Error(), "channel.telegram.admins") {
+		t.Fatalf("refusal must name the empty config key, got %q", err)
+	}
+}
+
+// TestTelegramFactorySkipsDisabledChannelWithEmptyAdmins keeps the refusal
+// scoped to startable channels: a disabled channel stays a no-op.
+func TestTelegramFactorySkipsDisabledChannelWithEmptyAdmins(t *testing.T) {
+	t.Setenv("MATRIX_TELEGRAM_CONFIG", "")
+	t.Setenv("MATRIX_TELEGRAM_ENABLED", "false")
+	t.Setenv("MATRIX_TELEGRAM_TOKEN", "test-token")
+	t.Setenv("MATRIX_TELEGRAM_ADMINS", "")
+
+	cfgMgr := config.NewManager(vault.NewVault(memStorage{values: map[string][]byte{}}))
+	gateway, enabled, err := telegramFactory{}.Build(
+		staticReader{"configs/telegram.json": []byte(enabledTelegramSeed)}, cfgMgr, fakeRouter{}, Deps{})
+	if err != nil {
+		t.Fatalf("disabled channel must not fail startup: %v", err)
+	}
+	if gateway != nil || enabled {
+		t.Fatalf("disabled channel must not start: gateway=%v enabled=%v", gateway, enabled)
 	}
 }

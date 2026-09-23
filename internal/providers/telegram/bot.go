@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/telegram/authz"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -26,7 +27,9 @@ type Bot struct {
 	// requests land in the conversation that started the run.
 	chats *sessionChatIndex
 	// elicitation renders registry events into chats; nil when disabled.
-	elicitation   *elicitationUI
+	elicitation *elicitationUI
+	// admins is the allow-list of user ids that may drive the bot; zero refuses all.
+	admins        authz.AllowList
 	unsubscribe   func()
 	unsubscribeMu sync.Mutex
 }
@@ -207,11 +210,17 @@ func truncateThought(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// NewBot initializes a new Telegram linkage using long-polling.
+// NewBot initializes a new Telegram linkage using long-polling. Admins is the
+// resolved channel.telegram.admins allow-list and must not be empty.
 
-func NewBot(token string, router middleware.SessionRouter) (*Bot, error) {
+func NewBot(token string, router middleware.SessionRouter, admins []int64) (*Bot, error) {
 	if token == "" {
 		return nil, fmt.Errorf("telegram token cannot be empty")
+	}
+
+	allowed, err := authz.New(admins)
+	if err != nil {
+		return nil, err
 	}
 
 	api, err := tgbotapi.NewBotAPI(token)
@@ -225,6 +234,7 @@ func NewBot(token string, router middleware.SessionRouter) (*Bot, error) {
 		api:    api,
 		stopCh: make(chan struct{}),
 		chats:  newSessionChatIndex(),
+		admins: allowed,
 	}, nil
 }
 

@@ -44,6 +44,11 @@ func (b *Bot) Start(ctx context.Context) error {
 }
 
 func (b *Bot) handleUpdate(ctx context.Context, log *slog.Logger, update tgbotapi.Update) {
+	// Authorisation runs before any dispatch, so a rejected update can reach
+	// neither an agent nor a system tool, a pending elicitation or a button.
+	if !b.admins.Authorize(log, update) {
+		return
+	}
 	if update.CallbackQuery != nil {
 		if b.elicitation != nil && b.elicitation.handleCallback(update.CallbackQuery) {
 			log.Info("elicitation callback handled", "event", "elicitation_callback",

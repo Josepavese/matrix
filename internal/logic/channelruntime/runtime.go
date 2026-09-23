@@ -74,7 +74,12 @@ func (telegramFactory) Build(reader middleware.ConfigReader, cfgMgr *config.Mana
 	if !cfg.Enabled || cfg.Token == "" {
 		return nil, false, nil
 	}
-	gateway, err := telegram.NewBot(cfg.Token, router)
+	// Fail closed: a startable channel with an empty admin list would answer
+	// anyone who can reach the bot, so it is refused loudly instead.
+	if len(cfg.Admins) == 0 {
+		return nil, false, fmt.Errorf("telegram channel is enabled but channel.telegram.admins is empty: refusing to start (fail closed); set at least one Telegram user id")
+	}
+	gateway, err := telegram.NewBot(cfg.Token, router, cfg.Admins)
 	if err != nil {
 		return nil, false, err
 	}
