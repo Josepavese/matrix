@@ -17,11 +17,13 @@ packages most relevant to the day's work were measured with reduced parallelism
 | --- | --- | --- | --- | --- | --- |
 | `internal/logic/vaultsec` | 99 | 0 | 4 | 100.00% | 96.12% |
 | `internal/providers/runapi` | 180 | 0 | 44 | 100.00% | 80.36% |
+| `internal/logic/runtrace` | 179 | 0 | 19 | 100.00% | 90.40% |
 
-Both clear the gate's thresholds (efficacy 80%, mutator coverage 60%). `vaultsec`
+All three clear the gate's thresholds (efficacy 80%, mutator coverage 60%). `vaultsec`
 matches its v0.1.30 figure exactly (99 killed), so the vault crypto tests have not
-decayed. `runapi` is the package this workstream touched most (the agent-auth
-handler); zero survivors means every mutant the tests can reach is killed, and the
+decayed. `runtrace` measured clean too (179 killed, 90.40% mutator coverage), and
+`runapi` is the package this workstream touched most (the agent-auth handler); zero
+survivors means every mutant the tests can reach is killed, and the
 44 uncovered mutants are the honest measure of what those tests still do not
 exercise.
 
@@ -37,9 +39,9 @@ gremlins unleash --workers 2 --test-cpu 1 \
 
 ## What remains
 
-Nine of the eleven Tier A packages were not re-measured:
+Eight of the eleven Tier A packages were not re-measured:
 `internal/middleware`, `internal/logic/elicitation`, `internal/logic/rundelivery`,
-`internal/logic/runconfig`, `internal/logic/runtrace`, `pkg/zedacp`,
+`internal/logic/runconfig`, `pkg/zedacp`,
 `pkg/zedacpstdio`, `internal/providers/telegram`, and the campaign's own defaults for
 the remaining members. The full run should happen on a quiet machine; the
 `quality-gate` job in CI runs the light gate (coverage ratchet and the plain and race
