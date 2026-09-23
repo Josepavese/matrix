@@ -8,6 +8,7 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/agentdoctor"
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/a2aclient"
 	"github.com/Josepavese/matrix/internal/providers/agentprobe"
 	"github.com/spf13/cobra"
 )
@@ -44,20 +45,7 @@ var agentDoctorCmd = &cobra.Command{
 				exitf("Error: %v", err)
 			}
 
-			endpoint := agentcfg.NormalizeEndpoint(agentcfg.Config{
-				Command:         cfg.Command,
-				Args:            cfg.Args,
-				Env:             cfg.Env,
-				Tenant:          cfg.Tenant,
-				Kind:            cfg.Kind,
-				Transport:       cfg.Transport,
-				Address:         cfg.Address,
-				CardURL:         cfg.CardURL,
-				ProtocolVersion: cfg.ProtocolVersion,
-				HealthcheckPath: cfg.HealthcheckPath,
-				EnvIsolation:    cfg.EnvIsolation,
-				Active:          cfg.Active,
-			})
+			endpoint := agentcfg.NormalizeEndpoint(cfg)
 			address := agentdoctor.EndpointAddress(endpoint)
 			resolved, policyErr := agentlaunch.ResolveEndpoint(id, endpoint)
 
@@ -104,6 +92,9 @@ var agentDoctorCmd = &cobra.Command{
 					item[key] = value
 				}
 				warnings = append(warnings, checkWarnings...)
+				if a2aAuth, a2aWarnings := agentdoctor.InspectA2AAuthentication(cmd.Context(), endpoint, a2aclient.FetchRemoteAuthCard); a2aAuth != nil {
+					item["a2a_authentication"], warnings = a2aAuth, append(warnings, a2aWarnings...)
+				}
 			}
 			meta, metaErr := agentcfg.LoadMeta(ctx.Store, id)
 			if metaErr != nil {
