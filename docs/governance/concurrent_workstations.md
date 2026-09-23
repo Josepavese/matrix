@@ -51,6 +51,28 @@ not being able to tell, at a glance, who or what something belonged to.
   read-write will fail with `ERR_VAULT_OPEN` timeout. That is expected, not a bug
   to work around by killing the runtime.
 
+**Disk: this workstation is resource-poor**
+
+The disk runs near capacity, so every workstream cleans as it goes rather than at
+the end. What is safe to delete without asking, because it is regenerable:
+
+- Go build cache (`go clean -cache`) and `dist/` after a release is published: the
+  artifacts live on GitHub, the local copies are only proof of a build that CI
+  already made.
+- Temporary fixtures, harnesses and stub servers under `/tmp` that you created for
+  a check (`/tmp/v.ps1`, `/tmp/win_srv.py`, screenshots, smoke `MATRIX_HOME`s).
+- Superseded vault backups in `~/.local/share/matrix/backups/`, once the migration
+  they guarded has completed and `matrix readiness` reports no blockers.
+- Anything under a directory that exists only because of a campaign you ran.
+
+What is never deleted as "cleanup": the vault itself (`data/`), installed agents
+(`agents/`), another session's virtual machines and images, and the shared Windows
+validation image — that one costs hours to rebuild, so it is a decision, not
+housekeeping.
+
+Recurring offenders worth checking first, in order of size: `~/.cache/go-build`,
+`~/.nido/images` and `~/.nido/vms`, `/tmp`, `dist/`, and stale vault backups.
+
 **Reporting what you find outside your own repository**
 
 - Cross-repository findings go to `issues/` as an untracked note with the date in
