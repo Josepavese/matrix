@@ -45,7 +45,7 @@ func (inst *Installer) verifyArtifact(agentID, tmpFile, platform string, dist *B
 
 	published := strings.ToLower(strings.TrimSpace(dist.SHA256))
 	if published == "" {
-		fmt.Printf("Registry index publishes no sha256 for %s (%s): installing without integrity verification\n", agentID, platform)
+		inst.progressf("Registry index publishes no sha256 for %s (%s): installing without integrity verification\n", agentID, platform)
 		return evidence, nil
 	}
 	if !isHexSHA256(published) {
@@ -58,7 +58,7 @@ func (inst *Installer) verifyArtifact(agentID, tmpFile, platform string, dist *B
 	evidence.Verified = true
 	evidence.Status = agentcfg.ArtifactVerified
 	evidence.Expected = published
-	fmt.Printf("Verified sha256 %s of %s against the registry index for %s\n", published, agentID, platform)
+	inst.progressf("Verified sha256 %s of %s against the registry index for %s\n", published, agentID, platform)
 	return evidence, nil
 }
 

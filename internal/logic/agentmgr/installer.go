@@ -4,7 +4,9 @@ package agentmgr
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
@@ -23,6 +25,27 @@ type Installer struct {
 	proc     middleware.Process
 	registry *RegistryClient
 	baseDir  string
+
+	// progress receives human-readable progress lines. It is a field rather than
+	// direct writes to stdout so that a caller offering machine-readable output
+	// (a future `matrix install --json`) can send progress elsewhere and keep
+	// stdout parseable.
+	progress io.Writer
+}
+
+// SetProgressWriter redirects human-readable install progress. A nil writer
+// discards it, which is what a machine-readable caller wants.
+func (inst *Installer) SetProgressWriter(w io.Writer) {
+	inst.progress = w
+}
+
+// progressf writes one progress line, tolerating an installer built without a
+// writer (the zero value is a silent installer, never a panicking one).
+func (inst *Installer) progressf(format string, args ...any) {
+	if inst.progress == nil {
+		return
+	}
+	fmt.Fprintf(inst.progress, format, args...)
 }
 
 // InstallerConfig represents the dependencies for an Installer.
@@ -46,6 +69,7 @@ func NewInstaller(cfg InstallerConfig) (*Installer, error) {
 		cfg.BaseDir = matrixhome.AgentsDir(home)
 	}
 	return &Installer{
+		progress: os.Stdout,
 		net:      cfg.Net,
 		archive:  cfg.Archive,
 		storage:  cfg.Storage,
@@ -117,7 +141,7 @@ func (inst *Installer) installResolved(ctx context.Context, agentID string, mani
 		return agentcfg.Config{}, nil, fmt.Errorf("unsupported distribution type: %s", resolved.Type)
 	}
 	if manifest.Distribution.Npx == nil || !agentidentity.IsCanonicalCodexPackage(manifest.Distribution.Npx.Package) {
-		fmt.Printf("Registering %s agent '%s' (v%s) via %s\n", resolved.Type, manifest.ID, manifest.Version, resolved.Command)
+		inst.progressf("Registering %s agent '%s' (v%s) via %s\n", resolved.Type, manifest.ID, manifest.Version, resolved.Command)
 		return agentcfg.Config{
 			Command: resolved.Command, Args: resolved.Args, Env: resolved.Env,
 			Kind: "acp", Transport: "stdio",
@@ -168,7 +192,7 @@ func (inst *Installer) fetchVerifiedArchive(ctx context.Context, manifest *Agent
 		return nil, err
 	}
 
-	fmt.Printf("Downloading %s %s from %s...\n", manifest.ID, manifest.Version, dist.Archive)
+	inst.progressf("Downloading %s %s from %s...\n", manifest.ID, manifest.Version, dist.Archive)
 	if err := inst.net.Download(ctx, dist.Archive, tmpFile); err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
@@ -181,7 +205,7 @@ func (inst *Installer) fetchVerifiedArchive(ctx context.Context, manifest *Agent
 		return nil, err
 	}
 
-	fmt.Printf("Extracting to %s...\n", agentPath)
+	inst.progressf("Extracting to %s...\n", agentPath)
 	if err := inst.fs.MkdirAll(agentPath, 0755); err != nil {
 		return nil, err
 	}
@@ -200,14 +224,14 @@ func (inst *Installer) Uninstall(_ context.Context, agentID string) error {
 		return err
 	}
 	if _, err := inst.fs.Stat(agentPath); err == nil {
-		fmt.Printf("Removing agent directory %s...\n", agentPath)
+		inst.progressf("Removing agent directory %s...\n", agentPath)
 		if err := inst.fs.RemoveAll(agentPath); err != nil {
 			return fmt.Errorf("failed to remove agent directory: %w", err)
 		}
 	}
 
 	// 2. Remove config + metadata from Vault
-	fmt.Printf("Removing agent %s from Vault...\n", agentID)
+	inst.progressf("Removing agent %s from Vault...\n", agentID)
 	if err := agentcfg.DeleteEntry(inst.storage, agentID); err != nil {
 		return fmt.Errorf("failed to remove agent config: %w", err)
 	}
