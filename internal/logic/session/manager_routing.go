@@ -62,7 +62,7 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 	if handoffPrompt := renderHandoffPrompt(meta.PendingHandoff); handoffPrompt != "" {
 		message = handoffPrompt + "\n\nUser request:\n" + req.Input
 	}
-	responseTxt, newAgentSessionID, toolCalls, metadata, routeErr := m.router.Route(ctx, middleware.RouteRequest{
+	routeReq := middleware.RouteRequest{
 		AgentID:                  effectiveAgentID,
 		LogicalSessionID:         sessionID,
 		AgentSessionID:           meta.AgentSessionID,
@@ -75,10 +75,11 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 		AdditionalDirectories:    req.AdditionalDirectories,
 		AgentLaunchArgs:          req.AgentLaunchArgs,
 		ThoughtNotifier:          notifier,
-	})
+	}
+	responseTxt, newAgentSessionID, toolCalls, metadata, routeErr := m.router.Route(ctx, routeReq)
 	m.applyPendingHandoff(&meta, channelID, log, routeErr)
 
-	responseTxt = m.applyToolCalls(responseTxt, toolCalls)
+	responseTxt = m.applyToolCalls(responseTxt, routeReq.Tools, toolCalls)
 	meta.AgentID = effectiveAgentID
 	queue.Submit(seq, sessionqueue.RouteResult{
 		LogicalSessionID: sessionID,
@@ -127,12 +128,17 @@ func (m *Manager) applyPendingHandoff(meta *SessionMeta, channelID string, log *
 	}
 }
 
-func (m *Manager) applyToolCalls(response string, toolCalls []middleware.ToolCall) string {
+// applyToolCalls executes the system tool calls an agent returned, but only the
+// ones the turn advertised: `advertised` is the same list the request handed the
+// agent, so a name Matrix never offered that agent cannot execute on the strength
+// of the name alone. The refusal is decided and recorded where the call would run
+// (`system_tools.ExecuteTool`) and surfaces here as the turn's tool output.
+func (m *Manager) applyToolCalls(response string, advertised []middleware.Tool, toolCalls []middleware.ToolCall) string {
 	if len(toolCalls) == 0 || m.systemTools == nil {
 		return response
 	}
 	for _, tc := range toolCalls {
-		response += "\n" + m.systemTools.ExecuteTool(tc)
+		response += "\n" + m.systemTools.ExecuteTool(advertised, tc)
 	}
 	return response
 }

@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/logic/agentmgr"
@@ -79,8 +81,17 @@ func NewHandler(config middleware.ConfigManager, storage middleware.Storage, ins
 	return &Handler{config: config, storage: storage, installer: installer}
 }
 
-// ExecuteTool routes the tool execution based on method name and payload
-func (h *Handler) ExecuteTool(call middleware.ToolCall) string {
+// ExecuteTool executes a tool call an agent returned, but only one the turn
+// advertised: `advertised` is the tool list that turn handed the agent, so a call
+// the agent was never offered cannot run on the strength of its name alone. The
+// published contract is then enforced again, so a name Matrix does not advertise
+// can never reach a case even if the switch below grows one. A refusal is
+// recorded and returned instead of executed.
+func (h *Handler) ExecuteTool(advertised []middleware.Tool, call middleware.ToolCall) string {
+	if refusal := undeclaredToolCall(advertised, call); refusal != "" {
+		slog.Warn("refused agent tool call", "event", "tool_call_refused", "tool", call.Function.Name, "reason", refusal)
+		return refusal
+	}
 	switch call.Function.Name {
 	case "APM_Install":
 		var args struct {
@@ -116,6 +127,93 @@ func (h *Handler) ExecuteTool(call middleware.ToolCall) string {
 
 	default:
 		return fmt.Sprintf("Unknown tool: %s", call.Function.Name)
+	}
+}
+
+// undeclaredToolCall returns why a tool call must not be dispatched, or an empty
+// string when it may.
+//
+// The two checks answer different questions, and a call has to pass both. The
+// first is the published contract, which is the ceiling: a name GetSystemTools
+// does not advertise, or arguments that do not fit the schema it published, are
+// refused before the switch is consulted. The second is authorization for one
+// turn: `advertised` is the very list that turn handed the agent, so a call whose
+// name is not in it was never offered to the agent that returned it — and a
+// routed turn advertises nothing at all, because the schemas go out on `/action`
+// turns only and that path executes its own calls — so every call arriving on a
+// routed turn is refused here.
+func undeclaredToolCall(advertised []middleware.Tool, call middleware.ToolCall) string {
+	if refusal := unadvertisedToolCall(call); refusal != "" {
+		return refusal
+	}
+	for _, tool := range advertised {
+		if name := strings.TrimSpace(tool.Name); name != "" && name == strings.TrimSpace(call.Function.Name) {
+			return ""
+		}
+	}
+	return fmt.Sprintf("Refused tool call %q: the turn did not advertise that tool.", call.Function.Name)
+}
+
+// unadvertisedToolCall returns why a tool call must not be dispatched, or an
+// empty string when it matches the contract GetSystemTools publishes: the name
+// must be one that contract advertises, and the arguments must parse into a JSON
+// object carrying every field the advertised schema marks required.
+//
+// Checking the name before the switch means no name Matrix does not advertise can
+// reach a case, even a case added later: the switch is not the contract, the
+// advertised schema is. Checking the arguments means an incomplete call — the
+// shape a model produces when it guesses — is refused rather than handed to a
+// handler with empty required values, which today would reach the installer and
+// the agent registry with an empty agent id.
+func unadvertisedToolCall(call middleware.ToolCall) string {
+	for _, tool := range GetSystemTools() {
+		if tool.Name != call.Function.Name {
+			continue
+		}
+		var args map[string]interface{}
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return fmt.Sprintf("Refused tool call %s: the arguments do not parse: %v", tool.Name, err)
+		}
+		if missing := missingRequiredArgs(tool, args); len(missing) > 0 {
+			return fmt.Sprintf("Refused tool call %s: required argument(s) %s are missing", tool.Name, strings.Join(missing, ", "))
+		}
+		return ""
+	}
+	return fmt.Sprintf("Refused tool call %q: Matrix does not advertise that tool", call.Function.Name)
+}
+
+// missingRequiredArgs lists the advertised arguments the call does not carry. It
+// reads the requirement out of the published schema rather than a hand-written
+// list, so a schema change moves the check with it.
+func missingRequiredArgs(tool middleware.Tool, args map[string]interface{}) []string {
+	var missing []string
+	for _, name := range requiredArgNames(tool.InputSchema["required"]) {
+		value, present := args[name]
+		if !present || value == nil {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+// requiredArgNames reads a schema's "required" entry. The schemas in this package
+// declare it as []string, but it is a JSON-shaped value published to agents, so
+// the decoded form is honoured too: a schema written as []interface{} must not
+// silently drop the check.
+func requiredArgNames(declared interface{}) []string {
+	switch required := declared.(type) {
+	case []string:
+		return required
+	case []interface{}:
+		names := make([]string, 0, len(required))
+		for _, value := range required {
+			if name, ok := value.(string); ok {
+				names = append(names, name)
+			}
+		}
+		return names
+	default:
+		return nil
 	}
 }
 

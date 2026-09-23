@@ -43,7 +43,7 @@ func TestConfigSetRefusesAPathOutsideTheConfigDirectory(t *testing.T) {
 	handler := configSetHandler(t, home)
 
 	outside := filepath.Join(t.TempDir(), "escape.json")
-	result := handler.ExecuteTool(configSetCall(t, outside, "pwned"))
+	result := handler.ExecuteTool(GetSystemTools(), configSetCall(t, outside, "pwned"))
 	if !strings.Contains(result, "Error") {
 		t.Fatalf("an escaping key must be answered with an error, got %q", result)
 	}
@@ -55,7 +55,7 @@ func TestConfigSetRefusesAPathOutsideTheConfigDirectory(t *testing.T) {
 	}
 
 	// The same tool still writes a configuration file inside the directory.
-	result = handler.ExecuteTool(configSetCall(t, "configs/agents.json", `{"agents":["claude"]}`))
+	result = handler.ExecuteTool(GetSystemTools(), configSetCall(t, "configs/agents.json", `{"agents":["claude"]}`))
 	if !strings.HasPrefix(result, "Success") {
 		t.Fatalf("a key inside the config directory must succeed, got %q", result)
 	}

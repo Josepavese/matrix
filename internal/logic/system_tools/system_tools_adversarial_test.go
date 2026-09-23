@@ -53,9 +53,11 @@ func keys(m map[string]bool) []string {
 
 // TestExecuteToolRejectsAnUnknownTool keeps an unknown name from silently
 // succeeding: an agent that mistypes a tool must learn that nothing happened.
+// The advertised list is the one /action hands the meta-agent, so this drives the
+// check with the call the meta-agent's own turn would make.
 func TestExecuteToolRejectsAnUnknownTool(t *testing.T) {
 	handler := NewHandler(nil, nil, nil)
-	result := handler.ExecuteTool(middleware.ToolCall{Function: middleware.ToolCallFunction{Name: "NoSuchTool", Arguments: "{}"}})
+	result := handler.ExecuteTool(GetSystemTools(), middleware.ToolCall{Function: middleware.ToolCallFunction{Name: "NoSuchTool", Arguments: "{}"}})
 	if result == "" {
 		t.Fatal("an unknown tool must produce an explicit answer")
 	}
@@ -64,7 +66,7 @@ func TestExecuteToolRejectsAnUnknownTool(t *testing.T) {
 	}
 	// A known tool with missing required arguments must also refuse, not panic.
 	// APM_Install needs an agent name; the handler must answer, not crash.
-	if got := handler.ExecuteTool(middleware.ToolCall{Function: middleware.ToolCallFunction{Name: "APM_Install", Arguments: "{}"}}); got == "" {
+	if got := handler.ExecuteTool(GetSystemTools(), middleware.ToolCall{Function: middleware.ToolCallFunction{Name: "APM_Install", Arguments: "{}"}}); got == "" {
 		t.Fatal("a known tool with missing arguments must answer rather than stay silent")
 	}
 }

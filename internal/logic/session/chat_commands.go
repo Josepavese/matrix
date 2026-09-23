@@ -156,17 +156,17 @@ func (m *Manager) handleActionCommand(ctx context.Context, channelID string, inp
 	if err != nil {
 		return "", fmt.Errorf(m.wizard.GetString(lang, "action_meta_failed"), err)
 	}
-	return m.renderActionResult(lang, responseTxt, toolCalls), nil
+	return m.renderActionResult(lang, responseTxt, tools, toolCalls), nil
 }
 
-func (m *Manager) renderActionResult(lang, response string, toolCalls []middleware.ToolCall) string {
+func (m *Manager) renderActionResult(lang, response string, advertised []middleware.Tool, toolCalls []middleware.ToolCall) string {
 	if len(toolCalls) == 0 {
 		return response
 	}
 	result := response + "\n\n" + m.wizard.GetString(lang, "action_executing_header") + "\n"
 	for _, toolCall := range toolCalls {
 		if m.systemTools != nil {
-			result += fmt.Sprintf("- %s: %s\n", toolCall.Function.Name, m.systemTools.ExecuteTool(toolCall))
+			result += fmt.Sprintf("- %s: %s\n", toolCall.Function.Name, m.systemTools.ExecuteTool(advertised, toolCall))
 		}
 	}
 	return result
