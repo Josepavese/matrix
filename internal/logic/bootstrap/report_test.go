@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildGuideTreatsRunsAsNonInteractive(t *testing.T) {
-	guide := strings.Join(BuildGuide("127.0.0.1:9091", false, false, false, []string{"opencode"}), "\n")
+	guide := strings.Join(BuildGuide(GuideInput{MatrixHTTPAddr: "127.0.0.1:9091", SystemConfigured: false, TelegramEnabled: false, TelegramConfigured: false, ActiveAgents: []string{"opencode"}}), "\n")
 	if strings.Contains(guide, "or `/v1/runs`") {
 		t.Fatalf("bootstrap guide must not suggest /v1/runs for first-run onboarding: %s", guide)
 	}

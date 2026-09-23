@@ -27,17 +27,40 @@ func BuildReport(store middleware.Storage, cfgMgr *config.Manager, registry *age
 		"telegram_source":     tgSource,
 		"active_agents":       activeAgents,
 		"can_run":             len(activeAgents) > 0,
-		"guide":               BuildGuide(configuredIngress(cfgMgr), systemConfigured, tgCfg.Enabled, tgCfg.Token != "", activeAgents),
+		"guide": BuildGuide(GuideInput{
+			MatrixHTTPAddr:     configuredIngress(cfgMgr),
+			SystemConfigured:   systemConfigured,
+			TelegramEnabled:    tgCfg.Enabled,
+			TelegramConfigured: tgCfg.Token != "",
+			ActiveAgents:       activeAgents,
+		}),
 	}
 	return report, nil
 }
 
 // BuildGuide returns setup guidance steps based on bootstrap state.
-// BuildGuide returns the ordered first-run steps. matrixHTTPAddr is the configured
-// ingress address and is used in the step that tells the operator where to POST: the
-// guide used to name 127.0.0.1:9091 unconditionally, so anyone who moved the port was
-// sent to an address nothing was listening on - which is how it was found.
-func BuildGuide(matrixHTTPAddr string, systemConfigured, telegramEnabled, telegramConfigured bool, activeAgents []string) []string {
+// GuideInput is what the first-run guide needs in order to describe this installation.
+// It is a struct because the guide grew a fifth fact - the ingress address - and the
+// governance manifest caps a function at four parameters, which is a rule worth keeping:
+// a five-boolean call site is unreadable at the point of use anyway.
+type GuideInput struct {
+	MatrixHTTPAddr     string
+	SystemConfigured   bool
+	TelegramEnabled    bool
+	TelegramConfigured bool
+	ActiveAgents       []string
+}
+
+// BuildGuide returns the ordered first-run steps. The ingress address is used in the
+// step that tells the operator where to POST: the guide named 127.0.0.1:9091
+// unconditionally, so anyone who moved the port was sent to an address with nothing
+// listening - which is how it was found.
+func BuildGuide(in GuideInput) []string {
+	matrixHTTPAddr := in.MatrixHTTPAddr
+	systemConfigured := in.SystemConfigured
+	telegramEnabled := in.TelegramEnabled
+	telegramConfigured := in.TelegramConfigured
+	activeAgents := in.ActiveAgents
 	steps := []string{
 		"Inspect the current bootstrap state with `matrix bootstrap doctor`.",
 	}
