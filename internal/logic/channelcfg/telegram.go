@@ -2,7 +2,9 @@ package channelcfg
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strconv"
 	"strings"
@@ -91,6 +93,16 @@ func LoadTelegramConfig(reader middleware.ConfigReader, cfgMgr *config.Manager) 
 func loadTelegramSeed(reader middleware.ConfigReader) (TelegramConfig, string, error) {
 	data, err := reader.ReadConfig("configs/telegram.json")
 	if err != nil {
+		// A fresh PAL home has no seed file, and an absent file means the channel was
+		// never configured - not that configuration is broken. Treating the two alike
+		// made a new install log "channel runtime failed to start: failed to read
+		// telegram seed config" on every `matrix run`, which reads like a damaged
+		// installation and sends an operator looking for a fault that is not there. A
+		// file that exists and cannot be parsed, or that carries a live token, stays an
+		// error: those are real.
+		if errors.Is(err, fs.ErrNotExist) {
+			return TelegramConfig{}, "configs/telegram.json (absent)", nil
+		}
 		return TelegramConfig{}, "", fmt.Errorf("failed to read telegram seed config: %w", err)
 	}
 	var cfg telegramFileConfig
