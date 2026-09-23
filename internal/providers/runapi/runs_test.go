@@ -431,7 +431,12 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 	}
 }
 
-func TestHandleRuns_EphemeralCleanupFailsRetainedReconciledClient(t *testing.T) {
+// TestHandleRuns_EphemeralCleanupKeepsRunWhenSharedClientTerminationIsDenied pins
+// the contract the v0.1.38 cleanup fix established: a cached shared agent client
+// that survives the run (here, a ref belonging to a different session) leaves the
+// cleanup degraded but must NOT fail a run whose governed transaction completed.
+// Before the fix this case returned 500 and marked a successful run failed.
+func TestHandleRuns_EphemeralCleanupKeepsRunWhenSharedClientTerminationIsDenied(t *testing.T) {
 	router := &runTestRouter{
 		reconcile: &middleware.AgentClientReconcileResult{
 			Retained: []middleware.AgentClientRef{{
@@ -459,18 +464,29 @@ func TestHandleRuns_EphemeralCleanupFailsRetainedReconciledClient(t *testing.T) 
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected cleanup failure 500, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("a retained shared client must not fail a completed run, got %d: %s", w.Code, w.Body.String())
 	}
-	var resp runresponse.Error
+	var resp runresponse.Success
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.Cleanup == nil || resp.Cleanup.Clean || resp.Cleanup.CleanupStrength != sessioncleanup.StrengthFailed {
-		t.Fatalf("retained reconcile client must fail cleanup proof, got %+v", resp.Cleanup)
+	if resp.Cleanup == nil {
+		t.Fatal("expected cleanup proof in response")
 	}
-	if resp.Cleanup.FailureCode != sessioncleanup.FailureRunRelatedSessionRetained {
-		t.Fatalf("expected retained reconcile failure code, got %+v", resp.Cleanup)
+	// Clean means "the cleanup did not fail"; the degradation is carried by
+	// StrongCleanup and the strength, which must not claim a strong cleanup.
+	if resp.Cleanup.StrongCleanup {
+		t.Fatalf("a retained process must not be reported as a strong cleanup, got %+v", resp.Cleanup)
+	}
+	if resp.Cleanup.CleanupStrength != sessioncleanup.StrengthRetained {
+		t.Fatalf("expected a retained cleanup strength, got %+v", resp.Cleanup)
+	}
+	if resp.Cleanup.WeakCleanupReason != sessioncleanup.WeakCleanupProcessRetained {
+		t.Fatalf("expected the weak cleanup reason to name the retained process, got %+v", resp.Cleanup)
+	}
+	if resp.Cleanup.ProcessRetentionScope != sessioncleanup.ScopeCachedSharedClient {
+		t.Fatalf("the evidence must name which process was retained, got %+v", resp.Cleanup)
 	}
 	if len(resp.Cleanup.RelatedSessions) != 1 {
 		t.Fatalf("expected retained reconciled client in related sessions, got %+v", resp.Cleanup.RelatedSessions)
@@ -482,9 +498,54 @@ func TestHandleRuns_EphemeralCleanupFailsRetainedReconciledClient(t *testing.T) 
 	if related.LogicalSessionID != "retained-logical" || related.RemoteSessionID != "retained-remote" {
 		t.Fatalf("expected retained client ownership details, got %+v", related)
 	}
-	cleanupEvent := waitForEvent(t, server.Store(), resp.RunID, "session.cleanup", runtrace.StatusFailed)
-	if cleanupEvent.Metadata["failure_code"] != sessioncleanup.FailureRunRelatedSessionRetained {
-		t.Fatalf("cleanup trace must expose retained reconcile failure, got %+v", cleanupEvent.Metadata)
+}
+
+// TestHandleRuns_EphemeralCleanupFailsRetainedRunScopedChild keeps the other half
+// of the contract pinned at the HTTP boundary: when the retained client belongs to
+// the run's OWN session, the run did leak a process it owned and must fail.
+func TestHandleRuns_EphemeralCleanupFailsRetainedRunScopedChild(t *testing.T) {
+	router := &runTestRouter{
+		reconcile: &middleware.AgentClientReconcileResult{
+			Retained: []middleware.AgentClientRef{{
+				LogicalSessionID: "logical-eval",
+				RemoteSessionID:  "remote-eval",
+				AgentID:          "opencode",
+				ProtocolKind:     "acp",
+				WorkspacePath:    "/tmp/eval-ws",
+			}},
+		},
+	}
+	server := NewServer(router).WithTraceStorage(memstore.New())
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"channel_id":     "noema-eval-channel-retained-child",
+		"agent_id":       "opencode",
+		"input":          "run eval",
+		"workspace_path": "/tmp/eval-ws",
+		"session_policy": middleware.SessionPolicyNewEphemeralDeleteAfterRun,
+		"cleanup_policy": middleware.SessionCleanupPolicyDeleteRemoteOrCancelAndForgetLocal,
+	})
+	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("a retained run-scoped child must fail the run, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp runresponse.Error
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Cleanup == nil || resp.Cleanup.CleanupStrength != sessioncleanup.StrengthFailed {
+		t.Fatalf("retained run-scoped child must fail cleanup proof, got %+v", resp.Cleanup)
+	}
+	if resp.Cleanup.FailureCode != sessioncleanup.FailureRunRelatedSessionRetained {
+		t.Fatalf("expected retained reconcile failure code, got %+v", resp.Cleanup)
+	}
+	if resp.Cleanup.ProcessRetentionScope != sessioncleanup.ScopeRunScopedAgentChild {
+		t.Fatalf("evidence must name the run-scoped child, got %+v", resp.Cleanup)
 	}
 }
 

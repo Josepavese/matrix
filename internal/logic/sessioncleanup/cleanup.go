@@ -26,6 +26,19 @@ const ForkChildUsesParentAgentClient = "fork child uses parent agent client"
 const WeakCleanupNoRemoteOrProcessProof = "cleanup_clean_without_remote_or_process_proof"
 const WeakCleanupProcessRetained = "process_retained"
 
+// Process retention scope names WHICH process survived reconciliation so the
+// operator can act on it. A bare process_retained=true cannot be triaged.
+const (
+	ScopeRunScopedAgentChild = "run_scoped_agent_child"
+	ScopeAgentWrapper        = "agent_wrapper"
+	ScopeCachedSharedClient  = "cached_shared_agent_client"
+)
+
+const (
+	WarningRunScopedAgentChildRetained = "run_scoped_agent_child_retained"
+	WarningCachedSharedClientRetained  = "cached_shared_agent_client_retained"
+)
+
 const (
 	StrengthStrong   = "strong"
 	StrengthWeak     = "weak"
@@ -279,6 +292,7 @@ func Metadata(cleanup middleware.SessionCleanupResult) map[string]interface{} {
 		"process_retained":          cleanup.ProcessRetained,
 		"process_retention_allowed": cleanup.ProcessRetentionAllowed,
 		"process_retention_reason":  cleanup.ProcessRetentionReason,
+		"process_retention_scope":   cleanup.ProcessRetentionScope,
 		"local_forgotten":           cleanup.LocalForgotten,
 		"fork_children_cleaned":     cleanup.ForkChildrenCleaned,
 		"fork_children":             cleanup.ForkChildren,

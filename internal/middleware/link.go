@@ -176,6 +176,7 @@ type SessionCleanupResult struct {
 	ProcessRetained         bool                           `json:"process_retained,omitempty"`
 	ProcessRetentionAllowed bool                           `json:"process_retention_allowed,omitempty"`
 	ProcessRetentionReason  string                         `json:"process_retention_reason,omitempty"`
+	ProcessRetentionScope   string                         `json:"process_retention_scope,omitempty"`
 	LocalForgotten          bool                           `json:"local_forgotten"`
 	ForkChildrenCleaned     int                            `json:"fork_children_cleaned,omitempty"`
 	ForkChildren            []SessionCleanupResult         `json:"fork_children,omitempty"`
