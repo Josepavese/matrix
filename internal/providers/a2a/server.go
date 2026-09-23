@@ -171,10 +171,13 @@ type a2aThoughtNotifier struct {
 
 func (n *a2aThoughtNotifier) OnThought(update middleware.ThoughtUpdate) {
 	message := a2asdk.NewMessageForTask(a2asdk.MessageRoleAgent, n.execCtx, a2asdk.NewTextPart(update.Content))
-	message.Metadata = map[string]any{"matrix.thought_type": int(update.Type), "title": update.Title}
+	metadata := make(map[string]any, len(update.Metadata)+2)
+	metadata["matrix.thought_type"] = int(update.Type)
+	metadata["title"] = update.Title
 	for key, value := range update.Metadata {
-		message.Metadata[key] = value
+		metadata[key] = value
 	}
+	message.Metadata = a2aSafeMetadata(metadata)
 	event := a2asdk.NewStatusUpdateEvent(n.execCtx, a2asdk.TaskStateWorking, message)
 	event.Metadata = map[string]any{"matrix.progress": true}
 	n.yield(event, nil)

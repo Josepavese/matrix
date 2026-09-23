@@ -1,7 +1,9 @@
 # The A2A surface does not work end to end, and fails without a diagnostic
 
 Date observed: 2026-09-23
-Status: half fixed — the JSON-RPC binding dispatches (ec451a8); the task still fails, cause not established
+Status: fixed — the JSON-RPC binding dispatches (ec451a8); the failing turn was Matrix's
+own progress metadata failing A2A task storage, and the cancellation was its
+consequence, not its cause
 
 ## How it was found
 
@@ -141,3 +143,91 @@ nido-free, scratch PAL home:
 
 The daemon was a second instance on its own ports and its own PAL home; the
 operator's runtime was not touched.
+
+## Defect 2 is fixed: the cause, and why the cancellation was a consequence
+
+The turn was not canceled by a timeout, by the HTTP request context, or by Matrix's
+"cancellable turn machinery". It was canceled by the protocol SDK *because Matrix failed
+the task first*, with its own progress metadata:
+
+1. The ACP observer hands the thought notifier the agent's payload verbatim
+   (`internal/providers/agents/router_observer_content.go`, `streamUpdateMetadata`:
+   `notif.Update.Content` is a `zedacp.Content`, `notif.Update.Contents` a
+   `[]zedacp.Content`, `raw_output` a `json.RawMessage`).
+2. `a2aThoughtNotifier.OnThought` put that map into an A2A status message, and A2A
+   Metadata is a JSON object (specification §3.2.5; the field is `google.protobuf.Struct`).
+   The SDK's task store rejects any value that is not nil, bool, int, float, string,
+   `[]any` or `map[string]any` (`a2asrv/taskstore/validator.go`), so processing that
+   event failed:
+
+   ```
+   WARN task moved to failed state due to a processor error
+        a2a.cause="failed to save task state: zedacp.Content is not permitted in Metadata,
+                   must be one of nil, bool, int, float, string, []any, map[string]any"
+   ```
+
+   The cause *is* logged; the task body carries no message because the SDK deliberately
+   does not disclose a processor cause to clients. That is the "no message, no artifacts"
+   task in the table above.
+3. When the event consumer stops, the execution's `errgroup` cancels the context the agent
+   turn runs on (`internal/taskexec/execution_handler.go`, `runProducerConsumer`). **That
+   is the `cancel()` that fires.** It reaches `zedacp.Client.doCall`'s `<-ctx.Done()`,
+   becomes `context canceled`, is classified as
+   `[agent_preflight_failed] phase=session/prompt: ACP prompt failed: context canceled`,
+   and then evicts the agent client. The eviction log line was the last symptom in the
+   chain, never its cause.
+4. The two reverted experiments could not have worked. Detaching from the request context
+   was pointless because the SDK already runs the execution on
+   `context.WithoutCancel(ctx)` (`internal/taskexec/local_manager.go:182`); completing the
+   empty-message path addressed an unrelated branch.
+
+The fix is `internal/providers/a2a/metadata.go`: metadata attached to A2A events is
+projected through JSON - the data model the field is defined over - before it reaches the
+protocol, and a value with no JSON representation is dropped instead of failing the turn.
+`internal/providers/a2a/metadata_test.go` drives the real handler, the real executor and a
+router whose turn reports the production metadata shape (a `zedacp.Content`, a
+`[]zedacp.Content`, a `json.RawMessage`) and then keeps working. With the projection
+removed, all three tests fail with `the running turn was canceled while the agent was
+working: context canceled` - the live symptom, reproduced deterministically.
+
+## The advertised surface, method by method
+
+The card publishes `protocolVersion: "1.0"` on both interfaces. In A2A 1.0 the JSON-RPC
+method names are PascalCase (`SendMessage`, `SubscribeToTask`, ... - specification §5.3
+and §9.4); the slash-separated names (`message/send`, `tasks/resubscribe`, ...) are the
+0.3 generation, which `internal/providers/a2a/jsonrpc_names.go` keeps accepting for
+callers written against it. The earlier reading in this file - that 1.0 uses the
+slash-separated names - was wrong; the translation is compatibility, not conformance.
+
+`internal/providers/a2a/methods_test.go` drives every operation through the real handler,
+the real executor and a router, asserting states, artifacts, error codes and the streaming
+event sequence; `harness_test.go` holds the shared helpers. `message/send` and
+`message/stream` failed against real agents through the metadata defect above; with it
+fixed, every advertised method is served:
+
+| Operation (1.0 name / legacy name) | Served | Tested | Advertised |
+| --- | --- | --- | --- |
+| `SendMessage` / `message/send` | yes | yes | yes, both interfaces |
+| `SendStreamingMessage` / `message/stream` | yes | yes (event sequence) | `capabilities.streaming: true`, verified |
+| `GetTask` / `tasks/get` | yes | yes | implicit |
+| `ListTasks` / `tasks/list` | yes | yes | implicit |
+| `CancelTask` / `tasks/cancel` | yes, and it cancels the running agent turn | yes | implicit |
+| `SubscribeToTask` / `tasks/resubscribe` | yes for non-terminal tasks | yes | `streaming: true` |
+| `CreateTaskPushNotificationConfig` / `.../set` | only when configured | both capability states | only when configured |
+| `GetTaskPushNotificationConfig` / `.../get` | only when configured | both capability states | only when configured |
+| `ListTaskPushNotificationConfigs` / `.../list` | only when configured | both capability states | only when configured |
+| `DeleteTaskPushNotificationConfig` / `.../delete` | only when configured | both capability states | only when configured |
+| `GetExtendedAgentCard` / `agent/getAuthenticatedExtendedCard` | only when configured | both capability states | only when configured |
+
+The daemon configures neither push notifications nor an extended card, so the card
+advertises neither and both surfaces answer the error the specification fixes for an
+unadvertised capability (§3.3.4): -32003 and -32004. `Server.WithPushNotifications` and
+`Server.WithExtendedAgentCard` are wired and tested for the day an operator turns one on.
+
+Two errors come from inside the SDK's request handler and do not match the
+specification's letter: a message sent to a terminal task answers -32602 where §3.1.1
+specifies -32004, and resubscribing to a terminal task answers -32001 where §9.4.6
+specifies -32004. Both are asserted by
+`TestTerminalStateErrorsAreTheProtocolSDKsOwn`, which records the deviation so an SDK
+upgrade that fixes it is noticed. Remapping them would mean replacing the SDK's
+`RequestHandler` for both transports.

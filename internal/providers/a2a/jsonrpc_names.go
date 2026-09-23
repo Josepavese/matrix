@@ -7,18 +7,26 @@ import (
 	"net/http"
 )
 
-// specJSONRPCMethodNames maps the method names the A2A specification defines for the
-// JSON-RPC binding onto the names the protocol SDK dispatches.
+// specJSONRPCMethodNames maps the method names of the A2A 0.3 JSON-RPC binding onto
+// the names the protocol SDK dispatches.
 //
-// Why this exists: the SDK advertises these as "JSON-RPC method names per A2A spec
-// §7" but dispatches PascalCase identifiers (SendMessage, GetTask, ...), while the
-// specification's JSON-RPC binding - the one the agent card publishes as
-// protocolVersion 1.0 with protocolBinding JSONRPC - uses slash-separated names
-// (message/send, tasks/get, ...). A spec-conformant client therefore received
-// "-32601 method not found" for every method it could send, which made the advertised
-// interface unusable even though the handler behind it was wired correctly. The names
-// are translated on the way in; responses need no translation because they carry no
-// method name.
+// A note on which generation is which, because the two are easy to confuse:
+//
+//   - The A2A 1.0 specification - the version this card publishes on every interface -
+//     names the JSON-RPC methods in PascalCase: SendMessage, SendStreamingMessage,
+//     GetTask, ListTasks, CancelTask, SubscribeToTask, CreateTaskPushNotificationConfig,
+//     GetTaskPushNotificationConfig, ListTaskPushNotificationConfigs,
+//     DeleteTaskPushNotificationConfig, GetExtendedAgentCard (specification §5.3
+//     "Method Mapping Reference", §9.4 "Core Methods"). Those are exactly the
+//     identifiers the SDK dispatches, so a 1.0 client needs no translation at all.
+//   - A2A 0.3 named them "category/action": message/send, tasks/get,
+//     tasks/pushNotificationConfig/set, agent/getAuthenticatedExtendedCard, ...
+//
+// The slash-separated names are accepted for callers written against that older
+// generation: a real client that talked to this daemon sent message/send and received
+// "-32601 method not found" for every method it could send, because nothing translated
+// the older name onto the one the handler dispatches. The names are translated on the
+// way in; responses need no translation because they carry no method name.
 var specJSONRPCMethodNames = map[string]string{
 	"message/send":                        "SendMessage",
 	"message/stream":                      "SendStreamingMessage",
@@ -34,10 +42,11 @@ var specJSONRPCMethodNames = map[string]string{
 	"agent/authenticatedExtendedCard":     "GetExtendedAgentCard",
 }
 
-// withSpecJSONRPCMethodNames rewrites an incoming JSON-RPC method name to the one the
-// SDK dispatches, leaving everything else about the request untouched. A body that is
-// not a single JSON-RPC request, or that already carries a name the SDK knows, is
-// passed through unchanged so nothing is lost on the way to the handler.
+// withSpecJSONRPCMethodNames rewrites an incoming legacy (0.3-generation) JSON-RPC
+// method name to the one the SDK dispatches, leaving everything else about the request
+// untouched. A 1.0 name, a body that is not a single JSON-RPC request, or a name no
+// table entry matches is passed through unchanged so nothing is lost on the way to the
+// handler.
 func withSpecJSONRPCMethodNames(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Body == nil {
