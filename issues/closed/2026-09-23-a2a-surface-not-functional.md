@@ -3,7 +3,11 @@
 Date observed: 2026-09-23
 Status: fixed — the JSON-RPC binding dispatches (ec451a8); the failing turn was Matrix's
 own progress metadata failing A2A task storage, and the cancellation was its
-consequence, not its cause
+consequence, not its cause. Follow-up (2026-09-23): the two recorded error-code
+deviations are corrected on both bindings by `task_state_guard.go` (which also turns the
+`-32603` a message to a running task received into the `-32004` it should be), the
+`ListTasks` artifact shape is recorded as an accepted difference, and the missing
+real-peer proof exists in `tests/integration/a2a_jsonrpc_router_e2e_test.go`.
 
 ## How it was found
 
@@ -224,13 +228,15 @@ advertises neither and both surfaces answer the error the specification fixes fo
 unadvertised capability (§3.3.4): -32003 and -32004. `Server.WithPushNotifications` and
 `Server.WithExtendedAgentCard` are wired and tested for the day an operator turns one on.
 
-Two errors come from inside the SDK's request handler and do not match the
-specification's letter: a message sent to a terminal task answers -32602 where §3.1.1
-specifies -32004, and resubscribing to a terminal task answers -32001 where §9.4.6
-specifies -32004. Both are asserted by
-`TestTerminalStateErrorsAreTheProtocolSDKsOwn`, which records the deviation so an SDK
-upgrade that fixes it is noticed. Remapping them would mean replacing the SDK's
-`RequestHandler` for both transports.
+Two errors came from inside the SDK's request handler and did not match the
+specification's letter: a message sent to a terminal task answered -32602 where §3.1.1
+specifies -32004, and resubscribing to a terminal task answered -32001 where §9.4.6
+specifies -32004. `TestTerminalStateErrorsAreTheProtocolSDKsOwn` pinned both. The
+follow-up pass recorded at the end of this file corrected them through the SDK's own
+call-interceptor hook, for both advertised bindings, without replacing the SDK's
+`RequestHandler`; that pinning test is now
+`TestProtocolSDKTerminalTaskCodesWithoutTheCorrection`, which drives the SDK without
+Matrix's correction so an upstream fix is still noticed.
 
 
 ## Resolution (2026-09-23, c3cfb4d)
@@ -258,10 +264,141 @@ backed by a test of the event sequence, push notifications and the extended card
 -32003 and -32004 when unconfigured, and a dispatch-table test asserts that none of the
 twelve method names answers -32601.
 
-Two error codes remain deviations and are recorded rather than hidden: send-to-terminal
-answers -32602 and resubscribe-to-terminal -32001 where the specification requires
--32004. Both are decided inside the SDK's request handler before Matrix code runs.
+Two error codes remained deviations at that point and were recorded rather than
+hidden: send-to-terminal answered -32602 and resubscribe-to-terminal -32001 where the
+specification requires -32004. Both were decided inside the SDK's request handler
+before Matrix code runs. The follow-up pass below corrected both through the SDK's
+call-interceptor hook.
 
 A claim in this issue was also wrong and is corrected: A2A 1.0 uses PascalCase JSON-RPC
 method names, and the slash-separated names belong to the previous generation. The
 translation added in ec451a8 is backward compatibility, not what a 1.0 client sends.
+
+## Follow-up (2026-09-23): the two recorded deviations, and the proof that was missing
+
+Three things remained open when this issue was closed: the two error codes recording a
+deviation instead of conforming, the `ListTasks` artifact shape, and the absence of any
+run through a real agent after the metadata fix. The first is fixed, the second is now
+recorded as an accepted difference, and the third is closed by a new integration test.
+
+### The terminal-state codes are corrected, in Matrix, on both bindings
+
+The audit was right about where the codes are chosen - both decisions happen inside the
+SDK before Matrix's executor runs - and wrong about the remedy. The SDK's
+`a2asrv.NewHandler` returns an `*a2asrv.InterceptedHandler` around its
+`defaultRequestHandler`, both bindings call that one value, and an
+`a2asrv.CallInterceptor` may refuse a request in `Before`. So one interceptor corrects
+both transports; nothing of the SDK is forked or replaced.
+
+`internal/providers/a2a/task_state_guard.go` looks the addressed task up in the same
+in-memory store the SDK would have created (`a2asrv.WithTaskStore` is given the store the
+guard reads, with the SDK's own `NewTaskStoreAuthenticator`), and only when the stored
+task's state is terminal does it refuse the request with
+`a2a.ErrUnsupportedOperation`. The SDK paths it steps in front of are:
+
+- `a2asrv/agentexec.go:228` (a2a-go v2.5.0): `task in a terminal state %q: %w` with
+  `a2a.ErrInvalidParams` - the -32602 a message to a finished task used to receive.
+- `internal/taskexec/local_manager.go:134`: `no active execution` for a finished task,
+  which `a2asrv/handler.go:373` wraps in `a2a.ErrTaskNotFound` - the -32001 a
+  resubscription used to receive.
+
+What a caller now gets, against the specification:
+
+| Operation | Specification | Before | Now |
+| --- | --- | --- | --- |
+| `SendMessage` / `message/send` to a terminal task | UnsupportedOperationError, -32004 (§3.1.1, §5.4) | -32602 | -32004 |
+| `SendStreamingMessage` / `message/stream` to a terminal task | UnsupportedOperationError, -32004 (§3.1.2, §5.4) | -32602 | -32004 |
+| `SubscribeToTask` / `tasks/resubscribe` to a terminal task | UnsupportedOperationError, -32004 (§3.1.6, §9.4.6, §5.4) | -32001 | -32004 |
+| HTTP+JSON `message:send` to a terminal task | FAILED_PRECONDITION, 400 (§5.4) | INVALID_ARGUMENT, 400 | FAILED_PRECONDITION, 400 |
+| HTTP+JSON `tasks/{id}:subscribe` to a terminal task | FAILED_PRECONDITION, 400 (§5.4) | NOT_FOUND, 404 | FAILED_PRECONDITION, 400 |
+
+An unknown task id is untouched and still answers TaskNotFoundError, which is what the
+guard's store lookup is for: it reads "the task exists and is terminal", not "the
+operation is scary".
+
+Tests: `internal/providers/a2a/task_state_guard_test.go`.
+
+- `TestTerminalTaskOperationsAnswerUnsupportedOperation` drives all five rows above plus
+  the unknown-id control. Removing `&taskStateGuard{...}` from
+  `newRequestHandler` (the only production change that carries the fix) fails four of
+  its five subtests with the production symptoms: `-32602 (executor setup failed: failed
+  to load exec ctx: task in a terminal state "TASK_STATE_COMPLETED": invalid params)`,
+  the SSE `-32001` frame, REST `INVALID_ARGUMENT`, and REST `NOT_FOUND`. The unknown-id
+  subtest passes either way, which is the point of it.
+- `TestProtocolSDKTerminalTaskCodesWithoutTheCorrection` keeps the old pinning test's
+  job: it wires the SDK's handler with the same executor and capability checks but
+  without the guard, and asserts -32602 and -32001, so an SDK upgrade that fixes either
+  code fails this test and the deviation record gets revisited.
+
+### The `ListTasks` artifact shape is an accepted difference
+
+§3.1.4 (A2A v1.0.1) says: "When `includeArtifacts` is false (the default), the artifacts
+field MUST be omitted entirely from each Task object in the response. ... When
+`includeArtifacts` is true, the artifacts field should be included with its actual
+content (which may be an empty array if the task has no artifacts)." Matrix satisfies the
+MUST and omits the field in both cases, so a task with no artifacts does not carry an
+empty array when `includeArtifacts` is true.
+
+This cannot be corrected from Matrix at a price worth paying, and the reason is the
+SDK's wire type rather than the store: both bindings marshal the response with
+`encoding/json` (`a2asrv/jsonrpc.go:361`, `a2asrv/rest.go:206`), and
+`a2a.Task.Artifacts` is tagged `json:"artifacts,omitempty"` (`a2a/core.go:347` in
+v2.5.0). Go's `omitempty` drops an empty slice whether or not it is nil, so no value
+Matrix can place in the response - the store's result, an interceptor's payload - can
+make the key appear. Emitting it would mean rewriting response bodies in a transport
+wrapper or forking the SDK's core type, and the sentence is the specification's
+lowercase "should", not a MUST.
+
+Recorded, not hidden: `TestListTasksOmitsTheArtifactsFieldForATaskWithoutArtifacts`
+pins the shape in both directions (a silent turn omits the key; a turn with an artifact
+carries it, which proves the pointer decode distinguishes the two). When it fails, the
+SDK has changed and this paragraph is outdated.
+
+### Found while fixing: a message to a running task was an "internal error"
+
+The audit for the two codes above turned up a third case the same guard corrects. A
+second message addressed to a task whose first turn is still in flight is refused by the
+execution manager with its internal `ErrExecutionInProgress`
+(`internal/taskexec/local_manager.go:197`), a value that is not one of the A2A error
+types and lives in a package Matrix cannot import. Both bindings therefore fell back to
+an internal error for a condition the client caused and can see coming: `-32603
+task execution is already in progress` on JSON-RPC, HTTP 500 on the HTTP+JSON binding.
+Matrix serves one turn per task, which is a limitation rather than a fault, so the
+refusal is now `UnsupportedOperationError` on both bindings (§3.3.2: "a specific aspect
+of it is not supported by this server agent implementation"). Two operations are
+deliberately exempt, and the test asserts both: resubscribing to the running task still
+streams it, and a task awaiting input would still accept the follow-up message §3.4.3
+documents. `TestMessageToARunningTaskAnswersUnsupportedOperationNotAnInternalError`
+fails with `-32603 task execution is already in progress` when the guard's
+running-state branch is removed.
+
+### The end-to-end proof
+
+`tests/integration/a2a_jsonrpc_router_e2e_test.go` drives a specification-named JSON-RPC
+request through the production `matrixa2a.Server` into the production `session.Manager`
+and `agents.Router` and into the repository's own `./cmd/mock-agent` compiled from its
+package path and spoken to over real stdio. It asserts a `TASK_STATE_COMPLETED` task
+whose artifact carries the peer's answer, for both the 1.0 name and the 0.3 legacy name,
+and reads the task back through `GetTask`. The task completing at all is part of the
+assertion: the metadata defect that failed every task ran through this same notifier.
+
+It is not a `matrix run` daemon: the HTTP listener is `httptest` and the CLI's
+vault/config bootstrap is replaced by an in-memory store. Everything from the wire
+request to the agent process is production code, and the peer is a real process rather
+than an in-process stub.
+
+The test reproduces both live defects when either fix is removed, which is what makes it
+the proof this issue was missing. Reverting `message.Metadata = a2aSafeMetadata(metadata)`
+to `message.Metadata = metadata` in `internal/providers/a2a/server.go` makes both subtests
+fail with the original symptom - `state = "TASK_STATE_FAILED" (no status message)` - with
+the real peer running the same turn; removing `withSpecJSONRPCMethodNames` from the route
+makes the `message/send` subtest fail with `-32601 method not found` while the 1.0 name
+still passes.
+
+One test-harness defect was found while writing it and fixed where it lives: the A2A
+streams are read by a goroutine that owns the response body, and a test that read one
+frame and returned left `Body.Close` racing that read on the shared HTTP transport. The
+wedged connection stalled whichever request reused it next until the transport's idle
+timeout, which showed up as an intermittent ~90-second test rather than a failure.
+`harness_test.go` now documents that a test which stops at the first frame must drain
+the stream, and `drainStream` is the helper for it.

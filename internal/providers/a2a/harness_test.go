@@ -202,6 +202,12 @@ func (f streamFrame) result(t *testing.T) streamResult {
 
 // openStream performs a streaming JSON-RPC call and returns the frames as they arrive
 // on the wire. The response body is closed by the cleanup registered for the test.
+//
+// A test that needs only the first frame must still drain the stream to its end (see
+// drainStream) before it returns. Closing a body whose reader goroutine is still
+// consuming it races on the shared HTTP transport, and a connection left in that state
+// stalls the next request that reuses it until the transport's idle timeout, which shows
+// up as an intermittent ~90s test rather than a failure.
 func openStream(t *testing.T, url, method, params string) <-chan streamFrame {
 	t.Helper()
 	body := fmt.Sprintf(`{"jsonrpc":"2.0","id":"matrix-stream","method":%q,"params":%s}`, method, params)
@@ -256,6 +262,25 @@ func awaitStreamClosed(t *testing.T, frames <-chan streamFrame) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatalf("the stream did not close after the task reached a terminal state")
+	}
+}
+
+// drainStream reads a stream to its end, discarding every frame. It is how a test that
+// stops at the first frame leaves the connection clean: the reader goroutine reaches
+// EOF before the test's cleanup closes the body, so no read is in flight against the
+// close. See the note on openStream for why that matters.
+func drainStream(t *testing.T, frames <-chan streamFrame) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case _, ok := <-frames:
+			if !ok {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("the stream did not close")
+		}
 	}
 }
 

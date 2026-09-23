@@ -12,6 +12,8 @@ import (
 
 	a2asdk "github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv/push"
+
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 func fetchCard(t *testing.T, url string) a2asdk.AgentCard {
@@ -182,6 +184,92 @@ func TestTasksGetAndListServeTheStoredTask(t *testing.T) {
 	if second.ContextID == first.ContextID {
 		t.Fatalf("the two messages shared a context, so the filter proves nothing")
 	}
+}
+
+// silentTurnRouter completes a turn without an answer, so the stored task carries no
+// artifacts at all.
+type silentTurnRouter struct{}
+
+func (r *silentTurnRouter) Route(_ context.Context, _ string, _ string, _ string, _ middleware.ThoughtNotifier) (string, error) {
+	return "", nil
+}
+
+// TestListTasksOmitsTheArtifactsFieldForATaskWithoutArtifacts records the one
+// shape deviation that remains in the A2A surface, against the specification and
+// against the SDK line that decides it.
+//
+// The specification (§3.1.4 List Tasks, A2A v1.0.1) says: "When includeArtifacts is
+// false (the default), the artifacts field MUST be omitted entirely from each Task
+// object in the response. ... When includeArtifacts is true, the artifacts field
+// should be included with its actual content (which may be an empty array if the
+// task has no artifacts)." Matrix omits the field in both cases for a task that has
+// no artifacts, so the "empty array" half is not served.
+//
+// The decision is the SDK wire type's, not the store's: both bindings marshal the
+// response with encoding/json (a2asrv/jsonrpc.go:361 and a2asrv/rest.go:206), and
+// a2a.Task.Artifacts carries `json:"artifacts,omitempty"` in a2a-go v2.5.0
+// (a2a/core.go:347), where omitempty means "empty slice", nil or not. Nothing
+// Matrix can put in the response - the store's result, an interceptor's payload -
+// can make the key appear without replacing the transport or the SDK's type, and
+// the requirement is the specification's lowercase "should" rather than a MUST. It
+// is recorded as a known, accepted difference in
+// issues/closed/2026-09-23-a2a-surface-not-functional.md and
+// docs/protocol_coverage.md.
+//
+// This test pins the shape so an SDK upgrade that emits the empty array is
+// noticed: when it fails, the record is outdated and the deviation is gone.
+func TestListTasksOmitsTheArtifactsFieldForATaskWithoutArtifacts(t *testing.T) {
+	type listedTask struct {
+		ID string `json:"id"`
+		// A pointer distinguishes "the field is absent" from "the field is an
+		// empty array", which is the whole question here.
+		Artifacts *[]json.RawMessage `json:"artifacts"`
+	}
+	var listing struct {
+		Tasks []listedTask `json:"tasks"`
+	}
+	list := func(t *testing.T, url string) []listedTask {
+		t.Helper()
+		answer := callRPC(t, url, "ListTasks", `{"includeArtifacts":true}`)
+		if answer.Error != nil {
+			t.Fatalf("ListTasks: error %d: %s", answer.Error.Code, answer.Error.Message)
+		}
+		if err := json.Unmarshal(answer.Result, &listing); err != nil {
+			t.Fatalf("decode ListTasks: %v", err)
+		}
+		return listing.Tasks
+	}
+
+	t.Run("a task with no artifacts", func(t *testing.T) {
+		server := newA2ATestServer(t, NewServer(&silentTurnRouter{}, "http://127.0.0.1:0", "opencode"))
+		completed := callRPC(t, server.URL, "SendMessage", sendMessageParams("m-silent", "say nothing")).requireTask(t, "SendMessage")
+		if completed.Status.State != stateCompleted {
+			t.Fatalf("the turn did not finish: %q", completed.Status.State)
+		}
+		if len(completed.Artifacts) != 0 {
+			t.Fatalf("the turn produced artifacts, so it cannot prove the empty case: %#v", completed.Artifacts)
+		}
+
+		tasks := list(t, server.URL)
+		if len(tasks) != 1 {
+			t.Fatalf("includeArtifacts listed %d tasks, want the one", len(tasks))
+		}
+		if tasks[0].Artifacts != nil {
+			t.Fatalf("the SDK now answers includeArtifacts with the artifacts field set to %v; the "+
+				"deviation recorded in issues/closed/2026-09-23-a2a-surface-not-functional.md is fixed "+
+				"upstream and the record must be updated", *tasks[0].Artifacts)
+		}
+	})
+
+	t.Run("a task with artifacts", func(t *testing.T) {
+		server := newA2ATestServer(t, NewServer(&stubSessionRouter{}, "http://127.0.0.1:0", "opencode"))
+		callRPC(t, server.URL, "SendMessage", sendMessageParams("m-loud", "say something")).requireTask(t, "SendMessage")
+
+		tasks := list(t, server.URL)
+		if len(tasks) != 1 || tasks[0].Artifacts == nil || len(*tasks[0].Artifacts) != 1 {
+			t.Fatalf("includeArtifacts returned %+v, want the field present with the artifact", tasks)
+		}
+	})
 }
 
 // TestTasksCancelStopsTheTurnAndAnswersCanceled covers cancelation end to end: the
@@ -485,40 +573,6 @@ func TestTheAdvertisedRESTBindingServesTheSameOperations(t *testing.T) {
 	extendedRefused := restRequest(t, http.MethodGet, server.URL+"/a2a/rest/extendedAgentCard", "")
 	if extendedRefused.status != http.StatusBadRequest {
 		t.Fatalf("REST extendedAgentCard status = %d, want 400 for the unsupported capability", extendedRefused.status)
-	}
-}
-
-// TestTerminalStateErrorsAreTheProtocolSDKsOwn records two places where the error a
-// caller receives does not match the specification's letter, so that a future upgrade of
-// the protocol SDK which changes them is noticed rather than silently absorbed:
-//
-//   - Sending a message to a task in a terminal state answers -32602 (invalid params)
-//     where §3.1.1 specifies UnsupportedOperationError (-32004).
-//   - Subscribing to a task in a terminal state answers -32001 (task not found) where
-//     §9.4.6 specifies UnsupportedOperationError (-32004).
-//
-// Both decisions are made inside the SDK's request handler before Matrix's executor is
-// reached: a2asrv.factory.loadExecutionContext rejects the terminal task with
-// a2a.ErrInvalidParams, and taskexec.localManager.Resubscribe has no execution left to
-// attach to, which the handler wraps in a2a.ErrTaskNotFound. Remapping them would mean
-// replacing the SDK's RequestHandler for both transports - a much larger change than
-// this fix - and the operation is refused either way, so no caller is told the request
-// succeeded.
-func TestTerminalStateErrorsAreTheProtocolSDKsOwn(t *testing.T) {
-	server := newA2ATestServer(t, NewServer(&stubSessionRouter{}, "http://127.0.0.1:0", "opencode"))
-
-	done := callRPC(t, server.URL, "SendMessage", sendMessageParams("m-terminal", "done")).requireTask(t, "SendMessage")
-	if done.Status.State != stateCompleted {
-		t.Fatalf("the turn did not finish: %q", done.Status.State)
-	}
-
-	followUp := fmt.Sprintf(`{"message":{"role":"user","messageId":"m-follow-up","taskId":%q,"parts":[{"text":"more"}]}}`, done.ID)
-	callRPC(t, server.URL, "SendMessage", followUp).requireError(t, "SendMessage", codeInvalidParams)
-
-	frames := openStream(t, server.URL, "SubscribeToTask", fmt.Sprintf(`{"id":%q}`, done.ID))
-	frame := nextFrame(t, frames, "the subscription answer")
-	if frame.Error == nil || frame.Error.Code != codeTaskNotFound {
-		t.Fatalf("SubscribeToTask on a terminal task answered %+v, want the SDK's task-not-found error", frame)
 	}
 }
 

@@ -193,6 +193,38 @@ Additional stable A2A surface:
   URL-validation and delivery policy so protocol coverage cannot silently
   create an SSRF surface.
 
+### Known A2A differences
+
+One difference between Matrix's served A2A surface and the specification's letter is
+accepted, tested, and recorded here rather than left implicit:
+
+- **`ListTasks` with `includeArtifacts: true` and a task that has no artifacts.**
+  §3.1.4 (A2A v1.0.1) says "the artifacts field should be included with its actual
+  content (which may be an empty array if the task has no artifacts)". Matrix omits
+  the field for an artifact-less task. The omission is the SDK wire type's, not the
+  store's: both bindings marshal with `encoding/json` (`a2asrv/jsonrpc.go:361`,
+  `a2asrv/rest.go:206`) and `a2a.Task.Artifacts` carries
+  `json:"artifacts,omitempty"` (`a2a/core.go:347` in `a2a-go/v2 v2.5.0`), so an empty
+  slice is dropped whether or not it is nil. Only a transport-level body rewrite or a
+  fork of the SDK's core type could emit `[]`, and the sentence is a lowercase
+  "should". The MUST in the same paragraph - omit the field when `includeArtifacts` is
+  false - is met. Pinned by
+  `TestListTasksOmitsTheArtifactsFieldForATaskWithoutArtifacts`
+  (`internal/providers/a2a/methods_test.go`), which fails if the SDK's shape changes.
+
+The corresponding error-code differences are not deviations: a message or a
+subscription addressed to a task in a terminal state answers
+`UnsupportedOperationError` (-32004 on JSON-RPC, `FAILED_PRECONDITION`/400 on
+HTTP+JSON) on both bindings, corrected in Matrix by an SDK call interceptor because
+the SDK itself chooses `-32602` (`a2asrv/agentexec.go:228`) and `-32001`
+(`internal/taskexec/local_manager.go:134` via `a2asrv/handler.go:373`). The same guard
+answers `UnsupportedOperationError` for a message addressed to a task whose turn is
+still running, which the SDK's internal `ErrExecutionInProgress`
+(`internal/taskexec/local_manager.go:197`) would otherwise surface as `-32603`/HTTP 500;
+resubscription to a running task and a message to a task awaiting input are exempt. The
+SDK's own codes remain pinned by `TestProtocolSDKTerminalTaskCodesWithoutTheCorrection`
+so an upstream fix is noticed.
+
 ## Runtime verification
 
 `AgentCapabilities` reports separate `session`, `operations`, `content`, and
