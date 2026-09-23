@@ -60,6 +60,27 @@ if [ "$VERSION" != "latest" ]; then
 fi
 
 json="$(curl -fsSL "$api")"
+
+# The release document addressed by tag can be served with an empty asset list
+# for a while after a release is published, while the assets themselves are
+# already downloadable. Observed on v0.1.36 and v0.1.37: releases/tags/<tag>
+# reported no assets while releases/<id>/assets reported all nine. The
+# id-addressed endpoint is used in that case, instead of failing an install on a
+# stale index.
+if ! printf '%s\n' "$json" | grep -q '"browser_download_url"'; then
+  release_id="$(printf '%s\n' "$json" \
+    | grep -Eo '"id":[[:space:]]*[0-9]+' \
+    | head -n 1 \
+    | grep -Eo '[0-9]+' || true)"
+  if [ -n "$release_id" ]; then
+    fresh_json="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/$release_id/assets" || true)"
+    if printf '%s\n' "$fresh_json" | grep -q '"browser_download_url"'; then
+      echo "release metadata was stale for $VERSION; read assets by release id" >&2
+      json="$fresh_json"
+    fi
+  fi
+fi
+
 asset_urls="$(printf '%s\n' "$json" \
   | grep -Eo '"browser_download_url":[[:space:]]*"[^"]+"' \
   | cut -d '"' -f 4 \
