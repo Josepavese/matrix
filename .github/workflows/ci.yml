@@ -123,3 +123,14 @@ jobs:
     # reproducible instead of waiting for GitHub to be stale.
     - name: Test install.sh asset resolution
       run: bash tests/install_sh_asset_test.sh
+
+  windows-validation-host:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+    # The guest console cannot be driven from CI, but the host half of the
+    # validation can: serving the script, collecting the report and judging it. The
+    # self-test drives that plumbing with a synthetic report, including the case
+    # where a check failed and the run must not be reported as valid.
+    - name: Self-test the Windows validation collector
+      run: bash tests/windows_validation_host.sh --self-test --port 8099

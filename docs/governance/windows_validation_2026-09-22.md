@@ -112,6 +112,27 @@ the release: the version assertion was hard-coded to `0.1.34`, which pinned the
 script to the release it was written for. It now derives the expected version from
 `-Version`.
 
+## Running it: host side is automated
+
+`tests/windows_validation_host.sh` does the host half, which used to be a throwaway
+Python server rewritten by hand every time:
+
+```
+tests/windows_validation_host.sh --version v0.1.38
+```
+
+It serves `tests/windows_release_validation.ps1`, prints the two lines to type in the
+guest, waits for the POSTed report, and exits non-zero unless every check passed.
+`--self-test` drives the whole collector with a synthetic report — including the
+case where a check failed and the run must not be reported as valid — so the
+plumbing is verified on a host with no Windows guest at all; CI runs that in the
+`windows-validation-host` job.
+
+What remains manual is the guest console itself: the VM has no SSH login, so the two
+commands are typed into it. Automating that needs the guest to accept a connection
+(OpenSSH or the QEMU guest agent) and is worth doing when the guest is next rebuilt,
+because it is the last step that requires a human at the screen.
+
 ## Rebuilding the guest
 
 The guest's writable overlay was deleted on 2026-09-23 to reclaim 4.9 GB on a
