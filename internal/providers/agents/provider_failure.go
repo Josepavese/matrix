@@ -5,6 +5,7 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 func classifyProviderFailure(agentID string, endpoint middleware.ProtocolEndpoint, phase string, err error) error {
@@ -20,11 +21,16 @@ func classifyProviderFailure(agentID string, endpoint middleware.ProtocolEndpoin
 	message := "agent provider preflight failed"
 	model := ""
 	lower := strings.ToLower(errText)
-	if isModelUnavailableError(lower) {
+	switch {
+	case zedacp.IsAuthenticationRequired(err):
+		// ACP v2's structured signal, checked before the text heuristics.
+		code = providerfailure.AuthMismatch
+		message = "the agent requires authentication before this request"
+	case isModelUnavailableError(lower):
 		code = providerfailure.ModelUnavailable
 		message = "configured provider model is unavailable through the selected adapter"
 		model = extractBacktickModel(errText)
-	} else if isProviderAuthError(lower) {
+	case isProviderAuthError(lower):
 		code = providerfailure.AuthMismatch
 		message = "provider authentication failed or does not match the selected adapter"
 	}

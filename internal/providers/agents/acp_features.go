@@ -84,6 +84,9 @@ func (c *acpConversationClient) validateMCPServers(servers []acpMcpServerConfig)
 	return nil
 }
 
+// AuthenticationMethods reports the advertised methods Matrix can run: the "agent"
+// type, plus a missing type (v1 agents omit it). ACP v2's "terminal" type needs a
+// process relaunch Matrix does not implement, so it is not offered.
 func (c *acpConversationClient) AuthenticationMethods() []middleware.AuthenticationMethod {
 	out := make([]middleware.AuthenticationMethod, 0, len(c.authMethods))
 	for _, method := range c.authMethods {
@@ -92,7 +95,7 @@ func (c *acpConversationClient) AuthenticationMethods() []middleware.Authenticat
 			continue
 		}
 		out = append(out, middleware.AuthenticationMethod{
-			ID:          method.ID,
+			ID:          method.Identifier(),
 			Type:        "agent",
 			Name:        method.Name,
 			Description: method.Description,

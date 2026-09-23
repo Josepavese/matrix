@@ -53,7 +53,10 @@ func (f *acpConversationFactory) initializeConversation(ctx context.Context, end
 	client, handler := newACPClientWithHandler(ctx, deps, transport)
 
 	initReq := acpInitializeRequest{
-		ProtocolVersion:    1,
+		// Zero asks the client to negotiate: it requests the highest version Matrix
+		// supports and drops to v1 if the agent refuses it, so an installed agent
+		// that only speaks the previous generation keeps working.
+		ProtocolVersion:    0,
 		ClientInfo:         map[string]interface{}{"name": "matrix", "version": "1.0"},
 		ClientCapabilities: acpClientCapabilitiesForDeps(deps),
 	}

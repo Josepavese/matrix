@@ -129,9 +129,12 @@ func (r *InitializeResponse) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// AuthMethod is one entry of the initialize response's authMethods. It carries
+// both generations of the identifier: "id" in v1, "methodId" in v2.
 type AuthMethod struct {
 	Type        string                 `json:"type,omitempty"`
 	ID          string                 `json:"id,omitempty"`
+	MethodID    string                 `json:"methodId,omitempty"`
 	Name        string                 `json:"name,omitempty"`
 	Description string                 `json:"description,omitempty"`
 	Meta        map[string]interface{} `json:"_meta,omitempty"`

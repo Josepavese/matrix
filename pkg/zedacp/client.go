@@ -23,6 +23,11 @@ type Client struct {
 	observers map[string]map[uint64]SessionObserver
 	nextObsID uint64
 
+	// protocolVersion is the version the agent agreed to in initialize. It is
+	// written once there and read by Authenticate and Logout, so it is guarded by
+	// mu like the rest of the client state.
+	protocolVersion int
+
 	// notifyMu guards notifyQueues, the per-session ordered delivery of updates
 	// to observers.
 	notifyMu     sync.Mutex
@@ -204,7 +209,53 @@ func (c *Client) sendNotification(ctx context.Context, method string, params int
 	return c.transport.Send(ctx, reqBytes)
 }
 
+// ACP renamed its authentication surface between protocol generations. Version 1
+// exposes the methods "authenticate" and "logout" and identifies a method by
+// "id"; version 2 exposes "auth/login" and "auth/logout" and identifies it by
+// "methodId", makes the type discriminator mandatory, and defines a terminal type
+// whose flow is relaunching the agent process, reconnecting and reinitializing.
+//
+// Matrix speaks both, choosing by the version the agent agrees to in initialize.
+// It does not implement the terminal relaunch, so it neither advertises
+// capabilities.auth.terminal nor offers terminal methods: advertising a flow it
+// cannot run would be a claim, not a capability.
+const (
+	ProtocolVersionV1 = 1
+	ProtocolVersionV2 = 2
+	// MaxSupportedProtocolVersion is what Matrix asks for when a caller does not
+	// pin a version. An agent that only speaks the previous generation is
+	// negotiated down in Initialize rather than failing the connection.
+	MaxSupportedProtocolVersion = ProtocolVersionV2
+)
+
 func (c *Client) Initialize(ctx context.Context, req InitializeRequest) (*InitializeResponse, error) {
+	if req.ProtocolVersion == 0 {
+		req.ProtocolVersion = MaxSupportedProtocolVersion
+	}
+	requested := req.ProtocolVersion
+
+	res, err := c.initializeOnce(ctx, req)
+	if err != nil && requested > ProtocolVersionV1 && rejectedForProtocolVersion(err) {
+		// An agent that only implements the previous generation refuses the newer
+		// number outright. Retry once at v1 instead of failing to connect at all,
+		// which is what keeps every already-installed agent working.
+		fallback := req
+		fallback.ProtocolVersion = ProtocolVersionV1
+		requested = ProtocolVersionV1
+		res, err = c.initializeOnce(ctx, fallback)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	agreed := agreedProtocolVersion(res.ProtocolVersion, requested)
+	c.mu.Lock()
+	c.protocolVersion = agreed
+	c.mu.Unlock()
+	return res, nil
+}
+
+func (c *Client) initializeOnce(ctx context.Context, req InitializeRequest) (*InitializeResponse, error) {
 	resp, err := c.doCall(ctx, "initialize", req)
 	if err != nil {
 		return nil, err
@@ -216,9 +267,75 @@ func (c *Client) Initialize(ctx context.Context, req InitializeRequest) (*Initia
 	return &res, nil
 }
 
+// agreedProtocolVersion resolves what the connection will speak. An agent that
+// declares nothing is treated as the conservative generation rather than the one we
+// asked for, and the agreed version can never exceed what was requested.
+func agreedProtocolVersion(declared, requested int) int {
+	if declared <= 0 {
+		return ProtocolVersionV1
+	}
+	if declared > requested {
+		return requested
+	}
+	return declared
+}
+
+// rejectedForProtocolVersion reports whether an initialize failure looks like the
+// agent refusing the requested protocol version. It is deliberately narrow and is
+// used only to decide whether to retry once at v1, never to classify a run
+// failure.
+func rejectedForProtocolVersion(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	if !strings.Contains(text, "protocol") {
+		return false
+	}
+	for _, marker := range []string{"version", "unsupported", "not supported", "unknown"} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// AuthenticatedProtocolVersion reports the version agreed in initialize, for
+// capability reporting and diagnostics. Zero means initialize has not run.
+func (c *Client) AuthenticatedProtocolVersion() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.protocolVersion
+}
+
+// authenticationMethodName is the wire method that performs a login in the given
+// protocol generation.
+func authenticationMethodName(version int) string {
+	if version >= ProtocolVersionV2 {
+		return "auth/login"
+	}
+	return "authenticate"
+}
+
+// logoutMethodName is the wire method that ends an authenticated session.
+func logoutMethodName(version int) string {
+	if version >= ProtocolVersionV2 {
+		return "auth/logout"
+	}
+	return "logout"
+}
+
+func (c *Client) loginMethod() string {
+	return authenticationMethodName(c.AuthenticatedProtocolVersion())
+}
+
+func (c *Client) logoutMethod() string {
+	return logoutMethodName(c.AuthenticatedProtocolVersion())
+}
+
 func (c *Client) Authenticate(ctx context.Context, methodID string) error {
 	params := map[string]interface{}{"methodId": methodID}
-	_, err := c.doCall(ctx, "authenticate", params)
+	_, err := c.doCall(ctx, c.loginMethod(), params)
 	return err
 }
 
@@ -391,7 +508,7 @@ func (c *Client) DisableProvider(ctx context.Context, req DisableProvidersReques
 }
 
 func (c *Client) Logout(ctx context.Context, req LogoutRequest) (*LogoutResponse, error) {
-	resp, err := c.doCall(ctx, "logout", req)
+	resp, err := c.doCall(ctx, c.logoutMethod(), req)
 	if err != nil {
 		return nil, err
 	}

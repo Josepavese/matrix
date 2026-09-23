@@ -1,7 +1,7 @@
 # ACP v2 authentication: Matrix speaks the previous generation of the protocol
 
 Date observed: 2026-09-23
-Status: open, scoped, not started
+Status: partially done — the negotiated surface shipped, the terminal flow did not
 
 ## What is true today
 
@@ -66,15 +66,35 @@ verified 2026-09-23:
    (`internal/providers/agents/acp_protocol_capabilities.go:8`); the operation
    names and the client capability set both change.
 
-## Suggested first slice
+## Done: the negotiated surface
 
-Take the version negotiation and the method-name mapping first, with v1 kept
-working: `pkg/zedacp` gains the v2 method names and `methodId` handling selected
-by the negotiated protocol version; the adapter reports which authentication
-surface it actually speaks; and the wizard continues to work against both. Then
-treat the `terminal` relaunch semantics as its own change, because it touches
-process launching and session reconnection and is the part most likely to regress
-real agent runs.
+The first slice is implemented. `pkg/zedacp` now speaks both generations and
+chooses by what the agent agrees to:
+
+- `Initialize` asks for the highest supported version (`MaxSupportedProtocolVersion
+  = 2`) unless a caller pins one, retries once at v1 when an agent refuses the
+  newer number, and records the agreed version. An agent that declares nothing is
+  treated as v1, so an installed agent that omits the field is never spoken to in
+  v2.
+- `Authenticate` and `Logout` choose their wire method from the agreed version:
+  `authenticate`/`logout` for v1, `auth/login`/`auth/logout` for v2.
+- `AuthMethod` carries `methodId` alongside `id`, and `Identifier()` reads
+  whichever the agent supplied; the adapter uses it, so an agent speaking either
+  version is understood.
+- `zedacp.IsAuthenticationRequired` recognises v2's structured `auth_required`
+  signal in the error data, with a bounded walk because that data comes from the
+  agent process; the provider classifier consults it before its text heuristics.
+
+Deliberate non-goal in this slice: Matrix does **not** advertise
+`capabilities.auth.terminal` and does not offer `terminal` methods, because it does
+not implement the relaunch flow. Advertising it would be a claim, not a capability.
+
+Evidence: `pkg/zedacp/auth_negotiation_test.go` covers both generations, the
+never-exceed-requested rule, the undeclared-version default, the narrow version
+rejection trigger, the structured signal in five shapes plus false positives, and a
+5000-deep payload against the depth bound.
+
+## Still open: the terminal flow and retry-after-login
 
 ## What is already done, so it is not re-done
 

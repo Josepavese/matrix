@@ -147,7 +147,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # use one router-lifetime client; new routes move to a fresh cached client.
 # 2026-08-04: exact configured provider mode is verified on ACP new/resume/load
 # so wrapper policy cannot be downgraded before a turn.
-"internal/providers/agents" = 4150
+# 2026-09-23: the adapter resolves an advertised method's identifier across both
+# protocol generations and classifies ACP v2's structured auth_required signal
+# before the text heuristics.
+"internal/providers/agents" = 4160
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
@@ -170,7 +173,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-07-22: stable ACP messageId is retained on session updates. 2026-07-19:
 # stable ACP schema v1.19.0 only; retired auth credentials and response aliases
 # were deleted and draft-only methods are explicit opt-ins.
-"pkg/zedacp" = 1770
+# 2026-09-23: the ACP client negotiates the protocol generation (v1 "authenticate"
+# and "logout" with "id" versus v2 "auth/login" and "auth/logout" with "methodId")
+# and recognises v2's structured "auth_required" error data.
+"pkg/zedacp" = 1880
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390
@@ -194,7 +200,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/providers/agents/router_observer.go" = 400
 "internal/providers/runapi/runs.go" = 300
 "pkg/zedacp/client.go" = 510
-"pkg/zedacp/types.go" = 740
+# 2026-09-23: AuthMethod carries methodId alongside id, because protocol version 2
+# renamed the identifier field and reading one name loses every method of the other.
+"pkg/zedacp/types.go" = 745
 
 [function_overrides]
 "cmd/mock-agent/main.go::main" = 100
