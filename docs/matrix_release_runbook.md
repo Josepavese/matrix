@@ -120,6 +120,13 @@ Minimum criteria for a local release candidate:
 - the `CI` workflow jobs `governance`, `lint`, `test`, `windows-codex-policy`,
   `build`, and `release-dry-run` are green
 - tagged releases publish through the `Release` workflow `goreleaser` job
+- the published release verifies end to end with `scripts/verify_release.sh <tag>`:
+  nine expected assets, every archive's sha256 against `checksums.txt`, and
+  `LICENSE` present in every archive and identical to the repository. Read the
+  release **by id** when the tag-addressed view reports no assets: GitHub has served
+  the tag document with an empty asset list for over an hour after publication
+  (v0.1.36 and v0.1.37), which is what broke the installers, and a verification
+  that reads it signs off a release nobody can install
 - `matrix readiness` returns `ready` or `ready_with_warnings`
 - vault schema is `current`
 - no unexpected retention overflows remain
