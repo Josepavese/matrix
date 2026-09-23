@@ -82,3 +82,10 @@ func TestAgentsDirUsesPALHome(t *testing.T) {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
 }
+
+func TestConfigsDirUsesPALHome(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "matrix-home")
+	if got, want := ConfigsDir(home), filepath.Join(home, "configs"); got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}

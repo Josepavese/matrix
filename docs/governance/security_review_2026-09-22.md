@@ -67,6 +67,17 @@ path.
 - **`G304` file inclusion via variable** (23 findings, mostly `scripts/` and the
   CLI): these tools read paths the operator passes on the command line or sets in
   configuration. An operator who can choose the path can already read the file.
+  **Corrected 2026-09-23**: that reasoning was wrong for `Config_Set`, whose path
+  is chosen by an agent tool call, not by an operator
+  (`docs/governance/security_threat_model_2026-09-23.md`, gap G4; evidence
+  `internal/logic/system_tools/handlers.go:112`). The write no longer trusts the
+  requested path: `ConfigProvider.WriteConfig` in
+  `internal/providers/osfs/config.go` resolves it — expanding `..` and every
+  symlink — and refuses it unless the result lies inside the PAL home's `configs/`
+  directory, the root named by `matrixhome.ConfigsDir`. Absolute paths outside
+  that directory, relative paths that escape it, and symlinks that leave it are
+  all rejected with an error naming the requested path and the allowed root. The
+  rest of this bullet still describes the command-line tools it names.
 - **`G204` subprocess launched with a variable** (7 findings): launching the
   configured agent binary is the product's purpose. The calls use
   `exec.CommandContext(executable, args...)` with no shell, so no interpolation

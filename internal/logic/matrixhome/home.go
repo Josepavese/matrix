@@ -11,6 +11,12 @@ import (
 
 const EnvName = "MATRIX_HOME"
 
+// Names of the PAL home subdirectories the code addresses individually.
+const (
+	configsDirName = "configs"
+	agentsDirName  = "agents"
+)
+
 func Configure() (string, error) {
 	home, err := Resolve()
 	if err != nil {
@@ -50,11 +56,18 @@ func Resolve() (string, error) {
 }
 
 func AgentsDir(home string) string {
-	return filepath.Join(home, "agents")
+	return filepath.Join(home, agentsDirName)
+}
+
+// ConfigsDir returns the directory that holds Matrix configuration files. It is
+// the only tree a configuration write may touch, so callers that accept a
+// configuration path from outside the process must confine it here.
+func ConfigsDir(home string) string {
+	return filepath.Join(home, configsDirName)
 }
 
 func Ensure(home string) error {
-	for _, dir := range []string{"", "bin", "configs", "data", "logs", "artifacts", "agents", "backups", "tmp"} {
+	for _, dir := range []string{"", "bin", configsDirName, "data", "logs", "artifacts", agentsDirName, "backups", "tmp"} {
 		path := home
 		if dir != "" {
 			path = filepath.Join(home, dir)
