@@ -1,7 +1,7 @@
 # The A2A surface does not work end to end, and fails without a diagnostic
 
 Date observed: 2026-09-23
-Status: half fixed — the JSON-RPC binding dispatches (ec451a8); the task still fails
+Status: half fixed — the JSON-RPC binding dispatches (ec451a8); the task still fails, cause not established
 
 ## How it was found
 
@@ -41,7 +41,23 @@ executor instead of being rejected).
 This also explains the second symptom in the table: the REST binding worked because the
 SDK's REST handler takes its method from the HTTP path, which already matched.
 
-## Defect 2 is still open, now with a cause
+## Defect 2 is still open, and the cause is NOT established
+
+Two attempted fixes were written and both were reverted, because their tests passed
+with and without them - which means neither addressed anything:
+
+- **Detaching the turn from the request context** (`context.WithoutCancel` plus a
+  budget). The reasoning was that the SDK hands the executor a context tied to the
+  HTTP request, so a client that goes away cancels the turn. A test that cancels the
+  request mid-turn while a stub router is working passes either way, so either the SDK
+  does not propagate that cancellation or the live cancellation comes from somewhere
+  else. Reverted rather than kept on a story.
+- **Completing the task on the empty-message path**, on the theory that a sequence
+  ending without a terminal status left the task failed with nothing to show. Removing
+  the terminal event again leaves the test green, so the SDK already completes that
+  path. Reverted.
+
+What the live run does establish:
 
 The task fails while the agent is working, and the runtime says why:
 
@@ -54,14 +70,20 @@ INFO evicted agent client after cancellable turn failure
      [agent_preflight_failed] ... phase=session/prompt: ACP prompt failed: context canceled
 ```
 
-The A2A request context is canceled while the turn runs. The same prompt through
+The turn is canceled while it runs. The same prompt through
 `POST /v1/runs` completes with the same agent, and that path is asynchronous: it
 returns a run id immediately and the turn continues on its own context, whereas the
 A2A `message/send` turn runs on the caller's request context. There is no
 `WriteTimeout` on the runtime's HTTP server (`cmd/matrix/run.go:209-210` sets only
-`ReadHeaderTimeout` and `IdleTimeout`), so this is not a timeout: the executor is
-handed a context that does not outlive the request. The fix is to detach the turn from
-the request context the way the runtime path already does.
+`ReadHeaderTimeout` and `IdleTimeout`), so this is not a server timeout.
+
+The log line that needs following is the one before the failure:
+`evicted agent client after cancellable turn failure`. Matrix's routing layer has a
+cancellable-turn mechanism of its own, and the cancellation is likelier to come from
+there than from the SDK's request context - which is exactly what the reverted
+experiment showed. The next step is to instrument that path (or reproduce the
+cancellation in a test that uses the real router rather than a stub) before changing
+anything: two plausible-sounding fixes have already been tried and disproved here.
 
 ## The original two defects
 

@@ -66,15 +66,7 @@ func (e *executor) Execute(ctx context.Context, execCtx *a2asrv.ExecutorContext)
 			return
 		}
 		if input == "" && len(contentBlocks) == 0 {
-			// A sequence that ends without a terminal status leaves a non-streaming
-			// caller with a task that never completes: the SDK moved it to failed and
-			// the runtime logged the cause as "processor error None", so an empty
-			// message produced an anonymous failure instead of an answer. Say what
-			// happened and finish the task.
-			if !yield(a2asdk.NewMessage(a2asdk.MessageRoleAgent, a2asdk.NewTextPart("empty message")), nil) {
-				return
-			}
-			yield(a2asdk.NewStatusUpdateEvent(execCtx, a2asdk.TaskStateCompleted, nil), nil)
+			yield(a2asdk.NewMessage(a2asdk.MessageRoleAgent, a2asdk.NewTextPart("empty message")), nil)
 			return
 		}
 
