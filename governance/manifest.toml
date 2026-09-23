@@ -18,6 +18,7 @@ required = [
   "docs/governance/issue_triage_template.md",
   "docs/governance/release_evidence_template.md",
   "docs/governance/security_governance.md",
+  "docs/governance/concurrent_workstations.md",
   "docs/governance/zero_legacy_governance.md",
   "docs/wiki/Governance.md",
   "code-governance.toml",
