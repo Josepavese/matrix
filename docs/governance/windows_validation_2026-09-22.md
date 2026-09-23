@@ -168,3 +168,59 @@ run with `--force-caps`.
   exercised on the guest.
 - `install.ps1`'s checksum and archive-path guards are additionally covered on
   every push by the `install-ps1-security` CI job, which does not need Windows.
+
+## Real guest run, 2026-09-23: v0.1.41, driven over SSH
+
+The validation below was re-run against the published `v0.1.41` on a freshly spawned
+Windows 11 IoT Enterprise LTSC Evaluation guest, and both suites passed:
+
+- `tests/windows_release_validation.ps1` → **WINDOWS_VALIDATION_OK**, 9 checks ok,
+  0 failed: the installer downloaded from the published release, its sha256 matched
+  (`17f44a78…`), `matrix.exe` installed, the PAL home was created, the binary runs and
+  reports `matrix 0.1.41`, `doctor` exits 0, `readiness` reports the two expected
+  blockers of a fresh install, and the seeded configuration was not overwritten.
+- `tests/install_ps1_security_test.ps1` → **INSTALL_PS1_TESTS_OK**: no parse errors,
+  both guards loaded, the checksum guard accepted a matching checksum and rejected a
+  tampered archive and an asset missing from `checksums.txt`, and the archive-path
+  guard accepted a normal archive while rejecting `../evil.exe`, `/absolute.exe`,
+  `C:/windows/evil.exe` and `dir/../../evil.exe`.
+
+### The automation is now SSH, not the console
+
+This is the part worth keeping. The guest has always been drivable only by typing
+into the VNC console, where a locked screen swallows keystrokes into the password
+field and `vncdo` needs `--force-caps`; that is why "guest-side Windows validation
+automation" sat open as a gap. The blueprint already ships an OpenSSH server and the
+user `vmuser`, and `nido spawn` publishes guest port 22 on a host port, so the guest
+can be driven entirely from the host:
+
+```
+nido spawn matrix-win-validation --image windows-11-iot-ltsc --gui --cpus 4 --memory 6144
+sshpass -p nido ssh -p 50022 vmuser@127.0.0.1 '<command>'
+```
+
+Two traps, both hit and worth recording:
+
+- `nido spawn <name> <template>` treats the positional argument as a template and
+  resolves it under `vms/`, which fails with "could not open backing image". Use
+  `--image <spawn-tag>` (`windows-11-iot-ltsc`), which resolves under `images/`.
+- `-p 2222:22` is read as host-port-first, so it produced a rule that could not bind.
+  The default mapping (host 50022 or similar to guest 22) is what you want; pass no
+  `-p` at all.
+- Over SSH the default shell is `cmd.exe`, where `;` is not a separator: chaining
+  `curl.exe … ; powershell …` hands the whole line to `curl`, which then complains
+  about `-File`. Run the fetch and the execution as two separate SSH commands.
+
+The Windows validation script fetches the installer from the published release; the
+security test needs the repository layout (`tests/…` next to `install/install.ps1`),
+so it must be served from the repository root. Serving only `tests/` silently hands
+the guest a 404 page, which parses as "no functions found" rather than as a download
+error — the first attempt failed exactly that way and the fix was the document root,
+not the test.
+
+### Still not covered
+
+Unchanged from above, plus: the interactive desktop, the Telegram bridge, the runtime
+daemon and the vault broker on Windows; PowerShell 7; and the guest was spawned from
+the local image and removed afterwards, so nothing here says anything about a
+physical machine.
