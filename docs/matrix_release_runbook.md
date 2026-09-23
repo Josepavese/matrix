@@ -34,9 +34,18 @@ The preflight includes GoReleaser config validation. Before tagging a release, a
 goreleaser release --snapshot --clean
 ```
 
+The `sboms` section of `.goreleaser.yml` shells out to `syft`, and GoReleaser
+fails rather than publishes a release without the SBOMs it was asked for, so
+`syft` must be on `PATH` for that snapshot run. The `Release` workflow and the
+CI `release-dry-run` job install it with `anchore/sbom-action/download-syft`
+from the version pinned there; install the same version locally instead of
+whatever `syft` happens to be first on `PATH`, or the snapshot's SBOMs are not
+the ones the release will publish.
+
 Each archive must contain the executable, the `LICENSE` text (Apache-2.0 requires
 it to travel with a redistributed binary), `configs/`, installers, and
-installation docs.
+installation docs. Each archive is also published with an SPDX JSON inventory
+named after it, `<archive>.sbom.json`.
 
 After artifacts are generated, install the host-matching archive into the local PAL home:
 
@@ -120,13 +129,24 @@ Minimum criteria for a local release candidate:
 - the `CI` workflow jobs `governance`, `lint`, `test`, `windows-codex-policy`,
   `build`, and `release-dry-run` are green
 - tagged releases publish through the `Release` workflow `goreleaser` job
+- every archive is published with an SBOM (`<archive>.sbom.json`, SPDX JSON,
+  produced by the `sboms` section of `.goreleaser.yml` with the pinned `syft`),
+  and the same job attests build provenance for every file in `checksums.txt`
+  with `actions/attest-build-provenance`, which is why that job carries
+  `id-token: write` and `attestations: write`
 - the published release verifies end to end with `scripts/verify_release.sh <tag>`:
-  nine expected assets, every archive's sha256 against `checksums.txt`, and
-  `LICENSE` present in every archive and identical to the repository. Read the
-  release **by id** when the tag-addressed view reports no assets: GitHub has served
-  the tag document with an empty asset list for over an hour after publication
-  (v0.1.36 and v0.1.37), which is what broke the installers, and a verification
-  that reads it signs off a release nobody can install
+  the nine expected assets, one SBOM per archive under the expected name, every
+  archive's and SBOM's sha256 against `checksums.txt`, `LICENSE` present in every
+  archive and identical to the repository, and a build provenance attestation for
+  every archive digest. Read the release **by id** when the tag-addressed view
+  reports no assets: GitHub has served the tag document with an empty asset list
+  for over an hour after publication (v0.1.36 and v0.1.37), which is what broke
+  the installers, and a verification that reads it signs off a release nobody can
+  install
+- the SBOM and attestation checks are requirements, so that command fails on
+  releases published before them (v0.1.39 and earlier); re-verifying an old tag
+  is expected to report `SBOM asset present -> missing` and
+  `provenance attestation ... -> no attestation for this digest`
 - `matrix readiness` returns `ready` or `ready_with_warnings`
 - vault schema is `current`
 - no unexpected retention overflows remain
@@ -141,6 +161,12 @@ If a previous local daemon is still running during validation, `matrix doctor`
 or `matrix readiness` may warn that the runtime endpoint report is invalid and
 that local probe fallback was used. This is acceptable only when blockers are
 empty and the warning clearly identifies the fallback path.
+
+The SBOM and the attestation are evidence about what was published, not a
+security review. The SBOM records what `syft` could identify inside each archive,
+and the attestation binds those digests to the workflow, commit, and tag that
+produced them. Neither says the binary is free of defects, and neither replaces
+the secret scan or the human review below.
 
 ## Versioning Rule
 

@@ -53,6 +53,18 @@ release:
     - glob: ./install/install.sh
     - glob: ./install/install.ps1
 
+sboms:
+  # The sboms pipe runs before the checksums pipe, so each published archive
+  # also ships an SPDX JSON inventory named after it, listed in checksums.txt
+  # and therefore covered by the provenance attestation in the Release workflow.
+  # Naming the document after the archive keeps the two files together in a
+  # download directory; scripts/verify_release.sh expects exactly this suffix.
+  # The pipe shells out to syft, which the release workflow installs and
+  # `goreleaser check` does not look for.
+  - artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.sbom.json"
+
 checksum:
   name_template: checksums.txt
 

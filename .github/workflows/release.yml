@@ -49,6 +49,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Attesting is what makes the published bytes verifiable rather than
+      # merely downloadable: id-token lets the job prove its workflow identity
+      # to Sigstore, and attestations stores the signed result against this
+      # repository, where the REST API serves it back per subject digest. Both
+      # are scoped to this job, which is the only one that runs after publishing.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -58,6 +65,16 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: '1.27.1'
+      # .goreleaser.yml's sboms section shells out to syft for every archive, and
+      # GoReleaser fails the release when the command is missing, so syft has to
+      # be on PATH before GoReleaser runs. The version is pinned because the SBOM
+      # is a published artifact: a syft upgrade should be a reviewed change, not
+      # a silent difference between two releases. goreleaser-action installs
+      # GoReleaser only, not the tools its pipes call.
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          syft-version: v1.52.0
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
         with:
@@ -66,3 +83,15 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Provenance is attested from the same dist/ files GoReleaser uploaded, so
+      # the subject digests are the published bytes and no second build can drift
+      # from them. subject-checksums covers everything checksums.txt lists - the
+      # six archives and their six SBOMs; checksums.txt is not an entry in its
+      # own list. The attestation lands in GitHub's attestation store rather than
+      # the asset list, so scripts/verify_release.sh reads it back from
+      # /repos/{owner}/{repo}/attestations/{digest} instead of looking for a
+      # fifteenth asset.
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-checksums: dist/checksums.txt
