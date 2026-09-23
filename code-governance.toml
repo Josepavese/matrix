@@ -184,7 +184,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-09-23: the client advertises the terminal auth capability in the parameter
 # names of the generation it requests, and keeps structured RPC error data so the
 # auth_required signal survives the client.
-"pkg/zedacp" = 1925
+"pkg/zedacp" = 1945
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390
@@ -212,7 +212,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # renamed the identifier field and reading one name loses every method of the other.
 # 2026-09-23: InitializeRequest marshals the parameter names of the generation it
 # requests, so a v2 agent sees the capabilities Matrix advertises.
-"pkg/zedacp/types.go" = 762
+# 2026-09-23: the initialize response is decoded by generation, because a v2 peer
+# names its capabilities and info differently from a v1 peer.
+"pkg/zedacp/types.go" = 785
 
 [function_overrides]
 "cmd/mock-agent/main.go::main" = 100

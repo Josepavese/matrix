@@ -21,6 +21,7 @@ type jsonRPCResponse struct {
 	Result  json.RawMessage `json:"result,omitempty"`
 	Method  *string         `json:"method,omitempty"`
 	Params  json.RawMessage `json:"params,omitempty"`
+	Error   *jsonRPCError   `json:"error,omitempty"`
 }
 
 type promptPart struct {
@@ -28,18 +29,34 @@ type promptPart struct {
 }
 
 func main() {
+	// The terminal authentication method launches this same binary as the login
+	// program, with --terminal-login appended to the peer's own arguments.
+	if terminalLoginRequested(os.Args[1:]) {
+		os.Exit(runTerminalLogin())
+	}
+	peer := newACPV2PeerFromArgs(os.Args[1:])
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		var req jsonRPCRequest
 		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
 			continue
 		}
-		resp, ok := handleRequest(req, scanner)
+		resp, ok := dispatch(req, scanner, peer)
 		if !ok {
 			continue
 		}
 		writeJSON(resp)
 	}
+}
+
+// dispatch routes one request to the generation this process was started as. A
+// process without --acp-v2 is the version 1 peer every existing interop test
+// drives, unchanged.
+func dispatch(req jsonRPCRequest, scanner *bufio.Scanner, peer *acpV2Peer) (jsonRPCResponse, bool) {
+	if peer != nil {
+		return peer.handle(req), true
+	}
+	return handleRequest(req, scanner)
 }
 
 func handleRequest(req jsonRPCRequest, scanner *bufio.Scanner) (jsonRPCResponse, bool) {

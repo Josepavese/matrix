@@ -48,3 +48,55 @@ func TestInitializeRequestUsesTheParameterNamesOfTheGenerationItRequests(t *test
 		t.Fatalf("v1 request must not carry the v2 names: %s", body)
 	}
 }
+
+// TestInitializeResponseReadsTheCapabilityNamesOfBothGenerations: a v2 peer answers
+// with capabilities and info, a v1 peer with agentCapabilities and agentInfo. Reading
+// only the v1 names left every v2 capability empty, so Matrix believed a spec-shaped
+// agent supported nothing at all - including the terminal authentication surface.
+func TestInitializeResponseReadsTheCapabilityNamesOfBothGenerations(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "v2 names",
+			body: `{"protocolVersion":2,"capabilities":{"terminal":true},"info":{"name":"peer-v2"},` +
+				`"authMethods":[{"methodId":"terminal-login","type":"terminal"}]}`,
+		},
+		{
+			name: "v1 names",
+			body: `{"protocolVersion":1,"agentCapabilities":{"terminal":true},"agentInfo":{"name":"peer-v1"},` +
+				`"authMethods":[{"id":"terminal-login","type":"terminal"}]}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var resp InitializeResponse
+			if err := json.Unmarshal([]byte(tc.body), &resp); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(resp.Capabilities) == 0 {
+				t.Fatalf("capabilities were dropped: %+v", resp)
+			}
+			if resp.Capabilities["terminal"] != true {
+				t.Fatalf("capabilities = %+v, want terminal true", resp.Capabilities)
+			}
+			if len(resp.AgentInfo) == 0 {
+				t.Fatalf("agent info was dropped: %+v", resp)
+			}
+			if len(resp.AuthMethods) != 1 || resp.AuthMethods[0].Identifier() != "terminal-login" {
+				t.Fatalf("auth methods = %+v", resp.AuthMethods)
+			}
+		})
+	}
+
+	// A peer that sends both spellings is answered by the generation it declared.
+	var both InitializeResponse
+	if err := json.Unmarshal([]byte(`{"protocolVersion":2,"capabilities":{"terminal":true},`+
+		`"agentCapabilities":{"terminal":false}}`), &both); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if both.Capabilities["terminal"] != true {
+		t.Fatalf("the v2 spelling must win: %+v", both.Capabilities)
+	}
+}

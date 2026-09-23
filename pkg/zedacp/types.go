@@ -140,21 +140,47 @@ type InitializeResponse struct {
 }
 
 func (r *InitializeResponse) UnmarshalJSON(data []byte) error {
-	type alias struct {
-		ProtocolVersion   int                    `json:"protocolVersion,omitempty"`
-		AgentInfo         map[string]interface{} `json:"agentInfo,omitempty"`
-		AgentCapabilities map[string]interface{} `json:"agentCapabilities,omitempty"`
-		AuthMethods       []AuthMethod           `json:"authMethods,omitempty"`
-	}
-	var raw alias
-	if err := json.Unmarshal(data, &raw); err != nil {
+	// The capability and info parameters are named differently by the two
+	// generations, and the reply must be read in the names the generation that
+	// answered defines: a v2 peer sends capabilities and info, a v1 peer sends
+	// agentCapabilities and agentInfo. Reading only the v1 names silently dropped
+	// everything a v2 peer advertised, so Matrix believed a conforming agent
+	// supported nothing at all - including the terminal authentication surface.
+	//
+	// The retired spelling stays retired where it was retired: a response declaring
+	// version 1 must not populate capabilities from that name, which is what the
+	// existing test pins and what the governance manifest records. Decoding is by
+	// generation, not by whichever key happens to be present.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-	r.ProtocolVersion = raw.ProtocolVersion
-	r.AgentInfo = raw.AgentInfo
-	r.AuthMethods = raw.AuthMethods
-	r.Capabilities = raw.AgentCapabilities
-	return nil
+	decodeInto := func(target interface{}, keys ...string) error {
+		for _, key := range keys {
+			raw, ok := fields[key]
+			if !ok || len(raw) == 0 || string(raw) == "null" {
+				continue
+			}
+			return json.Unmarshal(raw, target)
+		}
+		return nil
+	}
+	if err := decodeInto(&r.ProtocolVersion, "protocolVersion"); err != nil {
+		return err
+	}
+	if err := decodeInto(&r.AuthMethods, "authMethods"); err != nil {
+		return err
+	}
+	if r.ProtocolVersion >= ProtocolVersionV2 {
+		if err := decodeInto(&r.AgentInfo, "info", "agentInfo"); err != nil {
+			return err
+		}
+		return decodeInto(&r.Capabilities, "capabilities", "agentCapabilities")
+	}
+	if err := decodeInto(&r.AgentInfo, "agentInfo"); err != nil {
+		return err
+	}
+	return decodeInto(&r.Capabilities, "agentCapabilities")
 }
 
 // AuthMethod is one entry of the initialize response's authMethods. It carries
