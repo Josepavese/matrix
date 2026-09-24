@@ -73,10 +73,19 @@ func TestAttachContextMarksLateWhenRunCompletesBeforeDeliveryReturns(t *testing.
 	if err != nil {
 		t.Fatalf("Start run: %v", err)
 	}
+	releaseProvider := make(chan struct{})
+	defer func() {
+		select {
+		case <-releaseProvider:
+		default:
+			close(releaseProvider)
+		}
+	}()
 	attacher := fakeAttacher{attach: func(_ context.Context, req middleware.RunContextAttachmentRequest) (middleware.RunContextAttachmentResult, error) {
 		if _, err := store.Complete(req.RunID, "final", "end_turn"); err != nil {
 			t.Fatalf("Complete run: %v", err)
 		}
+		<-releaseProvider
 		return middleware.RunContextAttachmentResult{Status: "delivered", Message: "agent saw marker"}, nil
 	}}
 	_, resp := New(store, attacher, nil).Handle(context.Background(), run.ID, Request{
@@ -88,7 +97,12 @@ func TestAttachContextMarksLateWhenRunCompletesBeforeDeliveryReturns(t *testing.
 	if !resp.Accepted {
 		t.Fatalf("expected accepted response, got %+v", resp)
 	}
-	event := waitRunActionEvent(t, store, run.ID, "run.context.attached", "late")
+	first := waitRunActionEvent(t, store, run.ID, "run.context.attached", "late")
+	if first.Message != "Live context delivery was still pending when the run completed." {
+		t.Fatalf("watcher did not record the pending terminal delivery: %+v", first)
+	}
+	close(releaseProvider)
+	event := waitRunActionEvent(t, store, run.ID, "run.context.attached", "late", "agent saw marker")
 	if event.Message != "agent saw marker" {
 		t.Fatalf("expected late delivery message proof, got %q", event.Message)
 	}
@@ -267,7 +281,7 @@ func assertNoRunActionEvent(t *testing.T, store *runtrace.Store, runID, kind str
 	}
 }
 
-func waitRunActionEvent(t *testing.T, store *runtrace.Store, runID, kind, status string) runtrace.Event {
+func waitRunActionEvent(t *testing.T, store *runtrace.Store, runID, kind, status string, messages ...string) runtrace.Event {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -276,7 +290,7 @@ func waitRunActionEvent(t *testing.T, store *runtrace.Store, runID, kind, status
 			t.Fatalf("LoadEvents: %v", err)
 		}
 		for _, event := range events {
-			if event.Kind == kind && event.Status == status {
+			if event.Kind == kind && event.Status == status && (len(messages) == 0 || event.Message == messages[0]) {
 				return event
 			}
 		}

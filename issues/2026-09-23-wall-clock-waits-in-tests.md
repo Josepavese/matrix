@@ -14,6 +14,14 @@ intervento deve partire dai test che fanno un'asserzione immediatamente dopo
 una sleep fissa e usare un evento osservabile o una condizione con deadline;
 non aumentare indiscriminatamente i timeout per chiudere l'issue.
 
+La CI successiva ha trovato due altri ordini di eventi non deterministici. Il
+test A2A di risottoscrizione ora consuma un eventuale aggiornamento `working`
+prima dell'evento terminale. Il test `runaction` ora forza il caso in cui il
+watcher registra `late` prima del ritorno del provider; il codice conserva
+anche la prova successiva del provider sotto lo stesso `delivery_id`. Entrambi
+sono fix mirati verificati con race detector, non completano il refactor dei
+wait fissi inventariati qui.
+
 ## Why this exists
 
 A CI run failed on `TestAttachContextMarksLateWhenProviderDoesNotReturn` at a commit

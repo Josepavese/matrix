@@ -46,6 +46,7 @@ type deliveryState struct {
 }
 
 type deliveryRecorder func(runtrace.Run, deliveryState, bool)
+type deliveryClaim func(runtrace.Run, deliveryState, bool) bool
 
 type deliveryWatch struct {
 	run        runtrace.Run
@@ -163,6 +164,14 @@ func (s Service) recordAttach(run runtrace.Run, req Request, state deliveryState
 		s.appendDeliveredSidecars(run, req, state)
 	}
 	s.appendAttachEvent(run, req, state)
+}
+
+func (s Service) recordLateProviderResult(run runtrace.Run, req Request, state deliveryState, claim deliveryClaim) {
+	if !claim(run, state, false) {
+		// The watcher recorded a pending delivery at run completion. The provider's
+		// later result refines that proof for the same delivery ID.
+		s.appendAttachEvent(run, req, state)
+	}
 }
 
 func (s Service) appendDeliveredSidecars(run runtrace.Run, req Request, state deliveryState) {

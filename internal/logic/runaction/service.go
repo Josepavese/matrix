@@ -154,15 +154,22 @@ func (s Service) deliver(ctx context.Context, run runtrace.Run, req Request, del
 	defer cancel()
 	done := make(chan struct{})
 	var once sync.Once
-	record := func(target runtrace.Run, state deliveryState, emitSidecars bool) {
-		once.Do(func() { s.recordAttach(target, req, state, emitSidecars) })
+	record := func(target runtrace.Run, state deliveryState, emitSidecars bool) bool {
+		recorded := false
+		once.Do(func() {
+			s.recordAttach(target, req, state, emitSidecars)
+			recorded = true
+		})
+		return recorded
 	}
 	go s.watchRunTerminal(deliverCtx, deliveryWatch{
 		run:        run,
 		deliveryID: deliveryID,
 		done:       done,
 		cancel:     cancel,
-		recordLate: record,
+		recordLate: func(target runtrace.Run, state deliveryState, emitSidecars bool) {
+			record(target, state, emitSidecars)
+		},
 	})
 	notifier := newAttachProofNotifier(runnotifier.New(s.store, run.ID, run.AgentID, run.Protocol), deliveryID)
 	result, err := s.attacher.AttachRunContext(deliverCtx, middleware.RunContextAttachmentRequest{
@@ -189,7 +196,8 @@ func (s Service) deliver(ctx context.Context, run runtrace.Run, req Request, del
 	}
 	currentRun, ok := s.currentRunningRun(run)
 	if !ok {
-		record(currentRun, deliveryState{ID: deliveryID, Status: deliveryStatusLate, Message: firstNonEmpty(result.Message, "Live context delivered after run completion."), Class: deliveryClassRunCompletedBeforeReturn}, false)
+		state := deliveryState{ID: deliveryID, Status: deliveryStatusLate, Message: firstNonEmpty(result.Message, "Live context delivered after run completion."), Class: deliveryClassRunCompletedBeforeReturn}
+		s.recordLateProviderResult(currentRun, req, state, record)
 		return
 	}
 	state, emitSidecars := s.classifyProviderReturn(deliverCtx, currentRun, result, notifier)
