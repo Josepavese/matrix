@@ -107,3 +107,41 @@ func TestNotificationSequenceRecoversPastStaleCounter(t *testing.T) {
 		t.Fatalf("notifications=%+v err=%v", items, err)
 	}
 }
+
+func TestFindRunningRunForSessionRequiresUnambiguousAgentAndRemoteSession(t *testing.T) {
+	store := NewStore(memstore.New())
+	start := func(id, agent, remote string) {
+		t.Helper()
+		if _, _, err := store.Start(Run{ID: id, AgentID: agent, RemoteSessionID: remote, ChannelID: "test"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start("first", "dsh", "remote-a")
+	start("other-agent", "codex", "remote-a")
+	start("other-session", "dsh", "remote-b")
+	if got := store.FindRunningRunForSession("dsh", "remote-a"); got != "first" {
+		t.Fatalf("unique running match = %q, want first", got)
+	}
+	if got := store.FindRunningRunForSession("", "remote-a"); got != "" {
+		t.Fatalf("empty agent matched %q", got)
+	}
+	if got := store.FindRunningRunForSession("dsh", ""); got != "" {
+		t.Fatalf("empty session matched %q", got)
+	}
+	start("ambiguous", "dsh", "remote-a")
+	if got := store.FindRunningRunForSession("dsh", "remote-a"); got != "" {
+		t.Fatalf("ambiguous session attributed to %q", got)
+	}
+	if _, err := store.Complete("ambiguous", "done", "end_turn"); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.FindRunningRunForSession("dsh", "remote-a"); got != "first" {
+		t.Fatalf("terminal run obscured unique running match: %q", got)
+	}
+	if _, err := store.Complete("first", "done", "end_turn"); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.FindRunningRunForSession("dsh", "remote-a"); got != "" {
+		t.Fatalf("terminal session matched %q", got)
+	}
+}
