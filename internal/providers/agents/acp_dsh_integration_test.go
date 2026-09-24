@@ -52,6 +52,49 @@ func TestRealDSHStrictExternalAttach(t *testing.T) {
 	}
 }
 
+// Opt-in semantic resume proof against a copied external session. The caller
+// supplies a question about earlier context and a fragment of the expected
+// answer; neither the question nor the provider response is written to logs.
+func TestRealDSHExternalResumePrompt(t *testing.T) {
+	if os.Getenv("MATRIX_TEST_DSH_RESUME_PROMPT") == "" {
+		t.Skip("set MATRIX_TEST_DSH_RESUME_PROMPT and MATRIX_TEST_DSH_RESUME_EXPECT for semantic resume proof")
+	}
+	bin, entry, home := os.Getenv("MATRIX_TEST_DSH_BIN"), os.Getenv("MATRIX_TEST_DSH_ENTRY"), os.Getenv("MATRIX_TEST_DSH_HOME")
+	id, workspace := os.Getenv("MATRIX_TEST_DSH_SESSION_ID"), os.Getenv("MATRIX_TEST_DSH_WORKSPACE")
+	prompt, expected := os.Getenv("MATRIX_TEST_DSH_RESUME_PROMPT"), os.Getenv("MATRIX_TEST_DSH_RESUME_EXPECT")
+	if bin == "" || entry == "" || home == "" || id == "" || workspace == "" || expected == "" {
+		t.Fatal("MATRIX_TEST_DSH_BIN, ENTRY, HOME, SESSION_ID, WORKSPACE, RESUME_PROMPT, and RESUME_EXPECT are required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	client, err := (&acpConversationFactory{}).NewClient(ctx, middleware.ProtocolEndpoint{
+		Kind: middleware.ProtocolKindACP, Transport: "stdio", Command: bin,
+		Args: []string{entry, "--profile", "acp"}, Env: []string{"DSH_HOME=" + home},
+	}, middleware.ConversationFactoryDeps{AgentID: "dsh", Cwd: workspace})
+	if err != nil {
+		t.Fatalf("initialize DSH ACP: %v", err)
+	}
+	defer client.Close()
+	attacher := client.(middleware.ConversationSessionAttacher)
+	receipt, err := attacher.AttachExistingRemoteSession(ctx, id, workspace)
+	if err != nil {
+		t.Fatalf("strict external attach: %v", err)
+	}
+	if receipt.RemoteSessionID != id || receipt.VerificationMethod != "session/resume" {
+		t.Fatalf("wrong remote identity or proof: %+v", receipt)
+	}
+	result, err := client.ExecuteTurn(ctx, middleware.ConversationTurn{
+		AgentID: "dsh", LogicalSessionID: "external-resume-proof", RemoteSessionID: id,
+		StrictSession: true, WorkspacePath: workspace, Message: prompt,
+	})
+	if err != nil {
+		t.Fatalf("resumed prompt: %v", err)
+	}
+	if result.RemoteSessionID != id || !strings.Contains(result.Output, expected) {
+		t.Fatalf("external context was not recovered: remote_id=%s output_len=%d", result.RemoteSessionID, len(result.Output))
+	}
+}
+
 func TestRealDSHWorktreePrompt(t *testing.T) {
 	if os.Getenv("MATRIX_TEST_DSH_WORKTREE") != "1" {
 		t.Skip("set MATRIX_TEST_DSH_WORKTREE=1 with an isolated DSH_HOME")

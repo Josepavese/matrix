@@ -39,7 +39,7 @@ type simpleObserver struct {
 func (o *simpleObserver) OnUpdate(notif acpSessionNotification) {
 	log := slog.With("component", "acp_observer", "session", notif.SessionID, "update_type", notif.Update.SessionUpdate)
 	text := updateContentText(notif.Update)
-	log.Info("session update received", "event", "session_update", "update_type", notif.Update.SessionUpdate, "text_len", len(text), "text_preview", truncate(text, 120))
+	log.Info("session update received", "event", "session_update", "update_type", notif.Update.SessionUpdate, "text_len", len(text))
 	if reason, terminal := notif.Update.TurnTerminal(); terminal {
 		o.mu.Lock()
 		o.stopReason, o.terminal = reason, true
@@ -268,13 +268,6 @@ func (o *simpleObserver) Metadata() middleware.ConversationMetadata {
 		}
 	}
 	return meta
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
 }
 
 // stripThinking removes <think...</think...> blocks from agent output.
