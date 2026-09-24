@@ -66,6 +66,8 @@ func annotateProviderFailureAgent(err error, agentID string) error {
 func isModelUnavailableError(lower string) bool {
 	return strings.Contains(lower, "model") &&
 		(strings.Contains(lower, "does not exist") ||
+			strings.Contains(lower, "unavailable") ||
+			strings.Contains(lower, "unknown model option") ||
 			strings.Contains(lower, "do not have access") ||
 			strings.Contains(lower, "not have access"))
 }

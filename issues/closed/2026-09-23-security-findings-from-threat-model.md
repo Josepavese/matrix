@@ -1,7 +1,7 @@
 # Security findings from the first threat model
 
 Date observed: 2026-09-23
-Status: all three bugs fixed; the design decisions are still open
+Status: closed 2026-09-24; findings fixed or resolved with explicit controls
 Source: `docs/governance/security_threat_model_2026-09-23.md` (14 gaps, each with
 file:line evidence). This issue exists so the actionable ones are tracked as work
 rather than living only inside a document.
@@ -27,7 +27,30 @@ rather than living only inside a document.
   entitlement is turn-scoped rather than uniform. A system tool call arriving on any
   other turn is now refused and logged instead of executed.
 
-## Bugs still open
+## Closure evidence (2026-09-24)
+
+- **Local HTTP and JSON-RPC authentication:** `cmd/matrix/run_keys.go` now
+  generates separate API keys on daemon startup when absent. The only opt-out,
+  `MATRIX_LOCAL_UNAUTHENTICATED=1`, is explicit and loopback-only. The live
+  daemon proof for this release used an authenticated HTTP API and a private
+  Unix notification socket.
+- **Registry integrity and launcher:** a binary distribution without a SHA-256
+  now fails closed unless the operator explicitly uses `--allow-unverified`.
+  `agentinstall.ResolveLauncherPath` confines the index's command to the
+  installed agent directory, and installation verifies the command exists
+  there. The release's isolated HTTPS mirror proof installed a SHA-verified
+  artifact using the real `matrix install` CLI without contacting GitHub.
+- **Documentation contradictions:** Telegram admin enforcement, PAL config
+  containment and permission mode were corrected in the earlier fixes. The
+  `G204` paragraph in `docs/governance/security_review_2026-09-22.md` now
+  accurately describes the Unix `bash -c` environment-isolation path and its
+  literal argument quoting. An execution test covers shell metacharacters and
+  command substitution.
+
+The reports below are retained as the original threat-model findings; their
+present-tense descriptions refer to the code as it was when they were filed.
+
+## Original bug reports (resolved)
 
 **1. The Telegram `admins` list is never enforced.** Any Telegram user who can
 reach the bot drives the operator's agents and receives their answers, and
@@ -56,7 +79,7 @@ the tool.** `internal/providers/agents/acp_adapter.go:178` and
 *Fix*: refuse a tool call the session did not advertise for that turn, and record
 the refusal.
 
-## Design decisions still to take deliberately, not by default
+## Original design decisions (resolved above)
 
 **4. The local HTTP API and A2A ingress are unauthenticated when
 `matrix_api_key` is unset** — the shipped default. An empty key means "allow"
@@ -89,7 +112,7 @@ contained, so a hostile index can name any local binary. *Options*: pin the
 commands Matrix is willing to launch, or verify that the resolved command is the
 artifact that was just installed.
 
-## Documentation that contradicts the code
+## Original documentation contradictions (resolved above)
 
 Each of these is a claim in a committed document that the cited code does not
 support; the documents should be corrected whichever way the decision goes:

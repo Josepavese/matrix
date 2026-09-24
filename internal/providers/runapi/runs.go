@@ -222,6 +222,7 @@ func (s *Server) route(ctx context.Context, exec runExecution, prepared sessionS
 			WorkspacePath:         req.WorkspacePath,
 			Input:                 req.Input.String(),
 			ModelID:               req.ModelID,
+			FallbackModelID:       req.FallbackModelID,
 			SidecarCapsules:       req.SidecarCapsules,
 			AdditionalDirectories: req.AdditionalDirectories,
 			AgentLaunchArgs:       req.agentLaunchArgs,

@@ -161,7 +161,7 @@ func gitCommonDirectory(ctx context.Context, root string) (string, error) {
 	}
 	commonDir, err = filepath.EvalSymlinks(commonDir)
 	if err != nil {
-		return "", fmt.Errorf("Git common directory: %w", err)
+		return "", fmt.Errorf("git common directory: %w", err)
 	}
 	if err := requireOwnedDirectory(commonDir); err != nil {
 		return "", err

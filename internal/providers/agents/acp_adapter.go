@@ -198,43 +198,16 @@ func (c *acpConversationClient) prepareTurnSession(ctx context.Context, turn mid
 	if err != nil {
 		return "", classifyProviderFailure(turn.AgentID, c.endpoint, "session/new", err)
 	}
-	if err := c.applyRequestedModel(ctx, remoteSessionID, turn.ModelID); err != nil {
+	selection, err := c.selectTurnModel(ctx, remoteSessionID, turn.ModelID, turn.FallbackModelID)
+	if err != nil {
 		return remoteSessionID, classifyProviderFailure(turn.AgentID, c.endpoint, "session/set_model", err)
 	}
+	if turn.ModelID != "" {
+		if notifier, ok := turn.ThoughtNotifier.(middleware.ModelSelectionNotifier); ok {
+			notifier.OnModelSelection(selection)
+		}
+	}
 	return remoteSessionID, nil
-}
-
-func (c *acpConversationClient) applyRequestedModel(ctx context.Context, sessionID, modelID string) error {
-	if modelID == "" {
-		return nil
-	}
-	if c.negotiatedProtocolVersion() < 2 {
-		resp, err := c.currentACPClient().SetConfigOption(ctx, acpSetConfigOptionRequest{
-			SessionID: sessionID, ConfigID: "model", Value: modelID,
-		})
-		if err != nil {
-			return fmt.Errorf("requested model %q was not accepted by provider: %w", modelID, err)
-		}
-		if resp == nil {
-			return fmt.Errorf("provider did not confirm requested model %q", modelID)
-		}
-		for _, option := range resp.ConfigOptions {
-			if option.ID == "model" && option.Current == modelID {
-				return nil
-			}
-		}
-		return fmt.Errorf("provider did not confirm requested model %q", modelID)
-	}
-	setter, ok := c.currentACPClient().(interface {
-		SetSessionModel(context.Context, acpSetSessionModelRequest) (*acpSetSessionModelResponse, error)
-	})
-	if !ok {
-		return fmt.Errorf("ACP adapter does not support session/set_model")
-	}
-	if _, err := setter.SetSessionModel(ctx, acpSetSessionModelRequest{SessionID: sessionID, ModelID: modelID}); err != nil {
-		return fmt.Errorf("requested model %q was not accepted by provider: %w", modelID, err)
-	}
-	return nil
 }
 
 func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) (string, error) {

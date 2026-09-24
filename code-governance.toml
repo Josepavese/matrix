@@ -114,7 +114,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 "internal/logic/onboarding" = 1415
 # 2026-09-24: durable idempotency reservations, restart reconciliation and
 # minimal notification journal add their own persistence units.
-"internal/logic/runtrace" = 1329
+# 2026-09-24: model provenance in the canonical run and exported trace records
+# requested, configured and provider-confirmed identities separately.
+"internal/logic/runtrace" = 1341
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
 # process reap; forced run-owned child cleanup can remediate parent-owner
 # retention without weakening inline parent-restore safety. Later same-day
@@ -128,12 +130,15 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-09-24: strict external-session import, identity preservation and
 # workspace verification, including provider-announced directory validation,
 # are separate from normal session recovery.
-"internal/logic/session" = 5683
+# The explicit fallback model field is passed through the neutral route.
+"internal/logic/session" = 5684
 # 2026-07-19: stable ACP v1.19/A2A v1.0.1 protocol-neutral request and
 # capability surfaces; retired credential models were deleted.
 # 2026-09-24: provider-neutral remote session identity carries verification
 # limits for the strict import receipt.
-"internal/middleware" = 1146
+# Provider-neutral model selection evidence and explicit fallback fields are
+# used by the ACP adapter and the run trace without coupling the ingress to ACP.
+"internal/middleware" = 1159
 # 2026-04-27: workspace timeline event recording split validation/persistence/state update.
 "internal/logic/workspace" = 910
 # 2026-06-18: public-release hardening adds agent-id path validation for
@@ -181,7 +186,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # pkg/zedacp and internal/providers/agents, which the governance manifest forbids.
 # 2026-09-24: direct ACP resume/load verification and exact model selection
 # extend the provider adapter in focused files.
-"internal/providers/agents" = 4847
+# An authorized model fallback and provider-confirmed selection are isolated
+# in acp_model_selection.go; unsupported/auth failures still stop before prompt.
+"internal/providers/agents" = 4900
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
@@ -198,7 +205,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-09-24: run idempotency ingress, local wakeup stream and compact run
 # diagnostics plus an opt-in Git repository grant preflight extend the API in
 # focused files. The grant's canonical Git/owner checks live in workspacegrant.
-"internal/providers/runapi" = 1936
+# Model fallback validation and explicit run-trace propagation add a small
+# neutral API surface without increasing function or branch warnings.
+"internal/providers/runapi" = 1949
 # 2026-09-21: the Telegram channel gained the elicitation frontend — prompt
 # rendering, inline-keyboard building, callback routing, answer coercion and
 # session-to-chat correlation — split across focused files (elicitation.go,
@@ -217,7 +226,8 @@ exclude_dirs = ["vendor", "tests/mocks"]
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390
-"internal/middleware/link.go" = 320
+# The neutral ingress contract gains one explicit fallback model field.
+"internal/middleware/link.go" = 321
 "internal/logic/agentcatalog/service.go" = 330
 "internal/logic/agentdiscovery/discovery.go" = 430
 "internal/logic/onboarding/wizard.go" = 330

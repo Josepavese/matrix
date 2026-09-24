@@ -79,9 +79,14 @@ path.
   all rejected with an error naming the requested path and the allowed root. The
   rest of this bullet still describes the command-line tools it names.
 - **`G204` subprocess launched with a variable** (7 findings): launching the
-  configured agent binary is the product's purpose. The calls use
-  `exec.CommandContext(executable, args...)` with no shell, so no interpolation
-  occurs.
+  configured agent binary is the product's purpose. The ordinary path passes
+  executable and arguments directly to `exec.CommandContext`. On Unix, the
+  opt-in environment-isolation path invokes `bash -c` to source `nvm.sh` and
+  quotes the configured executable and each argument as shell literals in
+  `internal/logic/agentlaunch/stdio_unix.go`. The executable, arguments, and
+  `nvm.sh` are therefore trust inputs; the launcher tests cover shell
+  metacharacters and command substitution. This path must not be described as
+  shell-free.
 - **`G703` path traversal via taint in `vaultsec`**: the master key path comes from
   `MATRIX_HOME` or an explicit override, both operator-controlled, and the file is
   opened with `0600` and validated for permissions. No agent-supplied value reaches

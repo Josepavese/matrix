@@ -26,6 +26,7 @@ type ConversationRequest struct {
 	ChannelID                string
 	AgentID                  string
 	ModelID                  string
+	FallbackModelID          string
 	LogicalSessionID         string
 	WorkspaceID              string
 	WorkspacePath            string

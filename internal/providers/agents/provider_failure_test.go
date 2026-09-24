@@ -33,6 +33,15 @@ func TestClassifyProviderFailureDetectsModelUnavailable(t *testing.T) {
 	}
 }
 
+func TestClassifyProviderFailureRecognizesACPModelOptionRejection(t *testing.T) {
+	err := classifyProviderFailure("dsh", middleware.ProtocolEndpoint{Kind: middleware.ProtocolKindACP},
+		"session/set_model", errors.New("unknown model option: missing-model"))
+	failure, ok := providerfailure.As(err)
+	if !ok || failure.Code != providerfailure.ModelUnavailable {
+		t.Fatalf("ACP model rejection not typed: %v", err)
+	}
+}
+
 func TestClassifyProviderFailureClassifiesClientContextCancellation(t *testing.T) {
 	err := classifyProviderFailure("opencode", middleware.ProtocolEndpoint{
 		Kind:      middleware.ProtocolKindACP,

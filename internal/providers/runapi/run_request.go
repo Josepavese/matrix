@@ -31,9 +31,7 @@ func decodeRunRequest(w http.ResponseWriter, r *http.Request) (runRequest, bool)
 		return runRequest{}, false
 	}
 	req.AdditionalDirectories = additionalDirectories
-	req.ModelID = strings.TrimSpace(req.ModelID)
-	if len(req.ModelID) > 128 {
-		http.Error(w, "Bad Request: model_id exceeds 128 bytes", http.StatusBadRequest)
+	if !validateRunModels(w, &req) {
 		return runRequest{}, false
 	}
 	if req.WorkspacePolicy != "" && req.WorkspacePolicy != "require_grant" {
@@ -41,6 +39,20 @@ func decodeRunRequest(w http.ResponseWriter, r *http.Request) (runRequest, bool)
 		return runRequest{}, false
 	}
 	return req, true
+}
+
+func validateRunModels(w http.ResponseWriter, req *runRequest) bool {
+	req.ModelID = strings.TrimSpace(req.ModelID)
+	req.FallbackModelID = strings.TrimSpace(req.FallbackModelID)
+	if len(req.ModelID) > 128 {
+		http.Error(w, "Bad Request: model_id exceeds 128 bytes", http.StatusBadRequest)
+		return false
+	}
+	if req.FallbackModelID != "" && (req.ModelID == "" || req.FallbackModelID == req.ModelID || len(req.FallbackModelID) > 128) {
+		http.Error(w, "Bad Request: fallback_model_id requires a different model_id and at most 128 bytes", http.StatusBadRequest)
+		return false
+	}
+	return true
 }
 
 func (s *Server) prepareRunAgentConfig(w http.ResponseWriter, req *runRequest, agentID string) bool {

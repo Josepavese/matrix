@@ -104,7 +104,7 @@ func (s *Store) ReconcileTerminalNotifications() (int, error) {
 		if !found || !isTerminalStatus(run.Status) || seen[run.ID] {
 			continue
 		}
-		kind := "run." + string(run.Status)
+		kind := "run." + run.Status
 		if run.Status == StatusUnknown {
 			kind = "run.outcome_unknown"
 		}

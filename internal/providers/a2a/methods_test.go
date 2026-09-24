@@ -362,9 +362,22 @@ func TestTasksResubscribeStreamsTheTaskAndItsTerminalUpdate(t *testing.T) {
 
 	callRPC(t, server.URL, "CancelTask", fmt.Sprintf(`{"id":%q}`, running.ID))
 
-	terminal := nextFrame(t, frames, "the terminal status update").result(t)
-	if terminal.StatusUpdate == nil || terminal.StatusUpdate.Status.State != stateCanceled {
-		t.Fatalf("the subscription did not deliver the terminal status: %+v", terminal)
+	// A working update can already be queued when cancellation completes.
+	// Consume it and require the eventual terminal update on this subscription.
+	for {
+		update := nextFrame(t, frames, "the terminal status update").result(t)
+		if update.StatusUpdate == nil || update.StatusUpdate.TaskID != running.ID {
+			t.Fatalf("the subscription delivered an unexpected update: %+v", update)
+		}
+		switch update.StatusUpdate.Status.State {
+		case stateWorking:
+			continue
+		case stateCanceled:
+			// The stream closes only after its terminal status has been delivered.
+		default:
+			t.Fatalf("the subscription delivered state %q, want %q", update.StatusUpdate.Status.State, stateCanceled)
+		}
+		break
 	}
 	awaitStreamClosed(t, frames)
 }

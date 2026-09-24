@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -149,6 +150,8 @@ type pagedListACPClient struct {
 	setConfigReq       *acpSetConfigOptionRequest
 	setModelReq        *acpSetSessionModelRequest
 	setModelErr        error
+	setModelErrors     map[string]error
+	setModelReqs       []string
 }
 
 func (c *pagedListACPClient) Context() context.Context            { return c.ctx }
@@ -183,6 +186,10 @@ func (c *pagedListACPClient) ResumeSession(_ context.Context, req acpResumeSessi
 }
 func (c *pagedListACPClient) SetSessionModel(_ context.Context, req acpSetSessionModelRequest) (*acpSetSessionModelResponse, error) {
 	c.setModelReq = &req
+	c.setModelReqs = append(c.setModelReqs, req.ModelID)
+	if err := c.setModelErrors[req.ModelID]; err != nil {
+		return nil, err
+	}
 	return &acpSetSessionModelResponse{}, c.setModelErr
 }
 func (c *pagedListACPClient) ListSessions(context.Context) (*acpListSessionsResponse, error) {
@@ -255,7 +262,11 @@ func (c *pagedListACPClient) SetConfigOption(_ context.Context, req acpSetConfig
 		if c.setModelErr != nil {
 			return nil, c.setModelErr
 		}
-		return &acpSetConfigOptionResponse{ConfigOptions: []zedacp.ConfigOption{{ID: "model", Current: req.Value.(string)}}}, nil
+		value, ok := req.Value.(string)
+		if !ok {
+			return nil, fmt.Errorf("model config value has type %T, want string", req.Value)
+		}
+		return &acpSetConfigOptionResponse{ConfigOptions: []zedacp.ConfigOption{{ID: "model", Current: value}}}, nil
 	}
 	return &acpSetConfigOptionResponse{}, nil
 }
@@ -356,10 +367,64 @@ func TestExecuteTurnAppliesRequestedModelBeforePromptAndFailsClosed(t *testing.T
 
 func TestExecuteTurnUsesACPv1ModelConfigOption(t *testing.T) {
 	fake := &pagedListACPClient{ctx: context.Background(), protocolVersion: 1}
+	notifier := &modelSelectionCapture{}
 	client := &acpConversationClient{client: fake, loadedSessions: map[string]bool{}}
-	_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{Message: "work", ModelID: "chosen-model"})
+	_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{Message: "work", ModelID: "chosen-model", ThoughtNotifier: notifier})
 	if err != nil || fake.setConfigReq == nil || fake.setConfigReq.ConfigID != "model" || fake.promptReq == nil {
 		t.Fatalf("ACP v1 model selection failed: err=%v config=%+v prompt=%+v", err, fake.setConfigReq, fake.promptReq)
+	}
+	if selection := notifier.selection; selection.EffectiveModel != "chosen-model" || selection.Verification != "provider_confirmed" {
+		t.Fatalf("ACP v1 provider confirmation missing: %+v", selection)
+	}
+}
+
+type modelSelectionCapture struct{ selection middleware.ModelSelection }
+
+func (*modelSelectionCapture) OnThought(middleware.ThoughtUpdate) {}
+func (*modelSelectionCapture) SetHeader(string, string)           {}
+func (*modelSelectionCapture) FormattedHeader() string            { return "" }
+func (n *modelSelectionCapture) OnModelSelection(selection middleware.ModelSelection) {
+	n.selection = selection
+}
+
+func TestExecuteTurnUsesOnlyAnAuthorizedFallbackModel(t *testing.T) {
+	fake := &pagedListACPClient{ctx: context.Background(), protocolVersion: 2,
+		setModelErrors: map[string]error{"missing-model": errors.New("model unavailable")}}
+	notifier := &modelSelectionCapture{}
+	client := &acpConversationClient{client: fake, loadedSessions: map[string]bool{}}
+	_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{
+		Message: "work", ModelID: "missing-model", FallbackModelID: "safe-model", ThoughtNotifier: notifier})
+	if err != nil || fake.promptReq == nil {
+		t.Fatalf("authorized fallback did not reach prompt: %v", err)
+	}
+	if got := strings.Join(fake.setModelReqs, ","); got != "missing-model,safe-model" {
+		t.Fatalf("wrong model attempts: %s", got)
+	}
+	if selection := notifier.selection; !selection.FallbackUsed || selection.ConfiguredModel != "safe-model" ||
+		selection.EffectiveModel != "" || selection.Verification != "unverified" || selection.FallbackReason == "" {
+		t.Fatalf("fallback proof is inaccurate: %+v", selection)
+	}
+}
+
+func TestExecuteTurnDoesNotFallbackForAuthenticationFailure(t *testing.T) {
+	fake := &pagedListACPClient{ctx: context.Background(), protocolVersion: 2,
+		setModelErrors: map[string]error{"missing-model": errors.New("authentication required")}}
+	client := &acpConversationClient{client: fake, loadedSessions: map[string]bool{}}
+	_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{
+		Message: "work", ModelID: "missing-model", FallbackModelID: "safe-model"})
+	if err == nil || fake.promptReq != nil || strings.Join(fake.setModelReqs, ",") != "missing-model" {
+		t.Fatalf("authentication failure was treated as model fallback: err=%v attempts=%v", err, fake.setModelReqs)
+	}
+}
+
+func TestExecuteTurnDoesNotPromptWhenProviderCannotSetModels(t *testing.T) {
+	fake := &pagedListACPClient{ctx: context.Background(), protocolVersion: 2,
+		setModelErrors: map[string]error{"requested": errors.New("method not found")}}
+	client := &acpConversationClient{client: fake, loadedSessions: map[string]bool{}}
+	_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{
+		Message: "work", ModelID: "requested", FallbackModelID: "safe"})
+	if err == nil || fake.promptReq != nil || strings.Join(fake.setModelReqs, ",") != "requested" {
+		t.Fatalf("unsupported model setting reached prompt or fallback: err=%v attempts=%v", err, fake.setModelReqs)
 	}
 }
 

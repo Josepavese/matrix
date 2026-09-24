@@ -31,6 +31,26 @@ func newJSONRequest(method, target string, body io.Reader) *http.Request {
 	return req
 }
 
+func TestRunRequestRequiresAnExplicitDistinctFallbackModel(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		ok   bool
+	}{
+		{`{"channel_id":"c","input":"work","fallback_model_id":"safe"}`, false},
+		{`{"channel_id":"c","input":"work","model_id":"same","fallback_model_id":"same"}`, false},
+		{`{"channel_id":"c","input":"work","model_id":"primary","fallback_model_id":"safe"}`, true},
+	} {
+		w := httptest.NewRecorder()
+		req, ok := decodeRunRequest(w, newJSONRequest(http.MethodPost, RunPathV1, strings.NewReader(tc.body)))
+		if ok != tc.ok {
+			t.Fatalf("request %s accepted=%v response=%s", tc.body, ok, w.Body.String())
+		}
+		if ok && (req.ModelID != "primary" || req.FallbackModelID != "safe") {
+			t.Fatalf("fallback model not decoded: %+v", req)
+		}
+	}
+}
+
 func TestRunIdempotencyKeyReturnsSameRunWithoutSecondDispatch(t *testing.T) {
 	router := &runTestRouter{}
 	server := NewServer(router)

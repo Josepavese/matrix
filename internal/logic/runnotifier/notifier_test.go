@@ -8,6 +8,33 @@ import (
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
+func TestNotifierPersistsProviderModelSelection(t *testing.T) {
+	store := runtrace.NewStore(memstore.New())
+	run, _, err := store.Start(runtrace.Run{AgentID: "dsh", RequestedModel: "missing", ModelVerification: "unverified", ChannelID: "http.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notifier := New(store, run.ID, "dsh", "acp")
+	notifier.OnModelSelection(middleware.ModelSelection{ConfiguredModel: "available", Verification: "unverified",
+		FallbackUsed: true, FallbackReason: "requested_model_unavailable"})
+	trace, found, err := store.Trace(run.ID)
+	if err != nil || !found {
+		t.Fatalf("trace: found=%v err=%v", found, err)
+	}
+	if trace.Run.RequestedModel != "missing" || trace.Run.ConfiguredModel != "available" ||
+		trace.Run.EffectiveModel != "" || !trace.Run.ModelFallbackUsed || trace.Run.ModelFallbackReason != "requested_model_unavailable" ||
+		trace.Run.ModelVerification != "unverified" {
+		t.Fatalf("model provenance inaccurate: %+v", trace.Run)
+	}
+	selected := false
+	for _, event := range trace.Events {
+		selected = selected || event.Kind == "model.selection"
+	}
+	if !selected {
+		t.Fatalf("model selection event missing: %+v", trace.Events)
+	}
+}
+
 func TestNotifierRecordsIntermediateEvents(t *testing.T) {
 	store := runtrace.NewStore(memstore.New())
 	run, _, err := store.Start(runtrace.Run{AgentID: "codex", Protocol: "acp", ChannelID: "http.test"})

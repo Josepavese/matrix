@@ -39,6 +39,7 @@ type ProtocolEndpoint struct {
 type ConversationTurn struct {
 	AgentID                  string
 	ModelID                  string
+	FallbackModelID          string
 	LogicalSessionID         string
 	RemoteSessionID          string
 	StrictSession            bool

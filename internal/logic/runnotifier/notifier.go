@@ -79,6 +79,30 @@ func (n *Notifier) SetHeader(agentID, remoteSessionID string) {
 	}
 }
 
+func (n *Notifier) OnModelSelection(selection middleware.ModelSelection) {
+	if n == nil || n.store == nil {
+		return
+	}
+	run, found, err := n.store.LoadRun(n.runID)
+	if err != nil || !found {
+		return
+	}
+	run.ConfiguredModel = selection.ConfiguredModel
+	run.EffectiveModel = selection.EffectiveModel
+	run.ModelVerification = selection.Verification
+	run.ModelFallbackUsed = selection.FallbackUsed
+	run.ModelFallbackReason = selection.FallbackReason
+	if err := n.store.SaveRun(run); err != nil {
+		slog.Warn("failed to record model selection", "error", err, "run_id", n.runID)
+		return
+	}
+	_, _ = n.store.AppendEvent(runtrace.Event{RunID: n.runID, Kind: "model.selection", Metadata: map[string]interface{}{
+		"configured_model": selection.ConfiguredModel, "effective_model": selection.EffectiveModel,
+		"verification": selection.Verification, "fallback_used": selection.FallbackUsed,
+		"fallback_reason": selection.FallbackReason,
+	}})
+}
+
 func (n *Notifier) SetLogicalSession(logicalSessionID, workspaceID string) {
 	if n == nil || n.store == nil {
 		return

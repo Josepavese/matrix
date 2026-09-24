@@ -92,6 +92,7 @@ func buildRouteRequest(req middleware.ConversationRequest, meta SessionMeta, ses
 	return middleware.RouteRequest{
 		AgentID:                  meta.AgentID,
 		ModelID:                  req.ModelID,
+		FallbackModelID:          req.FallbackModelID,
 		LogicalSessionID:         sessionID,
 		AgentSessionID:           meta.AgentSessionID,
 		StrictSession:            meta.StrictRemote,

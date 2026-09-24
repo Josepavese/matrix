@@ -142,7 +142,7 @@ func (c *acpConversationClient) verifyExistingSession(ctx context.Context, remot
 	resp, err := c.currentACPClient().LoadSession(ctx, acpLoadSessionRequest{SessionID: remoteSessionID, Cwd: workspacePath, McpServers: cloneACPMCPServers(c.mcpServers)}, nil)
 	if err != nil {
 		if resumeErr != nil {
-			return "", fmt.Errorf("provider_failure: resume: %v; load: %w", resumeErr, err)
+			return "", fmt.Errorf("provider_failure: resume: %w; load: %w", resumeErr, err)
 		}
 		return "", fmt.Errorf("provider_failure: load: %w", err)
 	}

@@ -3,6 +3,17 @@
 Date observed: 2026-09-23
 Status: audited, not rewritten
 
+## Triage release 2026-09-24
+
+Inventario aggiornato: 68 occorrenze di `time.Sleep` nei file `*_test.go`.
+Il preflight completo, compresa la suite `go test -race -v ./...`, è passato.
+Questa prova non elimina il rischio di flake sotto carico: il refactor dei
+wait fissi non è stato fatto e l'issue rimane aperta. La correzione della
+race di produzione citata sotto è già chiusa separatamente. Il prossimo
+intervento deve partire dai test che fanno un'asserzione immediatamente dopo
+una sleep fissa e usare un evento osservabile o una condizione con deadline;
+non aumentare indiscriminatamente i timeout per chiudere l'issue.
+
 ## Why this exists
 
 A CI run failed on `TestAttachContextMarksLateWhenProviderDoesNotReturn` at a commit

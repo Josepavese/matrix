@@ -26,6 +26,7 @@ type AgentRouter interface {
 type RouteRequest struct {
 	AgentID                  string
 	ModelID                  string
+	FallbackModelID          string
 	LogicalSessionID         string
 	AgentSessionID           string
 	WorkspacePath            string
@@ -74,6 +75,22 @@ type ThoughtNotifier interface {
 	// FormattedHeader returns a platform-specific styled label for the final response.
 	// Returns empty string if no header is available.
 	FormattedHeader() string
+}
+
+// ModelSelection is provider evidence about a model setting applied before a
+// prompt. EffectiveModel is empty unless the provider confirms the setting.
+type ModelSelection struct {
+	ConfiguredModel string
+	EffectiveModel  string
+	Verification    string
+	FallbackUsed    bool
+	FallbackReason  string
+}
+
+// ModelSelectionNotifier is optional; run tracing implements it without
+// changing the ordinary thought stream exposed to chat frontends.
+type ModelSelectionNotifier interface {
+	OnModelSelection(ModelSelection)
 }
 
 // AgentEndpointResolver maps an agent ID to a protocol-neutral endpoint description.

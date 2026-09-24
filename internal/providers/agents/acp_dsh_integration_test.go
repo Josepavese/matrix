@@ -75,7 +75,10 @@ func TestRealDSHExternalResumePrompt(t *testing.T) {
 		t.Fatalf("initialize DSH ACP: %v", err)
 	}
 	defer client.Close()
-	attacher := client.(middleware.ConversationSessionAttacher)
+	attacher, ok := client.(middleware.ConversationSessionAttacher)
+	if !ok {
+		t.Fatal("ACP client does not expose strict attach")
+	}
 	receipt, err := attacher.AttachExistingRemoteSession(ctx, id, workspace)
 	if err != nil {
 		t.Fatalf("strict external attach: %v", err)
@@ -215,7 +218,11 @@ func TestRealDSHSyntheticContextSurvivesStrictAttach(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Matrix DSH client attempt %d: %v", attempt, err)
 		}
-		attacher := client.(middleware.ConversationSessionAttacher)
+		attacher, ok := client.(middleware.ConversationSessionAttacher)
+		if !ok {
+			_ = client.Close()
+			t.Fatal("ACP client does not expose strict attach")
+		}
 		receipt, err := attacher.AttachExistingRemoteSession(ctx, created.SessionID, workspace)
 		if err != nil || receipt.RemoteSessionID != created.SessionID {
 			_ = client.Close()

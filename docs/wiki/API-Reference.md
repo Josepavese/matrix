@@ -77,6 +77,7 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
 | `execution_mode` | string | No | Execution mode: `sync` (default), `async`, `stream` |
 | `agent_id` | string | No | Target agent (defaults to the configured default agent) |
 | `model_id` | string | No | Request this ACP session model. Matrix uses the provider's ACP model setting (`session/set_config_option` on v1 or `session/set_model` on v2) before the prompt and fails if rejected. The trace records `requested_model`; `model_verification=unverified` means the provider did not attest its effective model |
+| `fallback_model_id` | string | No | Explicit alternative to `model_id`. Matrix tries it before the prompt only when the requested model is rejected as unavailable or unsupported. Authentication, network and timeout failures never trigger fallback. The trace records the configured model, whether fallback was used, and provider confirmation when available; otherwise the effective model remains `unverified` |
 | `agent_config.model_reasoning_effort` | string | No | Per-run Codex reasoning effort when `agent_id` resolves to `codex`; allowed values are `low`, `medium`, `high`, `xhigh` |
 | `codex_config.model_reasoning_effort` | string | No | Codex-specific alias for `agent_config.model_reasoning_effort`; if both are provided they must agree |
 | `workspace_id` | string | No | Target workspace |

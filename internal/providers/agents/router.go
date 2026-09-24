@@ -400,6 +400,7 @@ func (r *Router) executePrompt(ctx context.Context, client middleware.Conversati
 	turn := middleware.ConversationTurn{
 		AgentID:                  req.AgentID,
 		ModelID:                  req.ModelID,
+		FallbackModelID:          req.FallbackModelID,
 		LogicalSessionID:         req.LogicalSessionID,
 		RemoteSessionID:          req.AgentSessionID,
 		StrictSession:            req.StrictSession,

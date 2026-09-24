@@ -51,6 +51,7 @@ type runRequest struct {
 	Input                  runpayload.Input            `json:"input"`
 	AgentID                string                      `json:"agent_id"`
 	ModelID                string                      `json:"model_id,omitempty"`
+	FallbackModelID        string                      `json:"fallback_model_id,omitempty"`
 	AgentConfig            runAgentConfig              `json:"agent_config,omitempty"`
 	CodexConfig            runAgentConfig              `json:"codex_config,omitempty"`
 	WorkspaceID            string                      `json:"workspace_id,omitempty"`
