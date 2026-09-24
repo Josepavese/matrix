@@ -15,9 +15,12 @@ import (
 )
 
 const (
-	ModelUnavailable = "provider_model_unavailable"
-	AuthMismatch     = "provider_auth_mismatch"
-	PreflightFailed  = "agent_preflight_failed"
+	ModelUnavailable                 = "provider_model_unavailable"
+	AuthMismatch                     = "provider_auth_mismatch"
+	PreflightFailed                  = "agent_preflight_failed"
+	WorkspaceRejected                = "provider_workspace_rejected"
+	WorkspaceNotGranted              = "matrix_workspace_not_granted"
+	AdditionalDirectoriesUnsupported = "additional_directories_unsupported"
 )
 
 type Failure struct {
@@ -53,6 +56,8 @@ func (e *Failure) Unwrap() error {
 	return e.Err
 }
 
+func (e *Failure) FailureCode() string { return e.Code }
+
 func As(err error) (*Failure, bool) {
 	var failure *Failure
 	if errors.As(err, &failure) {
@@ -66,7 +71,10 @@ func HTTPStatus(err error) (int, bool) {
 	if !ok {
 		return http.StatusInternalServerError, false
 	}
-	if failure.Code == ModelUnavailable || failure.Code == AuthMismatch {
+	if failure.Code == WorkspaceNotGranted {
+		return http.StatusForbidden, true
+	}
+	if failure.Code == ModelUnavailable || failure.Code == AuthMismatch || failure.Code == WorkspaceRejected || failure.Code == AdditionalDirectoriesUnsupported {
 		return http.StatusFailedDependency, true
 	}
 	return http.StatusBadGateway, true

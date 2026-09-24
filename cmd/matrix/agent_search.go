@@ -58,9 +58,14 @@ func init() {
 
 func searchAgents(source agentdiscovery.Source, query string, catalogURL string) ([]agentdiscovery.Record, error) {
 	ctx := context.Background()
+	registryURL, err := configuredAgentRegistryURL()
+	if err != nil {
+		return nil, err
+	}
 	opts := agentdiscovery.Options{
-		Net:        networkprovider.NewProvider(),
-		CatalogURL: catalogURL,
+		Net:         networkprovider.NewProvider(),
+		RegistryURL: registryURL,
+		CatalogURL:  catalogURL,
 	}
 
 	if source == agentdiscovery.SourceLocal || source == agentdiscovery.SourceACPRegistry {

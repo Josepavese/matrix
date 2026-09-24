@@ -62,20 +62,7 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 	if handoffPrompt := renderHandoffPrompt(meta.PendingHandoff); handoffPrompt != "" {
 		message = handoffPrompt + "\n\nUser request:\n" + req.Input
 	}
-	routeReq := middleware.RouteRequest{
-		AgentID:                  effectiveAgentID,
-		LogicalSessionID:         sessionID,
-		AgentSessionID:           meta.AgentSessionID,
-		WorkspacePath:            meta.WorkspacePath,
-		Message:                  message,
-		ContentBlocks:            req.ContentBlocks,
-		ExtensionURIs:            req.ExtensionURIs,
-		ReferencedRemoteSessions: req.ReferencedRemoteSessions,
-		SidecarCapsules:          req.SidecarCapsules,
-		AdditionalDirectories:    req.AdditionalDirectories,
-		AgentLaunchArgs:          req.AgentLaunchArgs,
-		ThoughtNotifier:          notifier,
-	}
+	routeReq := buildRouteRequest(req, meta, sessionID, message)
 	responseTxt, newAgentSessionID, toolCalls, metadata, routeErr := m.router.Route(ctx, routeReq)
 	m.applyPendingHandoff(&meta, channelID, log, routeErr)
 
@@ -95,6 +82,29 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 		log.Info("completed routed turn", "event", "route_completed", "logical_session", sessionID, "agent", effectiveAgentID, "response_len", len(responseTxt), "tool_calls", len(toolCalls))
 	}
 	return responseTxt, routeErr
+}
+
+func buildRouteRequest(req middleware.ConversationRequest, meta SessionMeta, sessionID, message string) middleware.RouteRequest {
+	directories := req.AdditionalDirectories
+	if meta.StrictRemote && len(directories) == 0 {
+		directories = append([]string(nil), meta.AdditionalDirectories...)
+	}
+	return middleware.RouteRequest{
+		AgentID:                  meta.AgentID,
+		ModelID:                  req.ModelID,
+		LogicalSessionID:         sessionID,
+		AgentSessionID:           meta.AgentSessionID,
+		StrictSession:            meta.StrictRemote,
+		WorkspacePath:            meta.WorkspacePath,
+		Message:                  message,
+		ContentBlocks:            req.ContentBlocks,
+		ExtensionURIs:            req.ExtensionURIs,
+		ReferencedRemoteSessions: req.ReferencedRemoteSessions,
+		SidecarCapsules:          req.SidecarCapsules,
+		AdditionalDirectories:    directories,
+		AgentLaunchArgs:          req.AgentLaunchArgs,
+		ThoughtNotifier:          req.Notifier,
+	}
 }
 
 func (m *Manager) resolveRouteMeta(sessionID, requestedAgentID string) (SessionMeta, string) {

@@ -24,10 +24,15 @@ var agentInfoCmd = &cobra.Command{
 	Run: func(_ *cobra.Command, args []string) {
 		ref := args[0]
 		source := agentdiscovery.Source(agentInfoSource)
+		registryURL, err := configuredAgentRegistryURL()
+		if err != nil {
+			exitf("Error: %v", err)
+		}
 
 		opts := agentdiscovery.Options{
-			Net:        networkprovider.NewProvider(),
-			CatalogURL: agentInfoCatalogURL,
+			Net:         networkprovider.NewProvider(),
+			RegistryURL: registryURL,
+			CatalogURL:  agentInfoCatalogURL,
 		}
 		if source == agentdiscovery.SourceLocal || source == agentdiscovery.SourceACPRegistry {
 			agentCtx, cleanup, err := NewAgentContext(DefaultVaultPath)

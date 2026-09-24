@@ -290,9 +290,9 @@ Common configuration keys:
 | `default_agent` | Agent for new sessions (default: `opencode`) |
 | `action_agent` | Meta-agent for `/action` (default: `gemini`) |
 | `matrix_http_addr` | HTTP API address |
-| `matrix_api_key` | HTTP API authentication key |
+| `matrix_api_key` | HTTP API authentication key; generated on first daemon startup if absent |
 | `jsonrpc_addr` | JSON-RPC daemon address |
-| `daemon_api_key` | JSON-RPC daemon authentication |
+| `daemon_api_key` | JSON-RPC daemon authentication; generated separately on first daemon startup if absent |
 | `agent.trust_mode` | Auto-approve tool requests (`true` or `false`, default: `false`) |
 
 When `matrix run` owns the bbolt vault, config and agent commands use the
@@ -436,6 +436,11 @@ Install an agent from the registry.
 ```bash
 matrix install claude
 ```
+
+Set `MATRIX_AGENT_REGISTRY_URL` to an HTTPS mirror containing a full ACP index
+with mirrored artifact URLs for offline deployments. Without the override,
+Matrix uses the public ACP registry. A matching artifact SHA-256 remains
+required for verified binary installation.
 
 A binary distribution whose registry entry publishes no `sha256` is refused:
 there is nothing to verify the download against. To accept such an artifact

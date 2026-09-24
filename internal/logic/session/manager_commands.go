@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -344,7 +345,10 @@ func (m *Manager) trySwitchToRemoteSession(ctx context.Context, channelID, targe
 	if controller == nil {
 		return middleware.SessionActionResult{}, false, nil
 	}
-	remoteSessions, _, _ := controller.ListAgentSessions(ctx, agentID)
+	remoteSessions, _, listErr := controller.ListAgentSessions(ctx, agentID)
+	if listErr != nil {
+		return middleware.SessionActionResult{}, true, fmt.Errorf("remote session discovery failed: %w", listErr)
+	}
 	match := matchRemoteSessionTarget(target, remoteSessions)
 	if match == nil {
 		return middleware.SessionActionResult{}, false, nil
@@ -395,6 +399,17 @@ func (m *Manager) importRemoteSession(channelID, agentID string, remote middlewa
 		return "", err
 	}
 	if existingID != "" {
+		meta, found, err := m.loadSessionMeta(existingID)
+		if err != nil || !found {
+			return "", fmt.Errorf("existing remote session mirror cannot be loaded: %w", err)
+		}
+		if remote.Cwd != "" && meta.WorkspacePath != "" && filepath.Clean(meta.WorkspacePath) != filepath.Clean(remote.Cwd) {
+			return "", fmt.Errorf("workspace_mismatch: mirror uses %s, provider reports %s", meta.WorkspacePath, remote.Cwd)
+		}
+		meta.StrictRemote = true
+		if err := m.saveSessionMeta(meta); err != nil {
+			return "", err
+		}
 		if err := m.AttachChannel(channelID, existingID); err != nil {
 			return "", err
 		}
@@ -431,6 +446,7 @@ func (m *Manager) importedRemoteSessionMeta(channelID, agentID string, remote mi
 	meta := SessionMeta{
 		ID:             uuid.New().String(),
 		AgentSessionID: remote.RemoteSessionID,
+		StrictRemote:   true,
 		CreatedAt:      now,
 		AgentID:        agentID,
 		Status:         "active",
@@ -444,6 +460,19 @@ func (m *Manager) importedRemoteSessionMeta(channelID, agentID string, remote mi
 	}
 	if err := m.applyPreferredWorkspace(channelID, &meta); err != nil {
 		return SessionMeta{}, err
+	}
+	if remote.Cwd != "" {
+		if !filepath.IsAbs(remote.Cwd) {
+			return SessionMeta{}, fmt.Errorf("provider reported non-absolute session cwd %q", remote.Cwd)
+		}
+		realPath, err := filepath.EvalSymlinks(remote.Cwd)
+		if err != nil {
+			return SessionMeta{}, fmt.Errorf("provider session cwd %q: %w", remote.Cwd, err)
+		}
+		if meta.WorkspacePath != "" && filepath.Clean(meta.WorkspacePath) != realPath {
+			return SessionMeta{}, fmt.Errorf("workspace_mismatch: channel prefers %s, provider reports %s", meta.WorkspacePath, realPath)
+		}
+		meta.WorkspacePath = realPath
 	}
 	return meta, nil
 }

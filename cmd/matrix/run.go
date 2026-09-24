@@ -73,6 +73,7 @@ var runCmd = &cobra.Command{
 			Installer:      d.Installer,
 			Sources:        discoverySources,
 			A2ACatalogURLs: a2aCatalogURLs,
+			RegistryURL:    registryURLFromEnvironment(),
 		})
 		wizard := onboarding.NewWizard(onboarding.WizardDependencies{
 			Storage:   d.App.Store,
@@ -122,6 +123,9 @@ var runCmd = &cobra.Command{
 		// Configurable addresses with defaults
 		jsonrpcAddr := d.App.Config.GetWithDefault("jsonrpc_addr", DefaultJSONRPCAddr)
 		matrixHTTPAddr := d.App.Config.GetWithDefault("matrix_http_addr", DefaultMatrixHTTPAddr)
+		if err := ensureLocalAPIKeys(d.App.Config); err != nil {
+			return fmt.Errorf("initialize local API authentication: %w", err)
+		}
 		matrixAPIKey := d.App.Config.GetWithDefault("matrix_api_key", "")
 		daemonAPIKey := d.App.Config.GetWithDefault("daemon_api_key", "")
 		if err := runtimecheck.RequireAPIKeyForExternalBind(matrixHTTPAddr, matrixAPIKey, "matrix_http_addr", "matrix_api_key"); err != nil {
@@ -136,6 +140,11 @@ var runCmd = &cobra.Command{
 		// Matrix HTTP API
 		matrixAPIServer := matrixapi.NewServer(sessionMgr)
 		matrixAPIServer.WithTraceStorage(d.App.Store)
+		if recovered, err := matrixAPIServer.RecoverInterruptedRuns(); err != nil {
+			return fmt.Errorf("recover interrupted runs: %w", err)
+		} else if recovered > 0 {
+			log.Warn("marked interrupted runs with unknown remote outcome", "event", "run_recovery_unknown", "count", recovered)
+		}
 		if elicitSvc != nil {
 			matrixAPIServer.WithElicitationService(elicitSvc)
 		}
@@ -151,6 +160,9 @@ var runCmd = &cobra.Command{
 		}
 		mux := http.NewServeMux()
 		matrixAPIServer.RegisterRoutes(mux)
+		if err := startLocalNotificationServer(ctx, activeMatrixHome, matrixAPIServer); err != nil {
+			return fmt.Errorf("start local notifications: %w", err)
+		}
 		go matrixAPIServer.StartRunSinkDeliveryWorker(ctx)
 		a2aServer := matrixa2a.NewServer(sessionMgr, "http://"+matrixHTTPAddr, d.App.Config.GetWithDefault("default_agent", DefaultAgent))
 		if matrixAPIKey != "" {

@@ -27,8 +27,11 @@ const runEventDispatchBuffer = 1024
 
 // Store persists Matrix run records and projects versioned trace views.
 type Store struct {
-	storage middleware.Storage
-	eventMu sync.Mutex
+	storage                         middleware.Storage
+	eventMu                         sync.Mutex
+	idempotencyMu                   sync.Mutex
+	notificationMu                  sync.Mutex
+	notificationSequenceInitialized bool
 
 	// The dispatcher is fed by one ordered worker rather than a goroutine per
 	// event, so sinks see events in sequence order and a panicking dispatcher

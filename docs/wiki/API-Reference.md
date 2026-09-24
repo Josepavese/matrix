@@ -4,17 +4,20 @@ Complete HTTP API reference for Matrix. The API server listens on `127.0.0.1:909
 
 ## Authentication
 
-All endpoints accept an optional API key via the `X-Matrix-Key` header:
+On first daemon startup Matrix generates distinct HTTP and JSON-RPC keys in
+the Vault when they are absent. HTTP requests require `X-Matrix-Key` (or Bearer
+authentication). Retrieve the HTTP key locally:
 
 ```bash
-curl -H "X-Matrix-Key: your-key" http://127.0.0.1:9091/_matrix/runtime
+MATRIX_API_KEY="$(matrix config get matrix_api_key)"
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/_matrix/runtime
 ```
 
-Configure the API key:
-
-```bash
-matrix config set matrix_api_key your-key
-```
+You can replace the generated key with `matrix config set matrix_api_key
+your-key`, then restart the daemon. The examples below omit the authentication
+header for readability; add `-H "X-Matrix-Key: $MATRIX_API_KEY"` to each
+request. `MATRIX_LOCAL_UNAUTHENTICATED=1` is an explicit development override
+and still permits only loopback binds without a key.
 
 ## Local Browser CORS
 
@@ -73,16 +76,31 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
 | `input` | string or object | Yes | The task body to send to the agent. Structured form is `{ "text": "..." }` |
 | `execution_mode` | string | No | Execution mode: `sync` (default), `async`, `stream` |
 | `agent_id` | string | No | Target agent (defaults to the configured default agent) |
+| `model_id` | string | No | Request this ACP session model. Matrix uses the provider's ACP model setting (`session/set_config_option` on v1 or `session/set_model` on v2) before the prompt and fails if rejected. The trace records `requested_model`; `model_verification=unverified` means the provider did not attest its effective model |
 | `agent_config.model_reasoning_effort` | string | No | Per-run Codex reasoning effort when `agent_id` resolves to `codex`; allowed values are `low`, `medium`, `high`, `xhigh` |
 | `codex_config.model_reasoning_effort` | string | No | Codex-specific alias for `agent_config.model_reasoning_effort`; if both are provided they must agree |
 | `workspace_id` | string | No | Target workspace |
 | `workspace_path` | string | No | Workspace root path |
+| `workspace_policy` | string | No | `require_grant` requires an active Matrix Git repository grant for the exact root or linked worktree before any prompt. Omitted preserves the caller's existing workspace policy |
 | `session_policy` | string | No | `new_ephemeral_delete_after_run` forces a fresh isolated session for the run |
 | `cleanup_policy` | string | No | Cleanup policy for `session_policy=new_ephemeral_delete_after_run`; ignored as a destructive cleanup trigger when `session_policy` is omitted |
 | `sidecar_capsules` | array | No | Protocol-neutral sidecar context projected into ACP/A2A and traced as `sidecar.capsule.delivered` |
 | `trace_policy` | object | No | Export policy for `/trace`; supports `content_mode`, `redaction_profile`, and `include_protocol_meta` |
 | `emergency_kill_seconds` | number | No | Explicit wall-clock emergency fuse. Omitted means no hard run timeout |
 | `activity_timeout_seconds` | number | No | Explicit idle-progress watchdog. Omitted means no activity timeout; when set, no agent/tool activity for this duration cancels the run with `activity_timeout` |
+
+`Idempotency-Key` is an optional request header (maximum 128 bytes). Its scope
+is `channel_id`. A retry with the same key and normalized request returns the
+original run ID with `Idempotency-Replayed: true`; a changed request returns
+`409`. A reservation whose run record is missing also returns `409` because
+its remote outcome cannot be safely inferred. Reservations remain in the Vault
+until explicitly removed as part of controlled data retention; Matrix never
+expires a key and silently starts duplicate work.
+
+After a daemon restart, runs that were still active become
+`outcome_unknown` with stop reason `daemon_interrupted`. Matrix does not replay
+their prompts. Inspect the run and its provider session before deciding what
+to do next.
 
 For Codex ACP, clients can select reasoning effort per run without changing the
 stored agent definition:
@@ -245,6 +263,30 @@ Streams results as they arrive from the agent.
 
 ---
 
+### `GET|POST|DELETE /v1/workspace-grants`
+
+Register a canonical, user-owned Git repository and optionally its linked
+worktrees for runs that request `workspace_policy=require_grant`. A grant
+does not change the agent provider's own trust or filesystem policy.
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/workspace-grants \
+  -H "X-Matrix-Key: $MATRIX_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"repository_path":"/absolute/repo/root","include_git_worktrees":true,"ttl_seconds":86400}'
+```
+
+`GET /v1/workspace-grants` lists grants. `DELETE /v1/workspace-grants/{id}`
+revokes one. The default lifetime is 24 hours;
+the accepted range is one minute to 30 days. Matrix checks the real path,
+filesystem owner and Git common directory at registration and on each run.
+Symlinked paths, nonroots and unrelated repositories are refused. A Matrix
+preflight refusal returns `matrix_workspace_not_granted` and leaves a failed
+run trace. A provider refusal remains `provider_workspace_rejected` and needs
+the provider's trust flow.
+
+---
+
 ### `GET /v1/runs/{run_id}/trace`
 
 Get the full trace for a run, including routing decisions, prompt, completion, and any failures.
@@ -253,6 +295,39 @@ Coding-agent traces include protocol-neutral tool events such as `tool.call.requ
 ```bash
 curl http://127.0.0.1:9091/v1/runs/run-abc123/trace
 ```
+
+---
+
+### `GET /v1/runs/{run_id}/explain`
+
+Return a short operational diagnosis with status, agent, workspace, failure
+phase/code, prompt receipt, cause, next action, and a trace link. Use
+`?lang=it` for Italian or `?lang=en` for English. A prompt receipt marked
+`unverified` means Matrix cannot prove whether the provider executed it.
+
+---
+
+### Local supervisor notifications
+
+On Linux and macOS the daemon serves `GET /v1/run-notifications` on the private
+Unix socket at `$MATRIX_HOME/data/run-notifications.sock` (mode `0600`). It
+requires the same HTTP API key. The response contains only notification type,
+sequence, run/session IDs, optional failure code, and time; it does not contain
+prompt, transcript, or tool output. Terminal kinds are `run.completed`,
+`run.failed`, `run.cancelled`, and `run.outcome_unknown`. An
+`elicitation.opened` event wakes a supervisor when a provider asks for input.
+
+```bash
+curl --unix-socket "$MATRIX_HOME/data/run-notifications.sock" \
+  -H "X-Matrix-Key: $MATRIX_API_KEY" \
+  'http://localhost/v1/run-notifications?stream=sse&after=0'
+```
+
+Use `Last-Event-ID` or `after` to resume after disconnect. Optional repeated
+`run_id` filters select runs. Delivery is at least once; deduplicate by the
+numeric sequence. Notifications persist in the Vault until controlled data
+retention removes them. On startup Matrix repairs missing terminal wakeups
+from terminal run records. The socket is not exposed over the TCP API.
 
 ---
 
@@ -267,7 +342,7 @@ agent chunk, including leading/trailing whitespace and newlines.
 `agent.message.final.message` contains only the selected final answer when the
 provider supplies final-phase metadata. Message events expose `message_id`,
 `message_phase`, and `message_classification` when available. A terminal
-`run.completed`, `run.failed`, or `run.cancelled` event closes the run.
+`run.completed`, `run.failed`, `run.cancelled`, or `run.outcome_unknown` event closes the run.
 Use the returned `next_cursor` as the next `after` value when polling.
 
 ```bash
@@ -418,6 +493,37 @@ curl -X POST http://127.0.0.1:9091/v1/elicitations   -H "Content-Type: applicati
 ### `POST /v1/session-actions`
 
 Manage session lifecycle.
+
+**Import an external ACP session by exact remote ID:**
+
+```bash
+curl -X POST http://127.0.0.1:9091/v1/session-actions \
+  -H "X-Matrix-Key: $MATRIX_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "docs.http",
+    "action": "import",
+    "agent_id": "dsh",
+    "target": "remote-session-id",
+    "workspace_path": "/absolute/path/to/original/workspace"
+  }'
+```
+
+Matrix verifies the exact ID with provider `session/resume` or `session/load`
+before storing the local mirror. It does not create a replacement session or
+send a prompt during import. The `remote_sessions` receipt includes
+`verification_method`, provider `cwd` when available, and `list_warning` if
+`session/list` failed or is unsupported. `verification_limit` states that
+Matrix cannot inspect the provider's conversation history. Future turns keep strict remote identity, including
+after daemon restart. The requested workspace must exist; a different provider
+`cwd` returns `workspace_mismatch`. Provider support and trust controls still
+apply: a provider may refuse the workspace or lack external resume support.
+Provider-announced `additional_directories` are canonicalized and retained;
+directories outside the workspace require the same path in the import request's
+`additional_directories` allowlist. Missing or unauthorized paths fail import.
+Failures return typed `error.code` values including `invalid_request`,
+`not_found`, `resume_unsupported`, `workspace_mismatch`,
+`provider_auth_required`, and `provider_failure`.
 
 **List sessions:**
 

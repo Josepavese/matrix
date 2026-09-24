@@ -33,6 +33,12 @@ func (s *Store) AppendEvent(event Event) (Event, error) {
 	if err := s.storeEvent(event); err != nil {
 		return Event{}, err
 	}
+	if isWakeupEvent(event.Kind) {
+		failureCode, _ := event.Metadata["failure_code"].(string)
+		if _, err := s.AppendNotification(Notification{Kind: event.Kind, RunID: event.RunID, FailureCode: failureCode, Timestamp: event.Timestamp}); err != nil {
+			return Event{}, fmt.Errorf("run event stored but local notification failed: %w", err)
+		}
+	}
 	s.enqueueDispatch(event)
 	return event, nil
 }

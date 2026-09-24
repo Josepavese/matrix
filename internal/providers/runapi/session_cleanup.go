@@ -26,6 +26,9 @@ type runSessionContext struct {
 }
 
 func (s *Server) prepareRunSessionContext(ctx context.Context, exec runExecution) (runSessionContext, error) {
+	if err := s.requireWorkspaceGrant(ctx, exec.req); err != nil {
+		return runSessionContext{}, err
+	}
 	beforeList := s.sessionListSnapshot(ctx, exec.req.ChannelID, exec.req.WorkspaceID)
 	before := activeSessionSnapshot(beforeList)
 	prepared, err := s.prepareSessionForRun(ctx, exec)

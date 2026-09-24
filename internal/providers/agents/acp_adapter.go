@@ -137,13 +137,9 @@ func (c *acpConversationClient) Alive() bool {
 // retry, so this body owns the turn itself and nothing about logging in again.
 func (c *acpConversationClient) executeTurnOnce(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
 	log := slog.With("component", "acp_adapter", "logical_session", turn.LogicalSessionID, "agent", turn.AgentID)
-	if err := c.validatePromptContent(turn.ContentBlocks); err != nil {
-		return middleware.ConversationResult{}, err
-	}
-	cwd := c.turnCwd(turn)
-	remoteSessionID, err := c.ensureACPRemoteSession(ctx, turn, cwd, log)
+	remoteSessionID, err := c.prepareTurnSession(ctx, turn, log)
 	if err != nil {
-		return middleware.ConversationResult{}, classifyProviderFailure(turn.AgentID, c.endpoint, "session/new", err)
+		return middleware.ConversationResult{RemoteSessionID: remoteSessionID}, err
 	}
 	c.prepareTurnCallbacks(turn, remoteSessionID)
 	endPrompt, err := c.beginPrompt(ctx, remoteSessionID, turn.LiveContextAttach)
@@ -160,7 +156,7 @@ func (c *acpConversationClient) executeTurnOnce(ctx context.Context, turn middle
 	defer turnObs.stop()
 	obs := turnObs.observer
 	resp, err := c.promptACP(ctx, remoteSessionID, turn, turnObs.prompt)
-	if err != nil && remoteSessionID != "" && isSessionNotFoundError(err) {
+	if err != nil && remoteSessionID != "" && isSessionNotFoundError(err) && !turn.StrictSession {
 		log.Warn("ACP session lost, recreating", "agent_session", remoteSessionID)
 		return c.retryTurnWithFreshSession(ctx, turn)
 	}
@@ -194,49 +190,97 @@ func (c *acpConversationClient) executeTurnOnce(ctx context.Context, turn middle
 	}, nil
 }
 
-func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) (string, error) {
-	if turn.RemoteSessionID == "" {
-		return c.createAndConfigureACPRemoteSession(ctx, turn, cwd, log)
+func (c *acpConversationClient) prepareTurnSession(ctx context.Context, turn middleware.ConversationTurn, log *slog.Logger) (string, error) {
+	if err := c.validatePromptContent(turn.ContentBlocks); err != nil {
+		return "", err
 	}
-	if !c.isLoadedSession(turn.RemoteSessionID) && c.sessionCapabilities.Resume {
-		mcpServers, err := c.turnMCPServers(turn.McpServers)
-		if err != nil {
-			return "", err
-		}
-		resumed, err := c.resumeACPRemoteSession(acpLoadRemoteSessionRequest{
-			Ctx:                   ctx,
-			RemoteSessionID:       turn.RemoteSessionID,
-			Cwd:                   cwd,
-			AdditionalDirectories: turn.AdditionalDirectories,
-			McpServers:            mcpServers,
-			Notifier:              turn.ThoughtNotifier,
-			Log:                   log,
+	remoteSessionID, err := c.ensureACPRemoteSession(ctx, turn, c.turnCwd(turn), log)
+	if err != nil {
+		return "", classifyProviderFailure(turn.AgentID, c.endpoint, "session/new", err)
+	}
+	if err := c.applyRequestedModel(ctx, remoteSessionID, turn.ModelID); err != nil {
+		return remoteSessionID, classifyProviderFailure(turn.AgentID, c.endpoint, "session/set_model", err)
+	}
+	return remoteSessionID, nil
+}
+
+func (c *acpConversationClient) applyRequestedModel(ctx context.Context, sessionID, modelID string) error {
+	if modelID == "" {
+		return nil
+	}
+	if c.negotiatedProtocolVersion() < 2 {
+		resp, err := c.currentACPClient().SetConfigOption(ctx, acpSetConfigOptionRequest{
+			SessionID: sessionID, ConfigID: "model", Value: modelID,
 		})
 		if err != nil {
-			return "", err
+			return fmt.Errorf("requested model %q was not accepted by provider: %w", modelID, err)
 		}
-		if resumed {
-			return turn.RemoteSessionID, nil
+		if resp == nil {
+			return fmt.Errorf("provider did not confirm requested model %q", modelID)
 		}
+		for _, option := range resp.ConfigOptions {
+			if option.ID == "model" && option.Current == modelID {
+				return nil
+			}
+		}
+		return fmt.Errorf("provider did not confirm requested model %q", modelID)
 	}
-	if !c.isLoadedSession(turn.RemoteSessionID) && c.sessionCapabilities.Load {
-		mcpServers, err := c.turnMCPServers(turn.McpServers)
+	setter, ok := c.currentACPClient().(interface {
+		SetSessionModel(context.Context, acpSetSessionModelRequest) (*acpSetSessionModelResponse, error)
+	})
+	if !ok {
+		return fmt.Errorf("ACP adapter does not support session/set_model")
+	}
+	if _, err := setter.SetSessionModel(ctx, acpSetSessionModelRequest{SessionID: sessionID, ModelID: modelID}); err != nil {
+		return fmt.Errorf("requested model %q was not accepted by provider: %w", modelID, err)
+	}
+	return nil
+}
+
+func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) (string, error) {
+	if turn.RemoteSessionID == "" {
+		if turn.StrictSession {
+			return "", fmt.Errorf("strict remote session requires an existing remote session ID")
+		}
+		return c.createAndConfigureACPRemoteSession(ctx, turn, cwd, log)
+	}
+	if turn.StrictSession && !c.isLoadedSession(turn.RemoteSessionID) {
+		_, err := c.AttachExistingRemoteSession(ctx, turn.RemoteSessionID, cwd)
 		if err != nil {
 			return "", err
 		}
-		if err := c.loadACPRemoteSession(acpLoadRemoteSessionRequest{
-			Ctx:                   ctx,
-			RemoteSessionID:       turn.RemoteSessionID,
-			Cwd:                   cwd,
-			AdditionalDirectories: turn.AdditionalDirectories,
-			McpServers:            mcpServers,
-			Notifier:              turn.ThoughtNotifier,
-			Log:                   log,
-		}); err != nil {
+	}
+	if !c.isLoadedSession(turn.RemoteSessionID) {
+		if err := c.restoreACPRemoteSession(ctx, turn, cwd, log); err != nil {
 			return "", err
 		}
 	}
 	return turn.RemoteSessionID, nil
+}
+
+func (c *acpConversationClient) restoreACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) error {
+	if !c.sessionCapabilities.Resume && !c.sessionCapabilities.Load {
+		return nil
+	}
+	mcpServers, err := c.turnMCPServers(turn.McpServers)
+	if err != nil {
+		return err
+	}
+	req := acpLoadRemoteSessionRequest{
+		Ctx: ctx, RemoteSessionID: turn.RemoteSessionID, Cwd: cwd,
+		AdditionalDirectories: turn.AdditionalDirectories, McpServers: mcpServers,
+		Notifier: turn.ThoughtNotifier, Log: log,
+	}
+	if c.sessionCapabilities.Resume {
+		resumed, err := c.resumeACPRemoteSession(req)
+		if err != nil || resumed {
+			return err
+		}
+	}
+	if c.sessionCapabilities.Load {
+		return c.loadACPRemoteSession(req)
+	}
+	return nil
 }
 
 func (c *acpConversationClient) isLoadedSession(remoteSessionID string) bool {
@@ -504,8 +548,11 @@ func (c *acpConversationClient) turnMCPServers(turnServers []middleware.McpServe
 }
 
 func (c *acpConversationClient) additionalDirectories(values []string) ([]string, error) {
-	if !c.sessionCapabilities.AdditionalDirectories || len(values) == 0 {
+	if len(values) == 0 {
 		return nil, nil
+	}
+	if !c.sessionCapabilities.AdditionalDirectories {
+		return nil, fmt.Errorf("ACP agent does not advertise additionalDirectories; requested directories cannot be used")
 	}
 	out := make([]string, 0, len(values))
 	seen := map[string]struct{}{}
@@ -531,87 +578,6 @@ func (c *acpConversationClient) additionalDirectories(values []string) ([]string
 
 func (c *acpConversationClient) SessionCapabilities() middleware.ConversationSessionCapabilities {
 	return c.sessionCapabilities
-}
-
-func (c *acpConversationClient) ListRemoteSessions(ctx context.Context) ([]middleware.RemoteSessionInfo, error) {
-	if !c.sessionCapabilities.List {
-		return nil, fmt.Errorf("ACP agent does not advertise session/list")
-	}
-	var out []middleware.RemoteSessionInfo
-	cursor := ""
-	for page := 0; page < 100; page++ {
-		resp, err := c.currentACPClient().ListSessionsWithRequest(ctx, acpListSessionsRequest{Cursor: cursor})
-		if err != nil {
-			return nil, err
-		}
-		for _, session := range resp.Sessions {
-			out = append(out, c.remoteSessionInfo(session))
-		}
-		if strings.TrimSpace(resp.NextCursor) == "" {
-			return out, nil
-		}
-		cursor = resp.NextCursor
-	}
-	return nil, fmt.Errorf("ACP session/list pagination exceeded safety limit")
-}
-
-func (c *acpConversationClient) remoteSessionInfo(session acpSessionInfo) middleware.RemoteSessionInfo {
-	return middleware.RemoteSessionInfo{
-		RemoteSessionID: session.SessionID,
-		DisplayID:       session.SessionID,
-		Title:           session.Title,
-		UpdatedAt:       session.UpdatedAt,
-		ProtocolKind:    middleware.ProtocolKindACP,
-		CanResume:       c.sessionCapabilities.Load || c.sessionCapabilities.Resume,
-		CanDelete:       c.sessionCapabilities.Delete,
-	}
-}
-
-func (c *acpConversationClient) GetRemoteSession(ctx context.Context, remoteSessionID string) (middleware.RemoteSessionInfo, error) {
-	if c.sessionCapabilities.List {
-		sessions, err := c.ListRemoteSessions(ctx)
-		if err != nil {
-			return middleware.RemoteSessionInfo{}, err
-		}
-		for _, session := range sessions {
-			if session.RemoteSessionID == remoteSessionID || session.DisplayID == remoteSessionID {
-				return session, nil
-			}
-		}
-	}
-	if c.sessionCapabilities.Resume {
-		if _, err := c.currentACPClient().ResumeSession(ctx, acpResumeSessionRequest{
-			SessionID:  remoteSessionID,
-			Cwd:        c.cwd,
-			McpServers: cloneACPMCPServers(c.mcpServers),
-		}); err == nil {
-			c.markLoadedSession(remoteSessionID)
-			return middleware.RemoteSessionInfo{
-				RemoteSessionID: remoteSessionID,
-				DisplayID:       remoteSessionID,
-				ProtocolKind:    middleware.ProtocolKindACP,
-				CanResume:       true,
-				CanDelete:       c.sessionCapabilities.Delete,
-			}, nil
-		}
-	}
-	if c.sessionCapabilities.Load {
-		if _, err := c.currentACPClient().LoadSession(ctx, acpLoadSessionRequest{
-			SessionID:  remoteSessionID,
-			Cwd:        c.cwd,
-			McpServers: cloneACPMCPServers(c.mcpServers),
-		}, nil); err == nil {
-			c.markLoadedSession(remoteSessionID)
-			return middleware.RemoteSessionInfo{
-				RemoteSessionID: remoteSessionID,
-				DisplayID:       remoteSessionID,
-				ProtocolKind:    middleware.ProtocolKindACP,
-				CanResume:       c.sessionCapabilities.Load || c.sessionCapabilities.Resume,
-				CanDelete:       c.sessionCapabilities.Delete,
-			}, nil
-		}
-	}
-	return middleware.RemoteSessionInfo{}, fmt.Errorf("ACP session %s not found", remoteSessionID)
 }
 
 func (c *acpConversationClient) DeleteRemoteSession(ctx context.Context, remoteSessionID string) error {

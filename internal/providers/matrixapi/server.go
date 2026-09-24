@@ -13,7 +13,6 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/elicitation"
 	"github.com/Josepavese/matrix/internal/logic/orchestration"
-	"github.com/Josepavese/matrix/internal/logic/runconfig"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/runapi"
 )
@@ -61,6 +60,21 @@ func (s *Server) WithDefaultAgent(agentID string) *Server {
 func (s *Server) WithTraceStorage(storage middleware.Storage) *Server {
 	s.runs.WithTraceStorage(storage)
 	return s
+}
+
+// RecoverInterruptedRuns is called once at daemon startup, before ingress.
+func (s *Server) RecoverInterruptedRuns() (int, error) {
+	recovered, err := s.runs.Store().RecoverInterruptedRuns()
+	if err != nil {
+		return recovered, err
+	}
+	_, err = s.runs.Store().ReconcileTerminalNotifications()
+	return recovered, err
+}
+
+// RegisterLocalNotificationRoutes is deliberately separate from the TCP API.
+func (s *Server) RegisterLocalNotificationRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/v1/run-notifications", s.runs.HandleLocalNotifications)
 }
 
 // WithEndpointResolver lets run traces record the selected protocol family.
@@ -113,6 +127,7 @@ const (
 type sessionActionRequest struct {
 	ChannelID             string   `json:"channel_id"`
 	Action                string   `json:"action"`
+	AgentID               string   `json:"agent_id,omitempty"`
 	Target                string   `json:"target,omitempty"`
 	WorkspaceID           string   `json:"workspace_id,omitempty"`
 	WorkspacePath         string   `json:"workspace_path,omitempty"`
@@ -173,93 +188,6 @@ func (s *Server) HandleOpenRouterCallback(w http.ResponseWriter, r *http.Request
 	// The message comes from a router implementation, so it is treated as text:
 	// this page runs on the local origin and any markup in it would execute.
 	_, _ = fmt.Fprintf(w, "<html><body><h1>%s</h1><p>You can close this window and go back to Telegram.</p></body></html>", html.EscapeString(res))
-}
-
-// HandleSessionActions is the typed HTTP handler for session lifecycle actions.
-func (s *Server) HandleSessionActions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !requireJSONContentType(w, r) {
-		return
-	}
-	if !requireAPIKey(w, r, s.apiKey) {
-		return
-	}
-
-	var req sessionActionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Bad Request: invalid json", http.StatusBadRequest)
-		return
-	}
-	if req.ChannelID == "" || req.Action == "" {
-		http.Error(w, "Bad Request: channel_id and action are required", http.StatusBadRequest)
-		return
-	}
-	additionalDirectories, err := runconfig.NormalizeAdditionalDirectories(req.AdditionalDirectories)
-	if err != nil {
-		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	result, err := s.router.HandleSessionActionTyped(r.Context(), middleware.SessionActionRequest{
-		ChannelID:             req.ChannelID,
-		Action:                req.Action,
-		Target:                req.Target,
-		WorkspaceID:           req.WorkspaceID,
-		WorkspacePath:         req.WorkspacePath,
-		AdditionalDirectories: additionalDirectories,
-		Ephemeral:             req.Ephemeral,
-		CleanupPolicy:         req.CleanupPolicy,
-		ForceForgetLocal:      req.ForceForgetLocal,
-		MakeActive:            req.MakeActive,
-		RestoreParent:         req.RestoreParent,
-		Async:                 req.Async,
-		Input:                 req.Input,
-	})
-	if err != nil {
-		slog.Error("matrix session action failed", "error", err, "action", req.Action)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(sessionActionHTTPStatus(result))
-	if err := json.NewEncoder(w).Encode(result); err != nil {
-		slog.Error("matrix session action failed to encode response", "error", err)
-	}
-}
-
-func sessionActionHTTPStatus(result middleware.SessionActionResult) int {
-	if result.Error == nil {
-		return http.StatusCreated
-	}
-	if status, ok := sessionActionErrorStatus[result.Error.Code]; ok {
-		return status
-	}
-	return http.StatusBadRequest
-}
-
-var sessionActionErrorStatus = map[string]int{
-	"agent_not_found": http.StatusNotFound,
-	"cleanup_clean_without_remote_or_process_proof": http.StatusConflict,
-	"cleanup_failed":                    http.StatusBadGateway,
-	"cleanup_warning":                   http.StatusConflict,
-	"fork_child_cleanup_failed":         http.StatusBadGateway,
-	"fork_child_turn_failed":            http.StatusBadGateway,
-	"fork_job_not_found":                http.StatusNotFound,
-	"fork_parent_restore_failed":        http.StatusConflict,
-	"local_forget":                      http.StatusConflict,
-	"local_status":                      http.StatusConflict,
-	"missing_remote_session_id":         http.StatusConflict,
-	"process_reap":                      http.StatusBadGateway,
-	"process_reap_refs":                 http.StatusConflict,
-	"remote_cancel":                     http.StatusBadGateway,
-	"remote_close":                      http.StatusBadGateway,
-	"remote_delete":                     http.StatusBadGateway,
-	"remote_session_materialize_failed": http.StatusBadGateway,
-	"run_related_session_retained":      http.StatusConflict,
 }
 
 // HandleWorkspaceActions is the typed HTTP handler for workspace control actions.

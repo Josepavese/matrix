@@ -18,32 +18,34 @@ import (
 
 // SessionMeta stores metadata for an active agent session in the SSOT vault.
 type SessionMeta struct {
-	ID               string                    `json:"id"`
-	AgentSessionID   string                    `json:"agent_session_id"`
-	CreatedAt        time.Time                 `json:"created_at"`
-	AgentID          string                    `json:"agent_id"`
-	Status           string                    `json:"status"`
-	Alias            string                    `json:"alias,omitempty"`
-	ProtocolKind     string                    `json:"protocol_kind,omitempty"`
-	MirrorStatus     string                    `json:"mirror_status,omitempty"`
-	RemoteTitle      string                    `json:"remote_title,omitempty"`
-	RemoteStatus     string                    `json:"remote_status,omitempty"`
-	RemoteMeta       map[string]interface{}    `json:"remote_meta,omitempty"`
-	RemoteUpdatedAt  time.Time                 `json:"remote_updated_at,omitempty"`
-	LastSyncedAt     time.Time                 `json:"last_synced_at,omitempty"`
-	WorkspaceID      string                    `json:"workspace_id,omitempty"`
-	WorkspacePath    string                    `json:"workspace_path,omitempty"`
-	WorkspaceBranch  string                    `json:"workspace_branch,omitempty"`
-	WorkspaceRole    string                    `json:"workspace_role,omitempty"`
-	WorkspaceBoundAt time.Time                 `json:"workspace_bound_at,omitempty"`
-	Mode             string                    `json:"mode,omitempty"`
-	Ephemeral        bool                      `json:"ephemeral,omitempty"`
-	CleanupPolicy    string                    `json:"cleanup_policy,omitempty"`
-	OwnerRunID       string                    `json:"owner_run_id,omitempty"`
-	ParentSessionID  string                    `json:"parent_session_id,omitempty"`
-	ParentRemoteID   string                    `json:"parent_remote_id,omitempty"`
-	PendingHandoff   *middleware.HandoffPacket `json:"pending_handoff,omitempty"`
-	LastHandoff      *middleware.HandoffPacket `json:"last_handoff,omitempty"`
+	ID                    string                    `json:"id"`
+	AgentSessionID        string                    `json:"agent_session_id"`
+	StrictRemote          bool                      `json:"strict_remote,omitempty"`
+	CreatedAt             time.Time                 `json:"created_at"`
+	AgentID               string                    `json:"agent_id"`
+	Status                string                    `json:"status"`
+	Alias                 string                    `json:"alias,omitempty"`
+	ProtocolKind          string                    `json:"protocol_kind,omitempty"`
+	MirrorStatus          string                    `json:"mirror_status,omitempty"`
+	RemoteTitle           string                    `json:"remote_title,omitempty"`
+	RemoteStatus          string                    `json:"remote_status,omitempty"`
+	RemoteMeta            map[string]interface{}    `json:"remote_meta,omitempty"`
+	RemoteUpdatedAt       time.Time                 `json:"remote_updated_at,omitempty"`
+	LastSyncedAt          time.Time                 `json:"last_synced_at,omitempty"`
+	WorkspaceID           string                    `json:"workspace_id,omitempty"`
+	WorkspacePath         string                    `json:"workspace_path,omitempty"`
+	AdditionalDirectories []string                  `json:"additional_directories,omitempty"`
+	WorkspaceBranch       string                    `json:"workspace_branch,omitempty"`
+	WorkspaceRole         string                    `json:"workspace_role,omitempty"`
+	WorkspaceBoundAt      time.Time                 `json:"workspace_bound_at,omitempty"`
+	Mode                  string                    `json:"mode,omitempty"`
+	Ephemeral             bool                      `json:"ephemeral,omitempty"`
+	CleanupPolicy         string                    `json:"cleanup_policy,omitempty"`
+	OwnerRunID            string                    `json:"owner_run_id,omitempty"`
+	ParentSessionID       string                    `json:"parent_session_id,omitempty"`
+	ParentRemoteID        string                    `json:"parent_remote_id,omitempty"`
+	PendingHandoff        *middleware.HandoffPacket `json:"pending_handoff,omitempty"`
+	LastHandoff           *middleware.HandoffPacket `json:"last_handoff,omitempty"`
 }
 
 // ChannelState tracks the active session and the history constraint to a channel.
@@ -239,6 +241,9 @@ func (m *Manager) handleSessionCoreAction(ctx context.Context, req middleware.Se
 	case "switch":
 		result, err := m.handleSessionSwitchTyped(ctx, req.ChannelID, lang, req.Target)
 		return result, true, err
+	case "import":
+		result, err := m.handleSessionImportTyped(ctx, req)
+		return result, true, classifyImportFailure(err)
 	case "list":
 		result, err := m.handleSessionListTyped(ctx, req, lang)
 		return result, true, err

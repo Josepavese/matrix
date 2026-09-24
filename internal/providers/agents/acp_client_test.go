@@ -113,11 +113,7 @@ func (m *mockTransport) Send(_ context.Context, message []byte) error {
 		if err != nil {
 			return err
 		}
-		// Small artificial delay to ensure listener is ready
-		go func() {
-			time.Sleep(10 * time.Millisecond)
-			m.reader <- rBytes
-		}()
+		m.reader <- rBytes
 	}
 
 	return nil
@@ -147,6 +143,7 @@ type testObserver struct {
 	updates []string
 	title   string
 	updated string
+	notify  chan struct{}
 	sync.Mutex
 }
 
@@ -159,6 +156,31 @@ func (o *testObserver) OnUpdate(notif zedacp.SessionNotification) {
 	}
 	if notif.Update.UpdatedAt != "" {
 		o.updated = notif.Update.UpdatedAt
+	}
+	if o.notify != nil {
+		select {
+		case o.notify <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func waitObserver(t *testing.T, obs *testObserver, ready func(*testObserver) bool) {
+	t.Helper()
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	for {
+		obs.Lock()
+		ok := ready(obs)
+		obs.Unlock()
+		if ok {
+			return
+		}
+		select {
+		case <-obs.notify:
+		case <-deadline.C:
+			t.Fatal("timed out waiting for observer update")
+		}
 	}
 }
 
@@ -185,7 +207,7 @@ func TestACPClient_FullLifecycle(t *testing.T) {
 	})
 
 	t.Run("LoadSession", func(t *testing.T) {
-		obs := &testObserver{}
+		obs := &testObserver{notify: make(chan struct{}, 1)}
 		_, err := client.LoadSession(ctx, zedacp.LoadSessionRequest{
 			SessionID:  "test-session-123",
 			Cwd:        "/tmp",
@@ -194,7 +216,7 @@ func TestACPClient_FullLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("LoadSession failed: %v", err)
 		}
-		time.Sleep(50 * time.Millisecond)
+		waitObserver(t, obs, func(o *testObserver) bool { return len(o.updates) != 0 })
 		obs.Lock()
 		defer obs.Unlock()
 		if len(obs.updates) == 0 {
@@ -284,7 +306,7 @@ func TestACPClient_FullLifecycle(t *testing.T) {
 			SessionID: "test-session-123",
 			Prompt:    []zedacp.Content{{Type: "text", Text: "Hello"}},
 		}
-		obs := &testObserver{}
+		obs := &testObserver{notify: make(chan struct{}, 1)}
 		res, err := client.Prompt(ctx, req, obs)
 		if err != nil {
 			t.Fatalf("Prompt failed: %v", err)
@@ -293,8 +315,7 @@ func TestACPClient_FullLifecycle(t *testing.T) {
 			t.Errorf("Expected stopReason end_turn, got %s", res.StopReason)
 		}
 
-		// Wait briefly to allow async sessionUpdate to process
-		time.Sleep(50 * time.Millisecond)
+		waitObserver(t, obs, func(o *testObserver) bool { return len(o.updates) != 0 && o.title == "Recovered Session" })
 
 		obs.Lock()
 		defer obs.Unlock()

@@ -23,6 +23,8 @@ type (
 	acpBooleanConfigOptionCapabilities  = zedacp.BooleanConfigOptionCapabilities
 	acpAuthMethod                       = zedacp.AuthMethod
 	acpLogoutRequest                    = zedacp.LogoutRequest
+	acpSetSessionModelRequest           = zedacp.SetSessionModelRequest
+	acpSetSessionModelResponse          = zedacp.SetSessionModelResponse
 	acpLogoutResponse                   = zedacp.LogoutResponse
 	acpFsCapability                     = zedacp.FsCapability
 	acpNewSessionRequest                = zedacp.NewSessionRequest

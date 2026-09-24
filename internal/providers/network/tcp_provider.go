@@ -36,12 +36,33 @@ type Provider struct {
 func NewProvider() *Provider {
 	return &Provider{
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:       30 * time.Second,
+			CheckRedirect: refuseHTTPSDowngrade,
 		},
 		downloadClient: &http.Client{
-			Timeout: downloadTimeout,
+			Timeout:       downloadTimeout,
+			CheckRedirect: refuseHTTPSDowngrade,
 		},
 	}
+}
+
+// NewProviderWithTransport keeps the production redirect and timeout policy
+// while allowing a caller to supply a trusted CA transport for an HTTPS mirror.
+func NewProviderWithTransport(transport http.RoundTripper) *Provider {
+	provider := NewProvider()
+	provider.httpClient.Transport = transport
+	provider.downloadClient.Transport = transport
+	return provider
+}
+
+func refuseHTTPSDowngrade(req *http.Request, via []*http.Request) error {
+	if len(via) != 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+		return fmt.Errorf("refusing HTTPS redirect to %s", req.URL.Scheme)
+	}
+	if len(via) >= 10 {
+		return fmt.Errorf("too many redirects")
+	}
+	return nil
 }
 
 // Download fetches a file from a URL and saves it to a local path.

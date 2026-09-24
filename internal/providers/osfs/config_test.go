@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -73,14 +74,23 @@ func TestWriteConfigWritesFilesInsideTheConfigDirectory(t *testing.T) {
 
 	// An existing configuration file is updated in place.
 	existing := filepath.Join(home, "configs", "agents.json")
-	if err := os.WriteFile(existing, []byte(`{"agents":[]}`), 0o600); err != nil {
+	if err := os.WriteFile(existing, []byte(`{"agents":[]}`), 0o644); err != nil {
 		t.Fatalf("seed existing config: %v", err)
+	}
+	if err := os.Chmod(existing, 0o644); err != nil {
+		t.Fatalf("set legacy config mode: %v", err)
 	}
 	if err := provider.WriteConfig("configs/agents.json", []byte(`{"agents":["claude"]}`)); err != nil {
 		t.Fatalf("an existing config file inside the config directory must stay writable: %v", err)
 	}
 	if got := readFile(t, existing); got != `{"agents":["claude"]}` {
 		t.Fatalf("the config file was not updated, it holds %q", got)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(existing)
+		if err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("existing config mode was not tightened: %v %v", info, err)
+		}
 	}
 
 	// A configuration file that does not exist yet is created.

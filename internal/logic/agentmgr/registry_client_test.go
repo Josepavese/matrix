@@ -19,6 +19,27 @@ func TestFindAgentResolvesCodexAliasToCanonicalRegistryID(t *testing.T) {
 	}
 }
 
+func TestRegistryCacheIsScopedToIndexURL(t *testing.T) {
+	public := NewRegistryClient(nil, "")
+	mirrorA := NewRegistryClient(nil, "https://mirror.example.test/a")
+	mirrorB := NewRegistryClient(nil, "https://mirror.example.test/b")
+	if public.cacheKey() != cacheKey || mirrorA.cacheKey() == public.cacheKey() || mirrorA.cacheKey() == mirrorB.cacheKey() {
+		t.Fatalf("registry cache keys collide across sources: %q %q %q", public.cacheKey(), mirrorA.cacheKey(), mirrorB.cacheKey())
+	}
+}
+
+func TestHTTPSMirrorRejectsInsecureArtifactURL(t *testing.T) {
+	client := NewRegistryClient(nil, "https://mirror.example.test/registry.json")
+	for _, raw := range []string{"http://mirror.example.test/agent.tar.gz", "https://user:pass@mirror.example.test/agent.tar.gz", "file:///tmp/agent.tar.gz"} {
+		if err := client.validateArtifactURL(raw); err == nil {
+			t.Fatalf("insecure artifact URL accepted: %s", raw)
+		}
+	}
+	if err := client.validateArtifactURL("https://mirror.example.test/agent.tar.gz"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFindAgentRejectsCodexProviderIdentifierAsPublicAgentID(t *testing.T) {
 	agents := []AgentManifest{{ID: "codex-acp", Version: "1.1.4"}}
 

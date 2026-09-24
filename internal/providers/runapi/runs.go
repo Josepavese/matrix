@@ -11,7 +11,6 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/logic/runactivity"
-	"github.com/Josepavese/matrix/internal/logic/runconfig"
 	"github.com/Josepavese/matrix/internal/logic/runnotifier"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/logic/sidecar"
@@ -40,10 +39,8 @@ func (s *Server) HandleRuns(w http.ResponseWriter, r *http.Request) {
 	if !s.prepareRunAgentConfig(w, &req, agentID) {
 		return
 	}
-	run, err := s.startRun(req, agentID)
-	if err != nil {
-		slog.Error("matrix run trace start failed", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	run, ok := s.acceptNewRun(w, r, req, agentID)
+	if !ok {
 		return
 	}
 	s.dispatchByExecutionMode(w, r, runExecution{
@@ -55,59 +52,22 @@ func (s *Server) HandleRuns(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func decodeRunRequest(w http.ResponseWriter, r *http.Request) (runRequest, bool) {
-	var req runRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Bad Request: invalid json", http.StatusBadRequest)
-		return runRequest{}, false
-	}
-	if strings.TrimSpace(req.ChannelID) == "" || strings.TrimSpace(req.Input.String()) == "" {
-		http.Error(w, "Bad Request: channel_id and input are required", http.StatusBadRequest)
-		return runRequest{}, false
-	}
-	req.SidecarCapsules = sidecar.NormalizeCapsules(req.SidecarCapsules)
-	if err := sidecar.ValidateCapsules(req.SidecarCapsules); err != nil {
-		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
-		return runRequest{}, false
-	}
-	additionalDirectories, err := runconfig.NormalizeAdditionalDirectories(req.AdditionalDirectories)
-	if err != nil {
-		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
-		return runRequest{}, false
-	}
-	req.AdditionalDirectories = additionalDirectories
-	return req, true
-}
-
-func (s *Server) prepareRunAgentConfig(w http.ResponseWriter, req *runRequest, agentID string) bool {
-	args, err := agentlaunch.CodexReasoningEffortArgs(agentID, req.AgentConfig.ModelReasoningEffort, req.CodexConfig.ModelReasoningEffort)
-	if err != nil {
-		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
-		return false
-	}
-	req.agentLaunchArgs = append(req.agentLaunchArgs, args...)
-	if s.endpointResolver != nil {
-		if _, err := agentlaunch.ResolveForAgent(s.endpointResolver, agentID, req.agentLaunchArgs...); err != nil {
-			http.Error(w, "Conflict: agent launch policy is not applicable: "+err.Error(), http.StatusConflict)
-			return false
-		}
-	}
-	return true
-}
-
-func (s *Server) startRun(req runRequest, agentID string) (runtrace.Run, error) {
+func (s *Server) startRun(req runRequest, agentID, runID string) (runtrace.Run, error) {
 	run, _, err := s.runStore.Start(runtrace.Run{
-		AgentID:       agentID,
-		Protocol:      s.resolveProtocol(agentID),
-		WorkspaceID:   req.WorkspaceID,
-		WorkspacePath: req.WorkspacePath,
-		ChannelID:     req.ChannelID,
-		ExecutionMode: normalizeRunExecutionMode(req.ExecutionMode),
-		InputRef:      "matrix://pending/input",
-		InputDigest:   runtrace.DigestString(req.Input.String()),
-		Context:       req.Context,
-		ClientMeta:    req.ClientMeta,
-		TracePolicy:   req.TracePolicy,
+		ID:                runID,
+		AgentID:           agentID,
+		RequestedModel:    req.ModelID,
+		ModelVerification: modelVerification(req.ModelID),
+		Protocol:          s.resolveProtocol(agentID),
+		WorkspaceID:       req.WorkspaceID,
+		WorkspacePath:     req.WorkspacePath,
+		ChannelID:         req.ChannelID,
+		ExecutionMode:     normalizeRunExecutionMode(req.ExecutionMode),
+		InputRef:          "matrix://pending/input",
+		InputDigest:       runtrace.DigestString(req.Input.String()),
+		Context:           req.Context,
+		ClientMeta:        req.ClientMeta,
+		TracePolicy:       req.TracePolicy,
 	})
 	if err != nil {
 		return runtrace.Run{}, err
@@ -119,6 +79,13 @@ func (s *Server) startRun(req runRequest, agentID string) (runtrace.Run, error) 
 	s.appendRouteEvents(run, req.AgentID, agentID, req.agentLaunchArgs)
 	s.appendSidecarEvents(run, req.SidecarCapsules)
 	return run, nil
+}
+
+func modelVerification(modelID string) string {
+	if modelID == "" {
+		return ""
+	}
+	return "unverified"
 }
 
 func (s *Server) appendRouteEvents(run runtrace.Run, requestedAgentID, selectedAgentID string, launchArgs []string) {
@@ -254,6 +221,7 @@ func (s *Server) route(ctx context.Context, exec runExecution, prepared sessionS
 			WorkspaceID:           req.WorkspaceID,
 			WorkspacePath:         req.WorkspacePath,
 			Input:                 req.Input.String(),
+			ModelID:               req.ModelID,
 			SidecarCapsules:       req.SidecarCapsules,
 			AdditionalDirectories: req.AdditionalDirectories,
 			AgentLaunchArgs:       req.agentLaunchArgs,

@@ -3,7 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/agentmgr"
 	"github.com/Josepavese/matrix/internal/logic/config"
@@ -40,6 +42,20 @@ type InstallerContext struct {
 	Store     middleware.Storage
 	Installer *agentmgr.Installer
 	closeFn   func()
+}
+
+// configuredAgentRegistryURL keeps the install and discovery paths on the same
+// operator-selected index. An override is a trust decision, so it must be HTTPS.
+func configuredAgentRegistryURL() (string, error) {
+	raw := strings.TrimSpace(os.Getenv("MATRIX_AGENT_REGISTRY_URL"))
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+		return "", fmt.Errorf("MATRIX_AGENT_REGISTRY_URL must be an absolute HTTPS URL without credentials or fragment")
+	}
+	return raw, nil
 }
 
 // NewAppContext opens the vault in read-write mode and builds core dependencies.
@@ -161,6 +177,10 @@ func NewAgentStoreContext(vaultPath string) (*AgentContext, func(), error) {
 
 // NewInstallerContext builds installer dependencies.
 func NewInstallerContext(vaultPath string) (*InstallerContext, func(), error) {
+	registryURL, err := configuredAgentRegistryURL()
+	if err != nil {
+		return nil, nil, err
+	}
 	provider, err := runtimevault.Open(vaultPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vault error: %w", err)
@@ -177,7 +197,7 @@ func NewInstallerContext(vaultPath string) (*InstallerContext, func(), error) {
 		Storage:  provider,
 		FS:       osfs.NewFSProvider(),
 		Process:  execprovider.NewProvider(),
-		Registry: agentmgr.NewCachingRegistryClient(netProv, "", provider),
+		Registry: agentmgr.NewCachingRegistryClient(netProv, registryURL, provider),
 		BaseDir:  "",
 	})
 	if err != nil {
@@ -193,6 +213,10 @@ func NewInstallerContext(vaultPath string) (*InstallerContext, func(), error) {
 
 // NewDaemonContext builds all dependencies needed for `matrix run`.
 func NewDaemonContext(vaultPath string) (*DaemonContext, func(), error) {
+	registryURL, err := configuredAgentRegistryURL()
+	if err != nil {
+		return nil, nil, err
+	}
 	app, closeApp, err := newLocalAppContext(vaultPath)
 	if err != nil {
 		return nil, nil, err
@@ -217,7 +241,7 @@ func NewDaemonContext(vaultPath string) (*DaemonContext, func(), error) {
 	supervisor := agentmgr.NewSupervisor(execProv, netProv, app.Store, registry)
 
 	archiveProv := osfs.NewArchiveProvider()
-	regClient := agentmgr.NewCachingRegistryClient(netProv, "", app.Store)
+	regClient := agentmgr.NewCachingRegistryClient(netProv, registryURL, app.Store)
 	installer, err := agentmgr.NewInstaller(agentmgr.InstallerConfig{
 		Net:      netProv,
 		Archive:  archiveProv,

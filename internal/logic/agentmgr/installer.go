@@ -221,6 +221,9 @@ func (inst *Installer) requireExtractedLauncher(agentID, cmd, resolved string) e
 // unless its digest matches, and only then extracts it into agentPath. The
 // temporary download is always removed, on every outcome.
 func (inst *Installer) fetchVerifiedArchive(ctx context.Context, manifest *AgentManifest, agentPath string, dist *BinaryDist) (*agentcfg.ArtifactVerification, error) {
+	if err := inst.registry.validateArtifactURL(dist.Archive); err != nil {
+		return nil, err
+	}
 	tmpFile, err := agentinstall.TempArchive(inst.fs.TempDir(), manifest.ID, manifest.Version, dist.Archive)
 	if err != nil {
 		return nil, err

@@ -31,6 +31,43 @@ func newJSONRequest(method, target string, body io.Reader) *http.Request {
 	return req
 }
 
+func TestRunIdempotencyKeyReturnsSameRunWithoutSecondDispatch(t *testing.T) {
+	router := &runTestRouter{}
+	server := NewServer(router)
+	requestBody := `{"channel_id":"delegator","input":"do work"}`
+	request := func(key, body string) *http.Request {
+		req := newJSONRequest(http.MethodPost, RunPathV1, strings.NewReader(body))
+		req.Header.Set("Idempotency-Key", key)
+		return req
+	}
+	first := httptest.NewRecorder()
+	server.HandleRuns(first, request("same-key", requestBody))
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first run: %d %s", first.Code, first.Body.String())
+	}
+	var created runresponse.Success
+	if err := json.Unmarshal(first.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	second := httptest.NewRecorder()
+	server.HandleRuns(second, request("same-key", requestBody))
+	if second.Code != http.StatusAccepted || second.Header().Get("Idempotency-Replayed") != "true" {
+		t.Fatalf("replay: %d %s", second.Code, second.Body.String())
+	}
+	var replayed runresponse.Success
+	if err := json.Unmarshal(second.Body.Bytes(), &replayed); err != nil {
+		t.Fatal(err)
+	}
+	if replayed.RunID != created.RunID {
+		t.Fatalf("duplicate run: %s != %s", replayed.RunID, created.RunID)
+	}
+	conflict := httptest.NewRecorder()
+	server.HandleRuns(conflict, request("same-key", `{"channel_id":"delegator","input":"different"}`))
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("payload conflict: %d %s", conflict.Code, conflict.Body.String())
+	}
+}
+
 type runTestRouter struct {
 	lastConversation middleware.ConversationRequest
 	sessionActions   []middleware.SessionActionRequest

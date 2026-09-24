@@ -45,3 +45,24 @@ func TestInstallAllowUnverifiedParsesIntoTheCommandVariable(t *testing.T) {
 		t.Fatal("--allow-unverified must set the opt-in the command passes to the installer")
 	}
 }
+
+func TestConfiguredAgentRegistryURL(t *testing.T) {
+	for _, tc := range []struct {
+		raw      string
+		accepted bool
+	}{
+		{"", true},
+		{"https://mirror.example.test/acp/registry.json", true},
+		{"http://mirror.example.test/acp/registry.json", false},
+		{"https://user:pass@mirror.example.test/index", false},
+		{"/local/index.json", false},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Setenv("MATRIX_AGENT_REGISTRY_URL", tc.raw)
+			_, err := configuredAgentRegistryURL()
+			if (err == nil) != tc.accepted {
+				t.Fatalf("URL %q accepted=%v, error=%v", tc.raw, tc.accepted, err)
+			}
+		})
+	}
+}

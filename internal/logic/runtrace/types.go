@@ -14,6 +14,7 @@ const (
 	StatusCompleted = "completed"
 	StatusFailed    = "failed"
 	StatusCancelled = "cancelled"
+	StatusUnknown   = "outcome_unknown"
 
 	ContentModeRefs     = "refs"
 	ContentModeRedacted = "redacted"
@@ -22,30 +23,32 @@ const (
 
 // Run is the canonical Matrix operational record for one communication run.
 type Run struct {
-	ID               string                 `json:"id"`
-	AgentID          string                 `json:"agent_id"`
-	Protocol         string                 `json:"protocol,omitempty"`
-	WorkspaceID      string                 `json:"workspace_id,omitempty"`
-	WorkspacePath    string                 `json:"workspace_path,omitempty"`
-	LogicalSessionID string                 `json:"logical_session_id,omitempty"`
-	RemoteSessionID  string                 `json:"remote_session_id,omitempty"`
-	ChannelID        string                 `json:"channel_id"`
-	ExecutionMode    string                 `json:"execution_mode"`
-	Status           string                 `json:"status"`
-	InputKind        string                 `json:"input_kind"`
-	InputRef         string                 `json:"input_ref,omitempty"`
-	InputDigest      string                 `json:"input_digest,omitempty"`
-	OutputRef        string                 `json:"output_ref,omitempty"`
-	OutputDigest     string                 `json:"output_digest,omitempty"`
-	Output           string                 `json:"output,omitempty"`
-	StopReason       string                 `json:"stop_reason,omitempty"`
-	Error            string                 `json:"error,omitempty"`
-	Context          []ContextRef           `json:"context,omitempty"`
-	ClientMeta       map[string]interface{} `json:"client_meta,omitempty"`
-	TracePolicy      TracePolicy            `json:"trace_policy"`
-	StartedAt        time.Time              `json:"started_at"`
-	CompletedAt      time.Time              `json:"completed_at,omitempty"`
-	UpdatedAt        time.Time              `json:"updated_at"`
+	ID                string                 `json:"id"`
+	AgentID           string                 `json:"agent_id"`
+	RequestedModel    string                 `json:"requested_model,omitempty"`
+	ModelVerification string                 `json:"model_verification,omitempty"`
+	Protocol          string                 `json:"protocol,omitempty"`
+	WorkspaceID       string                 `json:"workspace_id,omitempty"`
+	WorkspacePath     string                 `json:"workspace_path,omitempty"`
+	LogicalSessionID  string                 `json:"logical_session_id,omitempty"`
+	RemoteSessionID   string                 `json:"remote_session_id,omitempty"`
+	ChannelID         string                 `json:"channel_id"`
+	ExecutionMode     string                 `json:"execution_mode"`
+	Status            string                 `json:"status"`
+	InputKind         string                 `json:"input_kind"`
+	InputRef          string                 `json:"input_ref,omitempty"`
+	InputDigest       string                 `json:"input_digest,omitempty"`
+	OutputRef         string                 `json:"output_ref,omitempty"`
+	OutputDigest      string                 `json:"output_digest,omitempty"`
+	Output            string                 `json:"output,omitempty"`
+	StopReason        string                 `json:"stop_reason,omitempty"`
+	Error             string                 `json:"error,omitempty"`
+	Context           []ContextRef           `json:"context,omitempty"`
+	ClientMeta        map[string]interface{} `json:"client_meta,omitempty"`
+	TracePolicy       TracePolicy            `json:"trace_policy"`
+	StartedAt         time.Time              `json:"started_at"`
+	CompletedAt       time.Time              `json:"completed_at,omitempty"`
+	UpdatedAt         time.Time              `json:"updated_at"`
 }
 
 // ContextRef is caller-supplied neutral context. Matrix does not interpret it.
@@ -114,15 +117,17 @@ type Trace struct {
 }
 
 type TraceRun struct {
-	ID               string    `json:"id"`
-	AgentID          string    `json:"agent_id"`
-	Protocol         string    `json:"protocol,omitempty"`
-	WorkspaceID      string    `json:"workspace_id,omitempty"`
-	LogicalSessionID string    `json:"logical_session_id,omitempty"`
-	RemoteSessionID  string    `json:"remote_session_id,omitempty"`
-	StartedAt        time.Time `json:"started_at"`
-	CompletedAt      time.Time `json:"completed_at,omitempty"`
-	Status           string    `json:"status"`
+	ID                string    `json:"id"`
+	AgentID           string    `json:"agent_id"`
+	RequestedModel    string    `json:"requested_model,omitempty"`
+	ModelVerification string    `json:"model_verification,omitempty"`
+	Protocol          string    `json:"protocol,omitempty"`
+	WorkspaceID       string    `json:"workspace_id,omitempty"`
+	LogicalSessionID  string    `json:"logical_session_id,omitempty"`
+	RemoteSessionID   string    `json:"remote_session_id,omitempty"`
+	StartedAt         time.Time `json:"started_at"`
+	CompletedAt       time.Time `json:"completed_at,omitempty"`
+	Status            string    `json:"status"`
 }
 
 type Surface struct {

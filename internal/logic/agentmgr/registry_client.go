@@ -2,9 +2,12 @@ package agentmgr
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/agentidentity"
@@ -145,6 +148,17 @@ func (c *RegistryClient) FetchIndex(ctx context.Context) (RegistryIndex, error) 
 	return index, nil
 }
 
+func (c *RegistryClient) validateArtifactURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" || parsed.User != nil {
+		return fmt.Errorf("registry artifact URL is invalid or contains credentials")
+	}
+	if strings.HasPrefix(strings.ToLower(c.registryURL), "https://") && parsed.Scheme != "https" {
+		return fmt.Errorf("HTTPS registry artifact URL must use HTTPS: %s", raw)
+	}
+	return nil
+}
+
 // FetchIndexCached tries the cache first, falls back to network, then stale cache.
 func (c *RegistryClient) FetchIndexCached(ctx context.Context) (RegistryIndex, error) {
 	// Try fresh cache
@@ -282,7 +296,7 @@ func validateCanonicalProvider(manifest *AgentManifest) error {
 }
 
 func (c *RegistryClient) loadCache() (registryCache, bool) {
-	data, err := c.storage.Get(cacheKey)
+	data, err := c.storage.Get(c.cacheKey())
 	if err != nil || len(data) == 0 {
 		return registryCache{}, false
 	}
@@ -296,6 +310,13 @@ func (c *RegistryClient) loadCache() (registryCache, bool) {
 func (c *RegistryClient) saveCache(index RegistryIndex) {
 	cache := registryCache{FetchedAt: time.Now(), Index: index}
 	if data, err := json.Marshal(cache); err == nil {
-		_ = c.storage.Set(cacheKey, data)
+		_ = c.storage.Set(c.cacheKey(), data)
 	}
+}
+
+func (c *RegistryClient) cacheKey() string {
+	if c.registryURL == defaultRegistryURL {
+		return cacheKey
+	}
+	return fmt.Sprintf("%s.%x", cacheKey, sha256.Sum256([]byte(c.registryURL)))
 }

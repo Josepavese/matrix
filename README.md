@@ -31,6 +31,7 @@ You use more than one coding agent. Claude for reasoning. Gemini for speed. Open
 
 ```bash
 curl -X POST http://127.0.0.1:9091/v1/runs \
+  -H "X-Matrix-Key: $(matrix config get matrix_api_key)" \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -107,6 +108,7 @@ Prerequisites: at least one coding agent installed (OpenCode, Claude Code, or Ge
 
 ```bash
 curl -X POST http://127.0.0.1:9091/v1/runs \
+  -H "X-Matrix-Key: $(matrix config get matrix_api_key)" \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",

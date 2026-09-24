@@ -22,6 +22,12 @@ func classifyProviderFailure(agentID string, endpoint middleware.ProtocolEndpoin
 	model := ""
 	lower := strings.ToLower(errText)
 	switch {
+	case strings.Contains(lower, "does not advertise additionaldirectories"):
+		code = providerfailure.AdditionalDirectoriesUnsupported
+		message = "agent does not support the requested additional directories"
+	case strings.Contains(lower, "directory not authorized") || strings.Contains(lower, "workspace not trusted") || strings.Contains(lower, "untrusted workspace"):
+		code = providerfailure.WorkspaceRejected
+		message = "provider refused the requested workspace; complete the provider trust flow"
 	case zedacp.IsAuthenticationRequired(err):
 		// ACP v2's structured signal, checked before the text heuristics.
 		code = providerfailure.AuthMismatch

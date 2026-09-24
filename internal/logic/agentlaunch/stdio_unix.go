@@ -3,9 +3,12 @@
 package agentlaunch
 
 import (
-	"fmt"
 	"strings"
 )
+
+func shellLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+}
 
 func PrepareStdio(command string, args []string, envIsolation bool) (string, []string) {
 	if !envIsolation {
@@ -13,10 +16,10 @@ func PrepareStdio(command string, args []string, envIsolation bool) (string, []s
 	}
 	var launch strings.Builder
 	launch.WriteString(`export NVM_DIR="$HOME/.nvm"; if [ -s "$NVM_DIR/nvm.sh" ]; then \. "$NVM_DIR/nvm.sh"; fi; `)
-	fmt.Fprintf(&launch, "%q", command)
+	launch.WriteString(shellLiteral(command))
 	for _, arg := range args {
 		launch.WriteByte(' ')
-		fmt.Fprintf(&launch, "%q", arg)
+		launch.WriteString(shellLiteral(arg))
 	}
 	return "bash", []string{"-c", launch.String()}
 }

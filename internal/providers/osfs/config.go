@@ -40,7 +40,11 @@ func (p *ConfigProvider) WriteConfig(path string, data []byte) error {
 	}
 	// Channel configuration can carry identifiers and tokens, and Matrix is
 	// single-user: there is no reader that needs group or world access.
-	return os.WriteFile(target, data, 0o600)
+	if err := os.WriteFile(target, data, 0o600); err != nil {
+		return err
+	}
+	// WriteFile does not change the mode of an existing file.
+	return os.Chmod(target, 0o600)
 }
 
 // configWriteTarget resolves the file a config write would touch and refuses it

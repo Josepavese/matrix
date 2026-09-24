@@ -399,8 +399,10 @@ func pickPreferredID(available []string) string {
 func (r *Router) executePrompt(ctx context.Context, client middleware.ConversationClient, req middleware.RouteRequest) (string, string, []middleware.ToolCall, middleware.ConversationMetadata, error) {
 	turn := middleware.ConversationTurn{
 		AgentID:                  req.AgentID,
+		ModelID:                  req.ModelID,
 		LogicalSessionID:         req.LogicalSessionID,
 		RemoteSessionID:          req.AgentSessionID,
+		StrictSession:            req.StrictSession,
 		WorkspacePath:            req.WorkspacePath,
 		Message:                  req.Message,
 		ContentBlocks:            req.ContentBlocks,

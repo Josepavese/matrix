@@ -1,6 +1,7 @@
 package runtrace
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -112,7 +113,7 @@ func (s *Store) Complete(runID, output, stopReason string) (Run, error) {
 // isTerminalStatus reports whether a run has already reached a final state.
 func isTerminalStatus(status string) bool {
 	switch status {
-	case StatusCompleted, StatusFailed, StatusCancelled:
+	case StatusCompleted, StatusFailed, StatusCancelled, StatusUnknown:
 		return true
 	default:
 		return false
@@ -170,7 +171,12 @@ func (s *Store) Fail(runID string, runErr error) (Run, error) {
 		return Run{}, err
 	}
 	s.emitTerminalTrace(run, func() error {
-		_, err := s.AppendEvent(Event{RunID: run.ID, Kind: "run.failed", Actor: "matrix", Status: StatusFailed, Timestamp: run.CompletedAt, Message: run.Error})
+		failureCode := "run_failed"
+		var coded interface{ FailureCode() string }
+		if errors.As(runErr, &coded) {
+			failureCode = coded.FailureCode()
+		}
+		_, err := s.AppendEvent(Event{RunID: run.ID, Kind: "run.failed", Actor: "matrix", Status: StatusFailed, Timestamp: run.CompletedAt, Message: run.Error, Metadata: map[string]interface{}{"failure_code": failureCode}})
 		return err
 	})
 	return run, nil

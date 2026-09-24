@@ -74,6 +74,20 @@ func (r *Router) GetAgentSession(ctx context.Context, agentID string, remoteSess
 	return controller.GetRemoteSession(ctx, remoteSessionID)
 }
 
+// AttachAgentSessionForWorkspace selects the same workspace-bound client used
+// for the following run, then asks the provider to prove the exact remote ID.
+func (r *Router) AttachAgentSessionForWorkspace(ctx context.Context, agentID, remoteSessionID, workspacePath string) (middleware.RemoteSessionInfo, error) {
+	client, err := r.getOrCreateSessionControlClientForWorkspace(ctx, agentID, workspacePath)
+	if err != nil {
+		return middleware.RemoteSessionInfo{}, err
+	}
+	attacher, ok := client.(middleware.ConversationSessionAttacher)
+	if !ok {
+		return middleware.RemoteSessionInfo{}, fmt.Errorf("agent %s does not support verified remote session attach", agentID)
+	}
+	return attacher.AttachExistingRemoteSession(ctx, remoteSessionID, workspacePath)
+}
+
 func (r *Router) CancelAgentSession(ctx context.Context, agentID string, remoteSessionID string) error {
 	client, err := r.getSessionLifecycleClient(ctx, agentID)
 	if err != nil {

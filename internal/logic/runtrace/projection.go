@@ -84,15 +84,17 @@ func redactedEventMetadata(event Event) map[string]interface{} {
 
 func projectRun(run Run) TraceRun {
 	return TraceRun{
-		ID:               run.ID,
-		AgentID:          run.AgentID,
-		Protocol:         run.Protocol,
-		WorkspaceID:      run.WorkspaceID,
-		LogicalSessionID: run.LogicalSessionID,
-		RemoteSessionID:  run.RemoteSessionID,
-		StartedAt:        run.StartedAt,
-		CompletedAt:      run.CompletedAt,
-		Status:           run.Status,
+		ID:                run.ID,
+		AgentID:           run.AgentID,
+		RequestedModel:    run.RequestedModel,
+		ModelVerification: run.ModelVerification,
+		Protocol:          run.Protocol,
+		WorkspaceID:       run.WorkspaceID,
+		LogicalSessionID:  run.LogicalSessionID,
+		RemoteSessionID:   run.RemoteSessionID,
+		StartedAt:         run.StartedAt,
+		CompletedAt:       run.CompletedAt,
+		Status:            run.Status,
 	}
 }
 

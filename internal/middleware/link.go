@@ -25,6 +25,7 @@ type ChannelResponse struct {
 type ConversationRequest struct {
 	ChannelID                string
 	AgentID                  string
+	ModelID                  string
 	LogicalSessionID         string
 	WorkspaceID              string
 	WorkspacePath            string
@@ -85,6 +86,7 @@ const (
 type SessionActionRequest struct {
 	ChannelID             string
 	Action                string
+	AgentID               string
 	OwnerRunID            string
 	WorkspaceID           string
 	WorkspacePath         string

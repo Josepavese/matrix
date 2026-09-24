@@ -10,6 +10,7 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/memstore"
 	"github.com/Josepavese/matrix/internal/logic/rundelivery"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/logic/workspacegrant"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/runpayload"
 	"github.com/Josepavese/matrix/internal/providers/runsink"
@@ -22,6 +23,7 @@ const (
 	ElicitationPathV1     = "/v1/elicitations"
 	AgentAuthPathV1       = "/v1/agent-auth"
 	AgentAuthLogoutPathV1 = "/v1/agent-auth/logout"
+	WorkspaceGrantsPathV1 = "/v1/workspace-grants"
 )
 
 type Router interface {
@@ -34,22 +36,26 @@ type Server struct {
 	defaultAgent     string
 	endpointResolver middleware.AgentEndpointResolver
 	runStore         *runtrace.Store
+	workspaceGrants  *workspacegrant.Store
 	deliveryStore    *rundelivery.Store
 	sinkDelivery     *runsink.Service
 	elicitations     *elicitationsHandler
 	agentAuth        *agentAuthHandler
 	runCancels       map[string]context.CancelFunc
 	runMu            sync.Mutex
+	idempotencyMu    sync.Mutex
 }
 
 type runRequest struct {
 	ChannelID              string                      `json:"channel_id"`
 	Input                  runpayload.Input            `json:"input"`
 	AgentID                string                      `json:"agent_id"`
+	ModelID                string                      `json:"model_id,omitempty"`
 	AgentConfig            runAgentConfig              `json:"agent_config,omitempty"`
 	CodexConfig            runAgentConfig              `json:"codex_config,omitempty"`
 	WorkspaceID            string                      `json:"workspace_id,omitempty"`
 	WorkspacePath          string                      `json:"workspace_path,omitempty"`
+	WorkspacePolicy        string                      `json:"workspace_policy,omitempty"`
 	ExecutionMode          string                      `json:"execution_mode,omitempty"`
 	SessionPolicy          string                      `json:"session_policy,omitempty"`
 	CleanupPolicy          string                      `json:"cleanup_policy,omitempty"`
@@ -94,6 +100,7 @@ func NewServer(router Router) *Server {
 		runCancels:   map[string]context.CancelFunc{},
 	}
 	server.deliveryStore = rundelivery.NewStore(storage)
+	server.workspaceGrants = workspacegrant.NewStore(storage)
 	return server.withRunStore(runtrace.NewStore(storage))
 }
 
@@ -112,6 +119,7 @@ func (s *Server) WithDefaultAgent(agentID string) *Server {
 func (s *Server) WithTraceStorage(storage middleware.Storage) *Server {
 	if storage != nil {
 		s.deliveryStore = rundelivery.NewStore(storage)
+		s.workspaceGrants = workspacegrant.NewStore(storage)
 		s.withRunStore(runtrace.NewStore(storage))
 	}
 	return s
@@ -128,6 +136,7 @@ func (s *Server) WithEndpointResolver(resolver middleware.AgentEndpointResolver)
 func (s *Server) WithElicitationService(service *elicitation.Service) *Server {
 	if service != nil {
 		s.elicitations = &elicitationsHandler{service: service}
+		s.subscribeElicitationWakeups(service)
 	}
 	return s
 }
@@ -157,6 +166,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(ElicitationPathV1, s.HandleElicitations)
 	mux.HandleFunc(AgentAuthPathV1, s.HandleAgentAuth)
 	mux.HandleFunc(AgentAuthLogoutPathV1, s.HandleAgentAuth)
+	mux.HandleFunc(WorkspaceGrantsPathV1, s.HandleWorkspaceGrants)
+	mux.HandleFunc(WorkspaceGrantsPathV1+"/", s.HandleWorkspaceGrants)
 }
 
 func (s *Server) withRunStore(store *runtrace.Store) *Server {

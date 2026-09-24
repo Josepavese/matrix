@@ -38,8 +38,10 @@ type ProtocolEndpoint struct {
 // ConversationTurn is the protocol-neutral representation of a single user turn.
 type ConversationTurn struct {
 	AgentID                  string
+	ModelID                  string
 	LogicalSessionID         string
 	RemoteSessionID          string
+	StrictSession            bool
 	WorkspacePath            string
 	Message                  string
 	ContentBlocks            []Content
@@ -81,14 +83,19 @@ type ConversationClient interface {
 // RemoteSessionID is the opaque identifier Matrix must persist and reuse.
 // DisplayID is the human-facing stable token shown in channels for switch/delete flows.
 type RemoteSessionInfo struct {
-	RemoteSessionID string       `json:"remote_session_id,omitempty"`
-	DisplayID       string       `json:"display_id,omitempty"`
-	Title           string       `json:"title,omitempty"`
-	Status          string       `json:"status,omitempty"`
-	UpdatedAt       string       `json:"updated_at,omitempty"`
-	ProtocolKind    ProtocolKind `json:"protocol_kind,omitempty"`
-	CanResume       bool         `json:"can_resume,omitempty"`
-	CanDelete       bool         `json:"can_delete,omitempty"`
+	RemoteSessionID       string       `json:"remote_session_id,omitempty"`
+	DisplayID             string       `json:"display_id,omitempty"`
+	Title                 string       `json:"title,omitempty"`
+	Status                string       `json:"status,omitempty"`
+	UpdatedAt             string       `json:"updated_at,omitempty"`
+	Cwd                   string       `json:"cwd,omitempty"`
+	AdditionalDirectories []string     `json:"additional_directories,omitempty"`
+	VerificationMethod    string       `json:"verification_method,omitempty"`
+	VerificationLimit     string       `json:"verification_limit,omitempty"`
+	ListWarning           string       `json:"list_warning,omitempty"`
+	ProtocolKind          ProtocolKind `json:"protocol_kind,omitempty"`
+	CanResume             bool         `json:"can_resume,omitempty"`
+	CanDelete             bool         `json:"can_delete,omitempty"`
 }
 
 // CapabilityDescriptor is the protocol-neutral SSOT for a provider capability.
@@ -166,6 +173,12 @@ type SessionMaterializeRequest struct {
 // create a remote session handle without prompt replay.
 type ConversationSessionMaterializer interface {
 	MaterializeRemoteSession(ctx context.Context, req SessionMaterializeRequest) (RemoteSessionInfo, ConversationMetadata, error)
+}
+
+// ConversationSessionAttacher verifies a known remote ID without sending a prompt
+// or creating a replacement session. Listing is optional.
+type ConversationSessionAttacher interface {
+	AttachExistingRemoteSession(ctx context.Context, remoteSessionID, workspacePath string) (RemoteSessionInfo, error)
 }
 
 // ConversationHealth is an optional interface for cached clients that can report liveness.

@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -136,14 +137,18 @@ type pagedListACPClient struct {
 	initializeResponse *acpInitializeResponse
 	cursors            []string
 	listReqs           []acpListSessionsRequest
+	listErr            error
 	newReq             *acpNewSessionRequest
 	resumeReq          *acpResumeSessionRequest
+	resumeErr          error
 	promptReq          *acpPromptRequest
 	promptUpdates      []acpSessionNotification
 	authID             string
 	logouts            int
 	setModeID          string
 	setConfigReq       *acpSetConfigOptionRequest
+	setModelReq        *acpSetSessionModelRequest
+	setModelErr        error
 }
 
 func (c *pagedListACPClient) Context() context.Context            { return c.ctx }
@@ -174,12 +179,19 @@ func (c *pagedListACPClient) LoadSession(context.Context, acpLoadSessionRequest,
 }
 func (c *pagedListACPClient) ResumeSession(_ context.Context, req acpResumeSessionRequest) (*acpResumeSessionResponse, error) {
 	c.resumeReq = &req
-	return &acpResumeSessionResponse{}, nil
+	return &acpResumeSessionResponse{}, c.resumeErr
+}
+func (c *pagedListACPClient) SetSessionModel(_ context.Context, req acpSetSessionModelRequest) (*acpSetSessionModelResponse, error) {
+	c.setModelReq = &req
+	return &acpSetSessionModelResponse{}, c.setModelErr
 }
 func (c *pagedListACPClient) ListSessions(context.Context) (*acpListSessionsResponse, error) {
 	return c.ListSessionsWithRequest(context.Background(), acpListSessionsRequest{})
 }
 func (c *pagedListACPClient) ListSessionsWithRequest(_ context.Context, req acpListSessionsRequest) (*acpListSessionsResponse, error) {
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
 	c.cursors = append(c.cursors, req.Cursor)
 	c.listReqs = append(c.listReqs, req)
 	if req.Cursor == "" {
@@ -191,6 +203,34 @@ func (c *pagedListACPClient) ListSessionsWithRequest(_ context.Context, req acpL
 	return &acpListSessionsResponse{
 		Sessions: []acpSessionInfo{{SessionID: "two", Title: "Two"}},
 	}, nil
+}
+
+func TestAttachExistingSessionReportsListFailureButResumesExactID(t *testing.T) {
+	fake := &pagedListACPClient{ctx: context.Background(), listErr: errors.New("list temporarily unavailable")}
+	client := &acpConversationClient{
+		client: fake, cwd: "/workspace", loadedSessions: map[string]bool{},
+		sessionCapabilities: middleware.ConversationSessionCapabilities{List: true, Resume: true},
+	}
+	info, err := client.AttachExistingRemoteSession(context.Background(), "external-id", "/workspace")
+	if err != nil || info.RemoteSessionID != "external-id" || info.VerificationMethod != "session/resume" || !strings.Contains(info.ListWarning, "list temporarily unavailable") {
+		t.Fatalf("attach receipt=%+v err=%v", info, err)
+	}
+	if fake.newReq != nil || fake.promptReq != nil || fake.resumeReq == nil || fake.resumeReq.SessionID != "external-id" {
+		t.Fatalf("strict attach used wrong method: new=%+v prompt=%+v resume=%+v", fake.newReq, fake.promptReq, fake.resumeReq)
+	}
+}
+
+func TestAttachExistingSessionPreservesListFailureWhenResumeAlsoFails(t *testing.T) {
+	fake := &pagedListACPClient{ctx: context.Background(), listErr: errors.New("list temporarily unavailable"), resumeErr: errors.New("unknown session")}
+	client := &acpConversationClient{client: fake, cwd: "/workspace", loadedSessions: map[string]bool{},
+		sessionCapabilities: middleware.ConversationSessionCapabilities{List: true, Resume: true}}
+	_, err := client.AttachExistingRemoteSession(context.Background(), "external-id", "/workspace")
+	if err == nil || !strings.Contains(err.Error(), "list temporarily unavailable") || !strings.Contains(err.Error(), "unknown session") {
+		t.Fatalf("attach lost one of the provider errors: %v", err)
+	}
+	if fake.newReq != nil || fake.promptReq != nil {
+		t.Fatal("failed strict attach created a session or sent a prompt")
+	}
 }
 func (c *pagedListACPClient) CancelSession(context.Context, string) error { return nil }
 func (c *pagedListACPClient) CloseSession(context.Context, string) error  { return nil }
@@ -211,6 +251,12 @@ func (c *pagedListACPClient) SetMode(_ context.Context, _ string, modeID string)
 }
 func (c *pagedListACPClient) SetConfigOption(_ context.Context, req acpSetConfigOptionRequest) (*acpSetConfigOptionResponse, error) {
 	c.setConfigReq = &req
+	if req.ConfigID == "model" {
+		if c.setModelErr != nil {
+			return nil, c.setModelErr
+		}
+		return &acpSetConfigOptionResponse{ConfigOptions: []zedacp.ConfigOption{{ID: "model", Current: req.Value.(string)}}}, nil
+	}
 	return &acpSetConfigOptionResponse{}, nil
 }
 func (c *pagedListACPClient) ExtRequest(context.Context, string, interface{}, interface{}) error {
@@ -287,6 +333,36 @@ func TestExecuteTurnPropagatesPromptBlocksAndMCPServers(t *testing.T) {
 	}
 }
 
+func TestExecuteTurnAppliesRequestedModelBeforePromptAndFailsClosed(t *testing.T) {
+	for _, reject := range []bool{false, true} {
+		fake := &pagedListACPClient{ctx: context.Background(), protocolVersion: 2}
+		if reject {
+			fake.setModelErr = errors.New("model unavailable")
+		}
+		client := &acpConversationClient{client: fake, loadedSessions: map[string]bool{}}
+		_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{Message: "work", ModelID: "chosen-model"})
+		if fake.setModelReq == nil || fake.setModelReq.ModelID != "chosen-model" {
+			t.Fatalf("model not sent: %+v", fake.setModelReq)
+		}
+		if reject {
+			if err == nil || fake.promptReq != nil {
+				t.Fatalf("rejected model reached prompt: err=%v prompt=%+v", err, fake.promptReq)
+			}
+		} else if err != nil || fake.promptReq == nil {
+			t.Fatalf("accepted model failed: err=%v prompt=%+v", err, fake.promptReq)
+		}
+	}
+}
+
+func TestExecuteTurnUsesACPv1ModelConfigOption(t *testing.T) {
+	fake := &pagedListACPClient{ctx: context.Background(), protocolVersion: 1}
+	client := &acpConversationClient{client: fake, loadedSessions: map[string]bool{}}
+	_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{Message: "work", ModelID: "chosen-model"})
+	if err != nil || fake.setConfigReq == nil || fake.setConfigReq.ConfigID != "model" || fake.promptReq == nil {
+		t.Fatalf("ACP v1 model selection failed: err=%v config=%+v prompt=%+v", err, fake.setConfigReq, fake.promptReq)
+	}
+}
+
 func TestExecuteTurnReturnsOnlyExplicitFinalACPMessage(t *testing.T) {
 	phase := func(value string) map[string]interface{} {
 		return map[string]interface{}{"codex": map[string]interface{}{"phase": value}}
@@ -313,7 +389,7 @@ func TestExecuteTurnReturnsOnlyExplicitFinalACPMessage(t *testing.T) {
 	}
 }
 
-func TestExecuteTurnDoesNotSendAdditionalDirectoriesWithoutCapability(t *testing.T) {
+func TestExecuteTurnRejectsAdditionalDirectoriesWithoutCapability(t *testing.T) {
 	fake := &pagedListACPClient{ctx: context.Background()}
 	client := &acpConversationClient{
 		client:         fake,
@@ -324,14 +400,11 @@ func TestExecuteTurnDoesNotSendAdditionalDirectoriesWithoutCapability(t *testing
 		Message:               "hello",
 		AdditionalDirectories: []string{"/workspace/lib"},
 	})
-	if err != nil {
-		t.Fatalf("execute turn: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "does not advertise additionalDirectories") {
+		t.Fatalf("expected unsupported capability, got %v", err)
 	}
-	if fake.newReq == nil {
-		t.Fatal("expected session/new request")
-	}
-	if len(fake.newReq.AdditionalDirectories) != 0 {
-		t.Fatalf("additionalDirectories must be gated on provider capability, got %#v", fake.newReq.AdditionalDirectories)
+	if fake.newReq != nil {
+		t.Fatal("must reject before session/new")
 	}
 }
 

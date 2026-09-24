@@ -75,6 +75,9 @@ type mockRouter struct {
 	lastMsg        string
 	lastStrict     bool
 	remote         []middleware.RemoteSessionInfo
+	attachRemote   middleware.RemoteSessionInfo
+	attachErr      error
+	attachPath     string
 	listCalls      int
 	deleted        []string
 	canceled       []string
@@ -131,6 +134,11 @@ func (m *mockRouter) GetAgentSession(_ context.Context, _ string, remoteSessionI
 		}
 	}
 	return middleware.RemoteSessionInfo{}, nil
+}
+
+func (m *mockRouter) AttachAgentSessionForWorkspace(_ context.Context, _, _, workspacePath string) (middleware.RemoteSessionInfo, error) {
+	m.attachPath = workspacePath
+	return m.attachRemote, m.attachErr
 }
 
 func (m *mockRouter) DeleteAgentSession(_ context.Context, _ string, remoteSessionID string) error {

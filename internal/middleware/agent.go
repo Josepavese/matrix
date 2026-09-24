@@ -25,6 +25,7 @@ type AgentRouter interface {
 // RouteRequest contains the parameters for routing a prompt to an agent.
 type RouteRequest struct {
 	AgentID                  string
+	ModelID                  string
 	LogicalSessionID         string
 	AgentSessionID           string
 	WorkspacePath            string

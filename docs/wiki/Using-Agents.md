@@ -50,6 +50,21 @@ Install an agent from the registry:
 matrix install <agent-id>
 ```
 
+For an installation without GitHub access, mirror the complete ACP registry
+index and the artifact URLs it contains to an administrator controlled HTTPS
+endpoint, then select that index for discovery and installation:
+
+```bash
+MATRIX_AGENT_REGISTRY_URL=https://mirror.example.org/acp/registry.json matrix install <agent-id>
+```
+
+The override also applies to `matrix agent search` and registry backed agent
+information. Without it Matrix uses the public ACP registry. The override URL
+must use HTTPS. Each binary artifact still needs a valid `sha256` in the index;
+the existing digest, extraction, and command path checks remain active. The
+mirror operator is responsible for verifying and pinning the index itself.
+An index that still points an artifact at GitHub will still need GitHub access.
+
 Matrix downloads the agent binary (supports npm/npx, Python/uvx, and direct binary distributions) and registers it in the vault.
 
 For a binary distribution Matrix verifies the downloaded archive against the

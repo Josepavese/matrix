@@ -26,6 +26,8 @@ func (s *Server) HandleRunResource(w http.ResponseWriter, r *http.Request) {
 	switch resource {
 	case "trace":
 		s.handleRunTrace(w, r, runID)
+	case "explain":
+		s.handleRunExplain(w, r, runID)
 	case "events":
 		if wantsEventStream(r) {
 			s.streamRunEvents(w, r, runID)
@@ -145,7 +147,7 @@ func (s *Server) writeSSEBatch(w http.ResponseWriter, runID, cursor string) (boo
 
 func isTerminalRun(status string) bool {
 	switch status {
-	case runtrace.StatusCompleted, runtrace.StatusFailed, runtrace.StatusCancelled:
+	case runtrace.StatusCompleted, runtrace.StatusFailed, runtrace.StatusCancelled, runtrace.StatusUnknown:
 		return true
 	default:
 		return false

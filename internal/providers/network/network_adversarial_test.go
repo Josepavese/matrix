@@ -12,6 +12,41 @@ import (
 	"time"
 )
 
+func TestDownloadRefusesHTTPSRedirectToHTTP(t *testing.T) {
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("should not download"))
+	}))
+	defer plain.Close()
+	secure := httptest.NewTLSServer(http.RedirectHandler(plain.URL+"/artifact", http.StatusFound))
+	defer secure.Close()
+	provider := NewProvider()
+	provider.downloadClient.Transport = secure.Client().Transport
+	target := filepath.Join(t.TempDir(), "artifact")
+	err := provider.Download(context.Background(), secure.URL+"/artifact", target)
+	if err == nil || !strings.Contains(err.Error(), "refusing HTTPS redirect") {
+		t.Fatalf("downgrade accepted: %v", err)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("download wrote artifact after downgrade: %v", err)
+	}
+}
+
+func TestFetchJSONRefusesHTTPSRedirectToHTTP(t *testing.T) {
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"agents":[]}`))
+	}))
+	defer plain.Close()
+	secure := httptest.NewTLSServer(http.RedirectHandler(plain.URL+"/registry.json", http.StatusFound))
+	defer secure.Close()
+	provider := NewProvider()
+	provider.httpClient.Transport = secure.Client().Transport
+	var index map[string]interface{}
+	err := provider.FetchJSON(context.Background(), secure.URL+"/registry.json", &index)
+	if err == nil || !strings.Contains(err.Error(), "refusing HTTPS redirect") {
+		t.Fatalf("registry index downgrade accepted: %v", err)
+	}
+}
+
 // TestDownloadRejectsAnUnsupportedScheme keeps a caller from being told a
 // download succeeded when no request was ever made.
 func TestDownloadRejectsAnUnsupportedScheme(t *testing.T) {
