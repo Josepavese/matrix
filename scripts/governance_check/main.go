@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,12 +33,21 @@ type checkReport struct {
 }
 
 type patternBudget struct {
-	Name         string
-	Roots        []string
-	Patterns     []string
-	AllowedFiles []string
-	Max          int
-	Reason       string
+	Name     string
+	Roots    []string
+	Patterns []string
+	// RegexPatterns express the SHAPE of a branch instead of a fixed name:
+	// a comparison of an agent identity against any non-empty literal. This is
+	// what catches a branch on a name nobody has seen yet.
+	RegexPatterns []string
+	AllowedFiles  []string
+	// ExcludeSuffixes and ExcludeDirs are opt-in, per budget. They exist
+	// because a test file or a test fixture may legitimately name an agent:
+	// the budget guards production behaviour, not the vocabulary of a test.
+	ExcludeSuffixes []string
+	ExcludeDirs     []string
+	Max             int
+	Reason          string
 }
 
 func main() {
@@ -123,8 +133,14 @@ func loadManifest(path string) (manifest, error) {
 					budget.Roots, err = parseStringList(value)
 				case "patterns":
 					budget.Patterns, err = parseStringList(value)
+				case "regex_patterns":
+					budget.RegexPatterns, err = parseStringList(value)
 				case "allowed_files":
 					budget.AllowedFiles, err = parseStringList(value)
+				case "exclude_suffixes":
+					budget.ExcludeSuffixes, err = parseStringList(value)
+				case "exclude_dirs":
+					budget.ExcludeDirs, err = parseStringList(value)
 				case "max":
 					budget.Max, err = parseInt(value)
 				case "reason":
@@ -223,13 +239,25 @@ func checkManifest(root string, m manifest) checkReport {
 }
 
 func checkPatternBudget(root string, budget patternBudget) []string {
-	if len(budget.Roots) == 0 || len(budget.Patterns) == 0 {
-		return []string{fmt.Sprintf("[pattern_budget.%s] roots and patterns are required", budget.Name)}
+	if len(budget.Roots) == 0 || (len(budget.Patterns) == 0 && len(budget.RegexPatterns) == 0) {
+		return []string{fmt.Sprintf("[pattern_budget.%s] roots and at least one of patterns/regex_patterns are required", budget.Name)}
+	}
+	compiled := make([]*regexp.Regexp, 0, len(budget.RegexPatterns))
+	for _, expr := range budget.RegexPatterns {
+		re, err := regexp.Compile(expr)
+		if err != nil {
+			return []string{fmt.Sprintf("[pattern_budget.%s] invalid regex %q: %v", budget.Name, expr, err)}
+		}
+		compiled = append(compiled, re)
 	}
 
 	allowed := make(map[string]struct{}, len(budget.AllowedFiles))
 	for _, path := range budget.AllowedFiles {
 		allowed[filepath.ToSlash(filepath.Clean(path))] = struct{}{}
+	}
+	excludedDirs := make(map[string]struct{}, len(budget.ExcludeDirs))
+	for _, dir := range budget.ExcludeDirs {
+		excludedDirs[strings.TrimSpace(dir)] = struct{}{}
 	}
 
 	var matches []string
@@ -247,9 +275,11 @@ func checkPatternBudget(root string, budget patternBudget) []string {
 				switch entry.Name() {
 				case ".git", "dist", "vendor", "node_modules":
 					return filepath.SkipDir
-				default:
-					return nil
 				}
+				if _, skip := excludedDirs[entry.Name()]; skip {
+					return filepath.SkipDir
+				}
+				return nil
 			}
 			if !isTextGovernanceTarget(path) {
 				return nil
@@ -262,6 +292,11 @@ func checkPatternBudget(root string, budget patternBudget) []string {
 			rel = filepath.ToSlash(rel)
 			if _, ok := allowed[rel]; ok {
 				return nil
+			}
+			for _, suffix := range budget.ExcludeSuffixes {
+				if suffix != "" && strings.HasSuffix(rel, suffix) {
+					return nil
+				}
 			}
 
 			data, err := os.ReadFile(path)
@@ -276,6 +311,14 @@ func checkPatternBudget(root string, budget patternBudget) []string {
 				}
 				count += occurrences
 				matches = append(matches, fmt.Sprintf("%s contains %q %d time(s)", rel, pattern, occurrences))
+			}
+			for _, re := range compiled {
+				occurrences := len(re.FindAllString(content, -1))
+				if occurrences == 0 {
+					continue
+				}
+				count += occurrences
+				matches = append(matches, fmt.Sprintf("%s matches /%s/ %d time(s)", rel, re.String(), occurrences))
 			}
 			return nil
 		})

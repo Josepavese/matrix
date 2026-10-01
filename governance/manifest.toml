@@ -182,3 +182,54 @@ patterns = [
 allowed_files = []
 max = 0
 reason = "Raw bbolt access is provider-owned; logic and CLI diagnostics must use the daemon broker instead of opening the Vault file."
+
+# AGNOSTICISM — Matrix must not behave differently by agent or provider name.
+# The three budgets below make that constraint mechanical instead of a promise.
+# They exist because of the externally reported issues on OpenCode and MiMo, and
+# because the audit recorded in docs/governance/agnosticism_audit_baseline_2026-10-01.md
+# found pre-existing per-name branches that must not be extended.
+# Measured on the frozen tree 6a4c745 (2026-10-01), production Go only:
+#   quoted agent-name literals: 16    branch-shaped comparisons: 2    ad-hoc names: 0
+
+# RATCHET. Agent names are data, not behaviour: defaults, registry values, help
+# text and comments are legitimate and stay. What this freezes is the VOCABULARY:
+# a new agent name in production code is a new per-agent decision until the Lead
+# says otherwise. Tests and fixtures are excluded on purpose — a revert-proof
+# test must stay free to name the agent it generalises away from.
+[pattern_budget.agent_name_literals_in_logic]
+roots = ["cmd", "internal", "pkg"]
+patterns = ["\"opencode\"", "\"codex\"", "\"claude\"", "\"gemini\""]
+exclude_suffixes = ["_test.go"]
+exclude_dirs = ["testdata"]
+max = 16
+reason = "AGNOSTICISM RATCHET: 16 literals measured at baseline 6a4c745; a new one needs the Lead's justification, not a silent branch."
+
+# ZERO TOLERANCE. These names have no legitimate producer-side occurrence at
+# baseline: any literal in production code is an agent-specific patch. The test
+# fixtures that use mimo/kimi to prove the executable lookup is name-agnostic
+# live in *_test.go and are excluded here, exactly so that proof stays possible.
+[pattern_budget.adhoc_agent_name_literals]
+roots = ["cmd", "internal", "pkg"]
+patterns = ["\"mimo\"", "\"minimax\"", "\"halfpocket\"", "\"kimi\"", "\"deepseek\""]
+exclude_suffixes = ["_test.go"]
+exclude_dirs = ["testdata"]
+max = 0
+reason = "AGNOSTICISM: zero occurrences at baseline; a literal here is a patch for a specific agent, which the user forbade."
+
+# SHAPE OF THE BRANCH, not the name. Counting the shape catches a branch on a
+# name that appears in no list at all, which enumeration cannot. The empty-string
+# guard (agentID == "") does not match, so the 29 legitimate guards stay
+# invisible and healthy code is never blocked. The two baseline matches are
+# pre-existing and documented, hence max = 2.
+[pattern_budget.agent_identity_branch_shape]
+roots = ["cmd", "internal", "pkg"]
+regex_patterns = [
+  "(agentID|agentName|AgentID|agent_id)\\s*[!=]=\\s*\"[^\"]+\"",
+  "EqualFold\\s*\\(\\s*(agentID|agentName|AgentID|agent_id)\\s*,\\s*\"",
+  "EqualFold\\s*\\(\\s*strings\\.TrimSpace\\((agentID|agentName|AgentID|agent_id)\\)\\s*,\\s*\"",
+  "switch\\s+(agentID|agentName|AgentID|agent_id)\\b"
+]
+exclude_suffixes = ["_test.go"]
+exclude_dirs = ["testdata"]
+max = 2
+reason = "AGNOSTICISM: 2 branch-shaped comparisons measured at baseline (agentlaunch/codex.go:34, onboarding/wizard.go:308); a third is a new per-agent branch. Known limit: an allowlist keyed on a generic variable (name == \"newagent\") is not matched, because counting every == \"\" would also count kind == \"acp\" and block healthy work."
