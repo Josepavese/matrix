@@ -1,4 +1,4 @@
-package main
+package runtimeendpoints
 
 import (
 	"os"
@@ -39,7 +39,7 @@ func TestRuntimeDiscoveryPrefersWhatTheDaemonPublished(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	surfaces, notes := discoverRuntimeSurfaces(runtimeDiscoveryInput{
+	surfaces, notes := Discover(Input{
 		Home:           home,
 		ConfiguredRPC:  "127.0.0.1:9191",
 		ConfiguredHTTP: "127.0.0.1:9192",
@@ -74,7 +74,7 @@ func TestRuntimeDiscoveryPrefersWhatTheDaemonPublished(t *testing.T) {
 // published descriptor the answer is configuration or the documented default,
 // labelled as such and warned about, never presented as observation.
 func TestRuntimeDiscoverySaysWhenItIsGuessing(t *testing.T) {
-	surfaces, _ := discoverRuntimeSurfaces(runtimeDiscoveryInput{Home: t.TempDir()}, osfs.NewFSProvider())
+	surfaces, _ := Discover(Input{Home: t.TempDir()}, osfs.NewFSProvider())
 
 	rpc := surfaceByID(t, surfaces, "jsonrpc")
 	if rpc.Address != DefaultJSONRPCAddr || rpc.Source != "default" {
@@ -84,7 +84,7 @@ func TestRuntimeDiscoverySaysWhenItIsGuessing(t *testing.T) {
 		t.Fatalf("the fallback must be labelled, got warning %q", rpc.Warning)
 	}
 
-	configured, _ := discoverRuntimeSurfaces(runtimeDiscoveryInput{
+	configured, _ := Discover(Input{
 		Home:          t.TempDir(),
 		ConfiguredRPC: "127.0.0.1:9290",
 	}, osfs.NewFSProvider())
@@ -111,7 +111,7 @@ func TestRuntimeDiscoveryReportsExposureAndCredential(t *testing.T) {
 		{why: "external with a key", addr: "0.0.0.0:9090", apiKey: "secret", wantExposure: "external", wantAuth: "api-key:X-Matrix-Key"},
 	} {
 		t.Run(test.why, func(t *testing.T) {
-			surfaces, _ := discoverRuntimeSurfaces(runtimeDiscoveryInput{
+			surfaces, _ := Discover(Input{
 				Home:           t.TempDir(),
 				ConfiguredRPC:  test.addr,
 				ConfiguredHTTP: test.addr,
@@ -141,7 +141,7 @@ func TestRuntimeDiscoveryReportsExposureAndCredential(t *testing.T) {
 // broker are authenticated by two keys that are configured and generated
 // separately, so one surface's key must never stand in for the other's.
 func TestRuntimeDiscoveryKeepsTheTwoAPIKeysApart(t *testing.T) {
-	surfaces, _ := discoverRuntimeSurfaces(runtimeDiscoveryInput{
+	surfaces, _ := Discover(Input{
 		Home:           t.TempDir(),
 		ConfiguredRPC:  "0.0.0.0:9090",
 		ConfiguredHTTP: "0.0.0.0:9091",
@@ -166,7 +166,7 @@ func TestRuntimeDiscoveryKeepsTheTwoAPIKeysApart(t *testing.T) {
 	}
 }
 
-func surfaceByID(t *testing.T, surfaces []runtimeSurface, id string) runtimeSurface {
+func surfaceByID(t *testing.T, surfaces []Surface, id string) Surface {
 	t.Helper()
 	for _, surface := range surfaces {
 		if surface.Kind == id {
@@ -174,5 +174,67 @@ func surfaceByID(t *testing.T, surfaces []runtimeSurface, id string) runtimeSurf
 		}
 	}
 	t.Fatalf("no %s surface in %+v", id, surfaces)
-	return runtimeSurface{}
+	return Surface{}
+}
+
+// TestRuntimeDiscoveryRefusesAnAddressItCannotClassify keeps a malformed bind
+// address from being presented as reachable safely: an address nobody can read
+// is not evidence that reaching it is harmless, so it is reported as external
+// and warned about instead of passing as loopback.
+func TestRuntimeDiscoveryRefusesAnAddressItCannotClassify(t *testing.T) {
+	surfaces, _ := Discover(Input{
+		Home:           t.TempDir(),
+		ConfiguredRPC:  "not-an-address",
+		ConfiguredHTTP: "not-an-address",
+	}, osfs.NewFSProvider())
+
+	for _, surface := range surfaces {
+		if surface.Exposure != "external" {
+			t.Fatalf("%s exposure = %s, want external for an address that cannot be classified", surface.Kind, surface.Exposure)
+		}
+		if strings.TrimSpace(surface.Warning) == "" {
+			t.Fatalf("%s was reported with no warning although its address cannot be read: %+v", surface.Kind, surface)
+		}
+	}
+}
+
+// TestRuntimeDiscoveryRefusesAPublishedDescriptorItCannotRead is the rejection
+// the discovery meets most dangerously: the file exists, so a client could take
+// it for the answer, but it does not read as the published contract. A
+// supervisor sent to an address parsed out of a broken file talks to the wrong
+// port, so a descriptor that does not validate is refused and the answer says
+// which of the three sources it came from instead.
+func TestRuntimeDiscoveryRefusesAPublishedDescriptorItCannotRead(t *testing.T) {
+	for _, test := range []struct{ why, published string }{
+		{why: "truncated json", published: `{"version":1,"jsonrpc_addr":`},
+		{why: "unknown version", published: `{"version":99,"jsonrpc_addr":"127.0.0.1:9490","token":"t"}`},
+	} {
+		t.Run(test.why, func(t *testing.T) {
+			home := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(home, "data"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(runtimebroker.Path(home), []byte(test.published), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			surfaces, notes := Discover(Input{Home: home, ConfiguredRPC: "127.0.0.1:9390"}, osfs.NewFSProvider())
+			rpc := surfaceByID(t, surfaces, "jsonrpc")
+			if rpc.Source == "runtime-broker" {
+				t.Fatalf("an unreadable descriptor was trusted as the published answer: %+v", rpc)
+			}
+			if rpc.Address != "127.0.0.1:9390" || rpc.Source != "config:jsonrpc_addr" {
+				t.Fatalf("jsonrpc surface = %s from %s, want the configured fallback", rpc.Address, rpc.Source)
+			}
+			if !strings.Contains(rpc.Warning, "no published runtime descriptor") {
+				t.Fatalf("the refusal must be stated, got warning %q", rpc.Warning)
+			}
+			if strings.Contains(rpc.Address, "9490") {
+				t.Fatalf("an address read out of a descriptor that did not validate reached the answer: %q", rpc.Address)
+			}
+			if len(notes) != 0 {
+				t.Fatalf("a descriptor that was not read must not be reported as the source: %v", notes)
+			}
+		})
+	}
 }

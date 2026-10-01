@@ -1,9 +1,11 @@
 package main
 
+import "github.com/Josepavese/matrix/internal/logic/runtimeendpoints"
+
 const (
 	DefaultVaultPath      = "data/matrix-vault.db"
-	DefaultJSONRPCAddr    = "127.0.0.1:9090"
-	DefaultMatrixHTTPAddr = "127.0.0.1:9091"
+	DefaultJSONRPCAddr    = runtimeendpoints.DefaultJSONRPCAddr
+	DefaultMatrixHTTPAddr = runtimeendpoints.DefaultMatrixHTTPAddr
 	DefaultLocale         = "en"
 	DefaultLocalesPath    = "configs/locales"
 	DefaultAgent          = "opencode"

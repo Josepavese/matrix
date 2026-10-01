@@ -153,6 +153,10 @@ func canonicalOwnedRoot(path string) (string, error) {
 
 func gitCommonDirectory(ctx context.Context, root string) (string, error) {
 	command := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "--show-toplevel", "--git-common-dir")
+	// The probe decides an approval, so it runs with the allowlist environment
+	// instead of the daemon's: an inherited GIT_DIR would otherwise choose the
+	// repository, and therefore the common directory, a grant is keyed by.
+	command.Env = gitEnv()
 	output, err := command.Output()
 	if err != nil {
 		return "", fmt.Errorf("workspace is not a Git worktree root: %w", err)

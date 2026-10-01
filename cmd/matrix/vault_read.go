@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/jsontype"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/runtimevault"
@@ -87,50 +87,10 @@ func vaultRecordFields(recordType reflect.Type) []vaultRecordField {
 	return fields
 }
 
-// vaultJSONTypes names the JSON type of a field with the same vocabulary the
-// daemon's refusal uses, so a caller who read "expected object" reads "object" in
-// the field list too. It is a table because the vocabulary is a contract, and a
-// contract reads better as a list than as a tree of cases.
-var vaultJSONTypes = map[reflect.Kind]string{
-	reflect.String:  "string",
-	reflect.Bool:    "boolean",
-	reflect.Struct:  "object",
-	reflect.Map:     "object",
-	reflect.Slice:   "array",
-	reflect.Array:   "array",
-	reflect.Int:     "number",
-	reflect.Int8:    "number",
-	reflect.Int16:   "number",
-	reflect.Int32:   "number",
-	reflect.Int64:   "number",
-	reflect.Uint:    "number",
-	reflect.Uint8:   "number",
-	reflect.Uint16:  "number",
-	reflect.Uint32:  "number",
-	reflect.Uint64:  "number",
-	reflect.Float32: "number",
-	reflect.Float64: "number",
-}
-
 // vaultFieldType names the JSON type of a field, because that is what a caller
-// writing a query needs to know. time.Time is checked before the table: it is the
-// one struct that marshals to a string, and saying "object" for it would be wrong
-// in the only place it matters.
-func vaultFieldType(fieldType reflect.Type) string {
-	if fieldType == reflect.TypeOf(time.Time{}) {
-		return "string"
-	}
-	for fieldType != nil && fieldType.Kind() == reflect.Pointer {
-		fieldType = fieldType.Elem()
-	}
-	if fieldType == nil {
-		return "value"
-	}
-	if name, found := vaultJSONTypes[fieldType.Kind()]; found {
-		return name
-	}
-	return "value"
-}
+// writing a query needs to know. The vocabulary lives in internal/logic/jsontype,
+// shared with the refusals the daemon writes: one word per type, in one place.
+func vaultFieldType(fieldType reflect.Type) string { return jsontype.Expected(fieldType) }
 
 // vaultRecordSchemaText is what a caller sees before the parse error: the fields
 // the record really has, with the type of each one, so the next call is a field

@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package childidentity
 
 import (
 	"os"
@@ -41,11 +41,11 @@ func TestDoctorChildIdentityProvesTheDeclaredProcessCwd(t *testing.T) {
 	dir := t.TempDir()
 	endpoint := acpStdioEndpoint([]string{agentlaunch.ProcessCwdEnv + "=" + dir})
 
-	processCwd, err := childProcessCwd(endpoint)
+	processCwd, err := DeclaredProcessCwd(endpoint)
 	if err != nil {
-		t.Fatalf("childProcessCwd: %v", err)
+		t.Fatalf("DeclaredProcessCwd: %v", err)
 	}
-	child, warnings := probeChild(endpoint, processCwd)
+	child, warnings := Probe(endpoint, processCwd)
 	if len(warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", warnings)
 	}
@@ -75,14 +75,14 @@ func TestDoctorChildIdentityProvesTheDeclaredProcessCwd(t *testing.T) {
 func TestDoctorChildIdentityDoesNotInventAProcessCwd(t *testing.T) {
 	endpoint := acpStdioEndpoint(nil)
 
-	processCwd, err := childProcessCwd(endpoint)
+	processCwd, err := DeclaredProcessCwd(endpoint)
 	if err != nil {
-		t.Fatalf("childProcessCwd: %v", err)
+		t.Fatalf("DeclaredProcessCwd: %v", err)
 	}
 	if processCwd != "" {
 		t.Fatalf("an undeclared process cwd resolved to %q, want no choice at all", processCwd)
 	}
-	child, warnings := probeChild(endpoint, processCwd)
+	child, warnings := Probe(endpoint, processCwd)
 	if len(warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", warnings)
 	}
@@ -104,7 +104,7 @@ func TestDoctorChildRefusesAnUnusableDeclaredProcessCwd(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "absent-checkout")
 	endpoint := acpStdioEndpoint([]string{agentlaunch.ProcessCwdEnv + "=" + missing})
 
-	if _, err := childProcessCwd(endpoint); err == nil {
+	if _, err := DeclaredProcessCwd(endpoint); err == nil {
 		t.Fatal("expected the probe to refuse a declared process cwd that does not exist")
 	}
 }

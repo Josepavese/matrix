@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os/exec"
 	"time"
+
+	"github.com/Josepavese/matrix/internal/logic/childenv"
 )
 
 const (
@@ -65,8 +67,9 @@ func runValidatorProcess(ctx context.Context, workspace string, argv []string) (
 	cmd.Dir = workspace
 	// Caller-supplied code does not inherit the daemon's environment: it holds
 	// the operator's keys and the workspace is exactly where a validator writes.
-	// See validatorEnv.
-	cmd.Env = validatorEnv()
+	// The allowlist lives in internal/logic/childenv, shared with every other
+	// child Matrix starts for a decision of its own.
+	cmd.Env = childenv.Environment()
 	err := cmd.Run()
 	if runErr := ctx.Err(); runErr != nil {
 		return 0, runErr

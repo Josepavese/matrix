@@ -19,6 +19,7 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/cmdutil"
 	"github.com/Josepavese/matrix/internal/logic/matrixhome"
+	"github.com/Josepavese/matrix/internal/logic/runclient"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 )
 
@@ -34,10 +35,10 @@ const (
 	// ackIdempotencyKeyHeader is what makes an acknowledgement exactly-once
 	// Matrix-side. It is required and never generated here: a fresh key per
 	// invocation would turn every retry into a second claim.
-	ackIdempotencyKeyHeader = "Idempotency-Key"
+	ackIdempotencyKeyHeader = runclient.IdempotencyKeyHeader
 	// ackReplayedHeader marks a response that returns a recorded outcome
 	// instead of recording a new one. The body is identical either way.
-	ackReplayedHeader = "Idempotency-Replayed"
+	ackReplayedHeader = runclient.IdempotencyReplayedHeader
 
 	notificationPollInterval = 500 * time.Millisecond
 )

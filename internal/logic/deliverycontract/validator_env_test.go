@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Josepavese/matrix/internal/logic/childenv"
 )
 
 // TestAValidatorCannotSeeTheDaemonsEnvironment pins the property that keeps the
@@ -69,13 +71,13 @@ func TestTheValidatorEnvironmentIsAnAllowlistOfNames(t *testing.T) {
 	t.Setenv("MATRIX_DAEMON_API_KEY", "sk-live-another-sentinel")
 
 	handed := map[string]bool{}
-	for _, entry := range validatorEnv() {
+	for _, entry := range childenv.Environment() {
 		name := entry
 		if i := strings.IndexByte(entry, '='); i >= 0 {
 			name = entry[:i]
 		}
 		handed[name] = true
-		if !isAllowedValidatorEnvName(name) {
+		if !childenv.IsAllowedName(name) {
 			t.Fatalf("Matrix handed the validator %q, which the allowlist does not name", name)
 		}
 	}
@@ -88,18 +90,7 @@ func TestTheValidatorEnvironmentIsAnAllowlistOfNames(t *testing.T) {
 		t.Fatal("PATH is on the allowlist and must reach the validator")
 	}
 
-	// The allowlist is the security decision, so it is pinned as data. Without
-	// this, adding a name to validatorEnvNames would make every test above agree
-	// with the change: the predicate would simply answer true for the new name
-	// and the leak would arrive with the tests green. Changing the list is meant
-	// to be visible here.
-	want := []string{"PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR"}
-	if len(validatorEnvNames) != len(want) {
-		t.Fatalf("the validator allowlist is %v, want %v", validatorEnvNames, want)
-	}
-	for i := range want {
-		if validatorEnvNames[i] != want[i] {
-			t.Fatalf("the validator allowlist is %v, want %v", validatorEnvNames, want)
-		}
-	}
+	// The exact list is pinned where it lives: childenv holds the one decision a
+	// validator and the git probe share, and its test is where changing it has to
+	// be visible.
 }

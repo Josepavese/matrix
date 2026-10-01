@@ -13,6 +13,10 @@ import (
 )
 
 func decodeRunRequest(w http.ResponseWriter, r *http.Request) (runRequest, bool) {
+	// The body is decoded into memory before anything in it can be checked, so the
+	// read is capped before the decoder sees it. An oversized body is answered as
+	// its own case by writeRunRequestDecodeError, not as one of the json failures.
+	r.Body = http.MaxBytesReader(w, r.Body, runRequestMaxBytes)
 	var req runRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeRunRequestDecodeError(w, err)

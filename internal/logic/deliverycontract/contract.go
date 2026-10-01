@@ -105,13 +105,47 @@ func (c Contract) Declared() bool {
 	return len(c.Artifacts) > 0 || c.Validator != nil
 }
 
+// maxContractArtifacts bounds how many artifacts one contract may declare. Every
+// declared artifact costs the terminal a stat and a hash, so an unbounded list is
+// work a caller decides to make Matrix do for a single run. The number is far
+// above a real delivery - a handful of files, and every declaration in this
+// repository's own tests carries one or two - and it is not the limit on the
+// request body read twice: a megabyte of json holds tens of thousands of minimal
+// entries, so the size of a declaration and its number of requirements need a
+// ceiling each.
+const maxContractArtifacts = 32
+
 // Validate rejects a contract that cannot be evaluated as declared, before the
 // run starts. A contract that cannot be checked is worse than no contract: it
 // would produce an acceptance nobody can stand behind.
+//
+// It is the door and nothing else: how much was declared, and whether what was
+// declared has a shape that can be checked. The two questions are answered by the
+// two functions below, so the door reads as a sequence instead of a tree of cases.
 func (c Contract) Validate() error {
 	if !c.Declared() {
 		return nil
 	}
+	if err := c.validateQuantity(); err != nil {
+		return err
+	}
+	return c.validateShape()
+}
+
+// validateQuantity answers how much the caller declared. A list of artifacts is
+// work the terminal is asked to do, so it needs a ceiling of its own; the shape of
+// each entry is not this function's business.
+func (c Contract) validateQuantity() error {
+	if len(c.Artifacts) > maxContractArtifacts {
+		return fmt.Errorf("delivery contract: %d artifacts are declared and the limit is %d", len(c.Artifacts), maxContractArtifacts)
+	}
+	return nil
+}
+
+// validateShape answers whether what was declared can be checked at all: a path
+// to stat, a digest that is one, a validator that is an argv array with a
+// non-negative timeout.
+func (c Contract) validateShape() error {
 	for _, artifact := range c.Artifacts {
 		if strings.TrimSpace(artifact.Path) == "" {
 			return errors.New("delivery contract: an artifact is declared without a path")

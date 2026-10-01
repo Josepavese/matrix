@@ -8,6 +8,7 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/logic/agentdoctor"
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
+	"github.com/Josepavese/matrix/internal/logic/childidentity"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/a2aclient"
 	"github.com/Josepavese/matrix/internal/providers/agentprobe"
@@ -96,13 +97,13 @@ var agentDoctorCmd = &cobra.Command{
 				if a2aAuth, a2aWarnings := agentdoctor.InspectA2AAuthentication(cmd.Context(), endpoint, a2aclient.FetchRemoteAuthCard); a2aAuth != nil {
 					item["a2a_authentication"], warnings = a2aAuth, append(warnings, a2aWarnings...)
 				}
-				processCwd, cwdErr := childProcessCwd(endpoint)
+				processCwd, cwdErr := childidentity.DeclaredProcessCwd(endpoint)
 				if cwdErr != nil {
 					item["provider_status"] = "process_cwd_invalid"
 					item["process_cwd_error"] = cwdErr.Error()
 					warnings = append(warnings, cwdErr.Error())
 				} else {
-					child, childWarnings := probeChild(endpoint, processCwd)
+					child, childWarnings := childidentity.Probe(endpoint, processCwd)
 					if child.Status != "" {
 						item["child"] = child
 					}

@@ -281,3 +281,23 @@ func TestVaultGetStillReadsStringKeys(t *testing.T) {
 		t.Fatalf("string key printed %q, want its text", out)
 	}
 }
+
+// TestVaultRecordSchemaNamesTheTypeOfEachField pins the vault half of the shared
+// JSON vocabulary (internal/logic/jsontype): the field list names each type with
+// the same word the daemon's refusals use. The assertion is on the line the field
+// list prints, not on the word appearing somewhere in the help - a weaker check
+// passes even when the field list stops naming types at all.
+func TestVaultRecordSchemaNamesTheTypeOfEachField(t *testing.T) {
+	schema := vaultRecordSchemaText("runtrace.run.run-1")
+	for _, want := range []struct{ field, typ string }{
+		{"output", "string"},
+		{"trace_policy", "object"},
+		{"client_meta", "object"},
+		{"started_at", "string"},
+	} {
+		line := "  " + want.field + strings.Repeat(" ", 28-len(want.field)) + " " + want.typ
+		if !strings.Contains(schema, line) {
+			t.Fatalf("the schema must name %s as %s, got:\n%s", want.field, want.typ, schema)
+		}
+	}
+}

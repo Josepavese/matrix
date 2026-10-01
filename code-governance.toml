@@ -317,7 +317,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # and the decoder entry point purely to satisfy the number, which is a worse
 # debt than a raised ceiling. Splitting is the remedy for file, function,
 # parameter and branch budgets; this is a package ceiling.
-"internal/providers/runapi" = 2580
+"internal/providers/runapi" = 2538
 # 2026-09-21: the Telegram channel gained the elicitation frontend — prompt
 # rendering, inline-keyboard building, callback routing, answer coercion and
 # session-to-chat correlation — split across focused files (elicitation.go,

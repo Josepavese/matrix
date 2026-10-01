@@ -113,6 +113,14 @@ func decodeNotificationAck(w http.ResponseWriter, r *http.Request) (notification
 	// acknowledge something the caller did not mean.
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			// A body that was never read to the end is the size case, not the json
+			// one: the same distinction the run submission makes, answered the same
+			// way, so one error does not get two answers on two endpoints.
+			http.Error(w, fmt.Sprintf("Request Entity Too Large: the acknowledgement body is limited to %d bytes", tooLarge.Limit), http.StatusRequestEntityTooLarge)
+			return notificationAckRequest{}, false
+		}
 		http.Error(w, "Bad Request: invalid json", http.StatusBadRequest)
 		return notificationAckRequest{}, false
 	}
