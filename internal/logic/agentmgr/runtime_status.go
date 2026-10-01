@@ -191,7 +191,8 @@ func buildRuntimeReport(input inspectInput, canDial func(string) bool) AgentRunt
 			// apply, and calling it "not probed" left a freshly registered
 			// agent reading like a fault.
 			report.Status = "pending_apply"
-			report.Warnings = append(report.Warnings, "registration recorded, runtime not yet applied: restart the daemon or wait for the next refresh, then re-run this command")
+			report.Warnings = append(report.Warnings, "registration recorded, runtime not yet applied: "+
+				middleware.RegistrationRemedyThen("re-run this command"))
 		} else {
 			report = applyRuntimeState(report, input.State, canDial)
 		}

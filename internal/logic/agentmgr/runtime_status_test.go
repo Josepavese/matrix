@@ -41,8 +41,9 @@ func TestBuildRuntimeReportWaitsForTheRuntimeInsteadOfClaimingReady(t *testing.T
 	if report.Status != "pending_apply" {
 		t.Fatalf("runtime status = %q, want pending_apply", report.Status)
 	}
-	if len(report.Warnings) == 0 {
-		t.Fatal("pending_apply must tell the operator what to do next")
+	want := "registration recorded, runtime not yet applied: " + middleware.RegistrationRemedyThen("re-run this command")
+	if len(report.Warnings) != 1 || report.Warnings[0] != want {
+		t.Fatalf("pending_apply warning = %q, want the shared remedy %q", report.Warnings, want)
 	}
 }
 
