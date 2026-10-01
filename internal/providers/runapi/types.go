@@ -46,6 +46,12 @@ type Server struct {
 	runCancels       map[string]context.CancelFunc
 	runMu            sync.Mutex
 	idempotencyMu    sync.Mutex
+	// deliveryMu serialises settling a delivery contract. The check for an
+	// existing verdict and the append of a new one are two steps, and two
+	// terminal paths can reach them at once — a cancel racing a completion, for
+	// instance. Without this, both pass the check and the run ends up with two
+	// verdicts answering one question.
+	deliveryMu sync.Mutex
 }
 
 type runRequest struct {
