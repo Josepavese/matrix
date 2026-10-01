@@ -85,6 +85,30 @@ func (n *notifier) OnModelSelection(selection middleware.ModelSelection) {
 	}
 }
 
+// turnStopReasonReporter is the capability a turn uses to report what a provider
+// said ended it. It is declared here as the method set rather than imported from
+// the package that stores the reason, so this decorator stays independent of the
+// run store and forwards any implementation of the capability.
+type turnStopReasonReporter interface {
+	OnTurnStopReason(stopReason string)
+}
+
+// OnTurnStopReason forwards the reason a provider reported for ending its turn,
+// for the same reason OnModelSelection is forwarded above: the watchdog
+// decorates a notifier without changing what that notifier can do, and a
+// decorator that silently drops a capability makes the wrapped implementation
+// unreachable. Dropping this one does not degrade gracefully — the run records
+// "unreported" for a reason the provider did state, so enabling an activity
+// timeout would silently discard the provider's own word.
+func (n *notifier) OnTurnStopReason(stopReason string) {
+	if n.inner == nil {
+		return
+	}
+	if reporter, ok := n.inner.(turnStopReasonReporter); ok {
+		reporter.OnTurnStopReason(stopReason)
+	}
+}
+
 func IsTimeout(state *Timeout, err error) bool {
 	return state != nil && state.fired.Load() && errors.Is(err, context.Canceled)
 }

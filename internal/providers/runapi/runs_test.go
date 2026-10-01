@@ -98,6 +98,7 @@ type runTestRouter struct {
 	attachMu         sync.Mutex
 	attachRequests   []middleware.RunContextAttachmentRequest
 	routeThoughts    []middleware.ThoughtUpdate
+	routeStopReason  string
 	routeErr         error
 	routeWaitCancel  bool
 	routeStarted     chan struct{}
@@ -145,6 +146,15 @@ func (r *runTestRouter) RouteConversation(ctx context.Context, req middleware.Co
 		}
 		<-ctx.Done()
 		return "", ctx.Err()
+	}
+	if r.routeStopReason != "" {
+		// The protocol adapter reports the stop reason through the notifier it
+		// was given, which is the same object this router received. Reporting it
+		// here exercises that path for real instead of writing the value into the
+		// run directly.
+		if reporter, ok := req.Notifier.(runtrace.TurnStopReasonReporter); ok {
+			reporter.OnTurnStopReason(r.routeStopReason)
+		}
 	}
 	if r.routeErr != nil {
 		return "", r.routeErr
@@ -1710,4 +1720,119 @@ func lastSessionAction(actions []middleware.SessionActionRequest, action string)
 		}
 	}
 	return nil
+}
+
+// TestHandleRunsRecordsTheStopReasonTheProviderReported is the guard for the
+// source of the invented "end_turn". The run's stop reason is written by the
+// terminal transition inside the HTTP path, so the assertion has to read the run
+// store after a real request: a test on a hand-built run would not exercise the
+// line that writes it, and that line is exactly where the fabricated value used
+// to enter the record.
+//
+// The provider reports "max_tokens" here. Nothing in Matrix may turn that into
+// either an invention of its own or into a reason it prefers.
+func TestHandleRunsRecordsTheStopReasonTheProviderReported(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		timeoutSeconds int
+	}{
+		// The activity watchdog decorates the notifier the turn reports through,
+		// so both shapes of the runtime path are covered. The watchdog case is
+		// the one that was broken: the decorator forwarded model attestation but
+		// dropped the stop reason, so enabling an activity timeout silently
+		// turned a reported reason into "unreported".
+		{name: "without activity watchdog", timeoutSeconds: 0},
+		{name: "with activity watchdog", timeoutSeconds: 60},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			router := &runTestRouter{routeStopReason: "max_tokens"}
+			server := NewServer(router).WithTraceStorage(memstore.New())
+			mux := http.NewServeMux()
+			server.RegisterRoutes(mux)
+
+			body, _ := json.Marshal(map[string]interface{}{
+				"channel_id":               "stop-reason-channel",
+				"agent_id":                 "opencode",
+				"input":                    "answer the question",
+				"activity_timeout_seconds": tc.timeoutSeconds,
+			})
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body)))
+			if w.Code != http.StatusCreated {
+				t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+			}
+			var resp runresponse.Success
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+
+			run, found, err := server.Store().LoadRun(resp.RunID)
+			if err != nil || !found {
+				t.Fatalf("run found=%v err=%v", found, err)
+			}
+			if run.StopReason != "max_tokens" {
+				t.Fatalf("run record stop reason = %q, want the reason the provider reported", run.StopReason)
+			}
+			if run.Status != runtrace.StatusCompleted {
+				t.Fatalf("run status = %q, want %q", run.Status, runtrace.StatusCompleted)
+			}
+			trace, found, err := server.Store().Trace(resp.RunID)
+			if err != nil || !found {
+				t.Fatalf("trace found=%v err=%v", found, err)
+			}
+			var recorded bool
+			for _, event := range trace.Events {
+				if event.Kind == runtrace.KindTurnStopReason {
+					recorded = true
+				}
+				if event.Kind == "run.completed" && event.StopReason != "max_tokens" {
+					t.Fatalf("terminal event stop reason = %q, want %q", event.StopReason, "max_tokens")
+				}
+			}
+			if !recorded {
+				t.Fatalf("the reported stop reason never reached the trace: %#v", trace.Events)
+			}
+		})
+	}
+}
+
+// TestHandleRunsLeavesAnUnreportedStopReasonUnreported is the other half: when
+// the provider reports nothing, the record says so. This is what the invented
+// "end_turn" destroyed, and it is asserted on the same HTTP path.
+func TestHandleRunsLeavesAnUnreportedStopReasonUnreported(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		timeoutSeconds int
+	}{
+		{name: "without activity watchdog", timeoutSeconds: 0},
+		{name: "with activity watchdog", timeoutSeconds: 60},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := NewServer(&runTestRouter{}).WithTraceStorage(memstore.New())
+			mux := http.NewServeMux()
+			server.RegisterRoutes(mux)
+			body, _ := json.Marshal(map[string]interface{}{
+				"channel_id":               "stop-reason-absent",
+				"agent_id":                 "opencode",
+				"input":                    "answer",
+				"activity_timeout_seconds": tc.timeoutSeconds,
+			})
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body)))
+			if w.Code != http.StatusCreated {
+				t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+			}
+			var resp runresponse.Success
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			run, found, err := server.Store().LoadRun(resp.RunID)
+			if err != nil || !found {
+				t.Fatalf("run found=%v err=%v", found, err)
+			}
+			if run.StopReason != runtrace.StopReasonReportedNone {
+				t.Fatalf("run record stop reason = %q, want %q", run.StopReason, runtrace.StopReasonReportedNone)
+			}
+		})
+	}
 }
