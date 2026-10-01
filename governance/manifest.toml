@@ -219,8 +219,8 @@ reason = "AGNOSTICISM: zero occurrences at baseline; a literal here is a patch f
 # SHAPE OF THE BRANCH, not the name. Counting the shape catches a branch on a
 # name that appears in no list at all, which enumeration cannot. The empty-string
 # guard (agentID == "") does not match, so the 29 legitimate guards stay
-# invisible and healthy code is never blocked. The two baseline matches are
-# pre-existing and documented, hence max = 2.
+# invisible and healthy code is never blocked. Both baseline matches are gone:
+# the budget closes at zero, and the first new branch fails it.
 [pattern_budget.agent_identity_branch_shape]
 roots = ["cmd", "internal", "pkg"]
 regex_patterns = [

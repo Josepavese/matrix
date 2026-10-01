@@ -2,12 +2,14 @@ package runapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/runconfig"
 	"github.com/Josepavese/matrix/internal/logic/sidecar"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 func decodeRunRequest(w http.ResponseWriter, r *http.Request) (runRequest, bool) {
@@ -55,9 +57,28 @@ func validateRunModels(w http.ResponseWriter, req *runRequest) bool {
 	return true
 }
 
+// modelIDConflictMessage names the agent the request was refused for and the
+// action that resolves it. The previous text said only that model_id belongs to
+// ACP agents, which left the caller holding a rule instead of a next step: it
+// did not say which agent had been resolved, so a caller who believed they were
+// addressing an ACP agent had nothing to check.
+//
+// The remedies are worded to match the runtime status the operator sees for the
+// same window — agentmgr reports a registered-but-unapplied agent as
+// "pending_apply" with "restart the daemon or wait for the next refresh" — so
+// the 409 and the status do not send the operator in two directions.
+func modelIDConflictMessage(agentID string) string {
+	agent := "the requested agent"
+	if name := strings.TrimSpace(agentID); name != "" {
+		agent = fmt.Sprintf("agent %q", name)
+	}
+	return "Conflict: " + agent + " is not served as an ACP agent right now, so model_id is not supported; " +
+		middleware.RegistrationRemedyThen("retry")
+}
+
 func (s *Server) prepareRunAgentConfig(w http.ResponseWriter, req *runRequest, agentID string) bool {
 	if req.ModelID != "" && s.endpointResolver != nil && s.resolveProtocol(agentID) != "acp" {
-		http.Error(w, "Conflict: model_id is supported only for ACP agents", http.StatusConflict)
+		http.Error(w, modelIDConflictMessage(agentID), http.StatusConflict)
 		return false
 	}
 	declared := agentlaunch.DeclaredConfigKeysForAgent(s.endpointResolver, agentID)

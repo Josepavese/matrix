@@ -328,3 +328,73 @@ func TestArtifactThatCannotBeResolvedIsUnverifiable(t *testing.T) {
 		t.Fatalf("a link loop produced %q: %#v", verdict.Status, verdict.Checks)
 	}
 }
+
+// TestUnverifiableOutranksIncompleteInEitherOrder is the ordering the earlier
+// test did not reach. With the failure first and the unevaluable check second,
+// the last write lands on unverifiable whatever the guard does — the test passed
+// for the wrong reason. Reversed, a missing guard lets "could not look" be
+// overwritten by "was not delivered", which is the accusation this package
+// exists to prevent.
+func TestUnverifiableOutranksIncompleteInEitherOrder(t *testing.T) {
+	cases := []struct {
+		name      string
+		artifacts []Artifact
+	}{
+		{name: "failure first, unevaluable second", artifacts: []Artifact{{Path: "missing.md"}, {Path: "../escape.md"}}},
+		{name: "unevaluable first, failure second", artifacts: []Artifact{{Path: "../escape.md"}, {Path: "missing.md"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			verdict := Evaluate(context.Background(), t.TempDir(), Contract{Artifacts: tc.artifacts})
+			if verdict.Status != StatusUnverifiable {
+				t.Fatalf("acceptance = %q, want %q: an unevaluable contract cannot be reported as a delivery judgement (%#v)",
+					verdict.Status, StatusUnverifiable, verdict.Checks)
+			}
+		})
+	}
+}
+
+// TestARealNoisyValidatorCannotLeakItsOutput pins the fourth constraint with a
+// validator that actually runs and actually prints. The stubbed test above can
+// only show that the command's *name* is not serialised; this one shows that the
+// text a command writes has nowhere to go. If the runner ever captures stdout to
+// report it, the sentinel appears in the verdict and this fails.
+func TestARealNoisyValidatorCannotLeakItsOutput(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skipf("no shell available: %v", err)
+	}
+	verdict := Evaluate(context.Background(), t.TempDir(), Contract{
+		Validator: &Validator{Command: []string{"sh", "-c", "echo MATRIX_SENTINEL_LEAK; echo MATRIX_SENTINEL_LEAK >&2; exit 3"}},
+	})
+	if verdict.Status != StatusIncomplete {
+		t.Fatalf("acceptance = %q, want %q", verdict.Status, StatusIncomplete)
+	}
+	encoded, err := json.Marshal(verdict)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(encoded), "MATRIX_SENTINEL_LEAK") {
+		t.Fatalf("the validator's output reached the verdict: %s", encoded)
+	}
+	if check := verdict.Checks[len(verdict.Checks)-1]; !strings.Contains(check.Detail, "3") {
+		t.Fatalf("the exit code is the one thing that should survive: %#v", check)
+	}
+}
+
+// TestAnUnresolvablePathSaysWhyItCouldNotBeResolved pins the fix to the swallowed
+// resolution error at the level where it is visible. The verdict class is the
+// same either way — a link loop reads as unverifiable whether or not the error is
+// swallowed — so only the reason distinguishes "Matrix refused to look" from
+// "Matrix could not look".
+func TestAnUnresolvablePathSaysWhyItCouldNotBeResolved(t *testing.T) {
+	workspace := t.TempDir()
+	loop := filepath.Join(workspace, "loop.md")
+	if err := os.Symlink(loop, loop); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	verdict := Evaluate(context.Background(), workspace, Contract{Artifacts: []Artifact{{Path: "loop.md"}}})
+	detail := verdict.Checks[0].Detail
+	if !strings.Contains(detail, "could not be resolved") {
+		t.Fatalf("the reason a path could not be resolved is lost: %q", detail)
+	}
+}

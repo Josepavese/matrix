@@ -50,6 +50,8 @@ func appendDeliveryDeclared(store *runtrace.Store, runID string, contract delive
 // the reader's feet the moment somebody touched the workspace after the run, and
 // then the record would no longer say what was true when the work stopped.
 func (s *Server) recordDeliveryVerdict(run runtrace.Run) {
+	s.deliveryMu.Lock()
+	defer s.deliveryMu.Unlock()
 	events, err := s.runStore.LoadEvents(run.ID, 0)
 	if err != nil {
 		return

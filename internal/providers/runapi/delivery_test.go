@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -345,5 +346,66 @@ func TestTheContractIsDecodedFromTheRequestJSON(t *testing.T) {
 				t.Fatalf("status = %d, want %d: %s", w.Code, http.StatusBadRequest, w.Body.String())
 			}
 		})
+	}
+}
+
+// TestAVerdictEventWhosePayloadIsGoneStillAnswersFromItsStatus covers the
+// fallback branch: a trace policy can strip an event's metadata, and the verdict
+// must then be answered from the event's own status rather than reported as a
+// missing verdict. Without this branch, a redacted run reads as undecided.
+func TestAVerdictEventWhosePayloadIsGoneStillAnswersFromItsStatus(t *testing.T) {
+	contract := deliverycontract.Contract{Artifacts: []deliverycontract.Artifact{{Path: "REPORT.md"}}}
+	events := []runtrace.Event{
+		{Kind: deliverycontract.EventDeclared, Metadata: deliverycontract.Encode(contract)},
+		// The payload did not survive: no metadata at all, only the status.
+		{Kind: deliverycontract.EventVerified, Status: deliverycontract.StatusIncomplete},
+	}
+	status, verdict := deliveryExplanation(events)
+	if status != deliverycontract.StatusIncomplete {
+		t.Fatalf("acceptance = %q, want %q from the event status", status, deliverycontract.StatusIncomplete)
+	}
+	if verdict == nil || verdict.Status != deliverycontract.StatusIncomplete {
+		t.Fatalf("verdict = %#v, want it answered from the status alone", verdict)
+	}
+}
+
+// TestSimultaneousTerminalsRecordExactlyOneVerdict covers the race the guard
+// alone did not: checking for an existing verdict and appending a new one are two
+// steps, and a cancel racing a completion can reach both. Two verdicts on one
+// question leave a reader taking whichever it finds first.
+func TestSimultaneousTerminalsRecordExactlyOneVerdict(t *testing.T) {
+	server, _ := traceExportServer(t)
+	runID := "run-race"
+	seedContractedRun(t, server, runID, t.TempDir(), runtrace.StatusCompleted, &deliverycontract.Contract{
+		Artifacts: []deliverycontract.Artifact{{Path: "REPORT.md"}},
+	})
+	run := loadContractedRun(t, server, runID)
+
+	const terminals = 8
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < terminals; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			server.recordDeliveryVerdict(run)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	events, err := server.Store().LoadEvents(runID, 0)
+	if err != nil {
+		t.Fatalf("LoadEvents: %v", err)
+	}
+	verdicts := 0
+	for _, event := range events {
+		if event.Kind == deliverycontract.EventVerified {
+			verdicts++
+		}
+	}
+	if verdicts != 1 {
+		t.Fatalf("%d simultaneous terminal paths recorded %d verdicts, want exactly one", terminals, verdicts)
 	}
 }
