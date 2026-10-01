@@ -2,6 +2,8 @@ package runaction
 
 import (
 	"context"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -310,9 +312,20 @@ func waitRunActionEvent(t *testing.T, store *runtrace.Store, runID, kind, status
 }
 
 // pollObservingStorage is a test-only seam: it wraps the injected storage and
-// reports the first Get after it is armed, which is the poll the service uses to
-// look for the end of the run inside the boundary window. The test waits for the
-// fact that the service is looking, not for time to pass.
+// reports the poll the service issues from inside the terminal boundary window,
+// which is the read whose timing decides whether the completion this test stages
+// is observed at the boundary.
+//
+// Reporting the first Get after arming was wrong twice over. The service reads
+// the run once before the window opens - currentRunningRun decides whether the
+// provider came back after completion - so the first Get was that check and not
+// the poll; and the fact was signalled before the read was served, so the staged
+// completion could land inside the very read being observed. The window then
+// never saw the run end, the service classified the completion as having
+// happened before the provider returned, and this test failed on schedules that
+// let the completion goroutine run first. The read is now identified by its call
+// site and reported after it has been served, so the completion lands after the
+// provider-return check and before the window closes.
 type pollObservingStorage struct {
 	middleware.Storage
 	fired chan struct{}
@@ -323,8 +336,27 @@ type pollObservingStorage struct {
 func (p *pollObservingStorage) arm() { p.armed.Store(true) }
 
 func (p *pollObservingStorage) Get(key string) ([]byte, error) {
-	if p.armed.Load() {
+	data, err := p.Storage.Get(key)
+	if p.armed.Load() && isBoundaryWindowPoll() {
 		p.once.Do(func() { close(p.fired) })
 	}
-	return p.Storage.Get(key)
+	return data, err
+}
+
+// isBoundaryWindowPoll reports whether the read being served comes from the
+// terminal boundary window. It is identified by its call site on purpose: if the
+// window is renamed or removed, this test fails loudly - the service never polled
+// inside the window - instead of passing on a fact it did not stage.
+func isBoundaryWindowPoll() bool {
+	pc := make([]uintptr, 32)
+	frames := runtime.CallersFrames(pc[:runtime.Callers(2, pc)])
+	for {
+		frame, more := frames.Next()
+		if strings.HasSuffix(frame.Function, ".runEndsBeforeBoundaryWindow") {
+			return true
+		}
+		if !more {
+			return false
+		}
+	}
 }
