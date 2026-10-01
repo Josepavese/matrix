@@ -60,7 +60,8 @@ func (s *Server) prepareRunAgentConfig(w http.ResponseWriter, req *runRequest, a
 		http.Error(w, "Conflict: model_id is supported only for ACP agents", http.StatusConflict)
 		return false
 	}
-	args, err := agentlaunch.CodexReasoningEffortArgs(agentID, req.AgentConfig.ModelReasoningEffort, req.CodexConfig.ModelReasoningEffort)
+	declared := agentlaunch.DeclaredConfigKeysForAgent(s.endpointResolver, agentID)
+	args, err := agentlaunch.ReasoningEffortArgs(declared, req.AgentConfig.ModelReasoningEffort, req.CodexConfig.ModelReasoningEffort)
 	if err != nil {
 		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
 		return false

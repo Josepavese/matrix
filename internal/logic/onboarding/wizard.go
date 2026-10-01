@@ -304,9 +304,12 @@ func (w *Wizard) configureAgent(agentName string, context map[string]string) err
 	// Fallback: wizard context-based env mapping.
 	if len(envs) == 0 {
 		if apiKey := context["api_key"]; apiKey != "" {
+			// The name comes from the auth method the agent published: the
+			// method declares which variable carries its credential, and the
+			// generic key stands in only when a method declares none.
 			envKey := "API_KEY"
-			if agentName == "codex" {
-				envKey = "OPENAI_API_KEY"
+			if declared := w.handlers.credentialEnvName(agentName, context["auth_method"]); declared != "" {
+				envKey = declared
 			}
 			envs = append(envs, fmt.Sprintf("%s=%s", envKey, apiKey))
 		}

@@ -117,7 +117,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # AgentAuthController instead of always returning a hardcoded method, and performs
 # the protocol authenticate for a method the agent published. The port gained its
 # first consumer; the fallback is now reserved for agents that advertise none.
-"internal/logic/onboarding" = 1415
+# 2026-10-01: the vendor credential variable name moves from a per-agent branch to
+# what the auth method declares. The resolver reads the registered method, and the
+# fallback covers the openrouter path where no method is registered.
+"internal/logic/onboarding" = 1435
 # 2026-09-24: durable idempotency reservations, restart reconciliation and
 # minimal notification journal add their own persistence units.
 # 2026-09-24: model provenance in the canonical run and exported trace records
@@ -133,7 +136,11 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # values with a small margin, and the ceiling stays shared. File, function,
 # parameter and branch budgets are NOT raised here - those are quality
 # constraints and are met by splitting.
-"internal/logic/runtrace" = 1470
+# 2026-10-01: the stall view belongs to the trace projection, so the consumer
+# reads it from the export it already uses and no second vocabulary is
+# born in runapi. Measured request was ~130 code lines; the margin covers
+# the projection and its serialization.
+"internal/logic/runtrace" = 1680
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
 # process reap; forced run-owned child cleanup can remediate parent-owner
 # retention without weakening inline parent-restore safety. Later same-day

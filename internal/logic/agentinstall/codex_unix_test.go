@@ -44,6 +44,9 @@ func TestInstallCanonicalCodexActivatesCompleteStaging(t *testing.T) {
 	if got := strings.Join(cfg.Env, "\x00"); !strings.Contains(got, agentlaunch.CodexPolicyContractEnv+"="+agentlaunch.CodexPolicyContractV1) {
 		t.Fatalf("missing Codex policy contract marker: %#v", cfg.Env)
 	}
+	if got := strings.Join(cfg.Env, "\x00"); !strings.Contains(got, agentlaunch.ConfigKeysEnv+"="+agentlaunch.ConfigKeyList(agentlaunch.ModelReasoningEffortKey)) {
+		t.Fatalf("install must publish the launch configuration keys its provider accepts: %#v", cfg.Env)
+	}
 	if _, err := os.Stat(filepath.Join(target, "old")); !os.IsNotExist(err) {
 		t.Fatalf("old install was not replaced: %v", err)
 	}

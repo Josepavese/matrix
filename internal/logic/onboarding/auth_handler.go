@@ -90,3 +90,43 @@ func (r *authHandlerRegistry) get(agentID string) AuthHandler {
 	}
 	return r.fallback
 }
+
+// credentialEnvName returns the environment variable a collected API key is
+// stored under, read from the auth method's own declaration (AuthMethod.Vars):
+// the variable a credential belongs in is part of what the agent publishes.
+//
+// It prefers the method the wizard recorded, and otherwise the method that
+// carries a typed key. A handler declaring no such variable yields no name, and
+// the caller keeps its own fallback.
+func (r *authHandlerRegistry) credentialEnvName(agentID, methodID string) string {
+	if r == nil {
+		return ""
+	}
+	methods, err := r.get(agentID).Methods(context.Background())
+	if err != nil {
+		return ""
+	}
+	if declared := declaredEnvName(methods, methodID); declared != "" {
+		return declared
+	}
+	for _, method := range methods {
+		if method.Type == "env_var" && len(method.Vars) > 0 {
+			return method.Vars[0]
+		}
+	}
+	return ""
+}
+
+// declaredEnvName reads the variable name the method announces, matching the ID
+// the wizard recorded and, when it recorded none, the agent's only method.
+func declaredEnvName(methods []AuthMethod, methodID string) string {
+	if len(methods) == 1 && len(methods[0].Vars) > 0 {
+		return methods[0].Vars[0]
+	}
+	for _, method := range methods {
+		if method.ID == methodID && len(method.Vars) > 0 {
+			return method.Vars[0]
+		}
+	}
+	return ""
+}

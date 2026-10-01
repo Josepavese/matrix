@@ -401,14 +401,36 @@ restano preesistenti e **non estesi** dai fix (verificato file per file): `route
 `agentmgr/installer.go`, `agentlaunch/policy.go`, `agentlaunch/codex.go`, onboarding,
 `registry_client.go`.
 
-Il vincolo è ora **meccanico**: `governance/manifest.toml` contiene tre `pattern_budget`
+Il vincolo è ora **meccanico**: `governance/manifest.toml` contiene tre `pattern_budget` testuali
 (`agent_name_literals_in_logic` max 16, `adhoc_agent_name_literals` max 0,
 `agent_identity_branch_shape` max 2), tarati sul conteggio reale dell'albero finale e documentati nel
 `reason`. Prova di dente sull'albero reale: un ramo finto `agentID == "brandnewagent"` — nome che non
 esiste in nessuna lista — fa fallire il gate con `count 4 exceeds max 2`, e `"mimo"`/`"opencode"`
-fanno fallire gli altri due; rimossa la sonda, `GOVERNANCE_CHECK_OK`. Limite residuo dichiarato nel
-manifest: una allowlist su una variabile generica con nome nuovo (`if name == "newagent"`) non è
-coperta, perché contare ogni `== "` colpirebbe `kind == "acp"` e il check verrebbe disattivato.
+fanno fallire gli altri due; rimossa la sonda, `GOVERNANCE_CHECK_OK`.
+
+**Il limite residuo di quei tre budget è stato chiuso** da un quarto budget basato sull'AST
+(`identity_comparison_shape`, `ast_rule = "identity_comparison"`, max 1), implementato in
+`scripts/governance_check/ast_identity.go`. Il metodo testuale non poteva chiuderlo: contare ogni `== "`
+avrebbe colpito `kind == "acp"` e il check sarebbe stato disattivato alla prima settimana. Il criterio
+è un **ruolo**, non un letterale: un test di uguaglianza fra un valore CON NOME e una stringa non vuota,
+dove il nome dice *quale* agente/provider/programma si sta interrogando (identità) invece di *che tipo*
+di cosa è (classificatore). `identity_names` elenca i ruoli, mai gli agenti; `reviewed_pairs` esonera
+una COPPIA nome/letterale (`name=fork`), mai un nome, così esonerare un valore benigno non rende cieco
+il check sul successivo.
+
+Numeri misurati sull'albero finale: **160** confronti fra un valore e una stringa non vuota in
+produzione, **8** dei quali sono confronti identitari — 7 coperti dalle coppie riviste
+(`Name=write_file` ×2, `ID=quick_login`, `ID=chatgpt`, `[provider]=OpenRouter` ×2, `name=fork`) e 1
+preesistente (`onboarding/wizard.go:308` `agentName == "codex"`, già rattoppato da
+`agent_identity_branch_shape`). Prova di dente sull'albero reale: un package di sonda con
+`if name == "brandnewagent"` — variabile generica, nome mai visto — porta il conteggio a
+`count 2 exceeds max 1` e fallisce, e nel **medesimo run** il file di controllo con
+`kind == "acp" || transport == "stdio" || status == ""` non produce alcun finding; rimossa la sonda,
+`GOVERNANCE_CHECK_OK` e `git status` pulito. Limiti residui dichiarati nel `reason`: un confronto il cui
+lato sinistro è il risultato di una chiamata o un dereferenziamento non ha un nome e non è coperto (i
+budget testuali restano la rete per i nomi che enumerano); l'aggiunta di un ruolo nuovo alla
+vocabolario è una decisione rivista, e un confronto identitario legittimo nuovo richiede una coppia
+motivata, cioè esattamente la frizione che si vuole.
 
 ## 11. Verdetto di verifica indipendente (task-7) — verifier
 
@@ -419,7 +441,7 @@ presenta come prova, ripristinato e rieseguito. Ogni ciclo è chiuso con restore
 | Cluster | Esperimenti | Con dente | Senza dente / non provati |
 |---|---|---|---|
 | T1 esito/errori | F, G, I, J, **H2**, AA, AB, AC | F turno vuoto = fallimento (3 test); G niente `end_turn` inventato (4 test); I `(map[])` riprodotto alla lettera; J diagnostica strutturata (3 test); **H2** chiuso da `44e72b8`: il revert compila e fa fallire 4 sotto-prove sul percorso HTTP reale; AA watchdog che non inoltra → fallisce la sotto-prova `with_activity_watchdog` (`run record stop reason = "unreported", want the reason the provider reported`) e i test del decoratore; AB delivery proof che non inoltra → fallisce il suo test; AC inverso → `the decorator altered the reported reason: []string{"end_turn"}` | **H** (storico, a `eff9f98`): `runapi/runs.go:143` non era coperto da alcun test — **ora lo è**. Nessuno scoperto in questo blocco |
-| T2 workspace | K, L, N, M2, O | K grant sul path risolto (sintomo `workspace path must be absolute`); L rifiuto tipizzato id+path (2 test, l'HTTP passa da 409 a 201 completed); N indice ambiguo; M2 affinità dell'indice; O evidenza prima del prompt (2 test) | **M**: la metà "path" di `sessionMatchesWorkspaceHints` (riuso della sessione ATTIVA) — 70 test passano senza |
+| T2 workspace | K, L, N, M2, O | K grant sul path risolto (sintomo `workspace path must be absolute`); L rifiuto tipizzato id+path (2 test, l'HTTP passa da 409 a 201 completed); N indice ambiguo; M2 affinità dell'indice; O evidenza prima del prompt (2 test) | **M**: la metà "path" di `sessionMatchesWorkspaceHints` (riuso della sessione ATTIVA) — 70 test passavano senza. **Chiuso in `3e5d7d0`**, ri-verificato (M-REDO): vedi sotto |
 | T3 args/cwd | A, B, C, D2, E | A risoluzione registro (4/4 test); B ramo binario (1 test dedicato); C riparazione idempotente (3 test); D2 cwd del figlio (2 test, `its working directory was inherited, not governed`); E gate pre-fork (2 test) | nessuno; ma B è coperto **solo** dal test dedicato: l'end-to-end è mascherato dalla riparazione (docstring corretta in `96cd03a`) |
 | T4 attestazione | S, V, W4, X, Z | S conferma mai dedotta dalla richiesta (4 test, `a contradictory session model must fail closed`); V motivi distinti (2 test); W4 inoltro in `attachProofNotifier`; X inoltro nel watchdog (2 test); Z registrazione nel runnotifier (4 test) | **Y**: inoltro di `OnTurnStopReason` nel watchdog — il blocco non è in HEAD, quindi fuori dall'artefatto |
 | T5 elicitation | Q, R | Q leak del registro (`registry leaked 50 expired entries`); R unsubscribe (`unsubscribe left 1 observer(s) registered`) | nessuno |
@@ -454,40 +476,52 @@ Non verificato, dichiarato senza addolcire:
   last observed activity, current wait and pending requests" non è implementato — zero occorrenze in
   produzione di `last_activity|last_observed|current_wait|pending_request|wait_reason`, e `explain.go`
   non espone quei campi. Esiste solo il watchdog di inattività preesistente (`activity_timeout`).
-- **Metà non provata della regola di affinità**: `internal/logic/session/manager_workspace.go:210-212`,
-  il confronto sul path dentro `sessionMatchesWorkspaceHints` (riuso della sessione ATTIVA del
-  canale). Revertito (esperimento M) i 70 test del pacchetto passano. La guardia gemella
-  `sessionWorkspaceAffinityMatches` (`manager_workspace.go:129-137`, ripresa dall'indice) **è** coperta
-  (esperimento M2, `plan would reuse a session of another workspace path`). Frase per l'evidenza: "se
-  un domani un record legacy con `workspace_id` giusto e path di un altro workspace finisse nella
-  sessione ATTIVA del canale, i test attuali resterebbero verdi".
+- **Metà non provata della regola di affinità: RISOLTA in `3e5d7d0`, verificata da me.**
+  `internal/logic/session/manager_workspace.go:210-212`, il confronto sul path dentro
+  `sessionMatchesWorkspaceHints` (riuso della sessione ATTIVA del canale), era scoperto: revertito
+  (esperimento M) 70 test restavano verdi. Il commit aggiunge
+  `TestActiveSessionOfAnotherWorkspacePathIsNotReused`, che porta un record legacy con il path di un
+  altro workspace sulla sessione attiva del canale e verifica che il fixture NON finisca nell'indice
+  (così il test non può passare per la strada sbagliata). Revertita di nuovo la metà "path" (M-REDO,
+  compile-clean): ora FALLISCE con
+  `workspace_identity_isolation_test.go:277: plan would reuse the channel's active session under another workspace path: {Kind:reuse-active-session ... ReusesRemoteSession:true}`
+  — `reuse-active-session` è la prova che fallisce dal ramo attivo e non dall'indice. **Chiuso.** La
+  guardia gemella `sessionWorkspaceAffinityMatches` (`manager_workspace.go:129-137`, ripresa
+  dall'indice) era già coperta (esperimento M2).
 - **Buco di copertura sulla cwd**: `internal/providers/agents/acp_adapter.go:27` (`Cwd: deps.Cwd`) e
   `internal/providers/agents/router.go:289` (`Cwd: cwd` nel `ConversationFactoryDeps`). Nessun test
   parte dal workspace del RUN e verifica che il valore arrivi fino a `deps.Cwd`: i test coprono
   `transportSpec.Cwd` (fork reale) e il livello factory. Frase per l'evidenza: "se un domani qualcuno
   passasse `cwd=""` da `createClient`, i test attuali resterebbero verdi". Non è una regressione: è
   copertura mancante, e il percorso è corretto per ispezione.
-- **Limite residuo del budget** (§10): la forma `if name == "newagent"` su una variabile generica non è
-  catturata; è dichiarato nel `reason` del budget, non nascosto.
+- **Limite residuo del budget: CHIUSO (task-14).** La forma `if name == "newagent"` su una variabile
+  generica non era catturata dal metodo testuale; ora lo è, dal budget AST
+  `identity_comparison_shape` descritto in §10 (`count 2 exceeds max 1` con
+  `name == "brandnewagent"`, zero finding sul controllo `kind == "acp"`). Restano i due limiti
+  dichiarati nel `reason` di quel budget: un confronto su un risultato di chiamata o un
+  dereferenziamento non ha un nome e non è coperto, e un confronto identitario legittimo nuovo richiede
+  una coppia rivista motivata.
 - Gli esperimenti sono stati eseguiti mentre l'albero si muoveva: i primi (F, G, I, J, K, L, M, M2, N,
   O, A, B, C, D2, E, S, V, W4, X, Z, Q, R, P) su `96cd03a` con il blocco dello stop reason ancora
-  in-flight; gli ultimi (H2, AA, AB, AC) su `44e72b8`. Ogni verdetto vale per lo stato di HEAD
-  dichiarato. Nessun esperimento ha lasciato tracce: ogni ciclo si chiude con `git diff --stat` vuoto
-  sul file toccato e hash del restore verificato; i revert sono stati scritti in modo da **compilare**,
-  perché un errore di build non è un rosso comportamentale (eccezione dichiarata: la prima stesura di
-  W, scartata e rifatta come W4).
+  in-flight; gli ultimi (H2, AA, AB, AC) su `44e72b8`, poi T10 (AD, M-REDO) su `3e5d7d0`. Ogni
+  verdetto vale per lo stato di HEAD dichiarato. Nessun esperimento ha lasciato tracce: ogni ciclo si
+  chiude con `git diff --stat` vuoto sul file toccato e hash del restore verificato; i revert sono
+  stati scritti in modo da **compilare**, perché un errore di build non è un rosso comportamentale
+  (eccezione dichiarata: la prima stesura di W, scartata e rifatta come W4).
 
 ## 12. Verdetto finale — verifier, task-7
 
 **Tutti e dieci i cluster di fix hanno almeno una prova con dente, e ogni prova è un rosso
-comportamentale ottenuto revertendo la parte essenziale della correzione.** Le uniche eccezioni sono
-dichiarate qui sopra e non sono silenziose: due punti di copertura mancante (cwd run→`deps.Cwd`, metà
-"path" della guardia di affinità), un limite residuo del budget di agnosticismo, e il punto 4 della
-descrizione di `6a4c745` che è falso e va tolto o riscritto.
+comportamentale ottenuto revertendo la parte essenziale della correzione.** Le correzioni successive
+hanno chiuso tre dei quattro punti aperti che avevo dichiarato: il buco di copertura su `runs.go:143`
+(`44e72b8`, esperimento H2), la metà "path" della guardia di affinità (`3e5d7d0`, esperimento M-REDO)
+e il limite del budget di agnosticismo (task-14, budget AST). Restano dichiarati: il buco di copertura
+sulla cwd run→`deps.Cwd`, i due limiti intrinseci del budget AST, e il punto 4 della descrizione di
+`6a4c745` che è falso e va tolto o riscritto.
 
 Sull'agnosticismo: nessun fix introduce un ramo o una tabella per nome di agente o provider, la prova
 negativa è vuota in produzione, e la regola è ora **eseguita** dal gate invece che affidata alla
-disciplina (`GOVERNANCE_CHECK_OK`, 10 pattern budget, 0 failures).
+disciplina (`GOVERNANCE_CHECK_OK`, 11 pattern budget — tre testuali e uno sull'AST — 0 failures).
 
 **Nessuna azione bloccante residua.** La condizione che avevo posto — committare i due file di test dei
 decoratori, allora untracked — è stata soddisfatta dal Lead in `d23a22b`, senza modifiche ai file che

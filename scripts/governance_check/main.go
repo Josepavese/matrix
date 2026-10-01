@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -40,6 +41,15 @@ type patternBudget struct {
 	// a comparison of an agent identity against any non-empty literal. This is
 	// what catches a branch on a name nobody has seen yet.
 	RegexPatterns []string
+	// ASTRule expresses the shape of a comparison over the parsed syntax tree,
+	// where no literal list can: it is what catches a branch on an identity
+	// variable whose value nobody has enumerated yet. IdentityNames are the
+	// names whose value identifies WHICH agent/provider/program is being talked
+	// to, ReviewedPairs are the specific name/literal pairs a reviewer has
+	// cleared, and Max counts the findings that remain.
+	ASTRule       string
+	IdentityNames []string
+	ReviewedPairs []string
 	AllowedFiles  []string
 	// ExcludeSuffixes and ExcludeDirs are opt-in, per budget. They exist
 	// because a test file or a test fixture may legitimately name an agent:
@@ -135,6 +145,12 @@ func loadManifest(path string) (manifest, error) {
 					budget.Patterns, err = parseStringList(value)
 				case "regex_patterns":
 					budget.RegexPatterns, err = parseStringList(value)
+				case "ast_rule":
+					budget.ASTRule, err = parseString(value)
+				case "identity_names":
+					budget.IdentityNames, err = parseStringList(value)
+				case "reviewed_pairs":
+					budget.ReviewedPairs, err = parseStringList(value)
 				case "allowed_files":
 					budget.AllowedFiles, err = parseStringList(value)
 				case "exclude_suffixes":
@@ -238,19 +254,17 @@ func checkManifest(root string, m manifest) checkReport {
 	return report
 }
 
-func checkPatternBudget(root string, budget patternBudget) []string {
-	if len(budget.Roots) == 0 || (len(budget.Patterns) == 0 && len(budget.RegexPatterns) == 0) {
-		return []string{fmt.Sprintf("[pattern_budget.%s] roots and at least one of patterns/regex_patterns are required", budget.Name)}
-	}
-	compiled := make([]*regexp.Regexp, 0, len(budget.RegexPatterns))
-	for _, expr := range budget.RegexPatterns {
-		re, err := regexp.Compile(expr)
-		if err != nil {
-			return []string{fmt.Sprintf("[pattern_budget.%s] invalid regex %q: %v", budget.Name, expr, err)}
-		}
-		compiled = append(compiled, re)
-	}
+// errRootMissing marks the one walk failure that is a manifest mistake rather
+// than a scan failure, so callers keep reporting it the way every budget always
+// has.
+var errRootMissing = errors.New("root missing")
 
+// walkBudgetFiles visits every production file a budget governs, applying the
+// targeting rules once: the roots, the directories that are always skipped, the
+// allowed files and the excluded suffixes. Both the literal counting and the
+// syntax-tree check walk through here, so a file is in or out of every budget
+// kind for the same reason.
+func walkBudgetFiles(root string, budget patternBudget, visit func(rel, full string) error) error {
 	allowed := make(map[string]struct{}, len(budget.AllowedFiles))
 	for _, path := range budget.AllowedFiles {
 		allowed[filepath.ToSlash(filepath.Clean(path))] = struct{}{}
@@ -260,12 +274,10 @@ func checkPatternBudget(root string, budget patternBudget) []string {
 		excludedDirs[strings.TrimSpace(dir)] = struct{}{}
 	}
 
-	var matches []string
-	count := 0
 	for _, rootPath := range budget.Roots {
 		fullRoot := filepath.Join(root, filepath.FromSlash(rootPath))
 		if _, err := os.Stat(fullRoot); err != nil {
-			return []string{fmt.Sprintf("[pattern_budget.%s] root missing: %s", budget.Name, rootPath)}
+			return fmt.Errorf("%w: %s", errRootMissing, rootPath)
 		}
 		err := filepath.WalkDir(fullRoot, func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
@@ -298,32 +310,79 @@ func checkPatternBudget(root string, budget patternBudget) []string {
 					return nil
 				}
 			}
-
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			content := string(data)
-			for _, pattern := range budget.Patterns {
-				occurrences := strings.Count(content, pattern)
-				if occurrences == 0 {
-					continue
-				}
-				count += occurrences
-				matches = append(matches, fmt.Sprintf("%s contains %q %d time(s)", rel, pattern, occurrences))
-			}
-			for _, re := range compiled {
-				occurrences := len(re.FindAllString(content, -1))
-				if occurrences == 0 {
-					continue
-				}
-				count += occurrences
-				matches = append(matches, fmt.Sprintf("%s matches /%s/ %d time(s)", rel, re.String(), occurrences))
-			}
-			return nil
+			return visit(rel, path)
 		})
 		if err != nil {
-			return []string{fmt.Sprintf("[pattern_budget.%s] scan failed: %v", budget.Name, err)}
+			return err
+		}
+	}
+	return nil
+}
+
+func budgetWalkFailure(name string, err error) string {
+	if errors.Is(err, errRootMissing) {
+		return fmt.Sprintf("[pattern_budget.%s] %v", name, err)
+	}
+	return fmt.Sprintf("[pattern_budget.%s] scan failed: %v", name, err)
+}
+
+func checkPatternBudget(root string, budget patternBudget) []string {
+	if len(budget.Roots) == 0 || (len(budget.Patterns) == 0 && len(budget.RegexPatterns) == 0 && budget.ASTRule == "") {
+		return []string{fmt.Sprintf("[pattern_budget.%s] roots and at least one of patterns/regex_patterns/ast_rule are required", budget.Name)}
+	}
+	if budget.ASTRule != "" && budget.ASTRule != astRuleIdentityComparison {
+		return []string{fmt.Sprintf("[pattern_budget.%s] unknown ast_rule %q (known: %s)", budget.Name, budget.ASTRule, astRuleIdentityComparison)}
+	}
+	if budget.ASTRule == astRuleIdentityComparison && len(budget.IdentityNames) == 0 {
+		return []string{fmt.Sprintf("[pattern_budget.%s] ast_rule %s requires identity_names", budget.Name, astRuleIdentityComparison)}
+	}
+	compiled := make([]*regexp.Regexp, 0, len(budget.RegexPatterns))
+	for _, expr := range budget.RegexPatterns {
+		re, err := regexp.Compile(expr)
+		if err != nil {
+			return []string{fmt.Sprintf("[pattern_budget.%s] invalid regex %q: %v", budget.Name, expr, err)}
+		}
+		compiled = append(compiled, re)
+	}
+
+	var matches []string
+	count := 0
+	err := walkBudgetFiles(root, budget, func(rel, full string) error {
+		data, err := os.ReadFile(full)
+		if err != nil {
+			return err
+		}
+		content := string(data)
+		for _, pattern := range budget.Patterns {
+			occurrences := strings.Count(content, pattern)
+			if occurrences == 0 {
+				continue
+			}
+			count += occurrences
+			matches = append(matches, fmt.Sprintf("%s contains %q %d time(s)", rel, pattern, occurrences))
+		}
+		for _, re := range compiled {
+			occurrences := len(re.FindAllString(content, -1))
+			if occurrences == 0 {
+				continue
+			}
+			count += occurrences
+			matches = append(matches, fmt.Sprintf("%s matches /%s/ %d time(s)", rel, re.String(), occurrences))
+		}
+		return nil
+	})
+	if err != nil {
+		return []string{budgetWalkFailure(budget.Name, err)}
+	}
+
+	if budget.ASTRule == astRuleIdentityComparison {
+		findings, astErr := checkIdentityComparisons(root, budget)
+		if astErr != nil {
+			return []string{budgetWalkFailure(budget.Name, astErr)}
+		}
+		for _, finding := range findings {
+			count++
+			matches = append(matches, finding.String())
 		}
 	}
 

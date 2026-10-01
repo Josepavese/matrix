@@ -349,7 +349,14 @@ func TestHandleRuns_CodexReasoningEffortAddsLaunchArgsAndTrace(t *testing.T) {
 	server := NewServer(router).WithTraceStorage(memstore.New()).WithEndpointResolver(launchPolicyEndpointResolver{
 		endpoint: middleware.ProtocolEndpoint{
 			Args: []string{"-c", "sandbox_mode=\"danger-full-access\"", "-c", "approval_policy=\"never\""},
-			Env:  []string{agentlaunch.CodexPolicyContractEnv + "=" + agentlaunch.CodexPolicyContractV1},
+			// A canonical Codex install publishes both markers: the policy
+			// contract it implements and the launch configuration keys it
+			// declares. The fixture mirrors the install, so the request path is
+			// exercised against what a real endpoint carries.
+			Env: []string{
+				agentlaunch.CodexPolicyContractEnv + "=" + agentlaunch.CodexPolicyContractV1,
+				agentlaunch.ConfigKeysEnv + "=" + agentlaunch.ConfigKeyList(agentlaunch.ModelReasoningEffortKey),
+			},
 		},
 	})
 	mux := http.NewServeMux()

@@ -231,5 +231,53 @@ regex_patterns = [
 ]
 exclude_suffixes = ["_test.go"]
 exclude_dirs = ["testdata"]
-max = 2
-reason = "AGNOSTICISM: 2 branch-shaped comparisons measured at baseline (agentlaunch/codex.go:34, onboarding/wizard.go:308); a third is a new per-agent branch. Known limit: an allowlist keyed on a generic variable (name == \"newagent\") is not matched, because counting every == \"\" would also count kind == \"acp\" and block healthy work."
+max = 0
+reason = "AGNOSTICISM: 2 branch-shaped comparisons measured at baseline (agentlaunch/codex.go:34, onboarding/wizard.go:308); a third is a new per-agent branch. The generic-variable limit this budget could not close is closed by identity_comparison_shape below."
+
+# AST SHAPE CHECK — closes the limit the regex budget above declares. The textual
+# budgets count names somebody enumerated; this one reads the SYNTAX TREE and
+# recognises the shape of a name-based branch, so a comparison on a generic
+# variable against a name nobody has ever listed — `if name == "newagent"` —
+# fails the gate.
+#
+# The criterion is a ROLE, not a literal: an equality test between a NAMED value
+# and a non-empty string literal, where the name says WHICH agent/provider/
+# program/model is being talked to (an identity) instead of WHAT KIND of thing
+# this is (a classifier). Classifiers — kind, transport, status, phase, origin,
+# mode, type, protocol, section, method — are not in identity_names, so
+# `kind == "acp"` and the 29 empty-string guards keep passing untouched.
+#
+# identity_names is a vocabulary of ROLES, never of agents: it lists the names
+# whose value is an identity, not the identities themselves. A map key is covered
+# by the role it carries — state.Context["provider"] is matched by "provider" —
+# so a role is listed once and cannot be half-added. reviewed_pairs clears a
+# specific name/literal PAIR (`name=fork`), never a name (`name=…`), so clearing
+# one benign value can never blind the check to the next one.
+#
+# Measured at baseline on the frozen tree: 160 comparisons of a value against a
+# non-empty string literal in production, 8 of them identity comparisons, 7 of
+# them the reviewed pairs below, 1 the pre-existing branch already ratcheted by
+# agent_identity_branch_shape. Any additional identity comparison — in any file,
+# under any identity name, against any literal — makes the count 2 and fails.
+[pattern_budget.identity_comparison_shape]
+roots = ["cmd", "internal", "pkg"]
+ast_rule = "identity_comparison"
+identity_names = [
+  "name", "Name", "agentName", "agent", "agentID", "agentId", "AgentID", "agent_id",
+  "provider", "providerID", "providerId", "providerName",
+  "binary", "executable", "command", "cmd", "program",
+  "package", "pkg", "slug", "alias",
+  "model", "modelID", "modelId", "modelName",
+  "tool", "toolName", "ID",
+]
+reviewed_pairs = [
+  "Name=write_file",       # ACP tool identity: the tool summariser branches on the tool the peer reported
+  "ID=quick_login",        # onboarding: auth-method ids are a closed set declared by the provider
+  "ID=chatgpt",            # same closed set
+  "[provider]=OpenRouter", # onboarding is provider-facing by design; the provider dimension is its subject
+  "name=fork",             # ACP capability name, defined by the protocol
+]
+exclude_suffixes = ["_test.go"]
+exclude_dirs = ["testdata"]
+max = 1
+reason = "AGNOSTICISM SHAPE CHECK: 8 identity comparisons measured at baseline; 7 reviewed pairs plus the pre-existing agentName==\"codex\" branch that agent_identity_branch_shape already ratchets. A new comparison of an identity variable against any literal — including a name nobody has seen — raises the count to 2 and fails the gate. To clear a finding: if the compared value is a closed protocol vocabulary, add the name/literal PAIR to reviewed_pairs with the reason it is not an identity; if it is which agent or provider is being talked to, it is the patch this check exists to stop. Known limit: a comparison whose left side is a call result or a dereference carries no name and is not matched; the literal budgets above still cover the names they enumerate there."

@@ -50,6 +50,11 @@ func InstallCanonicalCodex(ctx context.Context, cfg Config) (agentcfg.Config, er
 		return agentcfg.Config{}, err
 	}
 	env := agentcfg.UpsertEnv(cfg.Env, agentlaunch.CodexPolicyContractEnv, agentlaunch.CodexPolicyContractV1)
+	// This provider's launch contract also carries the configuration keys its
+	// wrapper accepts, so a per-run setting is validated against what the
+	// installed provider declares instead of against the agent's name.
+	env = agentcfg.UpsertEnv(env, agentlaunch.ConfigKeysEnv,
+		agentlaunch.ConfigKeyList(agentlaunch.ModelReasoningEffortKey))
 	return agentcfg.Config{
 		Command: nodePath, Args: []string{filepath.Join(cfg.Target, relativeScript)},
 		Env: env, Kind: "acp", Transport: "stdio",
