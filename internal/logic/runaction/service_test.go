@@ -2,6 +2,8 @@ package runaction
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -118,7 +120,8 @@ func TestAttachContextMarksLateWhenRunCompletesBeforeDeliveryReturns(t *testing.
 }
 
 func TestAttachContextMarksTerminalBoundaryWhenProviderReturnsJustBeforeCompletion(t *testing.T) {
-	store := runtrace.NewStore(memstore.New())
+	storage := &pollObservingStorage{Storage: memstore.New(), fired: make(chan struct{})}
+	store := runtrace.NewStore(storage)
 	run, _, err := store.Start(runtrace.Run{
 		AgentID:          "opencode",
 		Protocol:         "acp",
@@ -132,8 +135,14 @@ func TestAttachContextMarksTerminalBoundaryWhenProviderReturnsJustBeforeCompleti
 		t.Fatalf("Start run: %v", err)
 	}
 	attacher := fakeAttacher{attach: func(_ context.Context, req middleware.RunContextAttachmentRequest) (middleware.RunContextAttachmentResult, error) {
+		storage.arm()
 		go func() {
-			time.Sleep(100 * time.Millisecond)
+			select {
+			case <-storage.fired:
+			case <-time.After(5 * time.Second):
+				t.Errorf("il servizio non ha mai interrogato la run nella finestra di confine")
+				return
+			}
 			if _, err := store.Complete(req.RunID, "final", "end_turn"); err != nil {
 				t.Errorf("Complete run: %v", err)
 			}
@@ -298,4 +307,24 @@ func waitRunActionEvent(t *testing.T, store *runtrace.Store, runID, kind, status
 	}
 	t.Fatalf("event %s/%s not found", kind, status)
 	return runtrace.Event{}
+}
+
+// pollObservingStorage e' una cucitura di solo test: avvolge lo storage iniettato
+// e segnala il primo Get successivo all'armamento, cioe' il poll con cui il
+// servizio cerca la fine della run nella finestra di confine. Il test aspetta il
+// fatto che il servizio stia guardando, non il passare del tempo.
+type pollObservingStorage struct {
+	middleware.Storage
+	fired chan struct{}
+	once  sync.Once
+	armed atomic.Bool
+}
+
+func (p *pollObservingStorage) arm() { p.armed.Store(true) }
+
+func (p *pollObservingStorage) Get(key string) ([]byte, error) {
+	if p.armed.Load() {
+		p.once.Do(func() { close(p.fired) })
+	}
+	return p.Storage.Get(key)
 }
