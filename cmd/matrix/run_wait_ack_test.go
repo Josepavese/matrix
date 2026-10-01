@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"os"
@@ -188,4 +189,52 @@ func cursorFromOutput(t *testing.T, printed string) uint64 {
 	}
 	t.Fatalf("no cursor in %q", printed)
 	return 0
+}
+
+// TestRunWaitSummarisesTheElicitationThatBlocksTheRun is the short elicitation
+// summary EP-05.A names: a run waiting on a question a person has to answer is
+// reported from the lifecycle the notification stream already carries — id,
+// state, session, since — inside the wait the caller is already running, so a
+// caller is never left waiting with no idea what is holding the run up.
+func TestRunWaitReportsTheElicitationSummary(t *testing.T) {
+	server, socketPath := newNotificationTestServer(t)
+	if _, err := server.Store().AppendNotification(runtrace.Notification{
+		RunID: "run-blocked", Kind: "elicitation.opened",
+		ElicitationID: "elicit-1", SessionID: "sess-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.Store().AppendEvent(runtrace.Event{RunID: "run-blocked", Kind: "run.cancelled"}); err != nil {
+		t.Fatal(err)
+	}
+
+	withWaitFlags(t, 0, 5*time.Second)
+	command, output := testCommand()
+	if err := runWaitAt(command, socketPath, "run-blocked"); err != nil {
+		t.Fatalf("runWaitAt: %v", err)
+	}
+	text := output.String()
+	if !strings.Contains(text, "elicitation id=elicit-1 state=opened session=sess-1 since=") {
+		t.Fatalf("the elicitation blocking the run was not summarised: %q", text)
+	}
+	if !strings.Contains(text, "outcome=cancelled") {
+		t.Fatalf("the terminal outcome must still be reported: %q", text)
+	}
+
+	// The same summary has to survive --json, where interleaved text would make
+	// the report unreadable to the machine that asked for it.
+	previousJSON := runWaitJSON
+	runWaitJSON = true
+	t.Cleanup(func() { runWaitJSON = previousJSON })
+	command, output = testCommand()
+	if err := runWaitAt(command, socketPath, "run-blocked"); err != nil {
+		t.Fatalf("runWaitAt (json): %v", err)
+	}
+	var report wakeupReport
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatalf("json report: %v (%q)", err, output.String())
+	}
+	if len(report.Elicitations) != 1 || report.Elicitations[0].ID != "elicit-1" || report.Elicitations[0].State != "opened" {
+		t.Fatalf("json report elicitations = %+v", report.Elicitations)
+	}
 }

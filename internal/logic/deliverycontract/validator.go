@@ -63,6 +63,10 @@ func runValidatorProcess(ctx context.Context, workspace string, argv []string) (
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = workspace
+	// Caller-supplied code does not inherit the daemon's environment: it holds
+	// the operator's keys and the workspace is exactly where a validator writes.
+	// See validatorEnv.
+	cmd.Env = validatorEnv()
 	err := cmd.Run()
 	if runErr := ctx.Err(); runErr != nil {
 		return 0, runErr

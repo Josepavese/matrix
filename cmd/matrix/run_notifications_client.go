@@ -47,12 +47,14 @@ const (
 // rather than passing the response through, is what keeps a turn's content from
 // reaching this client by accident.
 type notificationWakeup struct {
-	Sequence    uint64    `json:"sequence"`
-	Kind        string    `json:"kind"`
-	RunID       string    `json:"run_id,omitempty"`
-	AgentID     string    `json:"agent_id,omitempty"`
-	FailureCode string    `json:"failure_code,omitempty"`
-	Timestamp   time.Time `json:"timestamp"`
+	Sequence      uint64    `json:"sequence"`
+	Kind          string    `json:"kind"`
+	RunID         string    `json:"run_id,omitempty"`
+	AgentID       string    `json:"agent_id,omitempty"`
+	FailureCode   string    `json:"failure_code,omitempty"`
+	SessionID     string    `json:"session_id,omitempty"`
+	ElicitationID string    `json:"elicitation_id,omitempty"`
+	Timestamp     time.Time `json:"timestamp"`
 }
 
 type notificationPage struct {
@@ -208,12 +210,24 @@ func wakeupOutcome(kind string) (string, bool) {
 // command while the request itself was correct. An install without a key
 // answers local clients without authentication.
 func localSurfaceAPIKey() string {
-	manager, cleanup, err := cmdutil.OpenReadOnlyConfigManager(DefaultVaultPath)
+	_, apiKey, err := matrixSurfaceConfig()
 	if err != nil {
 		return ""
 	}
+	return apiKey
+}
+
+// matrixSurfaceConfig reads the address and the credential of the Matrix HTTP
+// surface. The local notification socket is served by that same server, so both
+// the socket clients and the TCP client read the same pair here instead of each
+// deciding which configuration key belongs to which surface.
+func matrixSurfaceConfig() (string, string, error) {
+	manager, cleanup, err := cmdutil.OpenReadOnlyConfigManager(DefaultVaultPath)
+	if err != nil {
+		return "", "", fmt.Errorf("read runtime configuration: %w", err)
+	}
 	defer cleanup()
-	return manager.GetWithDefault("matrix_api_key", "")
+	return manager.GetWithDefault("matrix_http_addr", ""), manager.GetWithDefault("matrix_api_key", ""), nil
 }
 
 // resolveActiveHome is the Matrix home whose socket this client talks to.

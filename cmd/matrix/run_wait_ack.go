@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -77,6 +78,7 @@ func runWaitAt(cmd *cobra.Command, socketPath, runID string) error {
 
 	deadline := time.Now().Add(runWaitTimeout)
 	cursor := runWaitAfter
+	var elicitations []elicitationSummary
 	for {
 		page, err := client.wakeups(cmd.Context(), wakeupQuery{After: cursor, RunID: runID})
 		if err != nil {
@@ -86,15 +88,33 @@ func runWaitAt(cmd *cobra.Command, socketPath, runID string) error {
 			cursor = page.NextCursor
 		}
 		for _, wakeup := range page.Notifications {
+			// A run blocked on a question a person has to answer is not
+			// terminal, and saying nothing about it left the caller waiting
+			// with no idea what was holding the run up. The elicitation
+			// lifecycle already travels in this stream, so the summary is
+			// reported from what arrived rather than asked for separately.
+			if summary, isElicitation := elicitationSummaryOf(wakeup); isElicitation {
+				elicitations = append(elicitations, summary)
+				if !runWaitJSON {
+					printElicitation(cmd, summary)
+				}
+				continue
+			}
 			outcome, terminal := wakeupOutcome(wakeup.Kind)
 			if !terminal {
 				continue
 			}
-			printWakeupOutcome(cmd, wakeup, outcome, cursor)
+			printWakeupOutcome(cmd, wakeupReport{
+				RunID: wakeup.RunID, Outcome: outcome, Kind: wakeup.Kind,
+				Sequence: wakeup.Sequence, Cursor: cursor, FailureCode: wakeup.FailureCode,
+				Elicitations: elicitations,
+			})
 			return nil
 		}
 		if time.Now().After(deadline) {
-			printWakeupTimeout(cmd, runID, cursor)
+			printWakeupTimeout(cmd, wakeupReport{
+				RunID: runID, Outcome: "timeout", Cursor: cursor, Elicitations: elicitations,
+			})
 			return fmt.Errorf("run %s reached no terminal outcome within %s (resume with --after %d)", runID, runWaitTimeout, cursor)
 		}
 		select {
@@ -108,21 +128,45 @@ func runWaitAt(cmd *cobra.Command, socketPath, runID string) error {
 type wakeupReport struct {
 	RunID       string `json:"run_id"`
 	Outcome     string `json:"outcome"`
-	Kind        string `json:"kind"`
-	Sequence    uint64 `json:"sequence"`
+	Kind        string `json:"kind,omitempty"`
+	Sequence    uint64 `json:"sequence,omitempty"`
 	Cursor      uint64 `json:"cursor"`
 	FailureCode string `json:"failure_code,omitempty"`
+	// Elicitations are the questions the run is blocked on, reported with the
+	// identity Matrix recorded for them and the state the stream announced.
+	Elicitations []elicitationSummary `json:"elicitations,omitempty"`
 }
 
-func printWakeupOutcome(cmd *cobra.Command, wakeup notificationWakeup, outcome string, cursor uint64) {
-	report := wakeupReport{
-		RunID:       wakeup.RunID,
-		Outcome:     outcome,
-		Kind:        wakeup.Kind,
-		Sequence:    wakeup.Sequence,
-		Cursor:      cursor,
-		FailureCode: wakeup.FailureCode,
+// elicitationSummary is the short form of one elicitation: which one, whether it
+// is open or answered, and since when. It carries no prompt text, because the
+// notification stream does not carry one.
+type elicitationSummary struct {
+	ID        string `json:"id,omitempty"`
+	State     string `json:"state"`
+	SessionID string `json:"session_id,omitempty"`
+	Since     string `json:"since,omitempty"`
+}
+
+// elicitationSummaryOf recognises the elicitation lifecycle by prefix rather
+// than by comparing the kind against a name: the state is whatever the producer
+// appended, so a new state reaches this summary without a code change.
+func elicitationSummaryOf(wakeup notificationWakeup) (elicitationSummary, bool) {
+	state, isElicitation := strings.CutPrefix(strings.TrimSpace(wakeup.Kind), "elicitation.")
+	if !isElicitation || strings.TrimSpace(state) == "" {
+		return elicitationSummary{}, false
 	}
+	return elicitationSummary{
+		ID: wakeup.ElicitationID, State: state,
+		SessionID: wakeup.SessionID, Since: wakeup.Timestamp.UTC().Format(time.RFC3339),
+	}, true
+}
+
+func printElicitation(cmd *cobra.Command, summary elicitationSummary) {
+	cmd.Printf("elicitation id=%s state=%s session=%s since=%s\n",
+		summary.ID, summary.State, summary.SessionID, summary.Since)
+}
+
+func printWakeupOutcome(cmd *cobra.Command, report wakeupReport) {
 	if runWaitJSON {
 		encoded, err := json.Marshal(report)
 		if err != nil {
@@ -140,15 +184,18 @@ func printWakeupOutcome(cmd *cobra.Command, wakeup notificationWakeup, outcome s
 		report.RunID, report.Outcome, report.Kind, report.Sequence, report.Cursor)
 }
 
-func printWakeupTimeout(cmd *cobra.Command, runID string, cursor uint64) {
+func printWakeupTimeout(cmd *cobra.Command, report wakeupReport) {
 	if runWaitJSON {
-		encoded, err := json.Marshal(map[string]any{"run_id": runID, "outcome": "timeout", "cursor": cursor})
+		encoded, err := json.Marshal(report)
 		if err == nil {
 			cmd.Println(string(encoded))
 		}
 		return
 	}
-	cmd.Printf("run_id=%s outcome=timeout cursor=%d\n", runID, cursor)
+	for _, summary := range report.Elicitations {
+		printElicitation(cmd, summary)
+	}
+	cmd.Printf("run_id=%s outcome=timeout cursor=%d\n", report.RunID, report.Cursor)
 }
 
 func runAck(cmd *cobra.Command) error {
