@@ -201,8 +201,8 @@ roots = ["cmd", "internal", "pkg"]
 patterns = ["\"opencode\"", "\"codex\"", "\"claude\"", "\"gemini\""]
 exclude_suffixes = ["_test.go"]
 exclude_dirs = ["testdata"]
-max = 16
-reason = "AGNOSTICISM RATCHET: 16 literals measured at baseline 6a4c745; a new one needs the Lead's justification, not a silent branch."
+max = 14
+reason = "AGNOSTICISM RATCHET: 16 literals at baseline 6a4c745, 14 measured at 664ac61 after the declaration-based launch refactor removed two — the ratchet moves down with the tree, so what was removed cannot come back unnoticed. A new literal needs the Lead's justification: adding support for a new agent is exactly the case that must be a reviewed decision, not a silent branch."
 
 # ZERO TOLERANCE. These names have no legitimate producer-side occurrence at
 # baseline: any literal in production code is an agent-specific patch. The test
@@ -232,7 +232,7 @@ regex_patterns = [
 exclude_suffixes = ["_test.go"]
 exclude_dirs = ["testdata"]
 max = 0
-reason = "AGNOSTICISM: 2 branch-shaped comparisons measured at baseline (agentlaunch/codex.go:34, onboarding/wizard.go:308); a third is a new per-agent branch. The generic-variable limit this budget could not close is closed by identity_comparison_shape below."
+reason = "AGNOSTICISM: 2 branch-shaped comparisons at baseline 6a4c745 (agentlaunch/codex.go:34, onboarding/wizard.go:308); both are gone — the first with the file, deleted in 39ae9cb, the second rewritten in 92144aa to read the auth method's own declaration — so the budget closes at zero. Verified by probe: a scratch `agentID == \"codex\"` in production fails with count 1 exceeds max 0. The generic-variable limit this budget could not close is closed by identity_comparison_shape below."
 
 # AST SHAPE CHECK — closes the limit the regex budget above declares. The textual
 # budgets count names somebody enumerated; this one reads the SYNTAX TREE and
@@ -279,5 +279,5 @@ reviewed_pairs = [
 ]
 exclude_suffixes = ["_test.go"]
 exclude_dirs = ["testdata"]
-max = 1
-reason = "AGNOSTICISM SHAPE CHECK: 8 identity comparisons measured at baseline; 7 reviewed pairs plus the pre-existing agentName==\"codex\" branch that agent_identity_branch_shape already ratchets. A new comparison of an identity variable against any literal — including a name nobody has seen — raises the count to 2 and fails the gate. To clear a finding: if the compared value is a closed protocol vocabulary, add the name/literal PAIR to reviewed_pairs with the reason it is not an identity; if it is which agent or provider is being talked to, it is the patch this check exists to stop. Known limit: a comparison whose left side is a call result or a dereference carries no name and is not matched; the literal budgets above still cover the names they enumerate there."
+max = 0
+reason = "AGNOSTICISM SHAPE CHECK: 8 identity comparisons measured at baseline 3e5d7d0, all 8 cleared — 7 reviewed pairs below and the pre-existing agentName==\"codex\" branch, which 92144aa rewrote to read the auth method's own declaration. The count is now zero, so the budget closes at zero and the FIRST new comparison of an identity variable against any literal — including a name nobody has seen — fails the gate. Verified by probe: a scratch `name == \"brandnewagent\"` fails with count 1 exceeds max 0. To clear a finding: if the compared value is a closed protocol vocabulary, add the name/literal PAIR to reviewed_pairs with the reason it is not an identity; if it is which agent or provider is being talked to, it is the patch this check exists to stop. Known limit: a comparison whose left side is a call result or a dereference carries no name and is not matched; the literal budgets above still cover the names they enumerate there."

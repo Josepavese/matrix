@@ -432,6 +432,20 @@ budget testuali restano la rete per i nomi che enumerano); l'aggiunta di un ruol
 vocabolario è una decisione rivista, e un confronto identitario legittimo nuovo richiede una coppia
 motivata, cioè esattamente la frizione che si vuole.
 
+**Ri-taratura dopo `92144aa`/`664ac61` (i due fix che chiudono i rami sul nome).** I due reperti che i
+budget si limitavano a tollerare non esistono più: `agentlaunch/codex.go` è cancellato (`39ae9cb`) e
+`wizard.go:308` legge la dichiarazione del metodo di auth. Conteggi reali rimisurati su HEAD azzerando
+tutti i `max` in una copia del manifest: **14** letterali (erano 16), **0** rami identitari, **0**
+confronti identitari via AST, **0** nomi ad hoc. Due ratchet erano quindi rimasti **larghi** e li ho
+ri-tarati sul valore misurato: `agent_name_literals_in_logic` 16 → **14** e `identity_comparison_shape`
+1 → **0**. Senza questa ri-taratura il primo confronto identitario nuovo sarebbe passato in silenzio —
+l'avrei introdotto io con `max = 1`, che tollerava proprio il reperto appena rimosso. Prova di dente su
+un package di sonda con `agentID == "codex"` e, in un secondo file, `name == "brandnewagent"`: falliscono
+**tre** budget — `agent_identity_branch_shape` `count 1 exceeds max 0`, `agent_name_literals_in_logic`
+`count 15 exceeds max 14`, `identity_comparison_shape` `count 2 exceeds max 0` con entrambi i finding
+elencati — e rimossa la sonda torna `GOVERNANCE_CHECK_OK`. La forma `if name == "newagent"` che aveva
+aperto il task-14 ora fallisce alla **prima** occorrenza.
+
 ## 11. Verdetto di verifica indipendente (task-7) — verifier
 
 Metodo: per ogni correzione ho **revertito io** la parte essenziale, eseguito il test che l'autore
@@ -488,12 +502,17 @@ Non verificato, dichiarato senza addolcire:
   — `reuse-active-session` è la prova che fallisce dal ramo attivo e non dall'indice. **Chiuso.** La
   guardia gemella `sessionWorkspaceAffinityMatches` (`manager_workspace.go:129-137`, ripresa
   dall'indice) era già coperta (esperimento M2).
-- **Buco di copertura sulla cwd**: `internal/providers/agents/acp_adapter.go:27` (`Cwd: deps.Cwd`) e
-  `internal/providers/agents/router.go:289` (`Cwd: cwd` nel `ConversationFactoryDeps`). Nessun test
-  parte dal workspace del RUN e verifica che il valore arrivi fino a `deps.Cwd`: i test coprono
-  `transportSpec.Cwd` (fork reale) e il livello factory. Frase per l'evidenza: "se un domani qualcuno
-  passasse `cwd=""` da `createClient`, i test attuali resterebbero verdi". Non è una regressione: è
-  copertura mancante, e il percorso è corretto per ispezione.
+- **Buco di copertura sulla cwd: CHIUSO in `39ae9cb`, verificato da me.** Era il tratto
+  `internal/providers/agents/acp_adapter.go:27` (`Cwd: deps.Cwd`) / `router.go:289` (`Cwd: cwd`): i test
+  coprivano `transportSpec.Cwd` e il livello factory, ma nessuno partiva dal workspace del RUN. Il
+  commit aggiunge `TestRunWorkspaceReachesTheAgentChildCwd`, che passa dal `session.Manager` reale e dal
+  router reale e legge la **cwd del processo figlio** (`readChildCwd`, harness preesistente), non un
+  campo. Revertito il tratto prima non coperto (`buildRouteRequest` che perde il workspace, compile-clean):
+  `router_run_workspace_cwd_test.go:70: the agent child of the run started in
+  /home/jose/hpdev/Libraries/matrix/internal/providers/agents, want the run workspace
+  /tmp/TestRunWorkspaceReachesTheAgentChildCwd2166695344/001` — cioè il sintomo esatto che avevo
+  dichiarato ("ogni run avvierebbe l'agente nella directory del daemon mentre la suite resterebbe
+  verde"). **Chiuso.**
 - **Limite residuo del budget: CHIUSO (task-14).** La forma `if name == "newagent"` su una variabile
   generica non era catturata dal metodo testuale; ora lo è, dal budget AST
   `identity_comparison_shape` descritto in §10 (`count 2 exceeds max 1` con
@@ -513,11 +532,12 @@ Non verificato, dichiarato senza addolcire:
 
 **Tutti e dieci i cluster di fix hanno almeno una prova con dente, e ogni prova è un rosso
 comportamentale ottenuto revertendo la parte essenziale della correzione.** Le correzioni successive
-hanno chiuso tre dei quattro punti aperti che avevo dichiarato: il buco di copertura su `runs.go:143`
-(`44e72b8`, esperimento H2), la metà "path" della guardia di affinità (`3e5d7d0`, esperimento M-REDO)
-e il limite del budget di agnosticismo (task-14, budget AST). Restano dichiarati: il buco di copertura
-sulla cwd run→`deps.Cwd`, i due limiti intrinseci del budget AST, e il punto 4 della descrizione di
-`6a4c745` che è falso e va tolto o riscritto.
+hanno chiuso **tutti e quattro** i punti aperti che avevo dichiarato: il buco di copertura su
+`runs.go:143` (`44e72b8`, esperimento H2), la metà "path" della guardia di affinità (`3e5d7d0`,
+esperimento M-REDO), il limite del budget di agnosticismo (task-14, budget AST, poi ri-tarato a zero in
+§10) e il buco di copertura della cwd run→figlio (`39ae9cb`, §11). Restano dichiarati: i due limiti
+intrinseci del budget AST e il punto 4 della descrizione di `6a4c745` che è falso e va tolto o
+riscritto.
 
 Sull'agnosticismo: nessun fix introduce un ramo o una tabella per nome di agente o provider, la prova
 negativa è vuota in produzione, e la regola è ora **eseguita** dal gate invece che affidata alla
@@ -529,3 +549,121 @@ avevo verificato. Il mio verdetto è **positivo**: tutti i dieci cluster hanno p
 è verde su `d23a22b` (gofmt pulito, 0 issues di lint, 16/16 pacchetti `ok`, `-race` `ok` su
 `elicitation`/`runtrace`/`session`/`runapi`, `governance_check` e `code_governance` senza failure), e i
 punti non coperti sono i tre dichiarati sopra — nessuno dei quali è una regressione introdotta dai fix.
+
+## 13. Verifica finale pre-tag: T11 (visibilità dello stallo) e T13 (agent-launch) — verifier
+
+**Nota di mappatura.** Il messaggio del Lead assegna T11 a `92144aa` e T13 a `664ac61`; il contenuto è
+l'opposto — `92144aa` è il refactor di launch/credenziali (T13) e `664ac61` è la vista di stallo (T11).
+Ho verificato per contenuto, non per etichetta.
+
+### 13.1 T11 — quattro affermazioni, quattro prove con dente
+
+**(a) La vista è calcolata dagli eventi grezzi prima di `applyTracePolicy`.** Vero e portante:
+`projection.go:36` chiama `ObserveStall` prima di `:37 applyTracePolicy`, e `applyEventTracePolicy`
+azzera `ProtocolMeta` quando `IncludeProtocolMeta` è falso — cioè in `content_mode=refs`, la
+configurazione di default dell'operatore (`lifecycle.go:46-47`). Revert (scambio delle due righe,
+compila): **due** test rossi,
+`stall_export_test.go:42: the export lost which tool is stuck: …Name:"read_file", SessionID:""` e
+`stall_export_test.go:74: session attribution did not survive the trace policy: StallSession{SessionID:"", RunSession:false, …}`.
+Le sessioni diventano stringa vuota e `RunSession` falso: il sintomo che il Lead ha descritto, provato.
+
+**(b) `isTurnEvidence` è una regola condivisa, non duplicata per finta.** La definizione è una sola
+(`outcome.go:104`) con due chiamanti: `outcome.go:92` (evidenza di completamento) e `stall.go:187`
+(attività). Mutata la definizione (tolto il caso `KindToolCallRequested|KindToolResultReceived`,
+compila), cadono **entrambi** i set: completamento `outcome_test.go:168: a requested tool call is
+evidence of a turn`; stallo `stall_test.go:161: child last activity = nil` e
+`stall_test.go:209: no activity observed`. Una modifica in un punto è sentita da entrambe le strade.
+
+**(c) La catena dell'elicitation è vera end-to-end.** `TestElicitationLifecycleReachesTheRunTrace` usa
+`elicitation.NewService` reale, `WithElicitationService` reale (che registra il subscriber di
+produzione), `service.Ask` reale in goroutine, la `Pending()` del servizio per ottenere l'id, il
+`/trace` vero attraverso `mux.ServeHTTP` e lo store vero (`memstore`) letto direttamente. Revert del
+subscriber alla sola apertura (`notifications.go`, compila):
+`stall_export_test.go:221: notification elicitation.resolved never recorded for run-elicitation`. Il
+reperto citato a motivazione — "ogni approvazione sarebbe sembrata pendente per sempre" — è esattamente
+ciò che il revert produce. L'unico doppio è `runTestRouter`, estraneo a questa catena.
+
+**(d) Il punto 1 della issue non è derivabile: dichiarazione VERA.** Il vocabolario eventi di
+produzione (33 kind enumerati) non contiene alcun segnale di retry, quota, rate-limit, heartbeat o
+liveness del client; il retry del client ACP (`retryTurnWithFreshSession`, `acp_adapter.go:523`) non
+registra **nulla** — è invisibile per costruzione; il vocabolario dei failure code
+(`provider_model_unavailable`, `provider_auth_mismatch`, `provider_workspace_rejected`,
+`provider_client_context_cancelled`, `provider_process_killed`, `provider_process_exit`,
+`provider_transport_eof`, `provider_transport_closed`) sa nominare cause **terminali**, non un'attesa di
+quota; e un retry per quota avverrebbe dentro il processo provider, fuori dall'osservazione di Matrix.
+Ciò che è derivabile è meno di quanto la issue chiedeva: "il peer tace da T" (`WaitProviderTurn` +
+`WaitingSince`) contro "non ho osservato nulla" (`WaitUnknown`), e — durante la generazione — i delta
+(`agent.message.delta`, `agent.thought.delta`) come attività. Ma un LLM silenzioso, un retry di quota e
+un client bloccato producono la stessa informazione: silenzio. La vista riporta `provider_turn` e non
+indovina. Precisazione onesta: non è derivabile **da ciò che Matrix registra oggi**; il client sa di
+essere in retry e potrebbe pubblicarlo, ma sarebbe una nuova evidenza da aggiungere, non un dato
+esistente da leggere.
+
+### 13.2 T13 — agnoscità e fail closed
+
+**(a) Il gate per nome è cancellato davvero.** `agentlaunch/codex.go` (contenente
+`validateCodexReasoningEffort` → `"model_reasoning_effort is supported only when agent_id resolves to
+codex"`) è cancellato in `39ae9cb`. Il sostituto è una **dichiarazione pubblicata dall'install**:
+`agentinstall/codex.go:56-57` (`UpsertEnv(env, ConfigKeysEnv, ConfigKeyList(ModelReasoningEffortKey))`),
+letta in modo agnostico da `config_keys.go` (match esatto del nome della variabile, valore separato da
+virgole) e consumata nel percorso generico da `run_request.go:63`. Nessun'altra sede inferisce la
+chiave dal nome: la chiave è pubblicata da un solo punto, e nessun fix ha aggiunto nomi di agente in
+file di produzione Go (§13.3). Anche la variabile di credenziale viene ora dalla dichiarazione del
+metodo (`AuthMethod.Vars`, `credentialEnvName` in `auth_handler.go`): revert al ramo
+`agentName == "codex"` (compila) → `credential_env_test.go:110: stored env =
+[]string{"OPENAI_API_KEY=typed-key"}, want it to contain "MOONSHOT_API_KEY=typed-key"` e
+`:113: … must not contain "OPENAI_API_KEY="`.
+
+**(b) Fail closed: VERO, senza vie di fuga.** C'è un solo consumatore (`run_request.go:64`) e un solo
+chiamante (`run_workspace_resolution.go:38`). `DeclaredConfigKeysForAgent` restituisce l'insieme vuoto
+per resolver nil, agente sconosciuto, id vuoto o errore del resolver, e `validateReasoningEffort` rifiuta
+quando la chiave non è dichiarata. Revert (rimossa la guardia, compila):
+`config_keys_test.go:64: ReasoningEffortArgs("xhigh") error = <nil>, want it to mention "requires a
+provider that declares"` per **entrambi** i sottocasi (`endpoint declares nothing`, `no endpoint at
+all`), e sul percorso HTTP `runs_test.go:424: expected 400, got 201` — con la guardia tolta la corsa
+**completa** accettando una chiave che nessun endpoint dichiara.
+
+**(c) I due rami device-auth sono guardie legittime, con una precisazione.** La premessa è vera: il
+gestore ACP generico **ripubblica gli id che l'agente pubblicizza** (`acp_auth_handler.go:35-58` copia
+`method.ID` dall'initialize e sintetizza `Type: "agent"`), quindi un id non è una dichiarazione del
+flusso. Rimosse le metà identitarie di entrambe le condizioni (compila), il test presentato cade su
+entrambi i sottocasi, e per `quick_login` la risposta è la prova che il Lead cercava:
+`agent "mimo" advertising method "quick_login" was routed into the vendor starter: "Open this URL:
+https://openrouter.ai/auth?callback_url=…&code_challenge=sLYN4o9B0Xmi_-Qtxcl8O4jH6Mtww4RYC5Cf7f1WbMs&code_challenge_method=S256&state=ch.789675f1…"`
+— un URL OAuth **reale**, con PKCE S256 e state CSRF legato al canale, generato dallo starter che
+interroga `w.handlers.get(agentOpencode)`; il callback scambia il codice e salva la chiave OpenRouter
+nel contesto dello stato, che `configureAgent` scrive nella configurazione dell'agente in onboarding.
+Per `quick_login` la guardia impedisce quindi un **instradamento di credenziale**: dichiarazione di
+sicurezza **verificata**. Per `chatgpt` la motivazione è **sovrastimata**: `startCodexDeviceAuth`
+riceve l'handler del chiamante (`step3Handle` → `w.handlers.get(state.AgentName)`), quindi per un
+agente estraneo non esegue il device-auth del vendor ma invoca l'handler di quell'agente — l'effetto
+provato è `"⚠️ Could not start Codex login: cannot start"`, cioè un passo e un messaggio sbagliati, non
+una credenziale del vendor. Conclusione: entrambe restano, la prima come guardia di sicurezza, la
+seconda come guardia di correttezza del flusso; **nessuna delle due è debito di agnoscità**, ma vanno
+dichiarate come le ultime dispatch per nome, e sono invisibili a tutti e quattro i budget perché
+confrontano **costanti** (`agentCodex`, `agentOpencode`), non letterali. La difesa meccanica è il test,
+che ho verificato con dente.
+
+**(d) `agent_identity_branch_shape` a `max = 0` è reale, non taratura.** Il diff del manifest fra
+`3e5d7d0` e HEAD non aggiunge `allowed_files`, non indebolisce le regex e non toglie pattern: cambia solo
+`max` 2 → 0. Entrambi i reperti di baseline sono spariti davvero (file cancellato, ramo riscritto).
+Sonda indipendente su un package scratch con `agentID == "codex"`: `count 1 exceeds max 0` → fallisce;
+rimossa, verde. (La stessa sonda ha rivelato che il **mio** budget AST era rimasto largo: vedi §10.)
+
+### 13.3 Ri-audit di agnoscità sul diff finale
+
+Diff esaminato: `git diff 3e5d7d0..HEAD`, 27 file, +2371/−130. Nei file di **produzione** (esclusi
+`_test.go` per costruzione) le uniche righe aggiunte che nominano un agente o un provider sono: una
+**nota** in `code-governance.toml` sull'openrouter di ripiego, le coppie riviste in
+`governance/manifest.toml` (`ID=chatgpt`, `[provider]=OpenRouter`) e il testo di questa baseline.
+**Zero** nomi aggiunti in codice Go di produzione. Le due occorrenze residue in codice sono spelling di
+schema API, non rami: `runapi/types.go:56` `CodexConfig ... json:"codex_config,omitempty"` e il messaggio
+di `reasoning_effort.go:35` che lo nomina. Conteggi misurati a HEAD: 14 letterali (nove file), 0 nomi ad
+hoc, 0 rami identitari, 0 confronti identitari AST. Le dispatch per nome **preesistenti e non estese**
+restano quelle già dichiarate in §10 — registry degli handler (`auth_handler.go:73-74`), onboarding
+(`wizard_steps.go`, `wizard_agent_selection.go`, `wizard_codex.go`), `agentidentity/codex.go`,
+install/adapters — più `agentlaunch/policy.go:27`, che seleziona il `codexPolicyAdapter` confrontando
+`agentID` con `agentidentity.CanonicalCodexAgentID`: preesistente (non toccato da `92144aa`) e la cui
+decisione è comunque sul contenuto (`active()` è vero solo se l'endpoint dichiara env di policy), ma è
+una dispatch per nome in più da mettere nel rapporto, non da nascondere. I fix non ne hanno introdotta
+nessuna.
