@@ -29,6 +29,13 @@ type attestationACPClient struct {
 	lastConfigValue string
 	lastModelID     string
 	prompts         []acpPromptRequest
+	// promptErrs is consumed one entry per prompt: a nil entry lets the prompt
+	// succeed, a non-nil one fails it. It is how a test makes the first attempt
+	// lose its session and the retry succeed.
+	promptErrs      []error
+	newSessionCalls int
+	setModelCalls   int
+	modelBySession  map[string]string
 }
 
 func (c *attestationACPClient) Context() context.Context            { return c.ctx }
@@ -43,6 +50,7 @@ func (c *attestationACPClient) Logout(context.Context, acpLogoutRequest) (*acpLo
 	return &acpLogoutResponse{}, nil
 }
 func (c *attestationACPClient) NewSession(context.Context, acpNewSessionRequest) (*acpNewSessionResponse, error) {
+	c.newSessionCalls++
 	if c.newSessionID == "" {
 		c.newSessionID = "remote-attested"
 	}
@@ -68,6 +76,13 @@ func (c *attestationACPClient) ForkSession(context.Context, acpForkSessionReques
 }
 func (c *attestationACPClient) Prompt(_ context.Context, req acpPromptRequest, _ acpSessionObserver) (*acpPromptResponse, error) {
 	c.prompts = append(c.prompts, req)
+	if len(c.promptErrs) > 0 {
+		err := c.promptErrs[0]
+		c.promptErrs = c.promptErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &acpPromptResponse{StopReason: "end_turn"}, nil
 }
 func (c *attestationACPClient) SetMode(context.Context, string, string) error { return nil }
@@ -83,6 +98,11 @@ func (c *attestationACPClient) SetConfigOption(_ context.Context, req acpSetConf
 }
 func (c *attestationACPClient) SetSessionModel(_ context.Context, req acpSetSessionModelRequest) (*acpSetSessionModelResponse, error) {
 	c.lastModelID = req.ModelID
+	c.setModelCalls++
+	if c.modelBySession == nil {
+		c.modelBySession = map[string]string{}
+	}
+	c.modelBySession[req.SessionID] = req.ModelID
 	if c.setModelErr != nil {
 		return nil, c.setModelErr
 	}
@@ -287,5 +307,69 @@ func TestProviderStatingAnotherModelFailsClosed(t *testing.T) {
 	}
 	if len(capture.receipts) != 0 {
 		t.Fatalf("a contradicted selection must not be published as evidence: %#v", capture.receipts)
+	}
+}
+
+// TestLostSessionRetryReappliesAndRenotifiesTheModel pins the retry path a lost
+// session takes. The retry rebuilds the turn for a fresh session, and the model
+// contract of the original turn travels with it: the requested model is applied
+// to the new session and published again, so the issue 5 symptom (no
+// configured_model, no model.selection event) cannot come back through here.
+func TestLostSessionRetryReappliesAndRenotifiesTheModel(t *testing.T) {
+	fake := &attestationACPClient{ctx: context.Background(), protocolVersion: 2,
+		newSessionID: "remote-fresh", promptErrs: []error{middleware.ErrSessionNotFound}}
+	client := turnClient(fake)
+	capture := &modelReceiptCapture{}
+	model := "deepseek/deepseek-flash"
+
+	result, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{
+		AgentID: "opencode", Message: "richiesta iniziale", ModelID: model,
+		FallbackModelID: "backup-model", RemoteSessionID: "remote-lost", ThoughtNotifier: capture})
+	if err != nil {
+		t.Fatalf("turn after the lost-session retry: %v", err)
+	}
+	if fake.newSessionCalls != 1 || result.RemoteSessionID != "remote-fresh" {
+		t.Fatalf("the retry must run on a rebuilt session: remote=%q new=%d",
+			result.RemoteSessionID, fake.newSessionCalls)
+	}
+	if len(fake.prompts) != 2 || fake.prompts[1].SessionID != "remote-fresh" {
+		t.Fatalf("the retried prompt did not reach the fresh session: %#v", fake.prompts)
+	}
+	if got := fake.modelBySession["remote-fresh"]; got != model {
+		t.Fatalf("the requested model was not applied to the retried session: set=%#v", fake.modelBySession)
+	}
+	if len(capture.receipts) != 2 {
+		t.Fatalf("the retried turn published %d model selections, want one per attempt: %#v",
+			len(capture.receipts), capture.receipts)
+	}
+	retried := capture.receipts[1]
+	if retried.ConfiguredModel != model || retried.EffectiveModel != "" ||
+		retried.Verification != middleware.ModelVerificationUnverified ||
+		retried.VerificationReason != middleware.ModelUnverifiedProviderDoesNotAttest {
+		t.Fatalf("retried selection lost the model contract: %#v", retried)
+	}
+}
+
+// TestFreshSessionRetryNeverDemotesAStrictTurn pins the security side of the same
+// reconstruction. A strict turn is a caller statement that the named remote
+// session is the only session this turn may run on; rebuilding it for a fresh
+// session must therefore fail closed instead of quietly creating a session.
+// The public path does not retry strict turns at all today, so this pins the
+// helper's own contract rather than a reachable state.
+func TestFreshSessionRetryNeverDemotesAStrictTurn(t *testing.T) {
+	fake := &attestationACPClient{ctx: context.Background(), protocolVersion: 2, newSessionID: "remote-fresh"}
+	capture := &modelReceiptCapture{}
+
+	_, err := turnClient(fake).retryTurnWithFreshSession(context.Background(), middleware.ConversationTurn{
+		AgentID: "opencode", Message: "richiesta", ModelID: "chosen-model",
+		RemoteSessionID: "remote-lost", StrictSession: true, ThoughtNotifier: capture})
+	if err == nil {
+		t.Fatal("a strict turn must not be silently retried onto a newly created session")
+	}
+	if fake.newSessionCalls != 0 {
+		t.Fatalf("a strict turn created %d remote session(s)", fake.newSessionCalls)
+	}
+	if len(fake.prompts) != 0 {
+		t.Fatalf("a strict turn reached the prompt without its session: %#v", fake.prompts)
 	}
 }

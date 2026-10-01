@@ -524,21 +524,16 @@ func (c *acpConversationClient) retryTurnWithFreshSession(ctx context.Context, t
 	// executeTurnOnce, not ExecuteTurn: this retry is about a lost session, and
 	// nesting the authentication retry inside it would give one caller-visible
 	// operation more than the single authentication attempt it is allowed.
-	return c.executeTurnOnce(ctx, middleware.ConversationTurn{
-		AgentID:                  turn.AgentID,
-		LogicalSessionID:         turn.LogicalSessionID,
-		WorkspacePath:            turn.WorkspacePath,
-		Message:                  turn.Message,
-		ContentBlocks:            turn.ContentBlocks,
-		ExtensionURIs:            turn.ExtensionURIs,
-		ReferencedRemoteSessions: turn.ReferencedRemoteSessions,
-		SidecarCapsules:          turn.SidecarCapsules,
-		Tools:                    turn.Tools,
-		McpServers:               turn.McpServers,
-		AdditionalDirectories:    turn.AdditionalDirectories,
-		ThoughtNotifier:          turn.ThoughtNotifier,
-		LiveContextAttach:        turn.LiveContextAttach,
-	})
+	//
+	// A lost session changes which session the turn runs on and nothing else, so
+	// the rebuilt turn starts from the caller's turn and clears only that session.
+	// Rebuilding it field by field let the rest of the caller's contract drop out
+	// silently: the requested model and its authorized fallback were never applied
+	// on the retry, and a strict turn lost the one statement that forbids it from
+	// running anywhere but its named session.
+	retryTurn := turn
+	retryTurn.RemoteSessionID = ""
+	return c.executeTurnOnce(ctx, retryTurn)
 }
 
 func acpPromptContent(promptText string, blocks []middleware.Content) []acpContent {

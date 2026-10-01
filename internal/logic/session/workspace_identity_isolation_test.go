@@ -232,6 +232,68 @@ func TestSessionOfAnotherWorkspacePathIsNotReused(t *testing.T) {
 	}
 }
 
+// The active-session match is the other half of the same guard, and it is a
+// different branch from the workspace index: a channel whose CURRENT session
+// records the right workspace id but another workspace's directory must not keep
+// that session either. Without the path comparison the id alone would match and
+// the foreign session would be reused on every turn of that channel.
+func TestActiveSessionOfAnotherWorkspacePathIsNotReused(t *testing.T) {
+	router := &mockRouter{}
+	mgr, storage := newWorkspaceSessionManager(t, router,
+		workspace.Meta{ID: "ws-a", RootPath: "/srv/work/a"},
+		workspace.Meta{ID: "ws-b", RootPath: "/srv/work/b"},
+	)
+	legacy := SessionMeta{
+		ID:             "legacy-active-foreign-path",
+		AgentID:        defaultAgentID,
+		AgentSessionID: "ses-legacy-active",
+		WorkspaceID:    "ws-b",
+		WorkspacePath:  "/srv/work/a",
+		Status:         "active",
+	}
+	if err := mgr.saveSessionMeta(legacy); err != nil {
+		t.Fatalf("saveSessionMeta: %v", err)
+	}
+	// The record is the channel's ACTIVE session and is deliberately absent from
+	// the workspace index: only the active branch can hand it out.
+	if err := mgr.updateChannelState("ch-active", legacy.ID); err != nil {
+		t.Fatalf("updateChannelState: %v", err)
+	}
+	indexed, err := workspace.LoadSessionIndex(storage, "ws-b")
+	if err != nil {
+		t.Fatalf("LoadSessionIndex: %v", err)
+	}
+	for _, sessionID := range indexed {
+		if sessionID == legacy.ID {
+			t.Fatalf("fixture leaked into the workspace index %s, the test would not exercise the active branch", legacy.ID)
+		}
+	}
+
+	plan, err := mgr.PlanSessionAffinity("ch-active", "", "ws-b", "/srv/work/b")
+	if err != nil {
+		t.Fatalf("PlanSessionAffinity: %v", err)
+	}
+	if plan.LogicalSessionID == legacy.ID || plan.RemoteSessionID == "ses-legacy-active" {
+		t.Fatalf("plan would reuse the channel's active session under another workspace path: %+v", plan)
+	}
+	if !plan.NewSession || plan.Kind != workspaceRouteCreate {
+		t.Fatalf("plan must create a session for a foreign-path active record, got %+v", plan)
+	}
+
+	if err := routeWorkspaceProbe(t, mgr, "ch-active", "ws-b", "/srv/work/b"); err != nil {
+		t.Fatalf("RouteConversation: %v", err)
+	}
+	if router.lastRemote == "ses-legacy-active" {
+		t.Fatal("routing handed the active session's foreign-path remote session to the provider")
+	}
+	if got := activeSessionIDFor(t, mgr, "ch-active"); got == legacy.ID {
+		t.Fatalf("routing reused the active session %s whose recorded path belongs to ws-a", legacy.ID)
+	}
+	if meta := sessionMetaFor(t, mgr, activeSessionIDFor(t, mgr, "ch-active")); meta.WorkspaceID != "ws-b" || meta.WorkspacePath != "/srv/work/b" {
+		t.Fatalf("the new session was bound to the wrong workspace: %+v", meta)
+	}
+}
+
 func TestWorkspaceIdentityMismatchIsRefusedBeforeRouting(t *testing.T) {
 	router := &mockRouter{}
 	mgr, _ := newWorkspaceSessionManager(t, router,
