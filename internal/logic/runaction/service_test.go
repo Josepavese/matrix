@@ -140,7 +140,7 @@ func TestAttachContextMarksTerminalBoundaryWhenProviderReturnsJustBeforeCompleti
 			select {
 			case <-storage.fired:
 			case <-time.After(5 * time.Second):
-				t.Errorf("il servizio non ha mai interrogato la run nella finestra di confine")
+				t.Errorf("the service never polled the run inside the boundary window")
 				return
 			}
 			if _, err := store.Complete(req.RunID, "final", "end_turn"); err != nil {
@@ -309,10 +309,10 @@ func waitRunActionEvent(t *testing.T, store *runtrace.Store, runID, kind, status
 	return runtrace.Event{}
 }
 
-// pollObservingStorage e' una cucitura di solo test: avvolge lo storage iniettato
-// e segnala il primo Get successivo all'armamento, cioe' il poll con cui il
-// servizio cerca la fine della run nella finestra di confine. Il test aspetta il
-// fatto che il servizio stia guardando, non il passare del tempo.
+// pollObservingStorage is a test-only seam: it wraps the injected storage and
+// reports the first Get after it is armed, which is the poll the service uses to
+// look for the end of the run inside the boundary window. The test waits for the
+// fact that the service is looking, not for time to pass.
 type pollObservingStorage struct {
 	middleware.Storage
 	fired chan struct{}
