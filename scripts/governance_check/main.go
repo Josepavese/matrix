@@ -50,7 +50,14 @@ type patternBudget struct {
 	ASTRule       string
 	IdentityNames []string
 	ReviewedPairs []string
-	AllowedFiles  []string
+	// AgentNameValues are the strings that denominate an agent. They do not decide
+	// the finding — the SHAPE does, exactly as it does for a literal — they decide
+	// what the finding SAYS: whether the constant a branch compares against names a
+	// known agent, or is some other value the reviewer must judge. The check reads
+	// the constant's value out of the tree, so a branch hidden behind
+	// `CanonicalCodexAgentID` is reported as the agent branch it is.
+	AgentNameValues []string
+	AllowedFiles    []string
 	// ExcludeSuffixes and ExcludeDirs are opt-in, per budget. They exist
 	// because a test file or a test fixture may legitimately name an agent:
 	// the budget guards production behaviour, not the vocabulary of a test.
@@ -149,6 +156,8 @@ func loadManifest(path string) (manifest, error) {
 					budget.ASTRule, err = parseString(value)
 				case "identity_names":
 					budget.IdentityNames, err = parseStringList(value)
+				case "agent_name_values":
+					budget.AgentNameValues, err = parseStringList(value)
 				case "reviewed_pairs":
 					budget.ReviewedPairs, err = parseStringList(value)
 				case "allowed_files":
@@ -335,6 +344,9 @@ func checkPatternBudget(root string, budget patternBudget) []string {
 	}
 	if budget.ASTRule == astRuleIdentityComparison && len(budget.IdentityNames) == 0 {
 		return []string{fmt.Sprintf("[pattern_budget.%s] ast_rule %s requires identity_names", budget.Name, astRuleIdentityComparison)}
+	}
+	if budget.ASTRule == astRuleIdentityComparison && len(budget.AgentNameValues) == 0 {
+		return []string{fmt.Sprintf("[pattern_budget.%s] ast_rule %s requires agent_name_values: a reviewer must be told whether a constant names an agent, not left to open every constant by hand", budget.Name, astRuleIdentityComparison)}
 	}
 	compiled := make([]*regexp.Regexp, 0, len(budget.RegexPatterns))
 	for _, expr := range budget.RegexPatterns {

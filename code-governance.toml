@@ -145,7 +145,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # reads it from the export it already uses and no second vocabulary is
 # born in runapi. Measured request was ~130 code lines; the margin covers
 # the projection and its serialization.
-"internal/logic/runtrace" = 1680
+# 2026-10-01: release audit, writes stopped. Measured 1676; tightened from 1680
+# so the ceiling states the tree rather than the write burst.
+"internal/logic/runtrace" = 1676
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
 # process reap; forced run-owned child cleanup can remediate parent-owner
 # retention without weakening inline parent-restore safety. Later same-day
@@ -176,7 +178,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # outcome is not invented, and the model selection surface records why a
 # provider verdict is unverified. Both are additive fields on types the
 # adapters already exchanged, not new coupling.
-"internal/middleware" = 1180
+# 2026-10-01: the registration remedy moves here as the one place both the
+# runtime status and the run refusal read from. Measured 1185.
+"internal/middleware" = 1190
 # 2026-04-27: workspace timeline event recording split validation/persistence/state update.
 # 2026-10-01: closing ten externally-reported issues across five clusters -
 # outcome semantics, structured ACP error propagation, workspace and session
@@ -191,7 +195,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # constraints and are met by splitting.
 # 2026-10-01: requested-vs-resolved workspace evidence, with git common dir and
 # branch, joins the identity resolution. Measured 1099.
-"internal/logic/workspace" = 1140
+# 2026-10-01: release audit, writes stopped. Measured 1099, which is what the
+# line above already recorded; the ceiling still said 1140 and is now tightened
+# to the measurement.
+"internal/logic/workspace" = 1099
 # 2026-06-18: public-release hardening adds agent-id path validation for
 # binary install/uninstall containment and temp archive path validation.
 # 2026-09-22: the installer verifies the sha256 the ACP registry index publishes
@@ -301,7 +308,16 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-10-01: provisional ceiling while the delivery contract, the decoding and
 # the 409 wording land here at once (measured 2564). Re-measured and tightened
 # at the release audit.
-"internal/providers/runapi" = 2600
+# 2026-10-01: release audit, writes stopped. Measured 2568 with the release
+# checker; the provisional ceiling had 32 lines of slack, and slack in a ceiling
+# is where the next change hides. Tightened to the measured value.
+# 2026-10-01: re-measured at 2573 while the run surface grows its request
+# decoding and its idempotent acknowledgement. Extracting the decoder was
+# considered and refused: it would have published runRequest, the body limit
+# and the decoder entry point purely to satisfy the number, which is a worse
+# debt than a raised ceiling. Splitting is the remedy for file, function,
+# parameter and branch budgets; this is a package ceiling.
+"internal/providers/runapi" = 2580
 # 2026-09-21: the Telegram channel gained the elicitation frontend — prompt
 # rendering, inline-keyboard building, callback routing, answer coercion and
 # session-to-chat correlation — split across focused files (elicitation.go,

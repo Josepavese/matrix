@@ -16,7 +16,8 @@ func identityBudget(roots ...string) patternBudget {
 		Name:            "identity_comparison_shape",
 		Roots:           roots,
 		ASTRule:         astRuleIdentityComparison,
-		IdentityNames:   []string{"name", "agentName", "agentID", "provider", "binary"},
+		IdentityNames:   []string{"name", "agentName", "AgentName", "agentID", "provider", "binary"},
+		AgentNameValues: []string{"codex", "opencode", "claude", "gemini", "mimo", "minimax", "halfpocket", "kimi", "deepseek"},
 		ExcludeSuffixes: []string{"_test.go"},
 		ExcludeDirs:     []string{"testdata"},
 		Max:             0,
@@ -202,5 +203,218 @@ reason = "shape"
 	}
 	if len(budget.ReviewedPairs) != 1 || budget.ReviewedPairs[0] != "name=fork" {
 		t.Fatalf("reviewed_pairs not loaded: %#v", budget.ReviewedPairs)
+	}
+}
+
+// The hole this extension closes, measured before it was closed: a branch on a
+// constant that denominates an agent passed every budget, because no budget read
+// the constant's value.
+func TestIdentityComparisonFiresOnAConstantThatDenominatesAnAgent(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "internal/logic/launch.go"), `package logic
+
+const agentCodex = "codex"
+
+func pick(agentID string) string {
+	if agentID == agentCodex {
+		return "codex-path"
+	}
+	return "generic-path"
+}
+`)
+
+	report := checkManifest(root, manifest{PatternBudgets: []patternBudget{identityBudget()}})
+	if len(report.Failures) != 1 {
+		t.Fatalf("a comparison against a constant naming an agent must fail: %#v", report.Failures)
+	}
+	if !strings.Contains(report.Failures[0], "const agentCodex") || !strings.Contains(report.Failures[0], `"codex"`) {
+		t.Fatalf("the failure must name the constant and its value: %#v", report.Failures)
+	}
+}
+
+// A constant that lives in another package is the shape the tree actually uses:
+// agentidentity declares the canonical id, agentlaunch and the wizard read it.
+func TestIdentityComparisonResolvesAQualifiedConstantFromAnotherPackage(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "go.mod"), "module example.com/tree\n\ngo 1.24\n")
+	mustWrite(t, filepath.Join(root, "internal/logic/agentidentity/codex.go"),
+		"package agentidentity\n\nconst CanonicalCodexAgentID = \"codex\"\n")
+	mustWrite(t, filepath.Join(root, "internal/logic/launch.go"), `package logic
+
+import "example.com/tree/internal/logic/agentidentity"
+
+func pick(agentID string) string {
+	if agentID == agentidentity.CanonicalCodexAgentID {
+		return "codex-path"
+	}
+	return "generic-path"
+}
+`)
+
+	report := checkManifest(root, manifest{PatternBudgets: []patternBudget{identityBudget()}})
+	if len(report.Failures) != 1 {
+		t.Fatalf("a qualified constant naming an agent must fail: %#v", report.Failures)
+	}
+	if !strings.Contains(report.Failures[0], "const agentidentity.CanonicalCodexAgentID") {
+		t.Fatalf("the failure must name the constant as written: %#v", report.Failures)
+	}
+}
+
+// The check must stay true: a classifier compared to a constant is how the tree
+// describes closed vocabularies, and the unset guard is not an identity test.
+// The constant rule judges the SHAPE on an identity role, not the value, so a
+// classifier must be left alone by its ROLE.
+func TestIdentityComparisonIgnoresClassifierConstantsAndEmptyGuards(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "internal/logic/classify.go"), `package logic
+
+const (
+	authTypeAgent = "agent"
+	kindACP       = "acp"
+	unsetAgent    = ""
+)
+
+func f(kind, status, agentID string) bool {
+	if kind == kindACP || status == authTypeAgent {
+		return true
+	}
+	return agentID == unsetAgent
+}
+`)
+
+	report := checkManifest(root, manifest{PatternBudgets: []patternBudget{identityBudget()}})
+	if len(report.Failures) != 0 {
+		t.Fatalf("classifier roles and the unset guard must not trip the shape check: %#v", report.Failures)
+	}
+}
+
+// A constant on an identity role whose value names no agent is still a branch
+// with its value one indirection away: the shape fails it, and the message tells
+// the reviewer the value names no agent, so the pair can be reviewed on its
+// merits instead of by opening the constant by hand.
+func TestIdentityComparisonFiresOnAConstantWhoseValueNamesNoAgent(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "internal/logic/providers.go"), `package logic
+
+const providerOpenRouter = "OpenRouter"
+
+func f(provider string) bool { return provider == providerOpenRouter }
+`)
+
+	report := checkManifest(root, manifest{PatternBudgets: []patternBudget{identityBudget()}})
+	if len(report.Failures) != 1 {
+		t.Fatalf("a constant on an identity role must fail even when its value names no agent: %#v", report.Failures)
+	}
+	if !strings.Contains(report.Failures[0], "names no agent in the vocabulary") {
+		t.Fatalf("the failure must say the value names no agent: %#v", report.Failures)
+	}
+}
+
+// The probe that chose the design: gating the constant rule on the value let a
+// NEW agent name behind a NEW constant pass every budget (measured: failures 0),
+// which is the same hole one indirection further out. The shape gate closes it.
+func TestIdentityComparisonFiresOnANewAgentNameBehindANewConstant(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "internal/logic/newagent.go"), `package logic
+
+const probeSomeBrandNewAgent = "somebrandnewagent"
+
+func f(agentID string) bool { return agentID == probeSomeBrandNewAgent }
+`)
+
+	report := checkManifest(root, manifest{PatternBudgets: []patternBudget{identityBudget()}})
+	if len(report.Failures) != 1 {
+		t.Fatalf("a name nobody enumerated, hidden behind a constant, must still fail: %#v", report.Failures)
+	}
+}
+
+// The whole-word rule cuts both ways: `codex-acp` DOES denominate the codex
+// agent, because the name is a word there. A registry id is an identity, not a
+// classifier, and comparing it is a branch on which agent.
+func TestIdentityComparisonTreatsARegistryIDAsAnIdentity(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "internal/logic/registry.go"), `package logic
+
+const CodexRegistryID = "codex-acp"
+
+func f(agentID string) bool { return agentID == CodexRegistryID }
+`)
+
+	report := checkManifest(root, manifest{PatternBudgets: []patternBudget{identityBudget()}})
+	if len(report.Failures) != 1 {
+		t.Fatalf("a registry id names an agent and must fail: %#v", report.Failures)
+	}
+	if !strings.Contains(report.Failures[0], "which names an agent") {
+		t.Fatalf("the failure must say the value names an agent: %#v", report.Failures)
+	}
+}
+
+// The whole-word rule is what keeps the label from over-claiming: "mimosa" is not
+// the MiMo agent, and the finding must say so rather than let a reviewer believe
+// the branch is on an agent.
+func TestIdentityComparisonWholeWordRuleIsReportedHonestly(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "internal/logic/mimosa.go"), `package logic
+
+const providerMimosa = "mimosa"
+
+func f(provider string) bool { return provider == providerMimosa }
+`)
+
+	report := checkManifest(root, manifest{PatternBudgets: []patternBudget{identityBudget()}})
+	if len(report.Failures) != 1 {
+		t.Fatalf("the shape must fail whatever the value: %#v", report.Failures)
+	}
+	if !strings.Contains(report.Failures[0], "names no agent in the vocabulary") {
+		t.Fatalf("a word merely containing a name must not be reported as an agent: %#v", report.Failures)
+	}
+}
+
+// Clearing a constant pair is a statement about that constant on that name, not
+// about the name: the same constant on another identity variable must still fail,
+// and so must a different constant on the cleared variable.
+func TestIdentityComparisonReviewedConstantPairDoesNotBlindTheName(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "internal/logic/wizard.go"), `package logic
+
+const (
+	agentCodex    = "codex"
+	agentOpencode = "opencode"
+)
+
+func f(agentName, provider string) bool {
+	if agentName == agentCodex || provider == agentCodex {
+		return true
+	}
+	return agentName == agentOpencode
+}
+`)
+
+	budget := identityBudget()
+	budget.ReviewedPairs = []string{"agentName=const:agentCodex"}
+	report := checkManifest(root, manifest{PatternBudgets: []patternBudget{budget}})
+	if len(report.Failures) != 1 {
+		t.Fatalf("the two unreviewed constants must fail the budget: %#v", report.Failures)
+	}
+	if got := strings.Count(report.Failures[0], "\n  - "); got != 2 {
+		t.Fatalf("a cleared pair must clear exactly that pair, got %d findings: %#v", got, report.Failures)
+	}
+	if strings.Contains(report.Failures[0], "compares agentName against const agentCodex") {
+		t.Fatalf("the reviewed pair was not cleared: %#v", report.Failures)
+	}
+}
+
+// Reading a constant's value is a capability that has to be configured: without
+// the vocabulary the check would silently go back to ignoring constants, which is
+// the hole this extension exists to close.
+func TestIdentityComparisonRequiresAgentNameValues(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "internal/logic/agent.go"), "package logic")
+
+	unconfigured := identityBudget()
+	unconfigured.AgentNameValues = nil
+	report := checkManifest(root, manifest{PatternBudgets: []patternBudget{unconfigured}})
+	if len(report.Failures) != 1 || !strings.Contains(report.Failures[0], "agent_name_values") {
+		t.Fatalf("a shape check without agent_name_values must fail loudly: %#v", report.Failures)
 	}
 }
