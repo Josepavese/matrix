@@ -85,6 +85,11 @@ func TestOpenCode_RunTimeoutCleanupThenImmediateJudgeRun_DoesNotPreflightFail(t 
 	if remoteID := waitForRunRemoteSessionID(t, traceStore, runID, 90*time.Second); remoteID == "" {
 		t.Fatalf("async run did not expose remote session id")
 	}
+	// Declared debt, real peer: the cancellation is meant to land while the
+	// external agent is mid-turn, and nothing Matrix records marks that moment.
+	// The trace knows the session exists (asserted above) and the turn's final
+	// message (agent.message.final), which is too late to cancel inside. Until
+	// a mid-turn signal is observable, the smoke test waits a fixed interval.
 	time.Sleep(2 * time.Second)
 	httpRunAction(t, server.URL, runID, map[string]interface{}{
 		"action": "cancel",
@@ -389,6 +394,9 @@ func TestOpenCode_CancelDuringSessionCreate_CleanupUsesSelectedSessionAndJudgeDo
 	if runID == "" {
 		t.Fatalf("async run response missing run_id: %+v", asyncRun)
 	}
+	// By design, not a debt: this smoke test exists to cancel an early point of
+	// the creation, whichever it turns out to be. There is no state to wait for
+	// because waiting for one would remove the race the test names.
 	time.Sleep(250 * time.Millisecond)
 	httpRunAction(t, server.URL, runID, map[string]interface{}{
 		"action": "cancel",
@@ -562,6 +570,9 @@ func runOpenCodeCancelledAsyncCycle(t *testing.T, baseURL string, traceStore *ru
 	if remoteID := waitForRunRemoteSessionID(t, traceStore, runID, 90*time.Second); remoteID == "" {
 		t.Fatalf("async run did not expose remote session id")
 	}
+	// Declared debt, real peer: same reason as the cancellation recovery smoke
+	// above — the cancel is meant to land mid-turn and no recorded signal marks
+	// the middle of an external agent's turn.
 	time.Sleep(2 * time.Second)
 	httpRunAction(t, baseURL, runID, map[string]interface{}{
 		"action": "cancel",

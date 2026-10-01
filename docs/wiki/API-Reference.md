@@ -299,6 +299,78 @@ curl http://127.0.0.1:9091/v1/runs/run-abc123/trace
 
 ---
 
+#### Model selection and attestation
+
+A model request, a model selection, and a model confirmation are three different
+facts, and the trace keeps them apart. Read the JSON field names literally: they
+are the only contract.
+
+| Level | Field | What it proves |
+|-------|-------|----------------|
+| Requested | `requested_model` (run record) / `requested_model` (`model.selection` event) | Only what the caller asked for. It is an input and never evidence of what ran. |
+| Selected | `configured_model` (run record) / `selected_model` (`model.selection` event) | What Matrix applied to the provider session. An accepted call is still not a confirmation: a provider can accept a selection and run something else. |
+| Confirmed | `effective_model` (run record) / `confirmed_model` (`model.selection` event) | What the provider itself stated about the session. Only this level can produce `model_verification=provider_confirmed`. |
+
+The `model.selection` event keeps `configured_model` and `effective_model` as
+aliases of `selected_model` and `confirmed_model` for consumers that already read
+them. Neither alias is ever filled from `requested_model`.
+
+`model_verification` has two verdicts:
+
+- `provider_confirmed` — the provider stated the effective model in a response
+  Matrix can inspect (for example `currentValue` from the ACP v1
+  `session/set_config_option` call).
+- `unverified` — no provider statement was available. This is the honest verdict,
+  not a failure, and it is never softened into a confirmation.
+
+When the verdict is `unverified`, two fields say why, and they answer different
+questions:
+
+- `verification_reason`: `provider_does_not_attest`, `model_not_selectable`,
+  `verification_not_repeated`, or `evidence_lost`.
+- `evidence_source`: which protocol response was inspected, so a reader can tell
+  "I looked and there is nothing to look at" from "I did not look again".
+
+`provider_does_not_attest` is structural, not a Matrix limitation: the ACP v2
+`session/set_model` call returns only `_meta`, so a v2 provider cannot attest a
+selection at all. A **hot reused session cannot re-attest**: `session/new`
+reports the state before selection, and `session/load`/`resume` run only when a
+session is materialized, so there is no read-only method that asks a warm session
+what model it is using. Matrix therefore keeps `unverified` for a reused session
+and reports `verification_not_repeated` rather than inventing confirmation from
+the fact that the selection call was accepted. A provider that answers with a
+different model than the one Matrix selected fails the run closed instead.
+
+`model_fallback_used` is `omitempty`, so **its absence from a trace does not
+prove `false`**. The field that always states the fallback answer is
+`fallback_used` in the `model.selection` event metadata; `model_fallback_reason`
+explains a fallback that did happen. A consumer that needs "was there a
+fallback?" must read the event, not infer it from a missing key.
+
+#### Run stall view (`stall`)
+
+Every exported trace carries `stall`, the derived answer to "is this run still
+moving, and if not, what is it stuck on". It is computed from the raw events
+before the trace policy strips them, so it still works on redacted traces:
+
+| Field | Meaning |
+|-------|---------|
+| `waiting` | The longest-outstanding wait: `none` (terminal run), `tool_result`, `permission`, `elicitation`, `provider_turn`, or `unknown` |
+| `waiting_since` | When that wait started; the run stopped being able to make progress then |
+| `last_activity` | Last observed activity with its `id`, `name`, `session_id`, `since`, `sequence` |
+| `pending[]` | Everything still outstanding, each with its own age, so a nested approval is visible without being the current wait |
+| `sessions[]` | The same picture per session, with `run_session` marking the session the run record names (structural, not inferred from an agent or provider name) |
+| `window_truncated` | The event window is a suffix of the run, not the whole run |
+
+`window_truncated` matters in one direction only: a retained request always keeps
+its resolution, because a resolution is written after the request it resolves, so
+a truncated window can under-report pending requests but can never fabricate one.
+A consumer that ignores the flag reads an incomplete picture as a complete one.
+`waiting: "elicitation"` comes from the notification stream, because the
+elicitation lifecycle is the single fact Matrix records outside the events.
+
+---
+
 ### `GET /v1/runs/{run_id}/explain`
 
 Return a short operational diagnosis with status, agent, workspace, failure
@@ -329,6 +401,60 @@ Use `Last-Event-ID` or `after` to resume after disconnect. Optional repeated
 numeric sequence. Notifications persist in the Vault until controlled data
 retention removes them. On startup Matrix repairs missing terminal wakeups
 from terminal run records. The socket is not exposed over the TCP API.
+
+**The delivery contract, stated honestly.** Matrix can prove a wakeup was
+written; it cannot prove a supervisor delivered it, because the daemon is not in
+the delivery path. There is no server-side per-consumer cursor: the durable
+cursor is the consumer's own `after` value. What the channel does guarantee is
+stable identity and restart-safe numbering:
+
+- a wakeup is identified by `run_id` plus its kind, and carries a monotonic
+  `sequence` that a restart does not renumber or re-announce (startup repair is
+  idempotent, so a terminal state yields one wakeup, not one per restart);
+- a consumer that reconnects from the cursor it persisted before delivering
+  receives the same wakeup again, with the same id and payload;
+- a consumer that persisted a cursor past a wakeup is never handed that wakeup
+  again.
+
+So **one logical outcome** is `(run_id, kind)` deduplicated by the consumer, not
+a property the server can enforce. A truncated payload is deliberate: this
+channel carries identity, not content. Transcripts never travel on it - read the
+run's events if you need content.
+
+### `POST /v1/run-notifications/ack`
+
+Acknowledge one delivered wakeup. This is the supervisor's own claim about its
+delivery; the daemon records the claim exactly once.
+
+```bash
+curl --unix-socket "$MATRIX_HOME/data/run-notifications.sock" \
+  -X POST \
+  -H "X-Matrix-Key: $MATRIX_API_KEY" \
+  -H "Idempotency-Key: supervisor-1-run-abc123" \
+  -H "Content-Type: application/json" \
+  -d '{"run_id":"run-abc123","sequence":12}' \
+  http://localhost/v1/run-notifications/ack
+```
+
+`Idempotency-Key` is required here (unlike run submission, where it is
+optional): it is what makes the acknowledgement exactly-once. It is an opaque
+value of at most 128 bytes and is hashed before storage, so the string a caller
+picks never becomes a stored key.
+
+| Response | Meaning |
+|----------|---------|
+| `200 {"status":"acked","run_id":…,"sequence":…}` | Recorded now, or already recorded under this key |
+| `200` with `Idempotency-Replayed: true` | The key was already recorded; the body is byte-identical to the first answer and nothing was written again |
+| `400 idempotency_key_required` | No `Idempotency-Key` header |
+| `400` | Key longer than 128 bytes, invalid JSON, unknown fields, missing `run_id`, or `sequence` not positive |
+| `409 idempotency_payload_conflict` | The key was already recorded for a different claim; the first record is untouched |
+| `405` | Method other than `POST` |
+
+The record is durable, so a retry after a daemon restart replays instead of
+recording a second time. An acknowledgement proves only what it says: that the
+supervisor claims delivery of that wakeup. It does not prove the wakeup existed,
+and exactly-once applies per key - two supervisors acknowledging the same wakeup
+are two records, not a replay.
 
 ---
 

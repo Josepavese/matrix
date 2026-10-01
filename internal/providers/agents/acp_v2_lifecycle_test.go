@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -103,15 +104,56 @@ func chunkUpdate(messageID, text string) acpSessionUpdate {
 	}
 }
 
+// v1QuietWindowForTest shrinks the version 1 quiet window through the same
+// override a deployment uses, then returns a silence that is a multiple of it.
+// The pause is therefore not measured against a hardcoded 150ms: it is derived
+// from the relation "silence > window" the two lifecycle tests argue about.
+//
+// The multiple is deliberately tight, and the pause is derived from the value
+// this test injected rather than from the accessor production reads: with the
+// override ignored the real window would be the 150ms default, this 100ms pause
+// would land inside it, and the version 1 test would fail — so the injection is
+// load-bearing rather than decorative.
+func v1QuietWindowForTest(t *testing.T) time.Duration {
+	t.Helper()
+	const injected = 50 * time.Millisecond
+	t.Setenv(acpV1QuietEnv, injected.String())
+	return 2 * injected
+}
+
+// TestACPQuietWindowFallsBackToTheDefault pins the contract the injected value
+// relies on: unset, unparsable and non-positive overrides leave the 150ms
+// default in place, and a valid one is used verbatim.
+func TestACPQuietWindowFallsBackToTheDefault(t *testing.T) {
+	t.Setenv(acpV1QuietEnv, "50ms")
+	if err := os.Unsetenv(acpV1QuietEnv); err != nil {
+		t.Fatalf("Unsetenv: %v", err)
+	}
+	if got := acpV1QuietWindow(); got != defaultACPV1QuietWindow {
+		t.Fatalf("an unset override must keep the default window, got %s", got)
+	}
+	for _, raw := range []string{"not-a-duration", "-5ms", "0s", "   "} {
+		t.Setenv(acpV1QuietEnv, raw)
+		if got := acpV1QuietWindow(); got != defaultACPV1QuietWindow {
+			t.Fatalf("override %q must fall back to the default window, got %s", raw, got)
+		}
+	}
+	t.Setenv(acpV1QuietEnv, "2s")
+	if got := acpV1QuietWindow(); got != 2*time.Second {
+		t.Fatalf("a valid override must be used verbatim, got %s", got)
+	}
+}
+
 // TestExecuteTurnWaitsForTheV2TerminalState is the completion proof: the peer
 // acknowledges the prompt, streams part of the answer, goes quiet for longer
 // than the version 1 quiet window, and only then streams the rest and reports
 // idle. The turn must return the whole answer, which the quiet wait cannot do.
 func TestExecuteTurnWaitsForTheV2TerminalState(t *testing.T) {
+	silence := v1QuietWindowForTest(t)
 	fake := newStreamingACPClient(zedacp.ProtocolVersionV2)
 	fake.streaming = func(emit func(acpSessionUpdate)) {
 		emit(chunkUpdate("msg-1", "part one"))
-		time.Sleep(400 * time.Millisecond)
+		time.Sleep(silence)
 		emit(chunkUpdate("msg-1", " and part two"))
 		emit(acpSessionUpdate{SessionUpdate: "state_update", State: "idle", StopReason: "end_turn"})
 	}
@@ -168,10 +210,11 @@ func TestExecuteTurnEndsAtTheV2TurnBudgetAndSaysSo(t *testing.T) {
 // touch: a version 1 turn still ends on the prompt response plus the quiet wait,
 // and carries no version 2 completion metadata.
 func TestExecuteTurnKeepsTheV1QuietWait(t *testing.T) {
+	silence := v1QuietWindowForTest(t)
 	fake := newStreamingACPClient(zedacp.ProtocolVersionV1)
 	fake.streaming = func(emit func(acpSessionUpdate)) {
 		emit(chunkUpdate("msg-1", "part one"))
-		time.Sleep(400 * time.Millisecond)
+		time.Sleep(silence)
 		emit(chunkUpdate("msg-1", " and part two"))
 		emit(acpSessionUpdate{SessionUpdate: "state_update", State: "idle", StopReason: "end_turn"})
 	}

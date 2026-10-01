@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
+	"github.com/Josepavese/matrix/internal/logic/logredact"
 	"github.com/Josepavese/matrix/internal/middleware"
 	"github.com/Josepavese/matrix/internal/providers/a2aclient"
 	"github.com/Josepavese/matrix/pkg/zedacp"
@@ -278,7 +279,11 @@ func (r *Router) createClient(ctx context.Context, agentID string, cwd string, l
 		return nil, "", fmt.Errorf("agent launch policy rejected: %w", err)
 	}
 	endpoint = resolved.Endpoint
-	log.Info("resolved agent endpoint", "event", "endpoint_resolved", "protocol_kind", endpoint.Kind, "transport", endpoint.Transport, "address", endpoint.Address, "command", endpoint.Command)
+	// The address is where the provider lives, and this line is written whether or
+	// not anyone reads it: it goes through the redaction policy, which withholds
+	// it unless the operator opted in. The command stays: it is the local program
+	// Matrix launches, not a remote host.
+	log.Info("resolved agent endpoint", "event", "endpoint_resolved", "protocol_kind", endpoint.Kind, "transport", endpoint.Transport, "address", logredact.Endpoint(endpoint.Address), "command", endpoint.Command)
 
 	factory, ok := r.factory[endpoint.Kind]
 	if !ok {

@@ -49,6 +49,34 @@ func acpV2TurnBudget() time.Duration {
 	return parsed
 }
 
+// defaultACPV1QuietWindow is how long a version 1 turn waits for the observer to
+// go quiet after the prompt response. Those generations have no terminal state
+// update to end on, so silence is the only completion signal available and the
+// turn returns whatever arrived inside the window.
+const defaultACPV1QuietWindow = 150 * time.Millisecond
+
+// acpV1QuietEnv names the operator override for that window, the version 1
+// counterpart of acpV2TurnEnv. It exists so a deployment can fit the wait to a
+// peer that streams slowly, and so a test can prove the window without sleeping
+// for the default: a test that shrinks the window can make the silence around it
+// short instead of hardcoding a pause measured against 150ms.
+const acpV1QuietEnv = "MATRIX_ACP_V1_QUIET_WINDOW"
+
+// acpV1QuietWindow reports the quiet window to use, falling back to the default
+// for an unset, unparsable or non-positive override rather than failing a turn
+// over configuration.
+func acpV1QuietWindow() time.Duration {
+	raw := strings.TrimSpace(os.Getenv(acpV1QuietEnv))
+	if raw == "" {
+		return defaultACPV1QuietWindow
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed <= 0 {
+		return defaultACPV1QuietWindow
+	}
+	return parsed
+}
+
 // acpSessionWatcher is the part of the protocol client that keeps an observer
 // registered outside a call. It is a local interface so the port stays small.
 type acpSessionWatcher interface {

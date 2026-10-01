@@ -202,25 +202,18 @@ func TestACPConversationClientSerializesNormalPromptsForSession(t *testing.T) {
 	<-fake.firstStarted
 
 	secondDone := make(chan error, 1)
-	secondStarted := make(chan struct{})
 	go func() {
-		close(secondStarted)
 		_, err := client.ExecuteTurn(ctx, middleware.ConversationTurn{RemoteSessionID: "remote-session", Message: "second"})
 		secondDone <- err
 	}()
-	<-secondStarted
 
-	// Serialization is a negative claim: the second prompt must not be forwarded
-	// while the first is in flight. A negative fact cannot be waited for — the
-	// guard keeps no "waiting turn" state to observe — so the window below only
-	// gives the second turn its chance to reach the guard, and it fails the
-	// moment the violation appears instead of after the wait. The fake also
-	// records whether the first prompt had returned when the second was
-	// forwarded, which names the violation even when this window misses it.
-	deadline := time.Now().Add(50 * time.Millisecond)
-	for fake.PromptCalls() == 1 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	// Serialization is a negative claim — the second prompt must not be
+	// forwarded while the first is in flight — so the test waits for the wait
+	// itself: the guard reports the turn blocked on this session. Only after
+	// that fact is observed does the silence assertion mean anything, because a
+	// second turn that never reached the guard could not have been serialized
+	// either way. No clock decides the outcome.
+	waitForPromptWaiter(t, client, "remote-session")
 	if calls := fake.PromptCalls(); calls != 1 {
 		t.Fatalf("second prompt should wait for first prompt completion, calls=%d", calls)
 	}
@@ -238,4 +231,22 @@ func TestACPConversationClientSerializesNormalPromptsForSession(t *testing.T) {
 	if !fake.secondPromptWaitedForFirst() {
 		t.Fatal("second prompt was forwarded while the first was still in flight")
 	}
+	if waiters := client.promptWaiterCount("remote-session"); waiters != 0 {
+		t.Fatalf("the guard still reports %d waiting turn(s) after both completed", waiters)
+	}
+}
+
+// waitForPromptWaiter polls the session guard until the turn blocked on it is
+// registered, and fails closed: a wait that never became observable proves
+// nothing about serialization, so the caller's silence check must not run.
+func waitForPromptWaiter(t *testing.T, client *acpConversationClient, remoteSessionID string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if client.promptWaiterCount(remoteSessionID) > 0 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("no turn ever registered as waiting on session %q: the second prompt was not serialized", remoteSessionID)
 }

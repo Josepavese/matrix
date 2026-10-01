@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
@@ -120,10 +119,13 @@ type acpConversationClient struct {
 	preferredMode       string
 	// reconnect rebuilds the connection after a terminal authentication method
 	// ran the configured agent program; nil means this client cannot reconnect.
-	reconnect          func(context.Context) error
-	mu                 sync.Mutex
-	loadedSessions     map[string]bool
-	activePrompts      map[string]chan struct{}
+	reconnect      func(context.Context) error
+	mu             sync.Mutex
+	loadedSessions map[string]bool
+	activePrompts  map[string]chan struct{}
+	// promptWaiters counts the turns blocked on a session's active prompt. It is
+	// observability only: the guard's decision never reads it.
+	promptWaiters      map[string]int
 	activeClientLeases int
 	closeRequested     bool
 	closed             bool
@@ -181,7 +183,7 @@ func (c *acpConversationClient) executeTurnOnce(ctx context.Context, turn middle
 				"event", "acp_v2_turn_budget_exhausted", "agent_session", remoteSessionID, "budget", budget)
 		}
 	} else {
-		obs.WaitIdle(ctx, 150*time.Millisecond)
+		obs.WaitIdle(ctx, acpV1QuietWindow())
 	}
 	stopReason := resolveTurnStopReason(resp.StopReason, turnObs.stopReason)
 	reportTurnStopReason(turn, stopReason)
@@ -507,7 +509,7 @@ func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionReq
 	if err := c.applySessionMode(req.Ctx, fromZedACPLoadSession(resp), req.RemoteSessionID, req.Log); err != nil {
 		return err
 	}
-	obs.WaitIdle(req.Ctx, 150*time.Millisecond)
+	obs.WaitIdle(req.Ctx, acpV1QuietWindow())
 	return nil
 }
 
