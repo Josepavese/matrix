@@ -29,6 +29,11 @@ func TestValidateElicitationValues(t *testing.T) {
 		"bad enum":         {"strategy": "yolo"},
 		"wrong number":     {"strategy": "balanced", "retries": "three"},
 		"wrong boolean":    {"strategy": "balanced", "dry_run": "yes"},
+		// A model answering with the wrong JSON type is the ordinary case, not an
+		// exotic one: "wrong number" and "wrong boolean" above already pin it for
+		// their types, and these two pin it for the remaining pair.
+		"wrong string":    {"strategy": "balanced", "note": 7},
+		"wrong enum type": {"strategy": 2},
 	}
 	for name, values := range cases {
 		if err := ValidateElicitationValues(req, values); err == nil {
