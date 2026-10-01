@@ -9,14 +9,31 @@ func (s *Store) Trace(runID string) (Trace, bool, error) {
 	if err != nil {
 		return Trace{}, false, err
 	}
-	return Project(run, events), true, nil
+	// The elicitation lifecycle lives in the notification stream, not in the
+	// events, so the trace reads it too. The limit bounds the read: a run with
+	// more than this many notifications has long since stopped being a run whose
+	// stall view fits in a diagnostic answer.
+	notifications, _, err := s.LoadNotificationsAfter(0, maxTraceNotifications, map[string]struct{}{runID: {}})
+	if err != nil {
+		return Trace{}, false, err
+	}
+	return Project(run, events, notifications), true, nil
 }
 
-func Project(run Run, events []Event) Trace {
+// maxTraceNotifications bounds how much of a run's notification stream a trace
+// projection reads.
+const maxTraceNotifications = 100
+
+func Project(run Run, events []Event, notifications []Notification) Trace {
 	contentRef := run.InputRef
 	if contentRef == "" {
 		contentRef = "matrix://runs/" + run.ID + "/input"
 	}
+	// The stall view is derived from the raw events, before the trace policy
+	// strips them. It has to be: session attribution lives in protocol metadata
+	// and tool names are dropped in redacted mode, so a view computed after the
+	// policy would go blind on exactly the runs an operator is diagnosing.
+	stall := ObserveStall(run, events, notifications)
 	events = applyTracePolicy(events, run.TracePolicy)
 	outcome := Outcome{Status: run.Status, StopReason: run.StopReason, SummaryRef: run.OutputRef, Error: run.Error}
 	if run.TracePolicy.ContentMode == ContentModeInline {
@@ -29,6 +46,7 @@ func Project(run Run, events []Event) Trace {
 		Routing:     projectRouting(run),
 		Events:      events,
 		Outcome:     outcome,
+		Stall:       &stall,
 		TracePolicy: run.TracePolicy,
 		Context:     run.Context,
 	}

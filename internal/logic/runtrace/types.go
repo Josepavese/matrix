@@ -114,12 +114,16 @@ type Event struct {
 
 // Trace is the versioned exported projection consumed by external systems.
 type Trace struct {
-	Schema      string       `json:"schema"`
-	Run         TraceRun     `json:"run"`
-	Surface     Surface      `json:"surface"`
-	Routing     Routing      `json:"routing,omitempty"`
-	Events      []Event      `json:"events"`
-	Outcome     Outcome      `json:"outcome"`
+	Schema  string   `json:"schema"`
+	Run     TraceRun `json:"run"`
+	Surface Surface  `json:"surface"`
+	Routing Routing  `json:"routing,omitempty"`
+	Events  []Event  `json:"events"`
+	Outcome Outcome  `json:"outcome"`
+	// Stall is the derived "is it still moving, and what is it stuck on" view.
+	// It is computed from the raw events, so it survives a trace policy that
+	// drops the protocol metadata and tool names its derivation reads.
+	Stall       *StallView   `json:"stall,omitempty"`
 	TracePolicy TracePolicy  `json:"trace_policy"`
 	Context     []ContextRef `json:"context,omitempty"`
 }

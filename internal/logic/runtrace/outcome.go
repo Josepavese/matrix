@@ -89,13 +89,25 @@ func turnEvidence(output string, events []Event) bool {
 		return true
 	}
 	for _, event := range events {
-		kind := strings.TrimSpace(event.Kind)
-		switch {
-		case strings.HasPrefix(kind, "agent.message."):
-			return true
-		case kind == "tool.call.requested", kind == "tool.result.received":
+		if isTurnEvidence(event) {
 			return true
 		}
+	}
+	return false
+}
+
+// isTurnEvidence is the per-event half of the rule above, exported inside the
+// package as a predicate so the stall view asks the same question the completion
+// rule asks. Two callers, one definition: "the agent did something" must not mean
+// one thing when Matrix decides whether a run succeeded and another thing when it
+// reports whether a run is still moving.
+func isTurnEvidence(event Event) bool {
+	kind := strings.TrimSpace(event.Kind)
+	switch {
+	case strings.HasPrefix(kind, "agent.message."):
+		return true
+	case kind == KindToolCallRequested, kind == KindToolResultReceived:
+		return true
 	}
 	return false
 }

@@ -101,13 +101,17 @@ func writeNotificationSSEItems(w http.ResponseWriter, items []runtrace.Notificat
 
 func (s *Server) subscribeElicitationWakeups(service *elicitation.Service) {
 	service.Subscribe(func(event elicitation.Event) {
-		if event.Kind != elicitation.EventOpened {
+		if event.Kind != elicitation.EventOpened && event.Kind != elicitation.EventResolved {
 			return
 		}
 		req := event.Request
 		runID := s.runStore.FindRunningRunForSession(req.AgentID, req.SessionID)
+		// The resolution is recorded as well as the opening. Recording only the
+		// opening left every elicitation looking permanently unanswered, which is
+		// why the run trace could not report a run blocked on a human: a wait
+		// with no end is an accusation, not a visibility.
 		_, _ = s.runStore.AppendNotification(runtrace.Notification{
-			Kind: "elicitation.opened", RunID: runID, AgentID: req.AgentID,
+			Kind: "elicitation." + string(event.Kind), RunID: runID, AgentID: req.AgentID,
 			SessionID: req.SessionID, ElicitationID: req.ID,
 		})
 	})
