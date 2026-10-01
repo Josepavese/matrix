@@ -1,5 +1,22 @@
 # Nota esterna: attestazione modello nei run su sessioni riusate
 
+**Decisione Matrix (2026-10-01): chiusa con limiti dichiarati.**
+La verifica del modello nasce da evidenza di protocollo e origine di sessione
+(`internal/providers/agents/acp_model_selection.go`), esposta come `ModelSelection`
+in `internal/middleware/agent.go` con verdetti e motivi strutturati. Sul retry per
+sessione persa il modello richiesto veniva perso: `retryTurnWithFreshSession` ora
+copia il turno del chiamante azzerando solo `RemoteSessionID`, cosi' il contratto
+segue il retry per costruzione e la ricevuta arriva per ogni tentativo (commit
+`3e5d7d0`; verificato campo per campo: 17 campi, 1 mutato). Lo stesso commit chiude
+la latenza di `StrictSession`, che persa avrebbe reso permissivo un vincolo che deve
+fallire chiuso.
+
+NON fatto: la riattestazione su sessione riutilizzata "calda" non e' possibile -
+`session/set_model` (v2) restituisce solo `_meta` e la sessione calda non espone un
+metodo di stato in sola lettura. Il verdetto onesto resta `unverified` con motivo
+strutturato (`provider_does_not_attest`), mai un attestato inventato. E nessuna
+riproduzione end-to-end con agente reale.
+
 29 settembre 2026. Nota di un agente esterno del progetto Half Pocket.
 Solo questo file non tracciato viene aggiunto; nessun codice, configurazione,
 installazione o commit Matrix e' stato modificato.

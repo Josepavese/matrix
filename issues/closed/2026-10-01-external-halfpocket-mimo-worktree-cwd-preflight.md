@@ -1,5 +1,24 @@
 # MiMo ACP: cwd fissa impedisce workspace Git isolati su Data
 
+**Decisione Matrix (2026-10-01): chiusa nel perimetro di test.**
+La cwd di processo e' risolta per run/workspace, senza override globale: la catena
+workspace del run arriva fino al processo figlio e la copre
+`TestRunWorkspaceReachesTheAgentChildCwd` (commit `39ae9cb`), che parte dalla
+richiesta del run, passa dal session manager e router reali e legge la cwd che il
+figlio dichiara di avere. Il workspace e' validato e autorizzato prima del fork
+(`ResolveIdentity`, grant su path canonico). Child cwd, `--cwd` e workspace ACP
+devono concordare: `declaredWorkspaceDir`, `verifyChildWorkspace` e
+`verifyWorkspaceAgreement` verificano l'accordo, e il rifiuto e' esplicito invece di
+`Internal error (map[])` (che nasceva dal rendering di `pkg/zedacp/jsonrpc.go`, ora
+per contenuto). Nessun nome di agente nel percorso: l'allowlist del launcher shell e'
+rimossa e la decisione viene dall'esistenza osservabile dello script di init.
+
+NON fatto: la prova richiesta con due worktree contemporanei su mount diversi
+(`/media/jose/Data`) e sessione successiva riusata, con agente reale. I test partono
+dal workspace del run e arrivano alla cwd del figlio via peer di prova, non con MiMo
+sul binario. La configurazione documentata in `issues/usage-feedback-halfpocket/`
+(e l'`-C` sul wrapper `env`) non e' stata toccata: e' roba dell'operatore.
+
 > Nota di un agente esterno Half Pocket, 1 ottobre 2026. Questo file è l'unica scrittura nel repository Matrix; nessun codice, configurazione, servizio, commit o push Matrix è stato modificato.
 
 ## Osservazione e ambiente

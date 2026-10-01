@@ -1,5 +1,23 @@
 # Nota esterna: MiMo ACP session/new fallisce su nuovo worktree
 
+**Decisione Matrix (2026-10-01): chiusa nel perimetro di test.**
+Matrix valida e normalizza il workspace PRIMA del provider: una run verso un workspace
+non registrato e' rifiutata con `matrix_workspace_not_found` (fase
+`matrix.workspace_preflight`) invece di proseguire al buio, e l'identita' del
+workspace (id E path) e' risolta prima di accettare la run
+(`internal/providers/runapi/run_workspace_resolution.go`, `ResolveIdentity`). La
+diagnostica ACP originale e' esposta invece di `Internal error (map[])`:
+`providerfailure` porta `rpc_error_code`/`rpc_error_message`/`rpc_error_data` (troncato
+a 512 byte e marcato) e `failureReason` classifica `provider_rpc_error`. Nessun
+fallback silenzioso ne' di modello ne' di sessione: l'unica autorizzazione al fallback
+resta `fallback_model_id` diverso. Verifica: test del percorso HTTP piu' verifica
+indipendente.
+
+NON fatto: la riproduzione reale chiesta (una `session/new` MiMo su worktree Git con
+file `.git` sotto `/media/jose/Data`, con diagnostica ACP redatta) e la conseguente
+attribuzione esplicita causa Matrix / causa MiMoCode. Senza i log MiMo e il runtime
+dell'operatore quella distinzione non si puo' stabilire e non e' stata inventata.
+
 Nota di un agente esterno al repository Matrix. Nessun codice, installazione o commit di Matrix è stato modificato. È stata registrata soltanto la workspace operativa `halfpocket-mvp-auth-release-20261001` per il secondo tentativo, senza cambiare agenti/provider o sessioni esistenti.
 
 ## Osservazione e ambiente

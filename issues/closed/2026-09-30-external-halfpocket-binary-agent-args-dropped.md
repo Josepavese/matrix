@@ -1,5 +1,16 @@
 # Nota esterna: `matrix install` perde gli argomenti del binario ACP
 
+**Decisione Matrix (2026-10-01): chiusa.**
+`agentmgr/installer.go` porta `Args: resolved.Args` sul ramo binario e
+`repairedArgs` ripara in modo idempotente le configurazioni gia' installate (elenco
+vuoto riempito dall'indice, elenco non vuoto vince, `Override.AppendArgs` intatto).
+`registry_client.go:241` propaga `dist.Args` da `ResolveAnyDistribution`. Verifica:
+esperimenti di reversione T3 con dente, piu' ri-verifica indipendente.
+
+NON fatto: il pezzo T3/B e' coperto solo dal test dedicato - mascherato end-to-end
+da `repairedArgs`, che ripara prima che il difetto si veda. Limite di copertura
+dichiarato, non di comportamento.
+
 Questa è una segnalazione di un agente esterno impegnato nel collaudo Half Pocket. Non ho modificato codice, installazione, configurazioni, commit o remoto del repository Matrix; l'unica scrittura qui è questo file non tracciato in `issues/`.
 
 ## Osservazione e ambiente

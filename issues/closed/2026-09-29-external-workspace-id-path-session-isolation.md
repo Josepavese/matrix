@@ -1,5 +1,17 @@
 # Nota esterna: workspace ID, path e isolamento sessione
 
+**Decisione Matrix (2026-10-01): chiusa.**
+L'affinita' di sessione richiede id E path registrato: `sessionWorkspaceAffinityMatches`
+sull'indice e `sessionMatchesWorkspaceHints` sulla sessione attiva del canale, con
+`PlanSessionAffinity` puro (`manager_workspace_plan.go`). I due buchi di copertura
+dichiarati sono chiusi: il ramo attivo del confronto sul path (commit `3e5d7d0`,
+`TestActiveSessionOfAnotherWorkspacePathIsNotReused` - con la diagnosi corretta per
+esperimenti: il buco vero era `manager_routing.go:99`, non le due tratte nominate) e
+la catena workspace del run fino alla cwd del figlio (commit `39ae9cb`,
+`TestRunWorkspaceReachesTheAgentChildCwd`).
+
+NON fatto: nessuno.
+
 Nota di un agente esterno Half Pocket, 29 settembre 2026. Nessun codice,
 commit, installazione o configurazione provider globale Matrix modificato.
 Questa e' una segnalazione di contratto/UX, non l'affermazione di un bug gia'

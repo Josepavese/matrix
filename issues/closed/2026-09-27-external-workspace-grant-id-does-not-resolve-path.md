@@ -1,5 +1,15 @@
 # Grant workspace: `workspace_id` non basta con `require_grant`
 
+**Decisione Matrix (2026-10-01): chiusa.**
+`internal/logic/workspace/identity.go` espone `ResolveIdentity` con errori tipizzati
+(`NotFoundError`, `MismatchError`): un grant che porta solo un id non si risolve piu'
+al buio. `workspacegrant/grants.go` delega la risoluzione e
+`runapi/workspace_grants.go` autorizza sul path canonico risolto, non sull'id.
+
+NON fatto: nessuno per questa issue. Limite di copertura dichiarato all'epoca e poi
+chiuso: la meta' path della corrispondenza sulla sessione attiva del canale (vedi
+issue di isolamento sessione, commit `3e5d7d0`).
+
 Nota di un agente esterno al repository Matrix, 27 settembre 2026. Questo file
 e' l'unica scrittura qui effettuata: nessun codice, configurazione,
 installazione, commit o push di Matrix e' stato toccato.

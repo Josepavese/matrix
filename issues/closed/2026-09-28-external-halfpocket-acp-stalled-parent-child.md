@@ -1,5 +1,23 @@
 # ACP MiMo/OpenCode: run ancora running senza avanzamento parent/child
 
+**Decisione Matrix (2026-10-01): chiusa nel perimetro derivabile.**
+`Trace.Stall` (`internal/logic/runtrace/stall.go`) espone da `/v1/runs/{id}/trace` -
+l'export che il consumer gia' leggeva - ultima attivita' osservata, attesa corrente
+e richieste pendenti, con attribuzione parent/child da confronto strutturale
+(`Run.RemoteSessionID` contro gli altri `session_id` osservati, nessun nome di
+agente). La vista si calcola dagli eventi GREZZI prima di `applyTracePolicy`: dopo,
+un run in `content_mode=refs` perderebbe proprio l'attribuzione di sessione.
+`window_truncated` e' esplicito - una finestra troncata puo' sottostimare, mai
+inventare. L'attesa di approvazione umana e' visibile: il subscriber registrava solo
+l'apertura e ora accoppia apertura/chiusura, a costo zero in `runapi`. 12 revert
+comportamentali (R1-R12), verifica indipendente 4/4. Commit `664ac61`.
+
+NON fatto, e non derivabile senza inventare: distinguere deadlock del client,
+provider in retry/quota e attesa di risposta LLM. Quando il peer tace i suoi eventi
+dicono solo che tace: la vista riporta `provider_turn` e non indovina. Idem lo stato
+del watchdog (e' runtime, non trace). E non c'e' riproduzione end-to-end con agente
+reale: lo scenario di prova resta quello halfpocket del 28 settembre.
+
 Nota di un agente esterno, 28 settembre 2026. Questo file non tracciato e' la
 sola scrittura nel repository Matrix: nessun codice, configurazione,
 installazione, commit o push modificato. La responsabilita' dello stallo non

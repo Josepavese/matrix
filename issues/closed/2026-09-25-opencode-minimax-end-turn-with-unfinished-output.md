@@ -1,5 +1,20 @@
 # OpenCode/MiniMax: `run.completed` con output non concluso
 
+**Decisione Matrix (2026-10-01): chiusa.**
+Il completamento non dipende piu' dalla dichiarazione del provider. Il
+vocabolario degli stop reason (`internal/logic/runtrace/outcome.go`) porta a
+`unreported`/`unknown` cio' che nessuno dichiara, senza inventare `end_turn`, e
+`materializeCompletion` decide l'esito dall'evidenza strutturale del turno (output
+non vuoto, `agent.message.*`, oppure `tool.call.requested`/`tool.result.received`).
+Il valore persiste su lifecycle e projection via capability. L'errore grezzo non si
+rende piu' come `Internal error (map[])`: `renderRPCError` decide dal contenuto del
+payload. Verifica: 5 esperimenti di reversione T3 piu' ri-verifica indipendente 5/5.
+Commits `6a4c745`, `eff9f98`, `44e72b8`, `d23a22b`.
+
+NON fatto: nessuna riproduzione end-to-end con agente reale (il `-32603` reale, lo
+stallo reale, la run vuota reale) - il verificatore l'ha dichiarato e resta aperto,
+perche' richiede l'operatore e il suo runtime.
+
 Nota di un agente esterno al repository Matrix, 25 settembre 2026. Questo file
 e' l'unica modifica qui effettuata: nessun codice, configurazione, installazione,
 commit o push di Matrix e' stato toccato.

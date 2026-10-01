@@ -1,7 +1,26 @@
 # Wall-clock waits in tests: the flake surface, and what to do about it
 
+**Decisione Matrix (2026-10-01): chiusa con tre debiti dichiarati.**
+La riscrittura e' fatta: 7 siti fragili resi non-casuali (fence FIFO, poll
+sull'osservabile, handshake), 2 guardie fail-open corrette - l'asserzione corre
+dopo il poll, non prima - e 2 attese d'ordine senza sleep. Ogni sito porta due
+esperimenti: ritardo iniettato al punto di sincronizzazione resta verde,
+sincronizzazione rimossa diventa rossa. `time.Sleep` nei test da 69 a 64.
+L'ultimo sleep fisso vero, in `internal/logic/runaction/service_test.go`, e'
+chiuso con una cucitura di solo test su `middleware.Storage` (commit `8df82ea`):
+20/20 verde con produzione intatta, rosso a finestra rotta. Verifica indipendente
+su `acp_adapter_concurrency_test.go` e `telegram/access_test.go`, piu' sweep
+`-count=20` e `GOMAXPROCS=1`. Commits `32109ef`, `8df82ea`, `09c2b20`.
+
+NON fatto, dichiarato come debito: 3 siti il cui punto di sincronizzazione non ha
+segno osservabile senza toccare produzione - `acp_adapter_concurrency_test.go:222`
+(asserzione negativa), `acp_v2_lifecycle_test.go:114/174` (stimolo = silenzio del
+peer oltre la quiet wait v1, 150ms letterale in `acp_adapter.go:184/510`) e le
+finestre deliberate dei test con agenti reali. Correzione a verbale: dei 4 debiti
+inizialmente elencati, tre erano gia' poll o stimoli documentati.
+
 Date observed: 2026-09-23
-Status: audited, not rewritten
+Status: closed, rewritten 2026-10-01
 
 ## Triage release 2026-09-24
 

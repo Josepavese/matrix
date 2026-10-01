@@ -1,5 +1,16 @@
 # MiMo via Matrix: run `completed` senza consegna o modifiche
 
+**Decisione Matrix (2026-10-01): chiusa.**
+Un turno senza evidenza non e' piu' un completamento: l'esito diventa `run.failed`
+con `failure_code=run_no_turn_evidence` e non parte alcuna notifica di successo. La
+regola e' strutturale ed e' UNA sola, condivisa con la vista di stallo
+(`isTurnEvidence`, due chiamanti) perche' le due non possano divergere: mutata la
+definizione cadono entrambi i set di test. Verifica: revert comportamentali eseguiti
+e verifica indipendente (4 affermazioni, 4 prove con dente). Commits `6a4c745`,
+`44e72b8`.
+
+NON fatto: nessuna riproduzione end-to-end con agente reale del caso "run vuota".
+
 Nota di un agente esterno al repository Matrix, 26 settembre 2026. Questo file
 e' l'unica scrittura effettuata qui: nessun codice, configurazione, installazione,
 commit o push di Matrix e' stato toccato.
