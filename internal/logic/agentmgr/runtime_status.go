@@ -124,6 +124,47 @@ func BuildRuntimeReports(store middleware.Storage, reg *Registry, proc middlewar
 	return reports, warnings, nil
 }
 
+// RuntimeReportRequest is what a single-agent runtime report needs. It is a
+// request rather than a parameter list so a caller cannot silently transpose
+// two of the collaborators it has to supply.
+type RuntimeReportRequest struct {
+	Store    middleware.Storage
+	Registry *Registry
+	Process  middleware.Process
+	CanDial  func(string) bool
+	AgentID  string
+}
+
+// BuildRuntimeReport generates the runtime report for one agent, so a command
+// that shows a single agent reports what the daemon says about it without
+// building every other agent's report.
+func BuildRuntimeReport(request RuntimeReportRequest) (AgentRuntimeReport, error) {
+	if request.Registry == nil {
+		return AgentRuntimeReport{}, fmt.Errorf("agent registry not available")
+	}
+	cfg, err := request.Registry.Get(request.AgentID)
+	if err != nil {
+		return AgentRuntimeReport{}, err
+	}
+	states, err := LoadRuntimeStates(request.Store)
+	if err != nil {
+		return AgentRuntimeReport{}, err
+	}
+	endpoint := protocolEndpointFromAgentConfig(cfg)
+	meta, metaErr := agentcfg.LoadMeta(request.Store, request.AgentID)
+	report := buildRuntimeReport(inspectInput{
+		AgentID:   request.AgentID,
+		Config:    cfg,
+		Installed: isInstalledEndpoint(cfg, endpoint, request.Process),
+		State:     states[request.AgentID],
+		Meta:      meta,
+	}, request.CanDial)
+	if metaErr != nil {
+		report.Warnings = append(report.Warnings, "agent metadata unavailable: "+metaErr.Error())
+	}
+	return report, nil
+}
+
 func buildRuntimeReport(input inspectInput, canDial func(string) bool) AgentRuntimeReport {
 	endpoint := protocolEndpointFromAgentConfig(input.Config)
 	report := AgentRuntimeReport{
@@ -144,8 +185,13 @@ func buildRuntimeReport(input inspectInput, canDial func(string) bool) AgentRunt
 		report.Warnings = append(report.Warnings, "executable not found in PATH")
 	case report.Mode == "on_demand":
 		if input.State.Status == "" {
-			report.Status = "not_probed"
-			report.Warnings = append(report.Warnings, "no bounded provider initialize probe recorded")
+			// Registered and installed, but the runtime has not observed this
+			// configuration yet. The status names the operator's situation
+			// rather than the absence of a probe: what has to happen next is an
+			// apply, and calling it "not probed" left a freshly registered
+			// agent reading like a fault.
+			report.Status = "pending_apply"
+			report.Warnings = append(report.Warnings, "registration recorded, runtime not yet applied: restart the daemon or wait for the next refresh, then re-run this command")
 		} else {
 			report = applyRuntimeState(report, input.State, canDial)
 		}

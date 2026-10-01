@@ -2,10 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
+	"github.com/Josepavese/matrix/internal/logic/agentmgr"
+	"github.com/Josepavese/matrix/internal/logic/runtimecheck"
 	"github.com/Josepavese/matrix/internal/middleware"
+	execprovider "github.com/Josepavese/matrix/internal/providers/exec"
+	"github.com/Josepavese/matrix/internal/providers/network"
 	"github.com/spf13/cobra"
 )
 
@@ -67,6 +72,21 @@ var agentShowCmd = &cobra.Command{
 			"is_active":  cfg.IsActive(),
 			"env_effect": cfg.Env,
 		}
+		// The runtime block is what tells a registered agent apart from a
+		// failed one: it is read from the runtime's own record, and a
+		// registration the runtime has not applied yet is reported as such.
+		runtimeReport, runtimeErr := agentmgr.BuildRuntimeReport(agentmgr.RuntimeReportRequest{
+			Store:    ctx.Store,
+			Registry: ctx.Registry,
+			Process:  execprovider.NewProvider(),
+			CanDial:  func(address string) bool { return runtimecheck.CanDial(network.NewProvider(), address) },
+			AgentID:  agentID,
+		})
+		if runtimeErr != nil {
+			payload["runtime_error"] = runtimeErr.Error()
+		} else {
+			payload["runtime"] = runtimeReport
+		}
 		if len(resolved.Metadata) > 0 {
 			payload["agent_launch_policy"] = resolved.Metadata
 		}
@@ -83,7 +103,11 @@ var agentShowCmd = &cobra.Command{
 		if err != nil {
 			exitf("Error: %v", err)
 		}
-		cmd.Println(string(out))
+		// The report is this command's data output: it goes to stdout so a
+		// caller can pipe it. cobra's Println writes to stderr when no out is
+		// set, which made `matrix agent show <id> > file.json` produce an
+		// empty file while the report looked present on a terminal.
+		fmt.Fprintln(cmd.OutOrStdout(), string(out))
 	},
 }
 

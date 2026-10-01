@@ -1,10 +1,12 @@
 package agentmgr
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
 	"github.com/Josepavese/matrix/internal/logic/memstore"
+	"github.com/Josepavese/matrix/internal/middleware"
 	execprovider "github.com/Josepavese/matrix/internal/providers/exec"
 )
 
@@ -25,16 +27,75 @@ func TestBuildRuntimeReportUsesBoundedProbeStateForOnDemandAgent(t *testing.T) {
 	}
 }
 
-func TestBuildRuntimeReportDoesNotClaimReadyBeforeProbe(t *testing.T) {
+// TestBuildRuntimeReportWaitsForTheRuntimeInsteadOfClaimingReady keeps the
+// guard that a registered agent is never reported as ready before the runtime
+// observed it. The status names what is missing — an apply — rather than the
+// probe that has not run, so a freshly registered agent does not read as a
+// fault while the daemon is still catching up.
+func TestBuildRuntimeReportWaitsForTheRuntimeInsteadOfClaimingReady(t *testing.T) {
 	report := buildRuntimeReport(inspectInput{
 		AgentID: "codex", Installed: true,
 		Config: AgentConfig{Command: "codex-acp", Kind: "acp", Transport: "stdio"},
 	}, nil)
 
-	if report.Status != "not_probed" {
-		t.Fatalf("runtime status = %q", report.Status)
+	if report.Status != "pending_apply" {
+		t.Fatalf("runtime status = %q, want pending_apply", report.Status)
+	}
+	if len(report.Warnings) == 0 {
+		t.Fatal("pending_apply must tell the operator what to do next")
 	}
 }
+
+// TestBuildRuntimeReportForOneAgentReportsTheRegisteredState is the acceptance
+// evidence for the single-agent report a show command consumes: an agent
+// registered in the SSOT and not yet observed by the runtime is reported as
+// pending_apply, not as an error, and the report stays about that agent.
+func TestBuildRuntimeReportForOneAgentReportsTheRegisteredState(t *testing.T) {
+	store := memstore.New()
+	if err := agentcfg.SaveEntry(store, "mimo", agentcfg.Entry{Config: AgentConfig{
+		Command: "/bin/true", Kind: string(middleware.ProtocolKindACP), Transport: "stdio",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := NewRegistry(nil, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := BuildRuntimeReport(RuntimeReportRequest{
+		Store:    store,
+		Registry: registry,
+		Process:  alwaysInstalledProcess{},
+		AgentID:  "mimo",
+	})
+	if err != nil {
+		t.Fatalf("BuildRuntimeReport: %v", err)
+	}
+	if report.AgentID != "mimo" {
+		t.Fatalf("report is about %q", report.AgentID)
+	}
+	if report.Status != "pending_apply" {
+		t.Fatalf("runtime status = %q, want pending_apply for a registered agent the runtime has not observed", report.Status)
+	}
+}
+
+// alwaysInstalledProcess reports every configured command as present, so a
+// report test exercises the runtime vocabulary instead of the host's PATH.
+type alwaysInstalledProcess struct{}
+
+func (alwaysInstalledProcess) Exec(middleware.CommandSpec) ([]byte, error) { return nil, nil }
+func (alwaysInstalledProcess) ExecSeparate(context.Context, middleware.CommandSpec) (*middleware.ExecResult, error) {
+	return nil, nil
+}
+func (alwaysInstalledProcess) Start(middleware.CommandSpec) (middleware.ProcessHandle, error) {
+	return nil, nil
+}
+func (alwaysInstalledProcess) StartPiped(middleware.CommandSpec) (middleware.PipedProcess, error) {
+	return nil, nil
+}
+func (alwaysInstalledProcess) RunPrivileged(middleware.CommandSpec) ([]byte, error) { return nil, nil }
+func (alwaysInstalledProcess) HasExecutable(string) bool                            { return true }
+func (alwaysInstalledProcess) SpawnPTY() error                                      { return nil }
 
 // TestBuildRuntimeReportsExposeArtifactVerification keeps the integrity outcome
 // observable to consumers of `matrix doctor`: the answer must reach the runtime

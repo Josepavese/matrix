@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
@@ -95,6 +96,18 @@ var agentDoctorCmd = &cobra.Command{
 				if a2aAuth, a2aWarnings := agentdoctor.InspectA2AAuthentication(cmd.Context(), endpoint, a2aclient.FetchRemoteAuthCard); a2aAuth != nil {
 					item["a2a_authentication"], warnings = a2aAuth, append(warnings, a2aWarnings...)
 				}
+				processCwd, cwdErr := childProcessCwd(endpoint)
+				if cwdErr != nil {
+					item["provider_status"] = "process_cwd_invalid"
+					item["process_cwd_error"] = cwdErr.Error()
+					warnings = append(warnings, cwdErr.Error())
+				} else {
+					child, childWarnings := probeChild(endpoint, processCwd)
+					if child.Status != "" {
+						item["child"] = child
+					}
+					warnings = append(warnings, childWarnings...)
+				}
 			}
 			meta, metaErr := agentcfg.LoadMeta(ctx.Store, id)
 			if metaErr != nil {
@@ -136,7 +149,11 @@ var agentDoctorCmd = &cobra.Command{
 		if err != nil {
 			exitf("Error: %v", err)
 		}
-		cmd.Println(string(out))
+		// The report is this command's data output: it goes to stdout so a
+		// caller can pipe it. cobra's Println writes to stderr when no out is
+		// set, which made `matrix agent show <id> > file.json` produce an
+		// empty file while the report looked present on a terminal.
+		fmt.Fprintln(cmd.OutOrStdout(), string(out))
 	},
 }
 

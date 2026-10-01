@@ -197,9 +197,23 @@ func (s *Supervisor) watchdog(ctx context.Context, agentID string, cfg AgentConf
 		}
 
 		args := injectPortArgs(cfg.Args, port)
-		log.Info("starting supervised agent", "event", "agent_starting", "port", port, "command", cfg.Command, "args", args)
-		spec := middleware.CommandSpec{Runner: cfg.Command, Args: args, Env: cfg.Env, EnvIsolation: cfg.EnvIsolation}
 		endpoint := protocolEndpointFromAgentConfig(cfg)
+		processCwd, cwdErr := agentlaunch.ResolveProcessCwd(endpoint)
+		if cwdErr != nil {
+			// An unusable declared process cwd stops the launch: starting the
+			// child somewhere else would be a silent substitution, and it is
+			// exactly the wrong directory that this declaration exists to
+			// prevent.
+			s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "process_cwd_invalid", Error: cwdErr.Error()})
+			log.Error("refusing to start supervised agent: declared process cwd is unusable",
+				"event", "agent_process_cwd_invalid", "error", cwdErr, "retry_in", "5s")
+			if !delayOrDone(ctx, 5*time.Second) {
+				return
+			}
+			continue
+		}
+		log.Info("starting supervised agent", "event", "agent_starting", "port", port, "command", cfg.Command, "args", args, "process_cwd", processCwd)
+		spec := middleware.CommandSpec{Runner: cfg.Command, Args: args, Env: cfg.Env, EnvIsolation: cfg.EnvIsolation, Dir: processCwd}
 		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "starting", Port: port, Address: fmt.Sprintf("127.0.0.1:%d", port)})
 
 		run, ok := s.startAgent(ctx, log, supervisedStartRequest{

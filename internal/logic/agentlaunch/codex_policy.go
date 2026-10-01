@@ -68,6 +68,27 @@ func (s codexPolicyState) active() bool {
 	return len(s.policy) > 0 || s.bypass || s.hasConfig || s.mode != ""
 }
 
+// holdsGovernedPolicy reports whether a launch asks for a guarantee that only
+// the codex launch-policy contract provides: the sandbox and approval keys, the
+// bypass flag, or the contract's own configuration and mode declarations.
+//
+// A launch config key that providers declare for themselves
+// (MATRIX_LAUNCH_CONFIG_KEYS, such as model_reasoning_effort) is deliberately
+// not one of these. Any provider may be handed such a key, so treating it as a
+// claim on this contract would route providers that never shipped it into a
+// contract they never declared.
+func (s codexPolicyState) holdsGovernedPolicy() bool {
+	if s.bypass || s.hasConfig || s.mode != "" {
+		return true
+	}
+	for key := range s.policy {
+		if key != ModelReasoningEffortKey {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *codexPolicyState) prepareRequested() {
 	s.requested = stringMapToAny(s.policy)
 	if s.bypass {
