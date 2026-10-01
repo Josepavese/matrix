@@ -3,16 +3,19 @@ package runapi
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/memstore"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 func TestLocalNotificationsSSEWakesOnTerminalEventWithoutContent(t *testing.T) {
@@ -398,3 +401,97 @@ func TestNotificationAckRefusesWhatItCannotRecordOnce(t *testing.T) {
 //   * An acknowledgement (POST /v1/run-notifications/ack) is the supervisor's
 //     own claim about one delivery, recorded exactly once per idempotency key.
 // ----------------------------------------------------------------------------
+
+// TestNotificationAckRecordsOneClaimOnceUnderConcurrency is the property the
+// exactly-once record actually needs: the read-check-write is atomic. Eight
+// identical claims race for the same key, and exactly one of them may be the
+// first one - a lock that is not there returns several "first" claims, which is
+// the whole guarantee gone. The single-threaded test above cannot see that.
+func TestNotificationAckRecordsOneClaimOnceUnderConcurrency(t *testing.T) {
+	storage := memstore.New()
+	server := NewServer(&runTestRouter{}).WithTraceStorage(storage)
+	const claim = `{"run_id":"run-raced","sequence":3}`
+	const claims = 8
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	firstClaims, replays, refusals := 0, 0, 0
+	for i := 0; i < claims; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			// The helper only builds a request and a recorder; it never fails
+			// the test, so it is safe off the test goroutine.
+			got := postNotificationAck(t, server.HandleLocalNotificationAck, http.MethodPost, "supervisor-race", claim)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case got.status != http.StatusOK:
+				refusals++
+			case got.replayed == "":
+				firstClaims++
+			default:
+				replays++
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if refusals != 0 || firstClaims != 1 || replays != claims-1 {
+		t.Fatalf("la stessa claim in parallelo ha prodotto prime=%d replay=%d rifiuti=%d, vuole prime=1 replay=%d rifiuti=0",
+			firstClaims, replays, refusals, claims-1)
+	}
+	record, found, err := server.loadNotificationAck("supervisor-race")
+	if err != nil || !found || record.Sequence != 3 {
+		t.Fatalf("record dopo la corsa: %+v found=%v err=%v", record, found, err)
+	}
+	if keys, err := storage.List("notification_ack."); err != nil || len(keys) != 1 {
+		t.Fatalf("la corsa ha lasciato %d record: %v err=%v", len(keys), keys, err)
+	}
+}
+
+// failingSetStorage keeps a working store for reads and refuses writes, which is
+// what a store outage looks like from the handler.
+type failingSetStorage struct {
+	middleware.Storage
+	err error
+}
+
+func (f failingSetStorage) Set(string, []byte) error { return f.err }
+
+// TestNotificationAckNeverClaimsWhatItCouldNotRecord covers the write path a
+// happy test cannot: if the record cannot be made durable, answering
+// "acked" would claim an exactly-once guarantee Matrix does not have. A record
+// written before the outage keeps answering replays, because reading it needs no
+// write.
+func TestNotificationAckNeverClaimsWhatItCouldNotRecord(t *testing.T) {
+	const claim = `{"run_id":"run-unwritten","sequence":5}`
+	broken := NewServer(&runTestRouter{}).WithTraceStorage(failingSetStorage{
+		Storage: memstore.New(),
+		err:     errors.New("vault write unavailable"),
+	})
+
+	got := postNotificationAck(t, broken.HandleLocalNotificationAck, http.MethodPost, "supervisor-1", claim)
+	if got.status != http.StatusInternalServerError || strings.Contains(got.body, "acked") {
+		t.Fatalf("una scrittura fallita è stata annunciata: status=%d body=%s", got.status, got.body)
+	}
+	if _, found, err := broken.loadNotificationAck("supervisor-1"); err != nil || found {
+		t.Fatalf("un record mai scritto risulta presente: found=%v err=%v", found, err)
+	}
+
+	// The same claim, with a record already durable from before the outage: the
+	// replay is answered from storage, so the outage does not lose a claim that
+	// was already made.
+	durable := memstore.New()
+	seeded := NewServer(&runTestRouter{}).WithTraceStorage(durable)
+	if seed := postNotificationAck(t, seeded.HandleLocalNotificationAck, http.MethodPost, "supervisor-2", claim); seed.status != http.StatusOK {
+		t.Fatalf("preparazione del record: status=%d body=%s", seed.status, seed.body)
+	}
+	replay := postNotificationAck(t, NewServer(&runTestRouter{}).WithTraceStorage(failingSetStorage{Storage: durable, err: errors.New("vault write unavailable")}).HandleLocalNotificationAck, http.MethodPost, "supervisor-2", claim)
+	if replay.status != http.StatusOK || replay.replayed != "true" {
+		t.Fatalf("un record già durabile deve rispondere in replay anche a store non scrivibile: status=%d replayed=%q", replay.status, replay.replayed)
+	}
+}

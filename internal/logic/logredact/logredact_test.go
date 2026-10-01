@@ -1,9 +1,6 @@
 package logredact
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 // TestEndpointIsRedactedByDefault pins the protective default: a provider host
 // never reaches a log unless the operator asked for it.
@@ -57,28 +54,5 @@ func TestEmptyEndpointStaysEmpty(t *testing.T) {
 		if got := Endpoint(raw); got != "" {
 			t.Fatalf("Endpoint(%q) = %q, want an empty result", raw, got)
 		}
-	}
-}
-
-// TestHeaderNamesNeverCarryValues is the second half of the policy: a caller can
-// record which headers were configured without writing a single credential.
-func TestHeaderNamesNeverCarryValues(t *testing.T) {
-	const secret = "sk-live-should-never-be-written"
-	names := HeaderNames(map[string]string{
-		"Authorization": "Bearer " + secret,
-		"X-Api-Key":     secret,
-		"":              secret,
-		"  ":            secret,
-	})
-	if len(names) != 2 || names[0] != "Authorization" || names[1] != "X-Api-Key" {
-		t.Fatalf("header names = %#v", names)
-	}
-	for _, name := range names {
-		if strings.Contains(name, secret) {
-			t.Fatalf("a header value reached a name: %q", name)
-		}
-	}
-	if names := HeaderNames(nil); len(names) != 0 {
-		t.Fatalf("no headers must produce no names: %#v", names)
 	}
 }

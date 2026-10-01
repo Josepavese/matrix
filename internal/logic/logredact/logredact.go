@@ -1,17 +1,22 @@
 // Package logredact holds the redaction policy for what Matrix writes into its
 // own logs without anyone asking for it. A value that says where a provider
-// lives is withheld unless the operator reveals it explicitly, and header values
-// are never written at all: a log is a record nobody requested, so the
-// protective choice is the default and the exception must be declared.
+// lives is withheld unless the operator reveals it explicitly: a log is a record
+// nobody requested, so the protective choice is the default and the exception
+// must be declared.
 //
 // This policy governs logging only. A surface an operator queries on purpose
 // (for example the doctor report) is an answer to a question, not a record
 // written behind their back, and keeps showing what it was asked for.
+//
+// Header values are deliberately absent from this package. The guarantee is that
+// no log site writes one, and that is a negative a helper cannot provide: an
+// earlier HeaderNames helper was removed rather than left unreachable, because a
+// promise no code keeps is worse than no promise. The one place that lists header
+// names is the agent configuration display, and it is not a log.
 package logredact
 
 import (
 	"os"
-	"sort"
 	"strings"
 )
 
@@ -40,18 +45,4 @@ func Endpoint(raw string) string {
 		return value
 	}
 	return Redacted
-}
-
-// HeaderNames returns the configured header names, sorted, and never their
-// values. A caller that wants to say which authentication headers were supplied
-// can log this and still keep every credential out of the record.
-func HeaderNames(headers map[string]string) []string {
-	names := make([]string, 0, len(headers))
-	for name := range headers {
-		if trimmed := strings.TrimSpace(name); trimmed != "" {
-			names = append(names, trimmed)
-		}
-	}
-	sort.Strings(names)
-	return names
 }

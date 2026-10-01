@@ -487,9 +487,8 @@ the provider endpoint: the resolved address is recorded as `***`. That is the
 default because a log is written without anyone asking for it. Set
 `MATRIX_LOG_REVEAL_ENDPOINTS=1` to record the real address instead; that is the
 only value that turns it on, and any other value keeps the redaction. Header
-values are never logged at all, in either mode, with no override: a caller that
-wants to record which authentication headers were configured can log their names
-only.
+values are never logged at all, in either mode, with no override; the only place
+that lists header names is the agent configuration display, and it is not a log.
 
 This covers logging. A surface an operator queries on purpose, such as
 `matrix agent doctor`, still shows the endpoint it was asked about.
