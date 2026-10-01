@@ -13,7 +13,7 @@ import (
 func decodeRunRequest(w http.ResponseWriter, r *http.Request) (runRequest, bool) {
 	var req runRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Bad Request: invalid json", http.StatusBadRequest)
+		writeRunRequestDecodeError(w, err)
 		return runRequest{}, false
 	}
 	if strings.TrimSpace(req.ChannelID) == "" || strings.TrimSpace(req.Input.String()) == "" {

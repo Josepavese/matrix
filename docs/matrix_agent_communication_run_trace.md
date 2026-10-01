@@ -611,6 +611,15 @@ Headless setup behavior:
 - `matrix bootstrap doctor` exposes `system_configured` so installers and sidecars can block traffic until setup is complete;
 - headless deployments must provision at least one active agent, then run `matrix vault set system.configured true` before routing production `/v1/runs` traffic.
 
+Reading a run record from the vault:
+
+- `matrix vault get <key>` is string-oriented: it prints the text a string key holds;
+- run records are typed objects, so the string getter refuses them with `code=ERR_VAULT_TYPED_RECORD` and names the field list instead of reporting a parse failure of the vault;
+- `matrix vault get runtrace.run.<id> --help` lists every field of the record and its JSON type before any access, and `--field <name>` reads one field;
+- every getter that walks a typed record is bounded by an explicit cap (`--max-bytes`, 32 KiB by default) and refuses an oversized value with a dedicated code instead of truncating it;
+- `matrix vault result <id>` prints the diagnostic terminal outcome (`status`, `stop_reason`, `error`, `summary_ref`) and never the summary content or a provider transcript;
+- `matrix vault summary <id>` prints only the terminal summary, refuses one over the cap with `code=ERR_VAULT_SUMMARY_TOO_LARGE`, and refuses a run whose terminal phase has not been written yet with `code=ERR_VAULT_SUMMARY_UNAVAILABLE`.
+
 Concurrency and durability:
 
 - event appends are serialized inside the run trace store before updating the event index, so concurrent provider deltas and lifecycle events cannot drop index references in a single daemon;

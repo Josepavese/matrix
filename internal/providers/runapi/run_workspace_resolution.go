@@ -62,12 +62,17 @@ type runWorkspaceEvidence struct {
 	identity      workspace.Identity
 	requestedID   string
 	requestedPath string
+	comparison    workspace.Comparison
 }
 
 // applyRunWorkspaceIdentity resolves the one canonical workspace the run will
 // use and writes it back into the request, so the run record and the session
 // layer work on the canonical pair instead of on whichever spelling arrived. On
 // refusal the request is left untouched, so the trace shows what was asked for.
+//
+// The comparison of the two sides is what the artifact publishes, and it is
+// evaluated here so a disagreement refuses the run before the prompt instead of
+// being reported after it.
 func (s *Server) applyRunWorkspaceIdentity(req *runRequest) (runWorkspaceEvidence, error) {
 	evidence := runWorkspaceEvidence{
 		requestedID:   strings.TrimSpace(req.WorkspaceID),
@@ -75,6 +80,14 @@ func (s *Server) applyRunWorkspaceIdentity(req *runRequest) (runWorkspaceEvidenc
 	}
 	identity, err := s.resolveRunWorkspaceIdentity(*req)
 	evidence.identity = identity
+	if err != nil {
+		return evidence, err
+	}
+	comparison, err := workspace.CompareObservations(
+		workspace.Observation{WorkspaceID: evidence.requestedID, Path: evidence.requestedPath},
+		workspace.Observation{WorkspaceID: identity.ID, Path: identity.Path},
+	)
+	evidence.comparison = comparison
 	if err != nil {
 		return evidence, err
 	}
@@ -99,6 +112,15 @@ func (s *Server) publishRunWorkspacePlan(run runtrace.Run, req runRequest, evide
 		"channel_id":               strings.TrimSpace(req.ChannelID),
 		"agent_id":                 strings.TrimSpace(run.AgentID),
 		"session_policy":           normalizeRunSessionPolicy(req.SessionPolicy),
+	}
+	// The requested/resolved pair travels as one block, with the fields Matrix
+	// did not derive named as such: a reader of the artifact must not have to
+	// reconstruct the comparison from two flat keys, nor read an absent field as
+	// an agreement.
+	if evidence.comparison.Requested != (workspace.Observation{}) || evidence.comparison.Resolved != (workspace.Observation{}) {
+		metadata["workspace_requested"] = evidence.comparison.Requested
+		metadata["workspace_resolved"] = evidence.comparison.Resolved
+		metadata["workspace_not_derived"] = evidence.comparison.NotDerived
 	}
 	if plan, ok := s.planRunSessionAffinity(req, run.AgentID, identity); ok {
 		metadata["planned_session_kind"] = plan.Kind
@@ -158,12 +180,19 @@ func workspaceIdentityFailure(err error) error {
 	}
 	failure := &providerfailure.Failure{Phase: "matrix.workspace_preflight", Diagnostics: map[string]string{"origin": "matrix"}, Err: err}
 	var mismatch *workspace.MismatchError
-	if errors.As(err, &mismatch) {
+	var disagreement *workspace.ComparisonError
+	switch {
+	case errors.As(err, &mismatch):
 		failure.Code = WorkspaceIdentityMismatchCode
 		failure.Message = "workspace_id and workspace_path denote different workspaces"
 		failure.Diagnostics["workspace_id"] = mismatch.ID
 		failure.Diagnostics["workspace_path"] = mismatch.RequestedPath
 		failure.Diagnostics["registered_workspace_path"] = mismatch.RegisteredPath
+		return failure
+	case errors.As(err, &disagreement):
+		failure.Code = WorkspaceIdentityMismatchCode
+		failure.Message = "the requested and the resolved workspace do not agree"
+		failure.Diagnostics["disagreeing_fields"] = strings.Join(disagreement.Fields, ",")
 		return failure
 	}
 	var notFound *workspace.NotFoundError

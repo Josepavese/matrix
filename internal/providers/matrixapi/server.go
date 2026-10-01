@@ -75,6 +75,7 @@ func (s *Server) RecoverInterruptedRuns() (int, error) {
 // RegisterLocalNotificationRoutes is deliberately separate from the TCP API.
 func (s *Server) RegisterLocalNotificationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/run-notifications", s.runs.HandleLocalNotifications)
+	mux.HandleFunc("/v1/run-notifications/ack", s.runs.HandleLocalNotificationAck)
 }
 
 // WithEndpointResolver lets run traces record the selected protocol family.

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Josepavese/matrix/internal/logic/memstore"
@@ -1241,5 +1242,33 @@ func TestHandleSessionActions_RunRelatedSessionRetainedUses409(t *testing.T) {
 
 	if w.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// The local notification surface is deliberately registered apart from the TCP
+// API, and both halves of it must be reachable there: a supervisor polls, and it
+// acknowledges what it delivered. A route that was never registered answers 404,
+// which a caller reads as "this build has no acknowledgement" instead of as the
+// wiring mistake it is.
+func TestRegisterLocalNotificationRoutesServesTheAcknowledgement(t *testing.T) {
+	s := NewServer(&mockSessionRouter{})
+	mux := http.NewServeMux()
+	s.RegisterLocalNotificationRoutes(mux)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, newJSONRequest(http.MethodPost, "/v1/run-notifications/ack", strings.NewReader("{}")))
+	if w.Code == http.StatusNotFound {
+		t.Fatal("the acknowledgement route is not registered on the local notification mux")
+	}
+	// Without an Idempotency-Key the handler refuses the claim before touching
+	// any store, so a 400 here is the route answering, not a deeper failure.
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected the route to answer 400 for an unkeyed claim, got %d: %s", w.Code, w.Body.String())
+	}
+
+	unkeyed := httptest.NewRecorder()
+	mux.ServeHTTP(unkeyed, newJSONRequest(http.MethodGet, "/v1/run-notifications/ack", nil))
+	if unkeyed.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for GET on the acknowledgement route, got %d", unkeyed.Code)
 	}
 }

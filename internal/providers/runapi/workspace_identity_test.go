@@ -295,3 +295,47 @@ func TestIsolatedSessionPolicyIsVisibleBeforeThePrompt(t *testing.T) {
 		t.Fatalf("isolated session was not published before the prompt: %+v", event.Metadata)
 	}
 }
+
+// The terminal artifact carries both sides of the workspace contract as one
+// block, and names what Matrix did not derive instead of leaving the reader to
+// read an absent repository field as an agreement.
+func TestRunArtifactCarriesTheRequestedAndTheResolvedWorkspace(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "worktree")
+	server := NewServer(&runTestRouter{}).WithTraceStorage(runWorkspaceStorage(t, workspace.Meta{ID: "ws-worktree", RootPath: root}))
+
+	w := postRunRequest(t, server, fmt.Sprintf(
+		`{"channel_id":"probe-workspace-artifact","input":"probe","workspace_id":"ws-worktree","workspace_path":%q}`, root))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("probe was not accepted: %d %s", w.Code, w.Body.String())
+	}
+	var success runresponse.Success
+	if err := json.Unmarshal(w.Body.Bytes(), &success); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	event := findRunEvent(t, loadRunTrace(t, server, success.RunID), "workspace.identity.resolved")
+	requested, ok := event.Metadata["workspace_requested"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("artifact does not carry the requested workspace: %+v", event.Metadata)
+	}
+	resolved, ok := event.Metadata["workspace_resolved"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("artifact does not carry the resolved workspace: %+v", event.Metadata)
+	}
+	if requested["workspace_id"] != "ws-worktree" || requested["path"] != root {
+		t.Fatalf("requested side is not what the caller sent: %+v", requested)
+	}
+	if resolved["workspace_id"] != "ws-worktree" || resolved["path"] != root {
+		t.Fatalf("resolved side is not the canonical identity: %+v", resolved)
+	}
+	notDerived, ok := event.Metadata["workspace_not_derived"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("artifact does not declare what it did not derive: %+v", event.Metadata)
+	}
+	for _, field := range []string{"git_common_dir", "branch", "real_child_cwd"} {
+		reason, found := notDerived[field].(string)
+		if !found || reason == "" {
+			t.Fatalf("%s must be declared with its reason, got %+v", field, notDerived)
+		}
+	}
+}
