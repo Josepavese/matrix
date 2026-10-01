@@ -121,6 +121,12 @@ func TestContextCancellationRacingAnAnswer(t *testing.T) {
 		for len(service.Pending()) == 0 && time.Now().Before(deadline) {
 			time.Sleep(50 * time.Microsecond)
 		}
+		// A round that never registered proves nothing: Respond would return
+		// false and the accept path would go untested. Fail instead of letting
+		// the wait expire quietly.
+		if len(service.Pending()) == 0 {
+			t.Fatalf("round %d: request never became pending", round)
+		}
 		var wg sync.WaitGroup
 		wg.Add(2)
 		var accepted bool
@@ -143,12 +149,25 @@ func TestContextCancellationRacingAnAnswer(t *testing.T) {
 
 // TestResolvedEntriesDoNotLeak keeps the registry bounded: every terminal path
 // must remove its entry.
+//
+// The proof is structural rather than timed: Ask removes its entry before it
+// returns (settleLocked deletes from the registry, then the caller wakes up), so
+// once every Ask has returned the registry must already be empty. Waiting on a
+// fixed sleep instead only made the assertion as reliable as the scheduler: a
+// goroutine that had not been scheduled yet left nothing to leak and nothing to
+// observe.
 func TestResolvedEntriesDoNotLeak(t *testing.T) {
 	service := NewService(20 * time.Millisecond)
-	for i := 0; i < 50; i++ {
-		go func() { service.Ask(context.Background(), middleware.ElicitationRequest{ID: "leak"}) }()
+	const requests = 50
+	var wg sync.WaitGroup
+	wg.Add(requests)
+	for i := 0; i < requests; i++ {
+		go func() {
+			defer wg.Done()
+			service.Ask(context.Background(), middleware.ElicitationRequest{ID: "leak"})
+		}()
 	}
-	time.Sleep(200 * time.Millisecond)
+	wg.Wait()
 	if pending := service.Pending(); len(pending) != 0 {
 		t.Fatalf("registry leaked %d expired entries", len(pending))
 	}
@@ -171,6 +190,12 @@ func TestManyConcurrentRequestsKeepUniqueIDs(t *testing.T) {
 			break
 		}
 		time.Sleep(time.Millisecond)
+	}
+	// The duplicate check below is only meaningful over the whole set: if the
+	// wait expired early it would inspect whatever subset happened to register
+	// and still pass the count check against that subset's size.
+	if pending := service.Pending(); len(pending) != 200 {
+		t.Fatalf("expected 200 concurrently pending requests, got %d", len(pending))
 	}
 	seen := map[string]bool{}
 	for _, pending := range service.Pending() {

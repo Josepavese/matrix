@@ -189,8 +189,14 @@ func TestServicePublishesLifecycleEvents(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	svc.Respond("e1", middleware.AcceptElicitation(map[string]interface{}{"x": 1}))
-	<-done
+	if !svc.Respond("e1", middleware.AcceptElicitation(map[string]interface{}{"x": 1})) {
+		t.Fatal("Respond refused to resolve a pending elicitation")
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ask never returned after Respond")
+	}
 
 	// Events are delivered on the subscriber's own worker, so wait for them
 	// rather than assuming they landed before Respond returned.
@@ -240,15 +246,48 @@ func TestServicePublishesResolvedOnTimeout(t *testing.T) {
 }
 
 // TestUnsubscribeStopsDelivery keeps a stopped frontend from receiving events.
+//
+// The fence is the subscriber list itself: publish() snapshots s.subscribers
+// under s.mu, so an observer that is no longer in the list cannot be handed an
+// event, whatever the scheduler does. The witness observer below then proves the
+// request really was published, so silence cannot pass for "Ask never ran".
 func TestUnsubscribeStopsDelivery(t *testing.T) {
 	svc := NewService(time.Second)
 	delivered := 0
 	unsubscribe := svc.Subscribe(func(Event) { delivered++ })
 	unsubscribe()
 	unsubscribe() // idempotent
+	if registered := subscriberCount(svc); registered != 0 {
+		t.Fatalf("unsubscribe left %d observer(s) registered", registered)
+	}
+
+	var mu sync.Mutex
+	published := false
+	stopWitness := svc.Subscribe(func(event Event) {
+		if event.Kind != EventOpened {
+			return
+		}
+		mu.Lock()
+		published = true
+		mu.Unlock()
+	})
+	defer stopWitness()
+
 	go svc.Ask(context.Background(), middleware.ElicitationRequest{ID: "e-nobody"})
-	time.Sleep(50 * time.Millisecond)
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return published
+	}, "the elicitation to be published")
+
 	if delivered != 0 {
 		t.Fatalf("unsubscribed observer received %d events", delivered)
 	}
+}
+
+// subscriberCount is the test-visible view of the registry publish() copies.
+func subscriberCount(svc *Service) int {
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+	return len(svc.subscribers)
 }
