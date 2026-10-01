@@ -31,7 +31,9 @@ func (o *recordingObserver) joined() string {
 }
 
 // waitForObserverText polls until every observer's joined text matches, because
-// updates are delivered on a per-session worker rather than inline.
+// updates are delivered on a per-session worker rather than inline. It fails
+// closed: a helper that returned silently on timeout would turn every caller's
+// assertion into "whatever happened to arrive".
 func waitForObserverText(t *testing.T, want string, observers ...*recordingObserver) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -48,6 +50,11 @@ func waitForObserverText(t *testing.T, want string, observers ...*recordingObser
 		}
 		time.Sleep(time.Millisecond)
 	}
+	got := make([]string, 0, len(observers))
+	for _, observer := range observers {
+		got = append(got, observer.joined())
+	}
+	t.Fatalf("observers never reached %q, got %v", want, got)
 }
 
 func TestClientFansOutConcurrentSessionObservers(t *testing.T) {
@@ -76,9 +83,18 @@ func TestClientFansOutConcurrentSessionObservers(t *testing.T) {
 	}
 
 	removeMain()
+
+	// Fence instead of a fixed sleep: the fence observer is registered before
+	// the updates are enqueued, and the per-session queue is FIFO and drained by
+	// a single worker. Once it holds both part-3 and part-4, the dispatch that
+	// skipped main has demonstrably already happened, so the silence assertion
+	// below is a consequence rather than a bet on the scheduler.
+	fresh := &recordingObserver{}
+	removeFresh := client.registerObserver("session-1", fresh)
+	defer removeFresh()
 	client.handleNotification(sessionUpdateResponse(t, "session-1", "part-3"))
-	// Give the worker time to (not) deliver before asserting silence.
-	time.Sleep(50 * time.Millisecond)
+	client.handleNotification(sessionUpdateResponse(t, "session-1", "part-4"))
+	waitForObserverText(t, "part-3part-4", fresh)
 	if main.joined() != "part-1part-2" {
 		t.Fatalf("expected no updates after all observers removed, got %q", main.joined())
 	}

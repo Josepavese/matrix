@@ -282,15 +282,43 @@ func TestTelegramElicitationExpiryRetractsPrompt(t *testing.T) {
 
 // TestTelegramElicitationUnknownChatIsSkipped keeps cross-channel safety: a
 // request from a session this bot does not own is never rendered here.
+//
+// The fence is ordering, not time: the foreign request is registered first, and
+// the prompt for a session this bot owns is rendered after it. The UI consumes
+// its event queue in order on a single worker, so the owned prompt can only
+// appear after the foreign request has been seen and skipped. The owned prompt
+// is also recognised by its text, so a foreign render cannot be mistaken for it
+// even if only one message has arrived.
 func TestTelegramElicitationUnknownChatIsSkipped(t *testing.T) {
 	service := elicitation.NewService(time.Minute)
 	ui, api, _ := newTestUI(t, service)
 	request := choiceRequest()
 	request.SessionID = "sess_other"
+	request.Message = "foreign session prompt"
 	go service.Ask(context.Background(), request)
-	time.Sleep(50 * time.Millisecond)
-	if sent := api.sentMessages(); len(sent) != 0 {
-		t.Fatalf("a foreign session must not be rendered in this chat: %+v", sent)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for len(service.Pending()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if pending := service.Pending(); len(pending) != 1 {
+		t.Fatalf("the foreign request never registered: %d pending", len(pending))
+	}
+
+	owned := choiceRequest()
+	owned.Message = "owned session prompt"
+	go service.Ask(context.Background(), owned)
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		sent := api.sentMessages()
+		if len(sent) > 0 && strings.Contains(sent[len(sent)-1].Text, "owned session prompt") {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	sent := api.sentMessages()
+	if len(sent) != 1 || !strings.Contains(sent[0].Text, "owned session prompt") {
+		t.Fatalf("only the owned session may be rendered in this chat, got %+v", sent)
 	}
 	_ = ui
 }

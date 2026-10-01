@@ -152,16 +152,29 @@ func waitForRoute(t *testing.T, router *spyRouter) routeCall {
 }
 
 // assertNeverRouted is the teeth of the gate: it fails if the router or the
-// Telegram API was touched at all. A dropped update is rejected synchronously,
-// so the short wait only guards against a goroutine that should not exist.
+// Telegram API was touched by a rejected update.
+//
+// The rejection in handleUpdate is synchronous — it returns before any
+// goroutine is started — so the first pass is a fact about the call that just
+// returned, not a race. The loop after it is an observation window for the one
+// regression that cannot be ruled out by construction: a gate moved behind the
+// dispatch, letting the update out on a background goroutine. The window is a
+// poll, not a fixed nap, so such a regression fails the moment it appears
+// instead of after the wait; 100ms is 100x the 1ms interval.
 func assertNeverRouted(t *testing.T, router *spyRouter, client *fakeHTTPClient) {
 	t.Helper()
-	time.Sleep(100 * time.Millisecond)
-	if calls := router.routed(); len(calls) != 0 {
-		t.Fatalf("rejected update reached the router: %+v", calls)
-	}
-	if calls := client.callCount(); calls != 0 {
-		t.Fatalf("rejected update touched the Telegram API %d time(s)", calls)
+	deadline := time.Now().Add(100 * time.Millisecond)
+	for {
+		if calls := router.routed(); len(calls) != 0 {
+			t.Fatalf("rejected update reached the router: %+v", calls)
+		}
+		if calls := client.callCount(); calls != 0 {
+			t.Fatalf("rejected update touched the Telegram API %d time(s)", calls)
+		}
+		if !time.Now().Before(deadline) {
+			return
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

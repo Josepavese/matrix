@@ -123,6 +123,11 @@ func FuzzElicitationPendingSerialisation(f *testing.F) {
 		for len(service.Pending()) == 0 && time.Now().Before(deadline) {
 			time.Sleep(time.Millisecond)
 		}
+		// Fail closed: without this the seed would exercise the listing with no
+		// pending elicitation at all and still pass.
+		if len(service.Pending()) == 0 {
+			t.Fatal("request never became pending")
+		}
 		server := NewServer(nil).WithElicitationService(service)
 		rec := httptest.NewRecorder()
 		server.HandleElicitations(rec, httptest.NewRequest(http.MethodGet, ElicitationPathV1, nil))

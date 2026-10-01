@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -104,9 +105,16 @@ func TestDownloadWritesTheBodyOnSuccess(t *testing.T) {
 
 // TestDownloadHonoursContextCancellation keeps a cancelled run from leaving a
 // request in flight and a partial file behind.
+//
+// The cancel is issued only after the handler has been entered, so the test
+// cancels a request that is provably in flight instead of racing a fixed sleep
+// against the server's startup.
 func TestDownloadHonoursContextCancellation(t *testing.T) {
 	release := make(chan struct{})
+	started := make(chan struct{})
+	var startedOnce sync.Once
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		startedOnce.Do(func() { close(started) })
 		<-release
 		_, _ = w.Write([]byte("late"))
 	}))
@@ -116,13 +124,25 @@ func TestDownloadHonoursContextCancellation(t *testing.T) {
 	}()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-	}()
+	defer cancel()
 	dest := filepath.Join(t.TempDir(), "out.bin")
-	if err := NewProvider().Download(ctx, server.URL+"/slow", dest); err == nil {
-		t.Fatal("a cancelled download must be reported")
+	downloadErr := make(chan error, 1)
+	go func() { downloadErr <- NewProvider().Download(ctx, server.URL+"/slow", dest) }()
+
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the download never reached the server")
+	}
+	cancel()
+
+	select {
+	case err := <-downloadErr:
+		if err == nil {
+			t.Fatal("a cancelled download must be reported")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the cancelled download never returned")
 	}
 }
 

@@ -13,10 +13,12 @@ import (
 type blockingACPClient struct {
 	ctx context.Context
 
-	mu            sync.Mutex
-	promptCalls   int
-	firstStarted  chan struct{}
-	firstReleased chan struct{}
+	mu                     sync.Mutex
+	promptCalls            int
+	firstReturned          bool
+	secondSawFirstReturned bool
+	firstStarted           chan struct{}
+	firstReleased          chan struct{}
 }
 
 func newBlockingACPClient(ctx context.Context) *blockingACPClient {
@@ -75,15 +77,37 @@ func (c *blockingACPClient) ExtNotification(context.Context, string, interface{}
 func (c *blockingACPClient) Prompt(ctx context.Context, _ acpPromptRequest, _ acpSessionObserver) (*acpPromptResponse, error) {
 	call := c.recordPromptCall()
 	if call != 1 {
+		// A later prompt that arrives while the first has not returned is a
+		// serialization violation; record it so the test can name it even when
+		// the polling window missed the moment it happened.
+		c.mu.Lock()
+		c.secondSawFirstReturned = c.firstReturned
+		c.mu.Unlock()
 		return &acpPromptResponse{}, nil
 	}
 	close(c.firstStarted)
 	select {
 	case <-ctx.Done():
+		c.markFirstReturned()
 		return nil, ctx.Err()
 	case <-c.firstReleased:
+		c.markFirstReturned()
 		return &acpPromptResponse{}, nil
 	}
+}
+
+// markFirstReturned runs before the first Prompt returns, so the per-session
+// guard cannot release the next turn before this flag is visible.
+func (c *blockingACPClient) markFirstReturned() {
+	c.mu.Lock()
+	c.firstReturned = true
+	c.mu.Unlock()
+}
+
+func (c *blockingACPClient) secondPromptWaitedForFirst() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.secondSawFirstReturned
 }
 
 func (c *blockingACPClient) recordPromptCall() int {
@@ -178,12 +202,25 @@ func TestACPConversationClientSerializesNormalPromptsForSession(t *testing.T) {
 	<-fake.firstStarted
 
 	secondDone := make(chan error, 1)
+	secondStarted := make(chan struct{})
 	go func() {
+		close(secondStarted)
 		_, err := client.ExecuteTurn(ctx, middleware.ConversationTurn{RemoteSessionID: "remote-session", Message: "second"})
 		secondDone <- err
 	}()
+	<-secondStarted
 
-	time.Sleep(50 * time.Millisecond)
+	// Serialization is a negative claim: the second prompt must not be forwarded
+	// while the first is in flight. A negative fact cannot be waited for — the
+	// guard keeps no "waiting turn" state to observe — so the window below only
+	// gives the second turn its chance to reach the guard, and it fails the
+	// moment the violation appears instead of after the wait. The fake also
+	// records whether the first prompt had returned when the second was
+	// forwarded, which names the violation even when this window misses it.
+	deadline := time.Now().Add(50 * time.Millisecond)
+	for fake.PromptCalls() == 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if calls := fake.PromptCalls(); calls != 1 {
 		t.Fatalf("second prompt should wait for first prompt completion, calls=%d", calls)
 	}
@@ -197,5 +234,8 @@ func TestACPConversationClientSerializesNormalPromptsForSession(t *testing.T) {
 	}
 	if calls := fake.PromptCalls(); calls != 2 {
 		t.Fatalf("expected second prompt after first completion, calls=%d", calls)
+	}
+	if !fake.secondPromptWaitedForFirst() {
+		t.Fatal("second prompt was forwarded while the first was still in flight")
 	}
 }

@@ -28,12 +28,22 @@ func TestFUSE_MountAndRead(t *testing.T) {
 		}
 	}()
 
-	// Wait briefly for the OS FUSE subsystem to register the mount
-	time.Sleep(200 * time.Millisecond)
-
-	// Verify the file exists and has correct content
+	// The kernel registers the mount asynchronously: wait for the observable
+	// fact — the file is readable — instead of sleeping a fixed 200ms and hoping
+	// the mount won the race. Five seconds is 250x the 20ms poll interval.
 	filePath := filepath.Join(mountPoint, "matrix.txt")
-	content, err := os.ReadFile(filePath)
+	var (
+		content []byte
+		err     error
+	)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		content, err = os.ReadFile(filePath)
+		if err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	if err != nil {
 		t.Fatalf("Failed to read virtual file after mount: %v", err)
 	}

@@ -293,6 +293,11 @@ func TestElicitationRoundTripsUnicodeAndLongValues(t *testing.T) {
 	for len(service.Pending()) == 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
+	// Fail closed: if the request never registered, the accept below would be
+	// answered by nobody and the transport assertions would prove nothing.
+	if len(service.Pending()) == 0 {
+		t.Fatal("elicitation never became pending")
+	}
 
 	value := "Marco 🚀 \"quoted\" \\slash\\ " + strings.Repeat("à", 200)
 	body, err := json.Marshal(map[string]interface{}{

@@ -226,6 +226,14 @@ func (o *countingObserver) OnUpdate(SessionNotification) {
 
 // TestClientSessionNotificationWithoutSessionIDIsIgnored keeps a malformed
 // notification from reaching observers with an empty key.
+//
+// The observer is registered for a real session, and a valid update for that
+// session is pushed last as a sentinel: the read loop consumes the transport
+// channel in order, so once the sentinel has been delivered the three malformed
+// notifications have already been handled. Checking the effect after a fact,
+// rather than after a sleep, is what makes this test able to fail for the right
+// reason: a sessionless notification that reaches the dispatch machinery would
+// arrive at the observer as well.
 func TestClientSessionNotificationWithoutSessionIDIsIgnored(t *testing.T) {
 	transport := newFakeTransport()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -234,15 +242,35 @@ func TestClientSessionNotificationWithoutSessionIDIsIgnored(t *testing.T) {
 	defer client.Close()
 
 	observer := &countingObserver{}
-	client.registerObserver("", observer)
+	client.registerObserver("session-1", observer)
 	transport.push(t, `{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"agent_message_chunk"}}}`)
 	transport.push(t, `{"jsonrpc":"2.0","method":"session/update","params":{}}`)
 	transport.push(t, `{"jsonrpc":"2.0","method":"session/update"}`)
-	time.Sleep(50 * time.Millisecond)
+	transport.push(t, `{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"sentinel"}}}}`)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		observer.mu.Lock()
+		updates := observer.updates
+		observer.mu.Unlock()
+		if updates >= 1 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
 	observer.mu.Lock()
-	defer observer.mu.Unlock()
-	if observer.updates != 0 {
-		t.Fatalf("notifications without a session must not be dispatched, got %d", observer.updates)
+	updates := observer.updates
+	observer.mu.Unlock()
+	if updates != 1 {
+		t.Fatalf("expected only the valid session update, got %d dispatch(es)", updates)
+	}
+	// The registry must not have grown an entry for the empty session either.
+	client.notifyMu.Lock()
+	_, emptyQueue := client.notifyQueues[""]
+	client.notifyMu.Unlock()
+	if emptyQueue {
+		t.Fatal("a sessionless notification created a dispatch queue under the empty key")
 	}
 }
 

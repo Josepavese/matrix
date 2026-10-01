@@ -93,7 +93,10 @@ func TestOpenRetriesBrokerPublishedDuringBoltLockWait(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		time.Sleep(100 * time.Millisecond)
+		// No startup delay: the ordering this test needs comes from the broker
+		// descriptor and the bolt lock, so the daemon is free to start
+		// concurrently with the read-only open — which is the interleaving under
+		// test anyway.
 		done <- server.Start(ctx, "127.0.0.1:0")
 	}()
 
@@ -133,7 +136,8 @@ func TestOpenWaitsForBrokerWhileDaemonStartupOwnsVaultIntent(t *testing.T) {
 	startupErr := make(chan error, 1)
 	serverDone := make(chan error, 1)
 	go func() {
-		time.Sleep(100 * time.Millisecond)
+		// The startup intent descriptor above already makes the CLI wait, so the
+		// daemon may open the vault immediately instead of after a fixed delay.
 		writer, err := bolt.NewProvider(dbPath)
 		if err != nil {
 			startupErr <- err

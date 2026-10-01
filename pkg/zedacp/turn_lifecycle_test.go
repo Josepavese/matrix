@@ -191,6 +191,9 @@ func waitForJoinedText(t *testing.T, want string, observer *lifecycleObserver) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+	// Fail closed: returning silently would leave the caller's own assertion to
+	// decide whether the timeout mattered.
+	t.Fatalf("watcher never joined %q, got %q", want, observer.joined())
 }
 
 func TestWatchSessionDeliversUpdatesUntilTheCallerStops(t *testing.T) {
@@ -221,8 +224,18 @@ func TestWatchSessionDeliversUpdatesUntilTheCallerStops(t *testing.T) {
 	}
 
 	stop()
+
+	// Same FIFO fence as the fan-out test: the sentinel watcher is registered
+	// before the updates are enqueued, so once it has seen both "after-stop" and
+	// "sentinel" the dispatch that skipped the stopped watcher has demonstrably
+	// happened. The silence check below follows from that order, not from a
+	// sleep.
+	sentinel := &lifecycleObserver{}
+	stopSentinel := client.WatchSession("session-1", sentinel)
+	defer stopSentinel()
 	client.handleNotification(sessionUpdateResponse(t, "session-1", "after-stop"))
-	time.Sleep(50 * time.Millisecond)
+	client.handleNotification(sessionUpdateResponse(t, "session-1", "sentinel"))
+	waitForJoinedText(t, "after-stopsentinel", sentinel)
 	if got := observer.joined(); got != "streamed" {
 		t.Fatalf("a stopped watch must not deliver more updates, got %q", got)
 	}
