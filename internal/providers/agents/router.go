@@ -425,7 +425,7 @@ func (r *Router) executePrompt(ctx context.Context, client middleware.Conversati
 	if err != nil {
 		return "", result.RemoteSessionID, result.ToolCalls, result.Metadata, err
 	}
-	return result.Output, result.RemoteSessionID, result.ToolCalls, result.Metadata, nil
+	return result.Output, result.RemoteSessionID, result.ToolCalls, metadataWithStopReason(result.Metadata, result.StopReason), nil
 }
 
 func metadataWithContentBlocks(metadata middleware.ConversationMetadata, blocks []middleware.Content) middleware.ConversationMetadata {

@@ -71,6 +71,20 @@ func (n *notifier) FormattedHeader() string {
 	return n.inner.FormattedHeader()
 }
 
+// OnModelSelection forwards provider model evidence to the wrapped notifier.
+// The watchdog decorates a notifier without changing what that notifier can do:
+// a decorator that silently drops an optional capability makes the wrapped
+// implementation unreachable, and the ACP adapter publishes model attestation
+// only through this interface.
+func (n *notifier) OnModelSelection(selection middleware.ModelSelection) {
+	if n.inner == nil {
+		return
+	}
+	if forwarder, ok := n.inner.(middleware.ModelSelectionNotifier); ok {
+		forwarder.OnModelSelection(selection)
+	}
+}
+
 func IsTimeout(state *Timeout, err error) bool {
 	return state != nil && state.fired.Load() && errors.Is(err, context.Canceled)
 }

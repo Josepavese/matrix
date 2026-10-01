@@ -99,6 +99,7 @@ func projectRun(run Run) TraceRun {
 		StartedAt:           run.StartedAt,
 		CompletedAt:         run.CompletedAt,
 		Status:              run.Status,
+		StopReason:          run.StopReason,
 	}
 }
 

@@ -72,12 +72,16 @@ type TracePolicy struct {
 
 // Event is one ordered operational event in a run.
 type Event struct {
-	ID                           string                 `json:"id"`
-	RunID                        string                 `json:"run_id"`
-	Sequence                     int                    `json:"sequence,omitempty"`
-	Kind                         string                 `json:"kind"`
-	Actor                        string                 `json:"actor"`
-	Status                       string                 `json:"status,omitempty"`
+	ID       string `json:"id"`
+	RunID    string `json:"run_id"`
+	Sequence int    `json:"sequence,omitempty"`
+	Kind     string `json:"kind"`
+	Actor    string `json:"actor"`
+	Status   string `json:"status,omitempty"`
+	// StopReason is what the peer reported ended the turn, recorded on the
+	// terminal event itself so a consumer reading only the event stream can see
+	// it. It is empty on every non-terminal event.
+	StopReason                   string                 `json:"stop_reason,omitempty"`
 	Timestamp                    time.Time              `json:"timestamp"`
 	Protocol                     string                 `json:"protocol,omitempty"`
 	ProtocolMethod               string                 `json:"protocol_method,omitempty"`
@@ -136,6 +140,7 @@ type TraceRun struct {
 	StartedAt           time.Time `json:"started_at"`
 	CompletedAt         time.Time `json:"completed_at,omitempty"`
 	Status              string    `json:"status"`
+	StopReason          string    `json:"stop_reason,omitempty"`
 }
 
 type Surface struct {

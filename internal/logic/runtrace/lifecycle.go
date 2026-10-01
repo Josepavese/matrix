@@ -96,14 +96,37 @@ func (s *Store) Complete(runID, output, stopReason string) (Run, error) {
 	if isTerminalStatus(run.Status) {
 		return run, nil
 	}
-	run = completeRun(run, output, stopReason)
+	// What the run becomes is decided from the run's own structured record, not
+	// from the caller's optimism: a provider turn that left no output, no tool
+	// call and no message is not a success, whichever peer produced it.
+	events, err := s.LoadEvents(runID, 0)
+	if err != nil {
+		return Run{}, err
+	}
+	output = strings.TrimSpace(output)
+	outcome := materializeCompletion(output, stopReason, events)
+	run = completeRun(run, output, outcome)
 	if err := s.SaveRun(run); err != nil {
 		return Run{}, err
+	}
+	if outcome.Status == StatusFailed {
+		s.emitTerminalTrace(run, func() error {
+			_, err := s.AppendEvent(Event{
+				RunID: run.ID, Kind: "run.failed", Actor: "matrix", Status: StatusFailed,
+				Timestamp: run.CompletedAt, Message: run.Error, StopReason: run.StopReason,
+				Metadata: map[string]interface{}{"failure_code": completionFailureCode},
+			})
+			return err
+		})
+		return run, nil
 	}
 	s.emitTerminalTrace(run,
 		func() error { return s.appendFinalMessage(run, output) },
 		func() error {
-			_, err := s.AppendEvent(Event{RunID: run.ID, Kind: "run.completed", Actor: "matrix", Status: StatusCompleted, Timestamp: run.CompletedAt})
+			_, err := s.AppendEvent(Event{
+				RunID: run.ID, Kind: "run.completed", Actor: "matrix", Status: StatusCompleted,
+				Timestamp: run.CompletedAt, StopReason: run.StopReason,
+			})
 			return err
 		},
 	)
@@ -120,10 +143,17 @@ func isTerminalStatus(status string) bool {
 	}
 }
 
-func completeRun(run Run, output, stopReason string) Run {
+// completeRun writes the terminal verdict of a completed or empty turn onto the
+// run record. The stop reason is the one the peer reported, normalised: Matrix
+// does not fill a silent peer's gap with a reason of its own.
+func completeRun(run Run, output string, outcome terminalOutcome) Run {
 	now := time.Now().UTC()
-	run.Status = StatusCompleted
-	run.StopReason = firstNonEmpty(stopReason, "end_turn")
+	run = applyTerminalOutcome(run, outcome)
+	if outcome.Status == StatusFailed {
+		run.CompletedAt = now
+		run.UpdatedAt = now
+		return run
+	}
 	run.Output = output
 	run.OutputRef = "matrix://runs/" + run.ID + "/outcome"
 	run.OutputDigest = DigestString(output)

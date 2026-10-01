@@ -87,8 +87,12 @@ type UvxDist struct {
 type ResolvedDist struct {
 	Type    string // "binary", "npx", "uvx"
 	Command string // "" for binary (resolved later), "npx"/"uvx" otherwise
-	Args    []string
-	Env     []string // flattened KEY=VALUE pairs
+	// Args are the launcher arguments the index declares for this platform and
+	// distribution. They are never empty-by-omission: a distribution that
+	// declares none resolves to an empty list, so "the index said nothing" and
+	// "resolution dropped what the index said" stay distinguishable.
+	Args []string
+	Env  []string // flattened KEY=VALUE pairs
 }
 
 // registryCache holds a cached registry index with fetch timestamp.
@@ -236,9 +240,11 @@ func (c *RegistryClient) ResolveAnyDistribution(manifest *AgentManifest) (*Resol
 	if err := validateCanonicalProvider(manifest); err != nil {
 		return nil, err
 	}
-	// Try binary first
-	if _, err := c.ResolveDistribution(manifest); err == nil {
-		return &ResolvedDist{Type: "binary"}, nil
+	// Try binary first. The platform entry declares the launcher arguments the
+	// agent program needs to speak ACP; they travel with the resolved
+	// distribution so the install registers what the index publishes.
+	if dist, err := c.ResolveDistribution(manifest); err == nil {
+		return &ResolvedDist{Type: "binary", Args: append([]string{}, dist.Args...)}, nil
 	}
 
 	// Fallback to npx

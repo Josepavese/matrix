@@ -1,6 +1,7 @@
 package providerfailure
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -143,14 +144,63 @@ func Diagnostics(endpoint middleware.ProtocolEndpoint, err error) map[string]str
 	}
 	if err != nil {
 		diagnostics["provider_error"] = err.Error()
-		diagnostics["failure_reason"] = failureReason(err.Error())
+		AppendRPCErrorDiagnostics(diagnostics, err)
+		diagnostics["failure_reason"] = failureReason(err)
 		AppendProcessDiagnostics(diagnostics, err)
 	}
 	return diagnostics
 }
 
-func failureReason(text string) string {
-	lower := strings.ToLower(text)
+// rpcErrorView is the structural view of a protocol's coded error: whichever SDK
+// produced it, the peer's code, message and payload are read the same way. It is
+// an interface over methods rather than a named type so this neutral layer keeps
+// every protocol at arm's length and imports none of them to unwrap another's
+// error.
+type rpcErrorView interface {
+	error
+	RPCErrorCode() int
+	RPCErrorMessage() string
+	RPCErrorData() any
+}
+
+// AppendRPCErrorDiagnostics records a JSON-RPC failure's code, message and
+// payload as their own bounded fields.
+//
+// The protocol carries diagnostics in fields, not only in prose: a caller that
+// has to recover a peer's error code by parsing a rendered sentence has already
+// lost the structure the peer sent. This is what makes an RPC failure legible in
+// a trace or an explanation without Matrix reading the text for meaning.
+func AppendRPCErrorDiagnostics(diagnostics map[string]string, err error) {
+	var coded rpcErrorView
+	if !errors.As(err, &coded) || coded == nil {
+		return
+	}
+	diagnostics["rpc_error_code"] = strconv.Itoa(coded.RPCErrorCode())
+	if text := strings.TrimSpace(coded.RPCErrorMessage()); text != "" {
+		diagnostics["rpc_error_message"] = boundedDiagnostic(text)
+	}
+	if data := coded.RPCErrorData(); data != nil {
+		if payload, err := json.Marshal(data); err == nil {
+			diagnostics["rpc_error_data"] = boundedDiagnostic(string(payload))
+		}
+	}
+}
+
+// maxDiagnosticLength bounds one diagnostic value so a chatty peer cannot turn a
+// trace field into a transcript.
+const maxDiagnosticLength = 512
+
+// boundedDiagnostic keeps a diagnostic value short enough to read in a trace.
+// The cut is marked, never silent, so a reader knows the value continues.
+func boundedDiagnostic(value string) string {
+	if len(value) <= maxDiagnosticLength {
+		return value
+	}
+	return value[:maxDiagnosticLength] + "…"
+}
+
+func failureReason(err error) string {
+	lower := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(lower, "client context cancelled") || strings.Contains(lower, "client context canceled"):
 		return "provider_client_context_cancelled"
@@ -164,9 +214,21 @@ func failureReason(text string) string {
 		return "provider_transport_eof"
 	case strings.Contains(lower, "broken pipe") || strings.Contains(lower, "file already closed"):
 		return "provider_transport_closed"
+	case isRPCError(err):
+		// A coded protocol error that none of the signals above explains is
+		// still a coded protocol error: the protocol's own word for it is more
+		// useful to a consumer than a generic provider error, and it is what
+		// tells a well-formed refusal apart from a transport failure.
+		return "provider_rpc_error"
 	default:
 		return "provider_error"
 	}
+}
+
+// isRPCError reports whether an error carries the protocol's own code.
+func isRPCError(err error) bool {
+	var coded rpcErrorView
+	return errors.As(err, &coded) && coded != nil
 }
 
 func AppendRunEvent(store *runtrace.Store, runID string, err error) {

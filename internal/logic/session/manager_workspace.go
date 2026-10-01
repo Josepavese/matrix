@@ -50,38 +50,35 @@ type workspaceRouteRequest struct {
 }
 
 func (m *Manager) getOrCreateSessionForWorkspace(channelID, targetAgent, workspaceID, workspacePath string) (string, *routeDecision, error) {
-	req := workspaceRouteRequest{
-		ChannelID:     channelID,
-		TargetAgent:   strings.TrimSpace(targetAgent),
-		WorkspaceID:   strings.TrimSpace(workspaceID),
-		WorkspacePath: strings.TrimSpace(workspacePath),
+	plan, err := m.planWorkspaceRoute(newWorkspaceRouteRequest(channelID, targetAgent, workspaceID, workspacePath))
+	if err != nil {
+		return "", nil, err
 	}
-	state, stateErr := m.getChannelState(req.ChannelID)
-	if sessionID, decision, reused, err := m.reuseActiveWorkspaceSession(req, state, stateErr); err != nil || reused {
-		return sessionID, decision, err
-	}
-	if sessionID, decision, resumed, err := m.resumeIndexedWorkspaceSession(req); err != nil || resumed {
-		return sessionID, decision, err
-	}
-	if stateErr == nil && strings.TrimSpace(state.PreferredWorkspaceID) != "" && req.WorkspaceID == "" {
-		req.WorkspaceID = state.PreferredWorkspaceID
-		return m.getOrCreateSessionForWorkspace(req.ChannelID, req.TargetAgent, req.WorkspaceID, req.WorkspacePath)
-	}
-	return m.createWorkspaceSession(req)
+	return m.applyWorkspaceRoutePlan(plan)
 }
 
-func (m *Manager) reuseActiveWorkspaceSession(req workspaceRouteRequest, state ChannelState, stateErr error) (string, *routeDecision, bool, error) {
-	if !canReuseActiveState(state, stateErr) {
-		return "", nil, false, nil
+// applyWorkspaceRoutePlan performs the side effects of an already resolved plan.
+// Splitting plan from apply is what lets a caller publish the same decision
+// before the prompt instead of describing it after the fact.
+func (m *Manager) applyWorkspaceRoutePlan(plan workspaceRoutePlan) (string, *routeDecision, error) {
+	switch plan.kind {
+	case workspaceRouteReuseActive:
+		if err := m.updateChannelWorkspaceState(plan.request.ChannelID, plan.meta.WorkspaceID); err != nil {
+			return "", nil, err
+		}
+		return plan.sessionID, reuseActiveDecision(plan.request, plan.meta, plan.sessionID), nil
+	case workspaceRouteResumeIndexed:
+		if err := m.attachChannelWithEvent(plan.request.ChannelID, plan.sessionID, "session.resumed", "Resumed workspace session", "workspace-resume", nil); err != nil {
+			return "", nil, err
+		}
+		if err := m.updateChannelWorkspaceState(plan.request.ChannelID, plan.request.WorkspaceID); err != nil {
+			return "", nil, err
+		}
+		candidate := workspaceSessionCandidate{SessionID: plan.sessionID, Meta: plan.meta}
+		return plan.sessionID, resumeWorkspaceDecision(plan.request, candidate), nil
+	default:
+		return m.createWorkspaceSession(plan.request)
 	}
-	meta, found := m.loadReusableSessionMeta(state.ActiveSessionID)
-	if !found || !workspaceRouteMatches(meta, req) {
-		return "", nil, false, nil
-	}
-	if err := m.updateChannelWorkspaceState(req.ChannelID, meta.WorkspaceID); err != nil {
-		return "", nil, true, err
-	}
-	return state.ActiveSessionID, reuseActiveDecision(req, meta, state.ActiveSessionID), true, nil
 }
 
 func canReuseActiveState(state ChannelState, stateErr error) bool {
@@ -110,27 +107,6 @@ func reuseActiveDecision(req workspaceRouteRequest, meta SessionMeta, sessionID 
 	}
 }
 
-func (m *Manager) resumeIndexedWorkspaceSession(req workspaceRouteRequest) (string, *routeDecision, bool, error) {
-	if strings.TrimSpace(req.WorkspaceID) == "" {
-		return "", nil, false, nil
-	}
-	sessionIDs, err := workspace.LoadSessionIndex(m.storage, req.WorkspaceID)
-	if err != nil {
-		return "", nil, true, err
-	}
-	for _, sessionID := range sessionIDs {
-		candidate, ok := m.workspaceSessionCandidate(req, sessionID)
-		if !ok {
-			continue
-		}
-		if req.TargetAgent != "" && candidate.Meta.AgentID != req.TargetAgent {
-			continue
-		}
-		return m.resumeWorkspaceSession(req, candidate)
-	}
-	return "", nil, false, nil
-}
-
 type workspaceSessionCandidate struct {
 	SessionID string
 	Meta      SessionMeta
@@ -141,17 +117,22 @@ func (m *Manager) workspaceSessionCandidate(req workspaceRouteRequest, sessionID
 	if err != nil || !found || strings.TrimSpace(meta.WorkspaceID) != req.WorkspaceID {
 		return workspaceSessionCandidate{}, false
 	}
+	if !sessionWorkspaceAffinityMatches(meta, req.WorkspacePath) {
+		return workspaceSessionCandidate{}, false
+	}
 	return workspaceSessionCandidate{SessionID: sessionID, Meta: meta}, true
 }
 
-func (m *Manager) resumeWorkspaceSession(req workspaceRouteRequest, candidate workspaceSessionCandidate) (string, *routeDecision, bool, error) {
-	if err := m.attachChannelWithEvent(req.ChannelID, candidate.SessionID, "session.resumed", "Resumed workspace session", "workspace-resume", nil); err != nil {
-		return "", nil, true, err
+// sessionWorkspaceAffinityMatches refuses a session whose recorded workspace
+// path belongs to a different workspace than the one being requested. A session
+// that recorded no path is unknown, not a different workspace.
+func sessionWorkspaceAffinityMatches(meta SessionMeta, requestedPath string) bool {
+	requestedPath = strings.TrimSpace(requestedPath)
+	recordedPath := strings.TrimSpace(meta.WorkspacePath)
+	if requestedPath == "" || recordedPath == "" {
+		return true
 	}
-	if err := m.updateChannelWorkspaceState(req.ChannelID, req.WorkspaceID); err != nil {
-		return "", nil, true, err
-	}
-	return candidate.SessionID, resumeWorkspaceDecision(req, candidate), true, nil
+	return filepath.Clean(recordedPath) == filepath.Clean(requestedPath)
 }
 
 func resumeWorkspaceDecision(req workspaceRouteRequest, candidate workspaceSessionCandidate) *routeDecision {
@@ -232,32 +213,15 @@ func sessionMatchesWorkspaceHints(meta SessionMeta, workspaceID, workspacePath s
 	return true
 }
 
+// resolveWorkspaceHint delegates to the workspace identity contract: one
+// canonical answer for the pair, and a typed refusal when the two hints denote
+// different workspaces instead of a silent ambiguous binding.
 func (m *Manager) resolveWorkspaceHint(workspaceID, workspacePath string) (string, string, error) {
-	workspaceID = strings.TrimSpace(workspaceID)
-	workspacePath = strings.TrimSpace(workspacePath)
-	if workspaceID != "" {
-		meta, found, err := workspace.LoadMeta(m.storage, workspaceID)
-		if err != nil {
-			return "", "", err
-		}
-		if !found {
-			return "", "", fmt.Errorf("workspace %s not found", workspaceID)
-		}
-		if workspacePath == "" {
-			workspacePath = meta.RootPath
-		}
-		return meta.ID, workspacePath, nil
+	identity, err := workspace.ResolveIdentity(m.storage, workspaceID, workspacePath)
+	if err != nil {
+		return "", "", err
 	}
-	if workspacePath != "" {
-		clean := filepath.Clean(workspacePath)
-		if meta, found, err := workspace.ResolveByPath(m.storage, clean); err != nil {
-			return "", "", err
-		} else if found {
-			return meta.ID, clean, nil
-		}
-		return "", clean, nil
-	}
-	return "", "", nil
+	return identity.ID, identity.Path, nil
 }
 
 func (m *Manager) indexSessionWorkspace(meta SessionMeta) error {

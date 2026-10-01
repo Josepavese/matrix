@@ -36,11 +36,26 @@ type Transport struct {
 	waitDone chan struct{}
 }
 
-func New(ctx context.Context, executable string, env []string, args ...string) (*Transport, error) {
+// SpawnSpec carries what a caller can decide about the agent program it starts.
+// It is an options struct rather than more positional parameters: the launch
+// facts grow (working directory, environment, and whatever the next protocol
+// generation needs) and every caller would otherwise have to be revisited.
+type SpawnSpec struct {
+	// Dir is the working directory of the child process. It is the run's
+	// workspace, not a global setting: two runs on two workspaces must not share
+	// one child directory. Empty leaves exec's default, the caller's directory.
+	Dir string
+	// Env is appended to the inherited environment. Empty inherits it untouched.
+	Env []string
+}
+
+// New starts the agent program and returns a transport bound to its stdio.
+func New(ctx context.Context, executable string, spec SpawnSpec, args ...string) (*Transport, error) {
 	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.Dir = spec.Dir
 	prepareCommand(cmd)
-	if len(env) > 0 {
-		cmd.Env = append(os.Environ(), env...)
+	if len(spec.Env) > 0 {
+		cmd.Env = append(os.Environ(), spec.Env...)
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

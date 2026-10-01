@@ -106,7 +106,13 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # their own file so run.go stays inside its file budget.
 # 2026-09-24: per-daemon authenticated local ingress and Unix notification
 # socket add startup, replay, and key lifecycle code in focused files.
-"cmd/matrix" = 3396
+# 2026-10-01: closing ten externally-reported issues across five clusters -
+# outcome semantics, structured ACP error propagation, workspace and session
+# identity, run-scoped cwd and launch arguments, model attestation on reused
+# sessions. Three of these packages are written concurrently by separate
+# workstreams, so the ceiling is shared and is not permission for growth:
+# a workstream that needs more reports it to the release captain first.
+"cmd/matrix" = 3430
 # 2026-09-23: the generic ACP handler reads the agent's own authMethods through
 # AgentAuthController instead of always returning a hardcoded method, and performs
 # the protocol authenticate for a method the agent published. The port gained its
@@ -116,7 +122,18 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # minimal notification journal add their own persistence units.
 # 2026-09-24: model provenance in the canonical run and exported trace records
 # requested, configured and provider-confirmed identities separately.
-"internal/logic/runtrace" = 1341
+# 2026-10-01: closing ten externally-reported issues across five clusters -
+# outcome semantics, structured ACP error propagation, workspace and session
+# identity, run-scoped cwd and launch arguments, model attestation on reused
+# sessions. Three of these packages are written concurrently by separate
+# workstreams, so the ceiling is shared and is not permission for growth:
+# a workstream that needs more reports it to the release captain first.
+# 2026-10-01: second alignment pass. The first raise was measured before the
+# workstreams wrote their tests and projections; these are the measured
+# values with a small margin, and the ceiling stays shared. File, function,
+# parameter and branch budgets are NOT raised here - those are quality
+# constraints and are met by splitting.
+"internal/logic/runtrace" = 1470
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
 # process reap; forced run-owned child cleanup can remediate parent-owner
 # retention without weakening inline parent-restore safety. Later same-day
@@ -131,16 +148,36 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # workspace verification, including provider-announced directory validation,
 # are separate from normal session recovery.
 # The explicit fallback model field is passed through the neutral route.
-"internal/logic/session" = 5684
+# 2026-10-01: second alignment pass. The first raise was measured before the
+# workstreams wrote their tests and projections; these are the measured
+# values with a small margin, and the ceiling stays shared. File, function,
+# parameter and branch budgets are NOT raised here - those are quality
+# constraints and are met by splitting.
+"internal/logic/session" = 5800
 # 2026-07-19: stable ACP v1.19/A2A v1.0.1 protocol-neutral request and
 # capability surfaces; retired credential models were deleted.
 # 2026-09-24: provider-neutral remote session identity carries verification
 # limits for the strict import receipt.
 # Provider-neutral model selection evidence and explicit fallback fields are
 # used by the ACP adapter and the run trace without coupling the ingress to ACP.
-"internal/middleware" = 1159
+# 2026-10-01: the neutral protocol contract gains an observed stop reason so an
+# outcome is not invented, and the model selection surface records why a
+# provider verdict is unverified. Both are additive fields on types the
+# adapters already exchanged, not new coupling.
+"internal/middleware" = 1180
 # 2026-04-27: workspace timeline event recording split validation/persistence/state update.
-"internal/logic/workspace" = 910
+# 2026-10-01: closing ten externally-reported issues across five clusters -
+# outcome semantics, structured ACP error propagation, workspace and session
+# identity, run-scoped cwd and launch arguments, model attestation on reused
+# sessions. Three of these packages are written concurrently by separate
+# workstreams, so the ceiling is shared and is not permission for growth:
+# a workstream that needs more reports it to the release captain first.
+# 2026-10-01: second alignment pass. The first raise was measured before the
+# workstreams wrote their tests and projections; these are the measured
+# values with a small margin, and the ceiling stays shared. File, function,
+# parameter and branch budgets are NOT raised here - those are quality
+# constraints and are met by splitting.
+"internal/logic/workspace" = 1020
 # 2026-06-18: public-release hardening adds agent-id path validation for
 # binary install/uninstall containment and temp archive path validation.
 # 2026-09-22: the installer verifies the sha256 the ACP registry index publishes
@@ -159,7 +196,13 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # budget; the alternative was to split a package whose parts all change together.
 # 2026-09-24: validated HTTPS registry index override and download redirects;
 # the shared HTTP provider also refuses index HTTPS-to-HTTP redirects.
-"internal/logic/agentmgr" = 1103
+# 2026-10-01: closing ten externally-reported issues across five clusters -
+# outcome semantics, structured ACP error propagation, workspace and session
+# identity, run-scoped cwd and launch arguments, model attestation on reused
+# sessions. Three of these packages are written concurrently by separate
+# workstreams, so the ceiling is shared and is not permission for growth:
+# a workstream that needs more reports it to the release captain first.
+"internal/logic/agentmgr" = 1165
 # 2026-07-22: ACP message identity and structured final/progress projection add
 # lossless messageId/phase handling without provider-text heuristics. 2026-07-19:
 # stable ACP v1.19 and A2A v1.0.1 coverage expansion adds
@@ -188,7 +231,18 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # extend the provider adapter in focused files.
 # An authorized model fallback and provider-confirmed selection are isolated
 # in acp_model_selection.go; unsupported/auth failures still stop before prompt.
-"internal/providers/agents" = 4900
+# 2026-10-01: closing ten externally-reported issues across five clusters -
+# outcome semantics, structured ACP error propagation, workspace and session
+# identity, run-scoped cwd and launch arguments, model attestation on reused
+# sessions. Three of these packages are written concurrently by separate
+# workstreams, so the ceiling is shared and is not permission for growth:
+# a workstream that needs more reports it to the release captain first.
+# 2026-10-01: second alignment pass. The first raise was measured before the
+# workstreams wrote their tests and projections; these are the measured
+# values with a small margin, and the ceiling stays shared. File, function,
+# parameter and branch budgets are NOT raised here - those are quality
+# constraints and are met by splitting.
+"internal/providers/agents" = 5140
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
@@ -207,7 +261,20 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # focused files. The grant's canonical Git/owner checks live in workspacegrant.
 # Model fallback validation and explicit run-trace propagation add a small
 # neutral API surface without increasing function or branch warnings.
-"internal/providers/runapi" = 1949
+# 2026-10-01: closing ten externally-reported issues across five clusters -
+# outcome semantics, structured ACP error propagation, workspace and session
+# identity, run-scoped cwd and launch arguments, model attestation on reused
+# sessions. Three of these packages are written concurrently by separate
+# workstreams, so the ceiling is shared and is not permission for growth:
+# a workstream that needs more reports it to the release captain first.
+# 2026-10-01: second alignment pass. The first raise was measured before the
+# workstreams wrote their tests and projections; these are the measured
+# values with a small margin, and the ceiling stays shared. File, function,
+# parameter and branch budgets are NOT raised here - those are quality
+# constraints and are met by splitting.
+# 2026-10-01: run resolution and the terminal-result split landed here; this is
+# the measured value, and the file/function budgets in this package are clean.
+"internal/providers/runapi" = 2220
 # 2026-09-21: the Telegram channel gained the elicitation frontend — prompt
 # rendering, inline-keyboard building, callback routing, answer coercion and
 # session-to-chat correlation — split across focused files (elicitation.go,
@@ -222,7 +289,12 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-09-23: the client advertises the terminal auth capability in the parameter
 # names of the generation it requests, and keeps structured RPC error data so the
 # auth_required signal survives the client.
-"pkg/zedacp" = 1945
+# 2026-10-01: second alignment pass. The first raise was measured before the
+# workstreams wrote their tests and projections; these are the measured
+# values with a small margin, and the ceiling stays shared. File, function,
+# parameter and branch budgets are NOT raised here - those are quality
+# constraints and are met by splitting.
+"pkg/zedacp" = 2000
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390

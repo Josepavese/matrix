@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
+	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -23,6 +24,7 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		Args:         endpoint.Args,
 		Env:          endpoint.Env,
 		EnvIsolation: endpoint.EnvIsolation,
+		Cwd:          deps.Cwd,
 	})
 	if err != nil {
 		return nil, err
@@ -181,24 +183,55 @@ func (c *acpConversationClient) executeTurnOnce(ctx context.Context, turn middle
 	} else {
 		obs.WaitIdle(ctx, 150*time.Millisecond)
 	}
+	stopReason := resolveTurnStopReason(resp.StopReason, turnObs.stopReason)
+	reportTurnStopReason(turn, stopReason)
 	return middleware.ConversationResult{
 		Output:          obs.GetContent(),
 		ContentBlocks:   obs.ContentBlocks(),
 		RemoteSessionID: remoteSessionID,
 		ToolCalls:       fromZedACPToolCalls(resp.ToolCalls),
-		Metadata:        obs.Metadata(),
+		Metadata:        metadataWithStopReason(obs.Metadata(), stopReason),
+		StopReason:      stopReason,
 	}, nil
+}
+
+// reportTurnStopReason tells the run's notifier what the peer said ended the
+// turn, so the terminal transition records the peer's own word. A notifier that
+// does not offer the capability records nothing, and neither does a turn where
+// the peer said nothing: the run then reports the reason as unreported, which is
+// true, instead of a reason Matrix made up.
+func reportTurnStopReason(turn middleware.ConversationTurn, stopReason string) {
+	reporter, ok := turn.ThoughtNotifier.(runtrace.TurnStopReasonReporter)
+	if !ok || strings.TrimSpace(stopReason) == "" {
+		return
+	}
+	reporter.OnTurnStopReason(stopReason)
+}
+
+// resolveTurnStopReason reports what the peer said ended the turn. A prompt
+// response carries the stop reason for every generation that ends a turn on the
+// response; a generation whose turn ends on a terminal state update reports it
+// there instead, so the observed terminal reason is the fallback. An empty
+// result means the peer reported nothing and Matrix records exactly that rather
+// than a reason of its own.
+func resolveTurnStopReason(responseReason, observedReason string) string {
+	return firstNonEmpty(responseReason, observedReason)
 }
 
 func (c *acpConversationClient) prepareTurnSession(ctx context.Context, turn middleware.ConversationTurn, log *slog.Logger) (string, error) {
 	if err := c.validatePromptContent(turn.ContentBlocks); err != nil {
 		return "", err
 	}
-	remoteSessionID, err := c.ensureACPRemoteSession(ctx, turn, c.turnCwd(turn), log)
+	remoteSessionID, origin, err := c.ensureACPRemoteSession(ctx, turn, c.turnCwd(turn), log)
 	if err != nil {
 		return "", classifyProviderFailure(turn.AgentID, c.endpoint, "session/new", err)
 	}
-	selection, err := c.selectTurnModel(ctx, remoteSessionID, turn.ModelID, turn.FallbackModelID)
+	selection, err := c.selectTurnModelFor(ctx, turnModelSelection{
+		SessionID:       remoteSessionID,
+		ModelID:         turn.ModelID,
+		FallbackModelID: turn.FallbackModelID,
+		Origin:          origin,
+	})
 	if err != nil {
 		return remoteSessionID, classifyProviderFailure(turn.AgentID, c.endpoint, "session/set_model", err)
 	}
@@ -210,34 +243,75 @@ func (c *acpConversationClient) prepareTurnSession(ctx context.Context, turn mid
 	return remoteSessionID, nil
 }
 
-func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) (string, error) {
+// ensureACPRemoteSession returns the remote session this turn runs against and
+// how it reached the turn. The origin is read from what the adapter did — a
+// session it created, resumed, loaded, or already had — and never guessed from
+// the session ID or from provider metadata.
+func (c *acpConversationClient) ensureACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) (string, sessionOrigin, error) {
 	if turn.RemoteSessionID == "" {
 		if turn.StrictSession {
-			return "", fmt.Errorf("strict remote session requires an existing remote session ID")
+			return "", sessionOriginUnknown, fmt.Errorf("strict remote session requires an existing remote session ID")
 		}
-		return c.createAndConfigureACPRemoteSession(ctx, turn, cwd, log)
+		sessionID, err := c.createAndConfigureACPRemoteSession(ctx, turn, cwd, log)
+		return sessionID, sessionOriginCreated, err
 	}
-	if turn.StrictSession && !c.isLoadedSession(turn.RemoteSessionID) {
-		_, err := c.AttachExistingRemoteSession(ctx, turn.RemoteSessionID, cwd)
-		if err != nil {
-			return "", err
-		}
+	if origin, attached, err := c.attachVerifiedSession(ctx, turn, cwd); err != nil || attached {
+		return turn.RemoteSessionID, origin, err
 	}
-	if !c.isLoadedSession(turn.RemoteSessionID) {
-		if err := c.restoreACPRemoteSession(ctx, turn, cwd, log); err != nil {
-			return "", err
-		}
+	if c.isLoadedSession(turn.RemoteSessionID) {
+		return turn.RemoteSessionID, sessionOriginReused, nil
 	}
-	return turn.RemoteSessionID, nil
+	origin, err := c.restoreACPRemoteSession(ctx, turn, cwd, log)
+	return turn.RemoteSessionID, origin, err
 }
 
-func (c *acpConversationClient) restoreACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) error {
+// attachVerifiedSession performs the verified attach a strict turn requires. The
+// reported bool distinguishes "already attached, nothing was asked" from "the
+// provider was asked and answered", which is what makes `reused` different from
+// `resumed`/`loaded`.
+func (c *acpConversationClient) attachVerifiedSession(ctx context.Context, turn middleware.ConversationTurn, cwd string) (sessionOrigin, bool, error) {
+	if !turn.StrictSession || c.isLoadedSession(turn.RemoteSessionID) {
+		return sessionOriginUnknown, false, nil
+	}
+	info, err := c.AttachExistingRemoteSession(ctx, turn.RemoteSessionID, cwd)
+	if err != nil {
+		return sessionOriginUnknown, true, err
+	}
+	return originFromVerificationMethod(info.VerificationMethod), true, nil
+}
+
+// originFromVerificationMethod maps the attach handshake the provider answered
+// onto the origin it establishes. An unrecognised or empty method stays unknown:
+// the origin is only ever what the provider confirmed.
+func originFromVerificationMethod(method string) sessionOrigin {
+	switch strings.TrimSpace(method) {
+	case "session/resume":
+		return sessionOriginResumed
+	case "session/load":
+		return sessionOriginLoaded
+	default:
+		return sessionOriginUnknown
+	}
+}
+
+// originIf reports the origin a confirmed transition establishes.
+func originIf(confirmed bool, origin sessionOrigin) sessionOrigin {
+	if confirmed {
+		return origin
+	}
+	return sessionOriginUnknown
+}
+
+// restoreACPRemoteSession restores a remote session this process does not hold.
+// It reports how the session was restored, which is what a caller needs to state
+// whether the provider confirmed its state on this turn.
+func (c *acpConversationClient) restoreACPRemoteSession(ctx context.Context, turn middleware.ConversationTurn, cwd string, log *slog.Logger) (sessionOrigin, error) {
 	if !c.sessionCapabilities.Resume && !c.sessionCapabilities.Load {
-		return nil
+		return sessionOriginUnknown, nil
 	}
 	mcpServers, err := c.turnMCPServers(turn.McpServers)
 	if err != nil {
-		return err
+		return sessionOriginUnknown, err
 	}
 	req := acpLoadRemoteSessionRequest{
 		Ctx: ctx, RemoteSessionID: turn.RemoteSessionID, Cwd: cwd,
@@ -247,13 +321,16 @@ func (c *acpConversationClient) restoreACPRemoteSession(ctx context.Context, tur
 	if c.sessionCapabilities.Resume {
 		resumed, err := c.resumeACPRemoteSession(req)
 		if err != nil || resumed {
-			return err
+			return originIf(resumed, sessionOriginResumed), err
 		}
 	}
 	if c.sessionCapabilities.Load {
-		return c.loadACPRemoteSession(req)
+		if err := c.loadACPRemoteSession(req); err != nil {
+			return sessionOriginUnknown, err
+		}
+		return sessionOriginLoaded, nil
 	}
-	return nil
+	return sessionOriginUnknown, nil
 }
 
 func (c *acpConversationClient) isLoadedSession(remoteSessionID string) bool {

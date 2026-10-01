@@ -85,6 +85,16 @@ type runExecution struct {
 type runExecutionResult struct {
 	output  string
 	cleanup *middleware.SessionCleanupResult
+	// terminal is the run record as it was left by its terminal transition. A
+	// response reports this state rather than assuming the turn succeeded.
+	terminal *runtrace.Run
+	// routeErr is the failure routing produced, kept typed so a caller still
+	// gets the provider's structured code and diagnostics instead of only the
+	// run record's stored text.
+	routeErr error
+	// abortErr is why a cancelled run was cancelled, when the cancellation came
+	// from an inactivity or deadline bound rather than from the caller.
+	abortErr error
 }
 
 type eventSinkRequest struct {

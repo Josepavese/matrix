@@ -63,6 +63,10 @@ type ConversationResult struct {
 	RemoteSessionID string
 	ToolCalls       []ToolCall
 	Metadata        ConversationMetadata
+	// StopReason is what the peer reported ended the turn, in the peer's own
+	// vocabulary. Empty means it reported nothing, which a consumer must be able
+	// to tell apart from a reported "end_turn".
+	StopReason string
 }
 
 // ConversationMetadata carries protocol-neutral session/task metadata emitted by

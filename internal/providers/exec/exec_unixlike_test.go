@@ -7,7 +7,9 @@ import (
 	"context"
 	"io"
 	"os"
+	goexec "os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,5 +235,148 @@ func TestHasExecutable_False(t *testing.T) {
 	p := NewProvider()
 	if p.HasExecutable("nonexistent_binary_xyz_12345") {
 		t.Error("nonexistent binary should not be found")
+	}
+}
+
+// isolatedEnvHome builds a home directory whose nvm initialization puts one
+// shared directory on PATH, and puts a binary for every requested name in that
+// directory. It does not run or install a real nvm: the point is that the
+// environment to source exists and resolves arbitrary names, exactly as an
+// installed toolchain does. The PATH entry is expanded by the lookup shell when
+// it sources the file, mirroring how nvm.sh prepends its own bin directory.
+func isolatedEnvHome(t *testing.T, names ...string) string {
+	t.Helper()
+
+	home := t.TempDir()
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		path := filepath.Join(bin, name)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nvmDir := filepath.Join(home, ".nvm")
+	if err := os.MkdirAll(nvmDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "export PATH='" + bin + "':\"$PATH\"\n"
+	if err := os.WriteFile(filepath.Join(nvmDir, "nvm.sh"), []byte(script), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
+// resolutionOracle answers the same question HasExecutable answers, from the
+// outside and without calling it: a name is resolvable when it is in $PATH now,
+// or when the shell environment in this home puts a directory containing it on
+// PATH. It reads the environment file the way the contract describes it instead
+// of trusting the implementation, so it can disagree with a name-based answer.
+func resolutionOracle(t *testing.T, home, name string) bool {
+	t.Helper()
+
+	if _, err := goexec.LookPath(name); err == nil {
+		return true
+	}
+	body, err := os.ReadFile(filepath.Join(home, ".nvm", "nvm.sh"))
+	if err != nil {
+		return false // nothing to source: only $PATH can answer
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		if !strings.HasPrefix(line, "export PATH=") {
+			continue
+		}
+		// The assignment is a shell word, so its parts can be quoted
+		// independently: each PATH entry is unquoted on its own, and an entry
+		// that is still a variable reference names no directory to check.
+		value := strings.TrimPrefix(line, "export PATH=")
+		for _, entry := range strings.Split(value, ":") {
+			entry = strings.TrimSuffix(strings.TrimPrefix(entry, "'"), "'")
+			entry = strings.TrimSuffix(strings.TrimPrefix(entry, `"`), `"`)
+			if entry == "" || !strings.HasPrefix(entry, "/") || strings.ContainsAny(entry, "$`") {
+				continue
+			}
+			if info, err := os.Stat(filepath.Join(entry, name)); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// TestHasExecutableIsNameAgnostic is the agnosticism contract for executable
+// resolution: the answer comes from the environment that can resolve the name,
+// never from the name itself.
+//
+// Each case asks about a name the retired allowlist did NOT contain (mimo,
+// kimi), because the defect was exactly that listed and unlisted names got
+// different answers. The expectation is computed by resolutionOracle, not by
+// the implementation: it says the same binary is resolvable under one name and
+// absent under another in the very same home, so a name-based answer is caught
+// whichever way it is written.
+func TestHasExecutableIsNameAgnostic(t *testing.T) {
+	p := NewProvider()
+	for _, test := range []struct {
+		why    string
+		home   string
+		absent []string
+		found  []string
+	}{
+		{
+			why:    "no shell environment to source",
+			home:   t.TempDir(),
+			absent: []string{"node", "mimo", "kimi", "nonexistent_binary_xyz_12345"},
+		},
+		{
+			why:    "shell environment resolves names the retired allowlist never had",
+			home:   isolatedEnvHome(t, "mimo"),
+			absent: []string{"kimi", "nonexistent_binary_xyz_12345"},
+			found:  []string{"mimo"},
+		},
+		{
+			why:    "shell environment resolves a listed name too",
+			home:   isolatedEnvHome(t, "node"),
+			absent: []string{"mimo"},
+			found:  []string{"node"},
+		},
+	} {
+		t.Run(test.why, func(t *testing.T) {
+			// The provider and the oracle read the same HOME, so the comparison
+			// is about the name, not about the host this runs on.
+			t.Setenv("HOME", test.home)
+
+			for _, name := range append(append([]string{}, test.found...), test.absent...) {
+				want := resolutionOracle(t, test.home, name)
+				if got := p.HasExecutable(name); got != want {
+					t.Fatalf("HasExecutable(%q) = %v, oracle says %v (HOME=%s): the answer must come from the environment, not from the name", name, got, want, test.home)
+				}
+			}
+			// Guard the oracle itself: without this, an oracle that always says
+			// false would make the assertions above meaningless.
+			if len(test.found) > 0 && !resolutionOracle(t, test.home, test.found[0]) {
+				t.Fatalf("oracle cannot see %q in %s although the test built it there", test.found[0], test.home)
+			}
+		})
+	}
+}
+
+// TestResolutionOracleMatchesASourcingShell anchors the oracle to the real
+// thing: in the current home, the names a shell that sources the environment
+// can resolve must be the names the oracle reports. Without this, the oracle
+// above could be a second opinion that is simply wrong in the same way.
+func TestResolutionOracleMatchesASourcingShell(t *testing.T) {
+	home := os.Getenv("HOME")
+	p := NewProvider()
+	for _, name := range []string{"node", "mimo", "nonexistent_binary_xyz_12345"} {
+		cmd := goexec.Command("bash", "-c", `export NVM_DIR="$HOME/.nvm"; if [ -s "$NVM_DIR/nvm.sh" ]; then \. "$NVM_DIR/nvm.sh"; fi; which "$1"`, "bash", name)
+		sourced := cmd.Run() == nil
+		if want := resolutionOracle(t, home, name); want != sourced {
+			t.Fatalf("resolutionOracle(%q) = %v but a sourcing shell says %v: the oracle does not describe the real environment", name, want, sourced)
+		}
+		if want := p.HasExecutable(name); want != sourced {
+			t.Fatalf("HasExecutable(%q) = %v but a sourcing shell says %v", name, want, sourced)
+		}
 	}
 }

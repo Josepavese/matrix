@@ -79,28 +79,22 @@ func (n *Notifier) SetHeader(agentID, remoteSessionID string) {
 	}
 }
 
-func (n *Notifier) OnModelSelection(selection middleware.ModelSelection) {
+// OnTurnStopReason records what the provider said ended the turn, as the turn
+// reported it. The value is never interpreted here: "end_turn" and a reason this
+// build has never seen are stored the same way, and a turn that reported nothing
+// appends nothing, so the terminal transition says "unreported" rather than
+// inheriting an assumption.
+func (n *Notifier) OnTurnStopReason(stopReason string) {
 	if n == nil || n.store == nil {
 		return
 	}
-	run, found, err := n.store.LoadRun(n.runID)
-	if err != nil || !found {
+	stopReason = strings.TrimSpace(stopReason)
+	if stopReason == "" {
 		return
 	}
-	run.ConfiguredModel = selection.ConfiguredModel
-	run.EffectiveModel = selection.EffectiveModel
-	run.ModelVerification = selection.Verification
-	run.ModelFallbackUsed = selection.FallbackUsed
-	run.ModelFallbackReason = selection.FallbackReason
-	if err := n.store.SaveRun(run); err != nil {
-		slog.Warn("failed to record model selection", "error", err, "run_id", n.runID)
-		return
-	}
-	_, _ = n.store.AppendEvent(runtrace.Event{RunID: n.runID, Kind: "model.selection", Metadata: map[string]interface{}{
-		"configured_model": selection.ConfiguredModel, "effective_model": selection.EffectiveModel,
-		"verification": selection.Verification, "fallback_used": selection.FallbackUsed,
-		"fallback_reason": selection.FallbackReason,
-	}})
+	event := n.baseEvent(runtrace.KindTurnStopReason, n.agentID, runtrace.StatusCompleted, "")
+	event.Metadata[runtrace.StopReasonMetadataKey] = stopReason
+	_, _ = n.store.AppendEvent(event)
 }
 
 func (n *Notifier) SetLogicalSession(logicalSessionID, workspaceID string) {

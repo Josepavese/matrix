@@ -9,10 +9,13 @@ import (
 	"io"
 	"os"
 	goexec "os/exec"
+	"path/filepath"
+	"strings"
 
 	"errors"
 
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/osfs"
 )
 
 // Provider implements middleware.Process for Unix-like systems (Linux, macOS).
@@ -104,20 +107,55 @@ func (p *Provider) RunPrivileged(spec middleware.CommandSpec) ([]byte, error) {
 	return out, nil
 }
 
-// HasExecutable reports whether the named binary exists in the host $PATH
+// HasExecutable reports whether the named binary exists in the host $PATH.
+//
+// A process started by the daemon does not inherit the PATH a login shell
+// builds, so a binary installed under a toolchain that only wires itself up in
+// shell startup — nvm is the one this host uses — is invisible to LookPath even
+// though it is installed. The second lookup therefore runs with that
+// environment sourced.
+//
+// Whether to make that second lookup is decided by one observable property: on
+// this host, is the shell environment to source actually there? It is not
+// decided by the name being looked up. Any binary, from any provider, gets the
+// same answer, so a name nobody listed still resolves when the environment can
+// resolve it, and no list of names has to be maintained as agents are added.
 func (p *Provider) HasExecutable(name string) bool {
-	_, err := goexec.LookPath(name)
-	if err == nil {
+	if _, err := goexec.LookPath(name); err == nil {
 		return true
 	}
-	// Also check in NVM environment if name is node/npm or an agent
-	if name == "node" || name == "npm" || name == "codex" || name == "gemini" || name == "claude" || name == "opencode" {
-		spec := middleware.CommandSpec{Runner: "which", Args: []string{name}, EnvIsolation: true}
-		if _, err := p.Exec(spec); err == nil {
-			return true
-		}
+	script := nvmInitScript()
+	if _, err := os.Stat(script); err != nil {
+		return false
+	}
+	spec := middleware.CommandSpec{
+		Runner:       "which",
+		Args:         []string{name},
+		EnvIsolation: true,
+	}
+	if _, err := p.Exec(spec); err == nil {
+		return true
 	}
 	return false
+}
+
+// nvmInitScript is the nvm initialization the isolated shell sources.
+//
+// The home it names is the USER home, not the Matrix PAL home: nvm installs
+// itself under the user's own home, and the lookup shell resolves the same path
+// through $HOME, so the two must agree. $HOME is read the way that shell reads
+// it; when it is unset, the user home comes from the provider-backed filesystem
+// rather than a second private implementation of the same resolution.
+func nvmInitScript() string {
+	home := strings.TrimSpace(os.Getenv("HOME"))
+	if home == "" {
+		resolved, err := osfs.NewFSProvider().UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		home = resolved
+	}
+	return filepath.Join(home, ".nvm", "nvm.sh")
 }
 
 func (p *Provider) prepareCmd(spec middleware.CommandSpec, privileged bool) *goexec.Cmd {

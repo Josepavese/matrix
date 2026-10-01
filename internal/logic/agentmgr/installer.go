@@ -101,6 +101,12 @@ func (inst *Installer) RegistryClient() *RegistryClient {
 
 // Install fetches, downloads, extracts and registers an agent.
 // Supports binary, npx, and uvx distribution types.
+//
+// Running it against an agent that is already installed is also the repair: a
+// record whose launch arguments are empty receives the ones the index declares
+// today. Installation is the only operation that changes the registry record,
+// so a lost-argument record becomes a working one by re-installing it, and the
+// caller's explicit override (agent args set/append) is never touched.
 func (inst *Installer) Install(ctx context.Context, agentID string) error {
 	existing, err := agentcfg.LoadEntry(inst.storage, agentID)
 	if err != nil {
@@ -124,6 +130,7 @@ func (inst *Installer) Install(ctx context.Context, agentID string) error {
 	}
 
 	// 4. Register in Vault
+	cfg.Args = repairedArgs(existing.Config.Args, resolved.Args)
 	entry := agentcfg.Entry{Config: cfg, Override: existing.Override}
 	if err := agentcfg.SaveEntry(inst.storage, agentID, entry); err != nil {
 		return err
@@ -146,10 +153,26 @@ func (inst *Installer) Install(ctx context.Context, agentID string) error {
 	return agentcfg.SaveMeta(inst.storage, agentID, meta)
 }
 
+// repairedArgs decides the launch arguments an install record carries.
+//
+// The registry declares them and the config keeps them, so a record whose
+// arguments are empty never filled them: it was written before the install path
+// carried the platform arguments, and re-installing is what repairs it. An
+// existing non-empty list wins, because it is what the index declared when that
+// installation ran; operator intent lives in the override layer, which this
+// leaves alone. Filling only an empty list is what keeps the repair idempotent:
+// a second install finds the arguments already there and adds nothing.
+func repairedArgs(existing, resolved []string) []string {
+	if len(existing) == 0 {
+		return append([]string{}, resolved...)
+	}
+	return append([]string{}, existing...)
+}
+
 func (inst *Installer) installResolved(ctx context.Context, agentID string, manifest *AgentManifest, resolved *ResolvedDist) (agentcfg.Config, *agentcfg.ArtifactVerification, error) {
 	if resolved.Type == "binary" {
 		binaryPath, verification, err := inst.installBinary(ctx, manifest)
-		return agentcfg.Config{Command: binaryPath, Kind: "acp", Transport: "stdio"}, verification, err
+		return agentcfg.Config{Command: binaryPath, Args: resolved.Args, Kind: "acp", Transport: "stdio"}, verification, err
 	}
 	if resolved.Type != "npx" && resolved.Type != "uvx" {
 		return agentcfg.Config{}, nil, fmt.Errorf("unsupported distribution type: %s", resolved.Type)

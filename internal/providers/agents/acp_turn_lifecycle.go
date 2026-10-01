@@ -77,6 +77,11 @@ type turnObservation struct {
 	prompt   acpSessionObserver
 	stop     func()
 	terminal bool
+	// stopReason is the reason the peer reported on its terminal state update.
+	// Reading it is safe for every generation and it stays empty when the peer
+	// reported none, which is what lets the turn's result say "nothing was
+	// reported" instead of manufacturing an ending.
+	stopReason string
 }
 
 // observeTurn builds the turn's observation, falling back to the version 1
@@ -86,6 +91,8 @@ func (c *acpConversationClient) observeTurn(remoteSessionID string, turn middlew
 		observer: &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier},
 		stop:     func() {},
 	}
+	reason, _ := observation.observer.terminalState()
+	observation.stopReason = reason
 	watcher, ok := c.currentACPClient().(acpSessionWatcher)
 	if !ok || !c.awaitsTerminalState() {
 		observation.prompt = observation.observer

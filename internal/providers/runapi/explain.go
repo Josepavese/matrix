@@ -15,6 +15,10 @@ type runExplanation struct {
 	WorkspacePath string `json:"workspace_path,omitempty"`
 	Phase         string `json:"phase,omitempty"`
 	FailureCode   string `json:"failure_code,omitempty"`
+	// StopReason is what the provider reported ended the turn, as it reported
+	// it. "unreported" means it reported nothing, which is not the same as
+	// "end_turn": a consumer must not be handed a reason Matrix invented.
+	StopReason    string `json:"stop_reason,omitempty"`
 	PromptReceipt string `json:"prompt_receipt"`
 	Cause         string `json:"cause"`
 	Uncertain     bool   `json:"uncertain"`
@@ -51,8 +55,11 @@ func (s *Server) handleRunExplain(w http.ResponseWriter, r *http.Request, runID 
 }
 
 func explainRun(run runtrace.Run, events []runtrace.Event, lang string) runExplanation {
-	out := runExplanation{RunID: run.ID, Status: run.Status, AgentID: run.AgentID,
-		WorkspaceID: run.WorkspaceID, WorkspacePath: run.WorkspacePath, PromptReceipt: "unverified"}
+	out := runExplanation{
+		RunID: run.ID, Status: run.Status, AgentID: run.AgentID,
+		WorkspaceID: run.WorkspaceID, WorkspacePath: run.WorkspacePath,
+		StopReason: run.StopReason, PromptReceipt: "unverified",
+	}
 	for _, event := range events {
 		if event.Kind == "provider.preflight.failed" {
 			out.Phase = event.ProtocolMethod
@@ -65,13 +72,37 @@ func explainRun(run runtrace.Run, events []runtrace.Event, lang string) runExpla
 				out.FailureCode = code
 			}
 		}
-		if event.Kind == "agent.message.final" || event.Kind == "run.completed" {
+		// A prompt is not confirmed by a run that ended without producing
+		// anything: the terminal event says the run stopped, not that the peer
+		// answered. A run that did produce a message, a tool call or output has
+		// the result itself as the receipt.
+		if hasTurnEvidence(events) && (event.Kind == "agent.message.final" || event.Kind == "run.completed") {
 			out.PromptReceipt = "confirmed_by_result"
 		}
 	}
 	choice := explanationFor(lang, run.Status, out.FailureCode)
 	out.Cause, out.NextAction, out.Uncertain = choice.cause, choice.action, choice.uncertain
 	return out
+}
+
+// hasTurnEvidence reports whether a run's events carry anything the peer actually
+// produced: a message event or a tool call. Operational events — routing, model
+// selection, the prompt record, the terminal transition — exist for every run,
+// including the ones that produced nothing, so they are not evidence.
+//
+// The rule reads event kinds only. It never inspects event text, so it cannot
+// become a text heuristic, and it names no provider.
+func hasTurnEvidence(events []runtrace.Event) bool {
+	for _, event := range events {
+		if strings.HasPrefix(event.Kind, "agent.message.") || isToolEvent(event.Kind) {
+			return true
+		}
+	}
+	return false
+}
+
+func isToolEvent(kind string) bool {
+	return kind == "tool.call.requested" || kind == "tool.result.received"
 }
 
 type explanationText struct {
@@ -89,6 +120,7 @@ var runExplanations = map[string]map[string]explanationText{
 		"additional_directories_unsupported": {"Directory aggiuntive non supportate", "Usa un provider che le supporta o riduci il workspace richiesto", false},
 		"cancelled":                          {"Run interrotta", "Controlla la trace e gli effetti remoti prima di riprovare", true},
 		"failed":                             {"Run fallita", "Controlla fase e trace prima di riprovare", true},
+		"run_no_turn_evidence":               {"Il provider ha chiuso il turno senza output, tool call o messaggio", "Ripeti il run o ispeziona la sessione remota: il turno non ha prodotto nulla di utilizzabile", true},
 	},
 	"en": {
 		"completed":                          {"Run completed", "Read the outcome or trace", false},
@@ -99,6 +131,7 @@ var runExplanations = map[string]map[string]explanationText{
 		"additional_directories_unsupported": {"Additional directories unsupported", "Use a supporting provider or reduce requested workspace", false},
 		"cancelled":                          {"Run interrupted", "Inspect the trace and remote effects before retrying", true},
 		"failed":                             {"Run failed", "Inspect phase and trace before retrying", true},
+		"run_no_turn_evidence":               {"The provider ended the turn with no output, tool call or message", "Retry the run or inspect the remote session: the turn produced nothing usable", true},
 	},
 }
 

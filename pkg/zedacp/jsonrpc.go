@@ -48,6 +48,10 @@ const (
 )
 
 // RPCError lets request handlers return protocol-correct JSON-RPC error codes.
+//
+// Message is the error's own text, verbatim: joining it to the code is what
+// Error does, and a peer's message that a caller reads programmatically is not
+// prefixed with a rendering of itself.
 type RPCError struct {
 	Code    int
 	Message string
@@ -58,10 +62,82 @@ func (e *RPCError) Error() string {
 	if e == nil {
 		return ""
 	}
-	if e.Message != "" {
-		return e.Message
+	return renderRPCError(e.Code, e.Message, e.Data)
+}
+
+// RPCErrorCode, RPCErrorMessage and RPCErrorData expose the three fields a
+// consumer that only knows "there is a coded protocol error here" needs. They
+// exist because the fields themselves carry no interface: a middleware layer
+// that must not import a protocol SDK can still read a peer's code, message and
+// payload without unwrapping a rendered string.
+func (e *RPCError) RPCErrorCode() int {
+	if e == nil {
+		return 0
 	}
-	return fmt.Sprintf("RPC error %d", e.Code)
+	return e.Code
+}
+
+func (e *RPCError) RPCErrorMessage() string {
+	if e == nil {
+		return ""
+	}
+	return e.Message
+}
+
+func (e *RPCError) RPCErrorData() any {
+	if e == nil {
+		return nil
+	}
+	return e.Data
+}
+
+// ErrTextInternal is the protocol's own word for an error with no message of its
+// own. It substitutes for an absent message, never for one that was sent.
+const ErrTextInternal = "Internal error"
+
+// renderRPCError is the one-line rendering of a JSON-RPC error: its code, its
+// text, and its structured payload when there is one.
+func renderRPCError(code int, message string, data any) string {
+	text := strings.TrimSpace(message)
+	if text == "" {
+		text = ErrTextInternal
+	}
+	rendered := fmt.Sprintf("RPC error %d: %s", code, text)
+	if payload := formatRPCErrorData(data); payload != "" {
+		rendered = fmt.Sprintf("%s (%s)", rendered, payload)
+	}
+	return rendered
+}
+
+// formatRPCErrorData renders an error's structured payload for a human reading
+// one line, and returns nothing when there is no payload to render.
+//
+// An empty object or empty list is not a payload: JSON-RPC makes "data" optional,
+// and peers routinely send `"data": {}` to mean "no additional context". Printing
+// it produced the suffix "(map[])", which told an operator nothing and hid the
+// message it was appended to. The value itself is not lost by this: it stays on
+// RPCError.Data for a consumer that reads it programmatically.
+func formatRPCErrorData(data any) string {
+	if emptyRPCErrorData(data) {
+		return ""
+	}
+	return fmt.Sprintf("%v", data)
+}
+
+// emptyRPCErrorData reports whether a structured payload carries no content.
+func emptyRPCErrorData(data any) bool {
+	switch typed := data.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case map[string]any:
+		return len(typed) == 0
+	case []any:
+		return len(typed) == 0
+	default:
+		return false
+	}
 }
 
 func NewMethodNotFoundError(method string) error {
@@ -78,25 +154,28 @@ func rpcErrorFromError(err error) *jsonRPCError {
 	}
 	var rpcErr *RPCError
 	if errors.As(err, &rpcErr) && rpcErr != nil {
-		return &jsonRPCError{Code: rpcErr.Code, Message: rpcErr.Error(), Data: rpcErr.Data}
+		// The message travels as itself: the wire frame carries code and data as
+		// their own fields, and a caller reading the text of the rebuilt error
+		// gets them rendered once rather than twice.
+		return &jsonRPCError{Code: rpcErr.Code, Message: rpcErr.Message, Data: rpcErr.Data}
 	}
 	return &jsonRPCError{Code: ErrCodeInternal, Message: err.Error()}
 }
 
 // rpcErrorFromWire rebuilds the typed error an inbound JSON-RPC error response
-// carries. It keeps the exact text an inbound error always produced, and what it
-// adds is that the error stays typed: ACP version 2 puts structured signals in
-// the data field — "auth_required" above all — and a caller cannot recognize
-// what a flattened string no longer carries.
+// carries. The code, the peer's message and its payload each stay their own
+// field rather than only a pre-rendered string, so the diagnostic survives the
+// boundary instead of being recoverable only by parsing prose back apart — and
+// so reading the error renders it once, whichever path produced it.
+//
+// An empty payload changes nothing: JSON-RPC makes "data" optional, and a peer
+// that sends `{}` means "no additional context". The `(map[])` an operator used
+// to see was Matrix rendering that emptiness as if it were evidence.
 func rpcErrorFromWire(err *jsonRPCError) error {
 	if err == nil {
 		return nil
 	}
-	text := fmt.Sprintf("RPC error %d: %s", err.Code, err.Message)
-	if err.Data != nil {
-		text = fmt.Sprintf("%s (%v)", text, err.Data)
-	}
-	return &RPCError{Code: err.Code, Message: text, Data: err.Data}
+	return &RPCError{Code: err.Code, Message: err.Message, Data: err.Data}
 }
 
 func newJSONRPCID(id int64) json.RawMessage {

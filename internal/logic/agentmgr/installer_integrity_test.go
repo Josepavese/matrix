@@ -59,6 +59,14 @@ func startFakeRegistry(t *testing.T, publication digestPublication) *fakeRegistr
 // against the same real HTTP download, hash and extraction path as production.
 func startFakeRegistryEntry(t *testing.T, publication digestPublication, cmd string, files map[string]string) *fakeRegistry {
 	t.Helper()
+	return startFakeRegistryWithArgs(t, publication, cmd, []string{"acp"}, files)
+}
+
+// startFakeRegistryWithArgs is startFakeRegistryEntry with the platform args
+// under the test's control, so the install path can be exercised with the
+// arguments the index declares and with none at all.
+func startFakeRegistryWithArgs(t *testing.T, publication digestPublication, cmd string, args []string, files map[string]string) *fakeRegistry {
+	t.Helper()
 
 	artifact := testArtifactFiles(t, files)
 	digest := sha256Hex(artifact)
@@ -78,7 +86,7 @@ func startFakeRegistryEntry(t *testing.T, publication digestPublication, cmd str
 		entry := map[string]any{
 			"archive": "http://" + r.Host + "/artifact.tar.gz",
 			"cmd":     cmd,
-			"args":    []string{"acp"},
+			"args":    args,
 		}
 		if publication != publishNoDigest {
 			entry["sha256"] = published

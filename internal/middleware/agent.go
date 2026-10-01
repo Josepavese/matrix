@@ -78,14 +78,41 @@ type ThoughtNotifier interface {
 }
 
 // ModelSelection is provider evidence about a model setting applied before a
-// prompt. EffectiveModel is empty unless the provider confirms the setting.
+// prompt. It separates the three levels a consumer must not conflate:
+// ConfiguredModel is what Matrix selected and applied to the provider session,
+// while EffectiveModel is what the provider itself stated and is empty unless
+// the provider confirms the setting. VerificationReason names why a selection
+// stayed unverified, and EvidenceSource names the provider response the verdict
+// came from. A confirmation is never derived from the requested model.
 type ModelSelection struct {
-	ConfiguredModel string
-	EffectiveModel  string
-	Verification    string
-	FallbackUsed    bool
-	FallbackReason  string
+	ConfiguredModel    string
+	EffectiveModel     string
+	Verification       string
+	VerificationReason string
+	EvidenceSource     string
+	FallbackUsed       bool
+	FallbackReason     string
 }
+
+// Model verification verdicts. Only a statement made by the provider itself can
+// produce ModelVerificationConfirmed.
+const (
+	ModelVerificationConfirmed  = "provider_confirmed"
+	ModelVerificationUnverified = "unverified"
+
+	// ModelUnverifiedProviderDoesNotAttest: the response to the selection cannot
+	// carry a model identity, so the provider never attests this way.
+	ModelUnverifiedProviderDoesNotAttest = "provider_does_not_attest"
+	// ModelUnverifiedModelNotSelectable: the provider stated its session state
+	// and it exposes no model selector.
+	ModelUnverifiedModelNotSelectable = "model_not_selectable"
+	// ModelUnverifiedNotRepeated: the session was reused as-is, so no session
+	// state response arrived on the turn and the model was not re-read.
+	ModelUnverifiedNotRepeated = "verification_not_repeated"
+	// ModelUnverifiedEvidenceLost: the provider stated a model selector without
+	// a current value, so the effective model is not readable.
+	ModelUnverifiedEvidenceLost = "evidence_lost"
+)
 
 // ModelSelectionNotifier is optional; run tracing implements it without
 // changing the ordinary thought stream exposed to chat frontends.

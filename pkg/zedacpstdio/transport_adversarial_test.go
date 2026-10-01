@@ -104,7 +104,7 @@ func TestConcurrentSendsDoNotInterleaveFrames(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	transport, err := New(ctx, cat, nil)
+	transport, err := New(ctx, cat, SpawnSpec{})
 	if err != nil {
 		t.Fatalf("start echo peer: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestSendAfterCloseFails(t *testing.T) {
 	cat := requireCat(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	transport, err := New(ctx, cat, nil)
+	transport, err := New(ctx, cat, SpawnSpec{})
 	if err != nil {
 		t.Fatalf("start echo peer: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestSpawnFailureDoesNotLeakDescriptors(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	for i := 0; i < 32; i++ {
-		transport, err := New(ctx, "/nonexistent/matrix-agent-binary", nil)
+		transport, err := New(ctx, "/nonexistent/matrix-agent-binary", SpawnSpec{})
 		if err == nil {
 			_ = transport.Close()
 			t.Fatal("expected a start failure for a missing binary")

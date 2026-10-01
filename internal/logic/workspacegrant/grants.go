@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/workspace"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -30,6 +31,15 @@ type Grant struct {
 type Store struct{ storage middleware.Storage }
 
 func NewStore(storage middleware.Storage) *Store { return &Store{storage: storage} }
+
+// ResolveIdentity resolves one run's workspace identity against the same vault
+// that stores the grants, so a request that only names a workspace id still has
+// a canonical path to authorize. The run API is wired with one vault for both
+// the registry and the grants; resolving here keeps that wiring the single
+// source of truth instead of letting the caller invent a path.
+func (s *Store) ResolveIdentity(workspaceID, workspacePath string) (workspace.Identity, error) {
+	return workspace.ResolveIdentity(s.storage, workspaceID, workspacePath)
+}
 
 func (s *Store) Register(ctx context.Context, path string, includeWorktrees bool, ttl time.Duration) (Grant, error) {
 	if ttl < time.Minute || ttl > 30*24*time.Hour {

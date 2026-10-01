@@ -8,6 +8,14 @@ import (
 	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
+	"github.com/Josepavese/matrix/internal/logic/workspace"
+)
+
+// Typed refusals for the workspace contract. They are Matrix-side codes: the
+// provider was never asked, so they must not be reported as provider failures.
+const (
+	WorkspaceIdentityMismatchCode = "matrix_workspace_identity_mismatch"
+	WorkspaceNotFoundCode         = "matrix_workspace_not_found"
 )
 
 type workspaceGrantRequest struct {
@@ -82,17 +90,35 @@ func (s *Server) registerWorkspaceGrant(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, grant)
 }
 
+// resolveRunWorkspaceIdentity resolves the one canonical workspace a run will
+// use. The grant check, the session binding and the published trace metadata all
+// read this answer, so a caller that names only a workspace id and a caller that
+// names id and path agree on the same workspace.
+func (s *Server) resolveRunWorkspaceIdentity(req runRequest) (workspace.Identity, error) {
+	return s.workspaceGrants.ResolveIdentity(req.WorkspaceID, req.WorkspacePath)
+}
+
+// requireWorkspaceGrant authorizes the canonical workspace of the run. A
+// workspace_id alone must work: the path the grant is evaluated on is the one
+// the registry records, not the empty string a caller left out.
 func (s *Server) requireWorkspaceGrant(ctx context.Context, req runRequest) error {
+	identity, err := s.resolveRunWorkspaceIdentity(req)
+	if err != nil {
+		return workspaceIdentityFailure(err)
+	}
 	if req.WorkspacePolicy != "require_grant" {
 		return nil
 	}
-	_, err := s.workspaceGrants.Authorize(ctx, req.WorkspacePath)
+	_, err = s.workspaceGrants.Authorize(ctx, identity.Path)
 	if err == nil {
 		return nil
 	}
 	return &providerfailure.Failure{
 		Code: providerfailure.WorkspaceNotGranted, Phase: "matrix.workspace_preflight",
-		Message:     "workspace is not covered by an active Matrix Git repository grant",
-		Diagnostics: map[string]string{"workspace_path": req.WorkspacePath, "origin": "matrix"}, Err: err,
+		Message: "workspace is not covered by an active Matrix Git repository grant",
+		Diagnostics: map[string]string{
+			"workspace_id": strings.TrimSpace(identity.ID), "workspace_path": strings.TrimSpace(identity.Path), "origin": "matrix",
+		},
+		Err: err,
 	}
 }

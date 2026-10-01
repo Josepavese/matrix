@@ -33,6 +33,12 @@ func (m *Manager) recordWorkspaceDecision(meta SessionMeta, channelID string, de
 		"selected_session_id": firstNonEmpty(strings.TrimSpace(decision.SelectedSessionID), meta.ID),
 		"selected_mode":       firstNonEmpty(strings.TrimSpace(decision.SelectedMode), normalizeMode(meta.Mode)),
 		"fallback_used":       decision.FallbackUsed,
+		// Recorded before the prompt so a reused remote session and the workspace
+		// it belongs to are visible in the decision trace, not only afterwards.
+		"workspace_id":               strings.TrimSpace(meta.WorkspaceID),
+		"workspace_path":             strings.TrimSpace(meta.WorkspacePath),
+		"selected_remote_session_id": strings.TrimSpace(meta.AgentSessionID),
+		"reuses_remote_session":      strings.TrimSpace(meta.AgentSessionID) != "",
 	}
 	m.recordWorkspaceEvent(meta, "decision.recorded", channelID, strings.TrimSpace(decision.Explanation), strings.TrimSpace(decision.Kind), metadata)
 }
