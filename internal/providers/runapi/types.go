@@ -2,6 +2,7 @@ package runapi
 
 import (
 	"context"
+	"github.com/Josepavese/matrix/internal/logic/deliverycontract"
 	"net/http"
 	"sync"
 	"time"
@@ -35,6 +36,7 @@ type Server struct {
 	apiKey           string
 	defaultAgent     string
 	endpointResolver middleware.AgentEndpointResolver
+	storage          middleware.Storage
 	runStore         *runtrace.Store
 	workspaceGrants  *workspacegrant.Store
 	deliveryStore    *rundelivery.Store
@@ -66,8 +68,13 @@ type runRequest struct {
 	SidecarCapsules        []middleware.SidecarCapsule `json:"sidecar_capsules,omitempty"`
 	AdditionalDirectories  []string                    `json:"additional_directories,omitempty"`
 	ClientMeta             map[string]interface{}      `json:"client_meta,omitempty"`
-	TracePolicy            runtrace.TracePolicy        `json:"trace_policy,omitempty"`
-	agentLaunchArgs        []string
+	// DeliveryContract is what the caller requires the run to leave behind and
+	// how to check it. Declared here, before the run, and recorded before
+	// dispatch: a contract agreed after the work would be a contract fitted to
+	// whatever the work turned out to be.
+	DeliveryContract *deliverycontract.Contract `json:"delivery_contract,omitempty"`
+	TracePolicy      runtrace.TracePolicy       `json:"trace_policy,omitempty"`
+	agentLaunchArgs  []string
 }
 
 type runAgentConfig struct {
@@ -109,6 +116,7 @@ func NewServer(router Router) *Server {
 		router:       router,
 		defaultAgent: "opencode",
 		runCancels:   map[string]context.CancelFunc{},
+		storage:      storage,
 	}
 	server.deliveryStore = rundelivery.NewStore(storage)
 	server.workspaceGrants = workspacegrant.NewStore(storage)
@@ -129,6 +137,7 @@ func (s *Server) WithDefaultAgent(agentID string) *Server {
 
 func (s *Server) WithTraceStorage(storage middleware.Storage) *Server {
 	if storage != nil {
+		s.storage = storage
 		s.deliveryStore = rundelivery.NewStore(storage)
 		s.workspaceGrants = workspacegrant.NewStore(storage)
 		s.withRunStore(runtrace.NewStore(storage))

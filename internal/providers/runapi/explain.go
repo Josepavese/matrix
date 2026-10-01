@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Josepavese/matrix/internal/logic/deliverycontract"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 )
 
@@ -18,12 +19,20 @@ type runExplanation struct {
 	// StopReason is what the provider reported ended the turn, as it reported
 	// it. "unreported" means it reported nothing, which is not the same as
 	// "end_turn": a consumer must not be handed a reason Matrix invented.
-	StopReason    string `json:"stop_reason,omitempty"`
-	PromptReceipt string `json:"prompt_receipt"`
-	Cause         string `json:"cause"`
-	Uncertain     bool   `json:"uncertain"`
-	NextAction    string `json:"next_action"`
-	TraceURL      string `json:"trace_url"`
+	StopReason string `json:"stop_reason,omitempty"`
+	// AcceptanceStatus is what the caller's declared delivery contract could be
+	// checked against, which is a different question from what the protocol
+	// reported: a run can be completed and its delivery incomplete, and reporting
+	// only the first is how "completed" came to look like "the work arrived".
+	AcceptanceStatus string `json:"acceptance_status"`
+	// Delivery carries the individual requirements and their outcomes, so a
+	// reader sees which one failed instead of only that something did.
+	Delivery      *deliverycontract.Verdict `json:"delivery,omitempty"`
+	PromptReceipt string                    `json:"prompt_receipt"`
+	Cause         string                    `json:"cause"`
+	Uncertain     bool                      `json:"uncertain"`
+	NextAction    string                    `json:"next_action"`
+	TraceURL      string                    `json:"trace_url"`
 }
 
 func (s *Server) handleRunExplain(w http.ResponseWriter, r *http.Request, runID string) {
@@ -60,6 +69,7 @@ func explainRun(run runtrace.Run, events []runtrace.Event, lang string) runExpla
 		WorkspaceID: run.WorkspaceID, WorkspacePath: run.WorkspacePath,
 		StopReason: run.StopReason, PromptReceipt: "unverified",
 	}
+	out.AcceptanceStatus, out.Delivery = deliveryExplanation(events)
 	for _, event := range events {
 		if event.Kind == "provider.preflight.failed" {
 			out.Phase = event.ProtocolMethod

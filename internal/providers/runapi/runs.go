@@ -157,6 +157,10 @@ func (s *Server) terminalResult(runID string, res runExecutionResult) runExecuti
 	if err != nil || !found {
 		return res
 	}
+	// The delivery contract is settled here, where every terminal path
+	// converges: once this returns, the run is over and the workspace is no
+	// longer necessarily the one the work left behind.
+	s.recordDeliveryVerdict(run)
 	res.terminal = &run
 	return res
 }

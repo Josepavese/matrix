@@ -16,6 +16,11 @@ import (
 // acceptNewRun serializes the durable reservation and run record. Dispatch
 // starts only after the lock is released, so a racing retry sees the same ID.
 func (s *Server) acceptNewRun(w http.ResponseWriter, r *http.Request, req runRequest, agentID string) (runtrace.Run, bool) {
+	contract, err := req.declaredContract()
+	if err != nil {
+		http.Error(w, "Bad Request: "+err.Error(), http.StatusBadRequest)
+		return runtrace.Run{}, false
+	}
 	s.idempotencyMu.Lock()
 	defer s.idempotencyMu.Unlock()
 	runID, replay, ok := s.reserveRequestedRun(w, r, req, agentID)
@@ -31,6 +36,11 @@ func (s *Server) acceptNewRun(w http.ResponseWriter, r *http.Request, req runReq
 		slog.Error("matrix run trace start failed", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return runtrace.Run{}, false
+	}
+	// Recorded before dispatch, so the declaration is on the record before the
+	// prompt is: what was asked for must not be written down after the answer.
+	if contract != nil {
+		appendDeliveryDeclared(s.runStore, run.ID, *contract)
 	}
 	return run, true
 }
