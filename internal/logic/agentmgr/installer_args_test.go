@@ -52,9 +52,12 @@ func TestResolveAnyDistributionKeepsBinaryPlatformArgs(t *testing.T) {
 // TestInstallKeepsBinaryPlatformArgs is the acceptance proof for issue 8: after
 // `matrix install`, the registered config carries exactly the arguments the
 // registry index declares for this platform, and `matrix agent show` sees the
-// same list because it is the same registry view. It fails if either loss point
-// returns: resolution (registry_client.go) or the binary install branch
-// (installer.go).
+// same list because it is the same registry view. It fails if the resolution
+// loss point returns (registry_client.go). It does NOT see the binary install
+// branch (installer.go): the idempotent repair refills the arguments that
+// branch drops, so this test stays green with the branch reverted.
+// TestInstallResolvedKeepsBinaryPlatformArgsForAFreshRecord covers that branch
+// directly, before any record exists to repair.
 func TestInstallKeepsBinaryPlatformArgs(t *testing.T) {
 	cases := []struct {
 		name  string
