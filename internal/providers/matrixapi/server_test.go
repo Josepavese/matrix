@@ -10,7 +10,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Josepavese/matrix/internal/logic/memstore"
 	"github.com/Josepavese/matrix/internal/logic/orchestration"
+	"github.com/Josepavese/matrix/internal/logic/workspace"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -231,9 +233,18 @@ func TestHandleRuns_Unauthorized(t *testing.T) {
 
 func TestHandleRuns_Success(t *testing.T) {
 	router := &mockSessionRouter{response: "Hello from agent"}
-	_, mux := setupServer(router, "secret-key", "")
+	// A real client can only name a workspace the vault already knows: the id
+	// comes from `matrix workspace add`, which records the root the run resolves
+	// to. The fixture registers it for the same reason production requires it.
+	workspaceRoot := t.TempDir()
+	storage := memstore.New()
+	if err := workspace.SaveMeta(storage, workspace.Meta{ID: "billing-api", RootPath: workspaceRoot}); err != nil {
+		t.Fatalf("register workspace billing-api: %v", err)
+	}
+	s, mux := setupServer(router, "secret-key", "")
+	s.WithTraceStorage(storage)
 
-	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "input": "hello", "agent_id": "gemini", "workspace_id": "billing-api", "workspace_path": "/tmp/billing-api"})
+	body, _ := json.Marshal(map[string]string{"channel_id": "ch1", "input": "hello", "agent_id": "gemini", "workspace_id": "billing-api", "workspace_path": workspaceRoot})
 	req := newJSONRequest(http.MethodPost, RunPathV1, bytes.NewReader(body))
 	req.Header.Set("X-Matrix-Key", "secret-key")
 	w := httptest.NewRecorder()
@@ -251,8 +262,8 @@ func TestHandleRuns_Success(t *testing.T) {
 	if router.lastWorkspaceID != "billing-api" {
 		t.Errorf("expected workspaceID billing-api, got %s", router.lastWorkspaceID)
 	}
-	if router.lastWorkspacePath != "/tmp/billing-api" {
-		t.Errorf("expected workspacePath /tmp/billing-api, got %s", router.lastWorkspacePath)
+	if router.lastWorkspacePath != workspaceRoot {
+		t.Errorf("expected workspacePath %s, got %s", workspaceRoot, router.lastWorkspacePath)
 	}
 
 	var resp map[string]string

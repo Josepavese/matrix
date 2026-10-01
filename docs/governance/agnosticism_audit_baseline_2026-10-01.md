@@ -359,3 +359,139 @@ o un elenco di `allowed_files` per le directory di test. Non ho modificato
   modifiche non sono coperte: serve il ri-audit sul diff finale, previsto da task-6.
 - Non ho ispezionato il runtime dell'operatore (porte 9090/9091) e non ho eseguito il binario.
 - La proposta §7 non è stata implementata né validata eseguendo `governance_check`.
+
+## 10. Ri-audit finale (dopo i fix) — verifier, task-6
+
+HEAD verificato: `6a4c745` (i dieci fix), `eff9f98` (budget meccanico), `96cd03a` (docstring del test
+issue-8), `44e72b8` (inoltro dello stop reason attraverso i decoratori + copertura del percorso HTTP),
+`d23a22b` (i due test dei decoratori). L'audit copre anche i file non committati presenti nell'albero,
+dichiarati al Lead perché non miei: `runaction/delivery_proof_stop_reason.go` e `runapi/runs_test.go`
+(poi committati in `44e72b8`) e i due file di test dei decoratori, che ho verificato mentre erano
+ancora untracked e che sono stati committati in `d23a22b` **senza modifiche** — `git status` non li
+segnala, quindi i byte su cui ho eseguito gli esperimenti sono esattamente quelli committati.
+
+Ri-audit dopo `44e72b8`: le righe aggiunte dai suoi tre file non contengono **alcun** nome di agente o
+provider; l'unica occorrenza è `"agent_id": "opencode"` in `runapi/runs_test.go`, cioè una fixture di
+test, e i budget escludono per costruzione i `*_test.go`. I due file nuovi di produzione
+(`delivery_proof_stop_reason.go`, l'aggiunta in `watchdog.go`) sono agnostici: inoltrano una capacità
+dichiarata come metodo, senza sapere chi sia l'agente. Prova negativa e gate invariati: exit 1,
+`GOVERNANCE_CHECK_OK`, `failures: 0`.
+
+Esito: **nessun ramo e nessuna tabella per nome di agente o provider introdotti dai fix.**
+
+| Prova | Comando | Esito |
+|---|---|---|
+| Nomi di agente/provider nelle righe AGGIUNTE del diff | `git diff -U0 -- cmd internal pkg \| rg '^\+' \| rg -i '<nomi>'` | una sola riga, ed è un commento in `internal/providers/exec/exec_unixlike_test.go` che descrive la allowlist RIMOSSA |
+| Identificatori (`Codex`, `IsCanonical…`) nelle righe aggiunte | `rg -i 'codex\|IsCanonical\|CanonicalRegistryAlias'` sulle stesse righe | sempre e solo quel commento |
+| File di produzione NUOVI (8) | grep di nomi su ciascuno | zero occorrenze |
+| Prova negativa | `rg -i 'mimo\|minimax\|halfpocket'` in `cmd internal pkg scripts`, senza `*_test.go` | exit 1, **zero occorrenze** |
+| Nuove tabelle in produzione | ispezione delle righe aggiunte con `[]string{`/`map[string]` | nessuna chiave di identità: copia di args, mappe di diagnostica, metadati di evento (vedi §6) |
+
+`workspaceDirFlags` (`internal/providers/agents/acp_transport.go:124`,
+`{"--cwd","--chdir","-C","-w","--working-directory"}`): **LEGITTIMO**, verificato nel contesto
+(righe 90-124). Sono spelling di flag di riga di comando applicate a qualunque programma, non nomi di
+agente o provider: `declaredWorkspaceDir` riconosce `-C /dir` e `-C=/dir` senza sapere chi sia
+l'agente, e il consumatore `verifyWorkspaceAgreement` rifiuta con un errore che nomina i tre path.
+Limite dichiarato: la copertura dipende dall'insieme di spelling (un `--workdir` non sarebbe
+riconosciuto). È un limite di copertura, non una violazione di agnosticismo.
+
+S1 è risolto in modo agnostico: `HasExecutable` non contiene più la allowlist e decide su una
+proprietà osservabile dell'ambiente (`nvmInitScript()`), con il commento che lo dichiara. S2-S7
+restano preesistenti e **non estesi** dai fix (verificato file per file): `router_observer_content.go`,
+`agentmgr/installer.go`, `agentlaunch/policy.go`, `agentlaunch/codex.go`, onboarding,
+`registry_client.go`.
+
+Il vincolo è ora **meccanico**: `governance/manifest.toml` contiene tre `pattern_budget`
+(`agent_name_literals_in_logic` max 16, `adhoc_agent_name_literals` max 0,
+`agent_identity_branch_shape` max 2), tarati sul conteggio reale dell'albero finale e documentati nel
+`reason`. Prova di dente sull'albero reale: un ramo finto `agentID == "brandnewagent"` — nome che non
+esiste in nessuna lista — fa fallire il gate con `count 4 exceeds max 2`, e `"mimo"`/`"opencode"`
+fanno fallire gli altri due; rimossa la sonda, `GOVERNANCE_CHECK_OK`. Limite residuo dichiarato nel
+manifest: una allowlist su una variabile generica con nome nuovo (`if name == "newagent"`) non è
+coperta, perché contare ogni `== "` colpirebbe `kind == "acp"` e il check verrebbe disattivato.
+
+## 11. Verdetto di verifica indipendente (task-7) — verifier
+
+Metodo: per ogni correzione ho **revertito io** la parte essenziale, eseguito il test che l'autore
+presenta come prova, ripristinato e rieseguito. Ogni ciclo è chiuso con restore verificato via
+`sha256` e `git diff --stat` vuoto. Un test che passa in entrambi i casi è dichiarato senza dente.
+
+| Cluster | Esperimenti | Con dente | Senza dente / non provati |
+|---|---|---|---|
+| T1 esito/errori | F, G, I, J, **H2**, AA, AB, AC | F turno vuoto = fallimento (3 test); G niente `end_turn` inventato (4 test); I `(map[])` riprodotto alla lettera; J diagnostica strutturata (3 test); **H2** chiuso da `44e72b8`: il revert compila e fa fallire 4 sotto-prove sul percorso HTTP reale; AA watchdog che non inoltra → fallisce la sotto-prova `with_activity_watchdog` (`run record stop reason = "unreported", want the reason the provider reported`) e i test del decoratore; AB delivery proof che non inoltra → fallisce il suo test; AC inverso → `the decorator altered the reported reason: []string{"end_turn"}` | **H** (storico, a `eff9f98`): `runapi/runs.go:143` non era coperto da alcun test — **ora lo è**. Nessuno scoperto in questo blocco |
+| T2 workspace | K, L, N, M2, O | K grant sul path risolto (sintomo `workspace path must be absolute`); L rifiuto tipizzato id+path (2 test, l'HTTP passa da 409 a 201 completed); N indice ambiguo; M2 affinità dell'indice; O evidenza prima del prompt (2 test) | **M**: la metà "path" di `sessionMatchesWorkspaceHints` (riuso della sessione ATTIVA) — 70 test passano senza |
+| T3 args/cwd | A, B, C, D2, E | A risoluzione registro (4/4 test); B ramo binario (1 test dedicato); C riparazione idempotente (3 test); D2 cwd del figlio (2 test, `its working directory was inherited, not governed`); E gate pre-fork (2 test) | nessuno; ma B è coperto **solo** dal test dedicato: l'end-to-end è mascherato dalla riparazione (docstring corretta in `96cd03a`) |
+| T4 attestazione | S, V, W4, X, Z | S conferma mai dedotta dalla richiesta (4 test, `a contradictory session model must fail closed`); V motivi distinti (2 test); W4 inoltro in `attachProofNotifier`; X inoltro nel watchdog (2 test); Z registrazione nel runnotifier (4 test) | **Y**: inoltro di `OnTurnStopReason` nel watchdog — il blocco non è in HEAD, quindi fuori dall'artefatto |
+| T5 elicitation | Q, R | Q leak del registro (`registry leaked 50 expired entries`); R unsubscribe (`unsubscribe left 1 observer(s) registered`) | nessuno |
+| T8 allowlist | P | P allowlist ripristinata: fallisce **solo** la sotto-prova con nome non elencato (`mimo`), mentre `node` resta verde | nessuno |
+
+Gate sullo stato finale: `gofmt -l cmd internal pkg scripts` vuoto; `golangci-lint` **0 issues** sui 13
+pacchetti verificati; `go test -count=1 -p 1` su 16 pacchetti → tutti `ok`;
+`go test -race` su `elicitation`, `runtrace`, `session`, `runapi` → tutti `ok`;
+`governance_check` → `GOVERNANCE_CHECK_OK` (10 pattern budget, 0 failures);
+`code_governance` → `Hard Budget Failures: none`, `Quality Warnings: none`.
+
+Non verificato, dichiarato senza addolcire:
+
+- **Nessuna riproduzione end-to-end reale** di `-32603`, stallo, run vuoto con `end_turn`: servono un
+  agente reale e il runtime dell'operatore, e le porte 9090/9091 sono fuori dal mio perimetro. Le
+  riproduzioni ottenute sono a livello di test, con i messaggi d'errore verbatim del sintomo.
+- **`runs.go:143`: buco CHIUSO in `44e72b8`, verificato da me.** Revertire `res.stopReason` in
+  `"end_turn"` (revert H2) ora **compila** e fa fallire 4 sotto-prove, con messaggi verbatim
+  `runs_test.go:1774: run record stop reason = "end_turn", want the reason the provider reported` e
+  `runs_test.go:1834: run record stop reason = "end_turn", want "unreported"`. Il test legge
+  `server.Store().LoadRun()` dopo `RegisterRoutes` + `mux.ServeHTTP` su `RunPathV1`: è il **percorso
+  HTTP reale**, non un run sintetico — la domanda del Lead ha risposta affermativa, e la trappola di
+  `jsonrpc.go:64` qui non si ripete.
+- **I due test dei decoratori: RISOLTO in `d23a22b`.** `44e72b8` conteneva la produzione
+  (`runaction/delivery_proof_stop_reason.go`, l'aggiunta in `runactivity/watchdog.go`) ma non i due
+  test; li ho verificati mentre erano untracked e li ho segnalati come condizione bloccante per il tag.
+  Il Lead li ha committati in `d23a22b` (`delivery_proof_stop_reason_test.go` +53,
+  `turn_stop_reason_forwarding_test.go` +96) senza toccarli: `git status` non li segnala, quindi le
+  prove AB e AC valgono per i byte committati. L'inoltro del watchdog (AA) era già coperto anche dal
+  test HTTP committato (`activity_timeout_seconds` presente 3 volte in `HEAD:runs_test.go`).
+- **Il punto 4 della descrizione del commit `6a4c745` è falso**: "Stalled parent/child runs expose
+  last observed activity, current wait and pending requests" non è implementato — zero occorrenze in
+  produzione di `last_activity|last_observed|current_wait|pending_request|wait_reason`, e `explain.go`
+  non espone quei campi. Esiste solo il watchdog di inattività preesistente (`activity_timeout`).
+- **Metà non provata della regola di affinità**: `internal/logic/session/manager_workspace.go:210-212`,
+  il confronto sul path dentro `sessionMatchesWorkspaceHints` (riuso della sessione ATTIVA del
+  canale). Revertito (esperimento M) i 70 test del pacchetto passano. La guardia gemella
+  `sessionWorkspaceAffinityMatches` (`manager_workspace.go:129-137`, ripresa dall'indice) **è** coperta
+  (esperimento M2, `plan would reuse a session of another workspace path`). Frase per l'evidenza: "se
+  un domani un record legacy con `workspace_id` giusto e path di un altro workspace finisse nella
+  sessione ATTIVA del canale, i test attuali resterebbero verdi".
+- **Buco di copertura sulla cwd**: `internal/providers/agents/acp_adapter.go:27` (`Cwd: deps.Cwd`) e
+  `internal/providers/agents/router.go:289` (`Cwd: cwd` nel `ConversationFactoryDeps`). Nessun test
+  parte dal workspace del RUN e verifica che il valore arrivi fino a `deps.Cwd`: i test coprono
+  `transportSpec.Cwd` (fork reale) e il livello factory. Frase per l'evidenza: "se un domani qualcuno
+  passasse `cwd=""` da `createClient`, i test attuali resterebbero verdi". Non è una regressione: è
+  copertura mancante, e il percorso è corretto per ispezione.
+- **Limite residuo del budget** (§10): la forma `if name == "newagent"` su una variabile generica non è
+  catturata; è dichiarato nel `reason` del budget, non nascosto.
+- Gli esperimenti sono stati eseguiti mentre l'albero si muoveva: i primi (F, G, I, J, K, L, M, M2, N,
+  O, A, B, C, D2, E, S, V, W4, X, Z, Q, R, P) su `96cd03a` con il blocco dello stop reason ancora
+  in-flight; gli ultimi (H2, AA, AB, AC) su `44e72b8`. Ogni verdetto vale per lo stato di HEAD
+  dichiarato. Nessun esperimento ha lasciato tracce: ogni ciclo si chiude con `git diff --stat` vuoto
+  sul file toccato e hash del restore verificato; i revert sono stati scritti in modo da **compilare**,
+  perché un errore di build non è un rosso comportamentale (eccezione dichiarata: la prima stesura di
+  W, scartata e rifatta come W4).
+
+## 12. Verdetto finale — verifier, task-7
+
+**Tutti e dieci i cluster di fix hanno almeno una prova con dente, e ogni prova è un rosso
+comportamentale ottenuto revertendo la parte essenziale della correzione.** Le uniche eccezioni sono
+dichiarate qui sopra e non sono silenziose: due punti di copertura mancante (cwd run→`deps.Cwd`, metà
+"path" della guardia di affinità), un limite residuo del budget di agnosticismo, e il punto 4 della
+descrizione di `6a4c745` che è falso e va tolto o riscritto.
+
+Sull'agnosticismo: nessun fix introduce un ramo o una tabella per nome di agente o provider, la prova
+negativa è vuota in produzione, e la regola è ora **eseguita** dal gate invece che affidata alla
+disciplina (`GOVERNANCE_CHECK_OK`, 10 pattern budget, 0 failures).
+
+**Nessuna azione bloccante residua.** La condizione che avevo posto — committare i due file di test dei
+decoratori, allora untracked — è stata soddisfatta dal Lead in `d23a22b`, senza modifiche ai file che
+avevo verificato. Il mio verdetto è **positivo**: tutti i dieci cluster hanno prove con dente, il gate
+è verde su `d23a22b` (gofmt pulito, 0 issues di lint, 16/16 pacchetti `ok`, `-race` `ok` su
+`elicitation`/`runtrace`/`session`/`runapi`, `governance_check` e `code_governance` senza failure), e i
+punti non coperti sono i tre dichiarati sopra — nessuno dei quali è una regressione introdotta dai fix.
