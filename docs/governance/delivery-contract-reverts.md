@@ -54,7 +54,7 @@ Format: | Test | Reverted change | Observed failure |
 | `TestUnverifiableOutranksIncompleteInEitherOrder` | the `unverifiable` guard in `Verdict.add` is removed | the second ordering reports `incomplete` for an artefact it refused to look at |
 | `TestSimultaneousTerminalsRecordExactlyOneVerdict` | the per-run lock is removed | 8 simultaneous terminals record more than one verdict (`-race`) |
 | `TestACompletedRunWithoutItsArtifactIsReportedAsIncompleteDelivery` | `/explain` stops exposing the verdict | the report shows `completed` with no acceptance status |
-| `TestAnIncompleteDeliverySaysWhy` | `verdict.explain()` is removed | `an incomplete delivery must say why it is incomplete` |
+| `TestCompletedRunWithoutTheDeclaredArtifactIsIncompleteDelivery` | `verdict.explain()` is removed | `an incomplete delivery must say why it is incomplete` |
 
 ## Wiring and the refusal message
 
