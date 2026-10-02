@@ -1,6 +1,7 @@
 package childidentity
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -98,12 +99,14 @@ func TestMalformedStatIsRefused(t *testing.T) {
 	}
 }
 
-// asRefusal reports whether the error is the terminal refusal type, without
-// importing errors just for one assertion.
+// asRefusal reports whether the error is the terminal refusal type. It unwraps
+// rather than asserting on the surface type, because a refusal that travelled
+// through fmt.Errorf("%w") is still the same refusal.
 func asRefusal(err error, target **refusedIdentityError) bool {
-	refused, ok := err.(*refusedIdentityError)
-	if ok {
+	var refused *refusedIdentityError
+	if errors.As(err, &refused) {
 		*target = refused
+		return true
 	}
-	return ok
+	return false
 }
