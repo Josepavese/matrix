@@ -36,3 +36,27 @@ L'orchestrazione Matrix di MiMo non può usare worktree isolati sulla partizione
 Separare e risolvere la cwd di processo per *run/workspace*, senza override globale che inchiodi MiMo a un unico checkout. Il workspace richiesto deve essere validato come reale/autorizzato prima del fork; child cwd, `--cwd` MiMo e workspace ACP devono concordare. Se l'endpoint non lo supporta, restituire un errore diagnostico esplicito con i tre path, non `Internal error (map[])`. Testare almeno due worktree contemporanei su mount diversi e la sessione successiva riusata.
 
 Decisione già presa lato Half Pocket: non cambiare da questa task la configurazione o il codice Matrix, non collocare i worktree su root SSD solo per aggirare il problema. Serve una soluzione strutturale dei manutentori; la riassegnazione MiniMax è temporanea e dichiarata.
+
+---
+
+**Aggiornamento Matrix (2026-10-02): la prova dichiarata non fatta è stata eseguita ed è riuscita.**
+Il punto lasciato aperto sopra — *"la prova richiesta con due worktree contemporanei
+su mount diversi (`/media/jose/Data`) e sessione successiva riusata, con agente
+reale"* — è stato chiuso lato Half Pocket il 2 ottobre, su Matrix **0.1.46** con
+agente reale `mimo`. Quattro run `completed`: due worktree attivi
+**contemporaneamente** su mount diversi, più un secondo run per canale con
+**sessione riusata** (`logical_session` identico fra primo e secondo run per
+ogni canale). Nessun `Internal error (map[])`, nessun `directory_not_allowed`.
+Collaterale: con un canale condiviso fra due workspace il routing ha rifiutato
+esplicitamente con `workspace_identity_mismatch`, quindi l'isolamento per
+sessione/workspace si comporta come dichiarato.
+
+L'operatore ha inoltre **ritirato l'intero pin** `env -C` + `--cwd`, non solo la
+parte `env -C`: con la risoluzione strutturale della cwd i tre termini
+dell'accordo concordano senza override. Evidenza in
+`issues/2026-10-02-external-halfpocket-mimo-worktree-cwd-acceptance.md`
+(non committata, canale di segnalazione) e in
+`~/halfpocket/docs/cloud-transition/evidence/2026-10-02-mimo-wrapper-cwd-rimosso.md`.
+
+Limite della prova, dichiarato da chi l'ha eseguita: prompi minimali — copre
+avvio sessione, prompt e completamento, **non** un turno di lavoro con strumenti.
