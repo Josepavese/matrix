@@ -58,6 +58,7 @@ func (p *Provider) ExecSeparate(ctx context.Context, spec middleware.CommandSpec
 			cmd = goexec.CommandContext(ctx, "bash", "-c", fullCmd)
 		}
 		if len(spec.Env) > 0 {
+			// The operator's command inherits: see the policy in doc.go ("Two environment policies, one per trust").
 			cmd.Env = append(os.Environ(), spec.Env...)
 		}
 		if spec.Dir != "" {
@@ -180,6 +181,7 @@ func (p *Provider) prepareCmd(spec middleware.CommandSpec, privileged bool) *goe
 		cmd = goexec.Command(spec.Runner, spec.Args...)
 	}
 	if len(spec.Env) > 0 {
+		// The operator's command inherits: see the policy in doc.go ("Two environment policies, one per trust").
 		cmd.Env = append(os.Environ(), spec.Env...)
 	}
 	if spec.Dir != "" {

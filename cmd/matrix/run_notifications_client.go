@@ -47,13 +47,13 @@ const (
 // question a person is being asked, because a supervisor woken by a question it
 // cannot show has to go and read the run to find out what is blocking it.
 type notificationWakeup struct {
-	Sequence      uint64    `json:"sequence"`
-	Kind          string    `json:"kind"`
-	RunID         string    `json:"run_id,omitempty"`
-	AgentID       string    `json:"agent_id,omitempty"`
-	FailureCode   string    `json:"failure_code,omitempty"`
-	SessionID     string    `json:"session_id,omitempty"`
-	ElicitationID string    `json:"elicitation_id,omitempty"`
+	Sequence      uint64 `json:"sequence"`
+	Kind          string `json:"kind"`
+	RunID         string `json:"run_id,omitempty"`
+	AgentID       string `json:"agent_id,omitempty"`
+	FailureCode   string `json:"failure_code,omitempty"`
+	SessionID     string `json:"session_id,omitempty"`
+	ElicitationID string `json:"elicitation_id,omitempty"`
 	// Question is bounded where the notification is written, and it is user
 	// content: a trace policy that redacts it leaves it empty and a truncation
 	// leaves QuestionTruncated set. Absent, empty and complete are three

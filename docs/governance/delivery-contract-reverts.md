@@ -105,3 +105,35 @@ hostile environment: in an ordinary one the same test passes.
 | `TestWorkspaceGrantAPIAndRunPreflight` | the same revert | under `GIT_CONFIG_GLOBAL` with `commit.gpgsign = true`: `git [-C …/repo … commit …]: exit status 128: error: gpg failed to sign the data` |
 | `TestGrantCoversOnlyOwnedRepositoryAndSelectedWorktrees` | the same revert | same failure under the same environment |
 | `TestElicitationInteropOverRealStdioProcess` | the same revert | under `GIT_DIR` pointing at another repository, `repoRoot` answers with the test's own directory: `build mock agent: exit status 1: stat …/tests/integration/cmd/mock-agent: directory not found` |
+
+## The notification channel: the question, and the record that acknowledges it
+
+Two properties landed here, and each row is a revert that was applied to the tree,
+compiled, ran, and failed the named test before the file was restored
+byte-identical.
+
+The bounded question: a supervisor that wakes on a question it cannot show has to
+read the transcript to find out what the run is blocked on. The question therefore
+travels on the notification record, and it is user content, so the trace policy
+must be able to take it away again - the same rule that empties an event message
+empties it.
+
+The acknowledgement record: the window a legitimate replay needs is set by the
+supervisor's own persisted cursor, which the daemon does not hold. No default
+window was chosen, because a number chosen here would be a promise Matrix cannot
+keep; the growth is declared, and an operator who wants a bound sets one. When a
+bound is configured, the answer declares it, so a replay that has fallen outside
+the window cannot look like a replay that never happened.
+
+| Test | Reverted change | Observed failure |
+| --- | --- | --- |
+| `TestNotificationAckRecordsOneClaimOnceUnderConcurrency` | the lock around `recordNotificationAck` is removed | 8 parallel identical claims record `prime=7 replay=1 rifiuti=0`, want `prime=1 replay=7 rifiuti=0` (`-race`); the second phase configures a window, so the same race also covers the housekeeping pass and its rate limit, and records inside the window stay uncollected |
+| `TestNotificationAckNeverClaimsWhatItCouldNotRecord` | the error from `storage.Set` is ignored | a failed write answers `200 {"run_id":"run-unwritten","sequence":5,"status":"acked"}`, want 500 and no record |
+| `TestTheElicitationQuestionTravelsBoundedAndMarked` | the raw message goes on the record and the bounded form only decides the marker | the record carries the whole question, newlines included, with `CODA-OLTRE-LA-SOGLIA` present, want the bounded single-line prefix |
+| `TestTheElicitationQuestionDoesNotSurviveARedactingPolicy` | `Project` stops applying the content rule to the stall view | under `content_mode=refs` and under `content_mode=redacted` the projected trace still carries the question, want it removed |
+| `TestBoundElicitationQuestionMarksTheCutAtTheDeclaredThreshold` | the truncation marker is not set | a question cut at the declared bound reads as a whole question, want it marked |
+| `TestAConfiguredWindowDeclaresItselfAndTurnsAnExpiredReplayIntoAFirstClaim` | the expiry check is removed (`expired := false`) | an expired record answers as a replay, want a first claim that says the record had expired |
+| `TestAConfiguredWindowDeclaresItselfAndTurnsAnExpiredReplayIntoAFirstClaim` | the window declaration is dropped from the answer | the answer does not carry `idempotency_window_seconds`, want the window in force declared |
+| `TestAConfiguredWindowEvictsExpiredRecordsInsteadOfOnlyHidingThem` | the sweep is removed | 4 acknowledgement records remain where 2 are inside the window: the window hides records instead of bounding them |
+| `TestAnUnusableWindowIsRefusedRatherThanQuietlyIgnored` | an unusable window falls back to no expiry | `0`, `-5` and a non-numeric value all answer `200` and store a record, want a refusal and nothing written |
+| `TestAConfiguredWindowDeclaresItselfAndTurnsAnExpiredReplayIntoAFirstClaim` | the JSON-string spelling that `matrix vault set` writes is not read | the documented way to set the window answers `500 ... must be a number of seconds`, so a configured window is an outage of the endpoint |

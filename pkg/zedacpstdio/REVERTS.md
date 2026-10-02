@@ -51,3 +51,38 @@ lancia uno attraverso `cmd.exe` — cerca `SystemRoot` e `COMSPEC`. Non sono
 segreti e non decidono su cosa lavora il figlio, quindi stanno nella lista; un
 daemon che non li possiede (ogni unix) non li passa a nessuno, e i figli unix
 restano esattamente quelli di prima.
+
+## Il reperto: la guardia che apriva il caso peggiore
+
+Prima della correzione la riga era:
+
+```go
+if len(spec.Env) > 0 {
+	cmd.Env = append(os.Environ(), spec.Env...)
+}
+```
+
+Sembra una guardia — "se non c'è niente da aggiungere, non tocco l'ambiente" — e
+invece apre il caso peggiore: con `spec.Env` vuoto `cmd.Env` resta `nil`, cioè
+**eredità completa**, mentre con `spec.Env` pieno il figlio eredita comunque tutto
+più le sue voci. Il figlio agente riceveva l'ambiente del daemon in **entrambi** i
+rami; la guardia non proteggeva nessuno dei due e faceva sembrare deciso ciò che
+non lo era. Una guardia che sembra proteggere e apre il caso peggiore è peggio di
+nessuna guardia, perché nessuno la guarda.
+
+La stessa forma in `internal/providers/exec/` è invece corretta: lì l'eredità è la
+politica voluta, quindi `nil` e "tutto più le voci dichiarate" sono la stessa cosa.
+
+## Due politiche d'ambiente, una per fiducia
+
+L'allowlist d'ambiente serve dove il figlio **non** è scelto dall'operatore o non è
+nella sua fiducia: il **processo agente** (guidato da un modello, esegue azioni
+generate) e il **validatore del chiamante** (codice fornito via richiesta). Un
+comando **scritto dall'operatore** e di breve durata — installer, toolchain — vive
+nel dominio di fiducia di chi l'ha scritto e si aspetta il suo ambiente: toglierglielo
+cambierebbe il mestiere di un runner di comandi.
+
+Quindi: due politiche, e la differenza è **chi sceglie il programma**. La decisione
+sta accanto al codice che la applica — `internal/providers/exec/doc.go` — e i sette
+siti `os.Environ()` di quel package la richiamano uno per uno, così chi legge le due
+righe a tre file di distanza non "sistema" quella sbagliata.

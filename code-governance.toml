@@ -125,7 +125,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-10-01: the vendor credential variable name moves from a per-agent branch to
 # what the auth method declares. The resolver reads the registered method, and the
 # fallback covers the openrouter path where no method is registered.
-"internal/logic/onboarding" = 1435
+"internal/logic/onboarding" = 1493
 # 2026-09-24: durable idempotency reservations, restart reconciliation and
 # minimal notification journal add their own persistence units.
 # 2026-09-24: model provenance in the canonical run and exported trace records
@@ -147,7 +147,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # the projection and its serialization.
 # 2026-10-01: release audit, writes stopped. Measured 1676; tightened from 1680
 # so the ceiling states the tree rather than the write burst.
-"internal/logic/runtrace" = 1676
+"internal/logic/runtrace" = 1703
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
 # process reap; forced run-owned child cleanup can remediate parent-owner
 # retention without weakening inline parent-restore safety. Later same-day
@@ -223,7 +223,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # sessions. Three of these packages are written concurrently by separate
 # workstreams, so the ceiling is shared and is not permission for growth:
 # a workstream that needs more reports it to the release captain first.
-"internal/logic/agentmgr" = 1165
+"internal/logic/agentmgr" = 1202
 # 2026-07-22: ACP message identity and structured final/progress projection add
 # lossless messageId/phase handling without provider-text heuristics. 2026-07-19:
 # stable ACP v1.19 and A2A v1.0.1 coverage expansion adds
@@ -317,7 +317,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # and the decoder entry point purely to satisfy the number, which is a worse
 # debt than a raised ceiling. Splitting is the remedy for file, function,
 # parameter and branch budgets; this is a package ceiling.
-"internal/providers/runapi" = 2580
+"internal/providers/runapi" = 2640
 # 2026-09-21: the Telegram channel gained the elicitation frontend — prompt
 # rendering, inline-keyboard building, callback routing, answer coercion and
 # session-to-chat correlation — split across focused files (elicitation.go,

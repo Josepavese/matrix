@@ -27,6 +27,7 @@ func NewProvider() *Provider {
 func (p *Provider) Exec(spec middleware.CommandSpec) ([]byte, error) {
 	cmd := goexec.Command(spec.Runner, spec.Args...)
 	if len(spec.Env) > 0 {
+		// The operator's command inherits: see the policy in doc.go ("Two environment policies, one per trust").
 		cmd.Env = append(os.Environ(), spec.Env...)
 	}
 	if spec.Dir != "" {
@@ -53,6 +54,7 @@ func (p *Provider) ExecSeparate(ctx context.Context, spec middleware.CommandSpec
 		cmd = goexec.Command(spec.Runner, spec.Args...)
 	}
 	if len(spec.Env) > 0 {
+		// The operator's command inherits: see the policy in doc.go ("Two environment policies, one per trust").
 		cmd.Env = append(os.Environ(), spec.Env...)
 	}
 	if spec.Dir != "" {
@@ -97,6 +99,7 @@ func (p *Provider) RunPrivileged(spec middleware.CommandSpec) ([]byte, error) {
 	)
 	cmd := goexec.Command("powershell", "-NoProfile", "-Command", psCmd)
 	if len(spec.Env) > 0 {
+		// The operator's command inherits: see the policy in doc.go ("Two environment policies, one per trust").
 		cmd.Env = append(os.Environ(), spec.Env...)
 	}
 	if spec.Dir != "" {
@@ -171,6 +174,7 @@ func (p *processHandle) GetPID() int {
 func (p *Provider) Start(spec middleware.CommandSpec) (middleware.ProcessHandle, error) {
 	cmd := goexec.Command(spec.Runner, spec.Args...)
 	if len(spec.Env) > 0 {
+		// The operator's command inherits: see the policy in doc.go ("Two environment policies, one per trust").
 		cmd.Env = append(os.Environ(), spec.Env...)
 	}
 	if spec.Dir != "" {
@@ -244,6 +248,7 @@ func (pp *pipedProcess) Stdout() io.Reader {
 func (p *Provider) StartPiped(spec middleware.CommandSpec) (middleware.PipedProcess, error) {
 	cmd := goexec.Command(spec.Runner, spec.Args...)
 	if len(spec.Env) > 0 {
+		// The operator's command inherits: see the policy in doc.go ("Two environment policies, one per trust").
 		cmd.Env = append(os.Environ(), spec.Env...)
 	}
 	if spec.Dir != "" {

@@ -358,7 +358,7 @@ before the trace policy strips them, so it still works on redacted traces:
 | `waiting` | The longest-outstanding wait: `none` (terminal run), `tool_result`, `permission`, `elicitation`, `provider_turn`, or `unknown` |
 | `waiting_since` | When that wait started; the run stopped being able to make progress then |
 | `last_activity` | Last observed activity with its `id`, `name`, `session_id`, `since`, `sequence` |
-| `pending[]` | Everything still outstanding, each with its own age, so a nested approval is visible without being the current wait |
+| `pending[]` | Everything still outstanding, each with its own age, so a nested approval is visible without being the current wait; a pending elicitation also carries `question`, and `question_truncated` when that text was cut |
 | `sessions[]` | The same picture per session, with `run_session` marking the session the run record names (structural, not inferred from an agent or provider name) |
 | `window_truncated` | The event window is a suffix of the run, not the whole run |
 
@@ -368,6 +368,17 @@ a truncated window can under-report pending requests but can never fabricate one
 A consumer that ignores the flag reads an incomplete picture as a complete one.
 `waiting: "elicitation"` comes from the notification stream, because the
 elicitation lifecycle is the single fact Matrix records outside the events.
+
+A pending elicitation also carries the question a person is being asked:
+`pending[].question`, with `pending[].question_truncated` saying the text was cut
+at the bound. That question is **user content**, and one piece of content is
+enough to make this view answer to the trace policy like anything else: it
+survives only under `content_mode=inline`. Under `refs` and under `redacted` the
+exported trace carries the view with the text removed, at both places a request
+appears (`pending[]` and `sessions[].pending[]`). The rest of the view — who is
+blocked, on what, since when — is derived from the raw records before the policy
+and stays visible on every trace, which is why the derivation and the export are
+two different things and not one.
 
 ---
 
@@ -384,11 +395,14 @@ phase/code, prompt receipt, cause, next action, and a trace link. Use
 
 On Linux and macOS the daemon serves `GET /v1/run-notifications` on the private
 Unix socket at `$MATRIX_HOME/data/run-notifications.sock` (mode `0600`). It
-requires the same HTTP API key. The response contains only notification type,
-sequence, run/session IDs, optional failure code, and time; it does not contain
-prompt, transcript, or tool output. Terminal kinds are `run.completed`,
+requires the same HTTP API key. The response contains notification type,
+sequence, run/session IDs, optional failure code, and time. It does not contain
+prompt, transcript, tool output or reasoning. Terminal kinds are `run.completed`,
 `run.failed`, `run.cancelled`, and `run.outcome_unknown`. An
-`elicitation.opened` event wakes a supervisor when a provider asks for input.
+`elicitation.opened` event wakes a supervisor when a provider asks for input, and
+that wakeup carries the bounded question (see below) — the single exception to
+the no-content rule, because a supervisor woken on a question it cannot show has
+to read the transcript to find out what the run is blocked on.
 
 ```bash
 curl --unix-socket "$MATRIX_HOME/data/run-notifications.sock" \
@@ -418,8 +432,34 @@ stable identity and restart-safe numbering:
 
 So **one logical outcome** is `(run_id, kind)` deduplicated by the consumer, not
 a property the server can enforce. A truncated payload is deliberate: this
-channel carries identity, not content. Transcripts never travel on it - read the
+channel carries identity, not content. Transcripts never travel on it — read the
 run's events if you need content.
+
+**The one exception, and what it costs.** An `elicitation.opened` wakeup carries
+the question of the open elicitation in `question`, and `question_truncated` when
+that question had to be cut:
+
+```json
+{"sequence":12,"kind":"elicitation.opened","run_id":"run-abc123","session_id":"s1",
+ "elicitation_id":"session:s1","question":"Which database should the migration target?",
+ "timestamp":"2026-10-02T09:14:31Z"}
+```
+
+- The text is **user content** — it is what a person is being asked — so it is
+  bounded to 200 runes, cut by rune (a multi-byte character is never split),
+  collapsed to a single line, and marked when it was cut. The marker is a fact,
+  not a suffix to parse: `question_truncated` appears only when it is true, so a
+  consumer that does not see it knows the question is whole.
+- It is written only on the opening, never on the resolution: once a question is
+  answered there is nothing left to ask, so nothing is carried.
+- Wherever a trace projects it, the trace policy decides: the question survives
+  under `content_mode=inline` and is removed under `refs` and `redacted`, from
+  both `pending[]` and `sessions[].pending[]`. **A redacting policy must be able
+  to take user content away, and this is the content the notification channel
+  adds.**
+
+Everything else on this channel remains identity: no prompt, no transcript, no
+tool output, no reasoning.
 
 ### `POST /v1/run-notifications/ack`
 
@@ -455,6 +495,43 @@ recording a second time. An acknowledgement proves only what it says: that the
 supervisor claims delivery of that wakeup. It does not prove the wakeup existed,
 and exactly-once applies per key - two supervisors acknowledging the same wakeup
 are two records, not a replay.
+
+**How long a record lives, and why there is no default.** A distinct key is a
+distinct record, so a caller can grow the store; by default nothing expires, and
+that is a declared choice rather than an oversight. The window a legitimate
+replay needs is set by the supervisor's own persisted cursor, which the daemon
+does not hold: a supervisor that comes back a week later is still replaying a
+claim it already made. Any number chosen here would be a promise Matrix cannot
+keep, and a record that expired too early turns a replay into a new claim.
+
+An operator who wants a bound sets one, in seconds:
+
+```bash
+matrix vault set retention.notification_ack_max_age 3600
+```
+
+- Unset means no expiry. The value is read either as a JSON number or as the JSON
+  string `matrix vault set` writes; both are the same window.
+- A value that is present but unusable (`0`, negative, not a number) is **refused**
+  rather than ignored: an operator who wrote a bound down is not silently given an
+  unbounded store. Every acknowledgement then answers `500`.
+- With a window configured, an acknowledgement whose record fell outside it is a
+  first claim again, and the answer says so instead of letting it look like a key
+  nobody had used.
+- Expired records are removed by a housekeeping pass on the acknowledgement path,
+  rate-limited to once a minute, so the store holds the window plus at most that
+  minute of traffic. A record inside the window is never touched.
+
+When a window is configured, the answer declares it:
+
+| Response | Meaning |
+|----------|---------|
+| `200 {"status":"acked","run_id":…,"sequence":…,"idempotency_window_seconds":3600}` | Recorded now, or a replay, inside the window in force |
+| `200` with `"idempotency_record_expired":true` | The key had a record, it fell outside the window, and this claim is the new first one |
+| `500` | The record could not be made durable, or the configured window is unusable |
+
+Without a window the two window fields are absent, because nothing expires and
+nothing can.
 
 ---
 

@@ -72,9 +72,11 @@ var agentShowCmd = &cobra.Command{
 			"is_active":  cfg.IsActive(),
 			"env_effect": cfg.Env,
 		}
-		// The runtime block is what tells a registered agent apart from a
-		// failed one: it is read from the runtime's own record, and a
-		// registration the runtime has not applied yet is reported as such.
+		// The runtime block is what tells a registered agent apart from a failed
+		// one: it is read from the runtime's own record. An agent the runtime
+		// starts per run is reported as served on demand, which is not a claim
+		// that anybody watched it run, and a registration that does need an apply
+		// is still reported as pending one.
 		runtimeReport, runtimeErr := agentmgr.BuildRuntimeReport(agentmgr.RuntimeReportRequest{
 			Store:    ctx.Store,
 			Registry: ctx.Registry,

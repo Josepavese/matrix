@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,9 +66,11 @@ type notificationAckRecord struct {
 }
 
 // HandleLocalNotificationAck records that a supervisor delivered one wakeup.
-// The response body is identical for a first acknowledgement and for a replay:
-// the outcome is the same, and only the Idempotency-Replayed header says
-// whether the daemon had already recorded it.
+// For one stable window the body is the same for a first acknowledgement and for
+// a replay: the outcome is the same, and only the Idempotency-Replayed header
+// says whether the daemon had already recorded it. The window fields are the
+// exception the operator asked for - they declare the policy in force, so a
+// replay that fell outside a configured window is never dressed as a replay.
 func (s *Server) HandleLocalNotificationAck(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -115,23 +118,27 @@ func (s *Server) HandleLocalNotificationAck(w http.ResponseWriter, r *http.Reque
 	if replay {
 		w.Header().Set("Idempotency-Replayed", "true")
 	}
+	writeJSON(w, http.StatusOK, notificationAckBody(req, expired, window))
+}
+
+// notificationAckBody is the answer for a claim that was recorded or replayed.
+// The window fields declare the policy in force rather than the claim itself:
+// they say which window produced this outcome, so that a replay which has fallen
+// outside one cannot look like a retry that never happened. They are absent when
+// nothing expires, because then nothing can.
+func notificationAckBody(req notificationAckRequest, expired bool, window time.Duration) map[string]interface{} {
 	body := map[string]interface{}{
 		"status":   "acked",
 		"run_id":   req.RunID,
 		"sequence": req.Sequence,
 	}
-	// When an operator configured a window, the answer declares it: after that
-	// window the same key comes back as a first claim, and a consumer that is not
-	// told so reads a replay that turned into a new claim as a retry that never
-	// happened. The field is absent when nothing expires, because then nothing
-	// can.
 	if window > 0 {
 		body["idempotency_window_seconds"] = int64(window.Seconds())
 	}
 	if expired {
 		body["idempotency_record_expired"] = true
 	}
-	writeJSON(w, http.StatusOK, body)
+	return body
 }
 
 func decodeNotificationAck(w http.ResponseWriter, r *http.Request) (notificationAckRequest, bool) {
@@ -223,7 +230,12 @@ func notificationAckMaxAge(storage middleware.Storage) (time.Duration, error) {
 		return 0, nil
 	}
 	var seconds int64
-	if err := json.Unmarshal(data, &seconds); err != nil {
+	// Both spellings the daemon's own tooling produces are read: `matrix vault
+	// set` stores a JSON string, and a policy written by a JSON tool stores a
+	// number. Refusing the path an operator actually has would turn a configured
+	// window into an outage of the endpoint.
+	text := strings.Trim(strings.TrimSpace(string(data)), `"`)
+	if seconds, err = strconv.ParseInt(text, 10, 64); err != nil {
 		return 0, fmt.Errorf("%s must be a number of seconds: %w", notificationAckMaxAgeKey, err)
 	}
 	if seconds <= 0 {

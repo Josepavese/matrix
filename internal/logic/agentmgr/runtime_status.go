@@ -185,14 +185,7 @@ func buildRuntimeReport(input inspectInput, canDial func(string) bool) AgentRunt
 		report.Warnings = append(report.Warnings, "executable not found in PATH")
 	case report.Mode == "on_demand":
 		if input.State.Status == "" {
-			// Registered and installed, but the runtime has not observed this
-			// configuration yet. The status names the operator's situation
-			// rather than the absence of a probe: what has to happen next is an
-			// apply, and calling it "not probed" left a freshly registered
-			// agent reading like a fault.
-			report.Status = "pending_apply"
-			report.Warnings = append(report.Warnings, "registration recorded, runtime not yet applied: "+
-				middleware.RegistrationRemedyThen("re-run this command"))
+			report = reportUnobservedOnDemand(report, endpoint)
 		} else {
 			report = applyRuntimeState(report, input.State, canDial)
 		}
@@ -204,6 +197,35 @@ func buildRuntimeReport(input inspectInput, canDial func(string) bool) AgentRunt
 		report.Status = "not_observed"
 		report.Warnings = append(report.Warnings, "no runtime state recorded")
 	}
+	return report
+}
+
+// reportUnobservedOnDemand describes an active, installed agent the runtime has
+// no record for.
+//
+// An ACP agent over stdio is started by the run that needs it, so there is no
+// apply to wait for and sending the operator to restart the daemon sends them to
+// fix something that is not broken. The status becomes the runtime's own word for
+// that arrangement, and it is deliberately NOT a claim of readiness: the warning
+// says nothing has been observed running, and the report carries no pid, no
+// address and no timestamp — the traces an observation would have left. What was
+// removed is the false remedy, not the guard: a recorded observation still
+// decides the status, and a failed one is still reported as it happened, which is
+// the invariant that a provider unable to complete its handshake is never
+// declared ready.
+//
+// Every other on-demand protocol keeps waiting for an apply. Nothing here claims
+// a transport it has not been measured on.
+func reportUnobservedOnDemand(report AgentRuntimeReport, endpoint middleware.ProtocolEndpoint) AgentRuntimeReport {
+	if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" {
+		report.Status = "ready_on_demand"
+		report.Warnings = append(report.Warnings,
+			"served on demand: the runtime starts this agent when a run arrives; nothing has been observed running yet")
+		return report
+	}
+	report.Status = "pending_apply"
+	report.Warnings = append(report.Warnings, "registration recorded, runtime not yet applied: "+
+		middleware.RegistrationRemedyThen("re-run this command"))
 	return report
 }
 

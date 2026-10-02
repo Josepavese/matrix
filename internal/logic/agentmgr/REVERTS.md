@@ -1,14 +1,22 @@
 # Reversioni — registro agenti (hot-enable)
 
 Metodo del repo: si copia il file, si applica la reversione, si compila, si esegue
-il test, si ripristina **dalla copia** (mai con `git`). Le reversioni V1–V3 stanno
-tutte in `registry.go`.
+il test, si ripristina **dalla copia** (mai con `git`). V1–V3 stanno in
+`registry.go`, V4 in `runtime_status.go`.
 
 | nome | cosa reverte | test che cadono |
 |---|---|---|
 | V1 | il miss non rilegge il vault (`Get` risponde "non trovato" dalla vista vecchia) | `TestAnAgentEnabledAfterTheDaemonStartedIsServedNotRefusedAsUnknown`, `TestTheRunPathResolvesAnAgentEnabledAfterStartup`, `TestAnAgentEnabledAfterTheDaemonStartedIsNotRefusedWithA409` |
 | V2 | TTL ignorato: la vista in cache non si rinfresca mai | `TestAnEnabledAgentAppearsInTheViewWhenTheSnapshotExpires` |
 | V3 | errore di rilettura inghiottito (vault illeggibile letto come "agente inesistente") | `TestRegistryKeepsTheAgentsItHasWhenAReloadFails` |
+| V4 | nessun trasporto è più servito a richiesta: il report torna a `pending_apply` anche per `acp`+`stdio` | `TestBuildRuntimeReportSaysServedOnDemandWithoutClaimingItWasObserved`, `TestBuildRuntimeReportForOneAgentReportsTheRegisteredState` |
+
+V4 è la reversione della correzione di precisione: sotto di essa il report torna a
+mandare l'operatore a riavviare il demone per un agente che la run serve. Sotto V4
+restano verdi gli altri test del report — compreso quello che pretende che una
+**osservazione registrata** decida lo stato (`initialize_failed` resta
+`initialize_failed`) — perché V4 toglie il caso "servito a richiesta", non la
+guardia sull'osservazione.
 
 V1 è la reversione che riporta il **409**: il terzo test è nella run API e misura la
 superficie che l'operatore ha incontrato, quindi cade insieme agli altri due invece

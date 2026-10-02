@@ -2,6 +2,7 @@ package runapi
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/elicitation"
 	"github.com/Josepavese/matrix/internal/logic/memstore"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/middleware"
@@ -451,6 +453,43 @@ func TestNotificationAckRecordsOneClaimOnceUnderConcurrency(t *testing.T) {
 	if keys, err := storage.List("notification_ack."); err != nil || len(keys) != 1 {
 		t.Fatalf("la corsa ha lasciato %d record: %v err=%v", len(keys), keys, err)
 	}
+
+	// The same race with a window configured, because that is when the
+	// housekeeping pass runs: it reads and deletes the same records under the
+	// same lock, and a pass outside the lock would race the mark that rate-limits
+	// it. Records written moments ago are inside the window, so nothing may be
+	// evicted here - a pass that collects live records is worse than a late one.
+	setAckWindow(t, storage, `60`)
+	const secondClaim = `{"run_id":"run-raced-later","sequence":4}`
+	firstClaims, replays, refusals = 0, 0, 0
+	start = make(chan struct{})
+	for i := 0; i < claims; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			got := postNotificationAck(t, server.HandleLocalNotificationAck, http.MethodPost, "supervisor-race-2", secondClaim)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case got.status != http.StatusOK:
+				refusals++
+			case got.replayed == "":
+				firstClaims++
+			default:
+				replays++
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if refusals != 0 || firstClaims != 1 || replays != claims-1 {
+		t.Fatalf("con una finestra configurata la corsa ha prodotto prime=%d replay=%d rifiuti=%d, vuole prime=1 replay=%d rifiuti=0",
+			firstClaims, replays, refusals, claims-1)
+	}
+	if keys, err := storage.List("notification_ack."); err != nil || len(keys) != 2 {
+		t.Fatalf("la passata di raccolta ha toccato record dentro finestra: %v err=%v", keys, err)
+	}
 }
 
 // failingSetStorage keeps a working store for reads and refuses writes, which is
@@ -493,5 +532,211 @@ func TestNotificationAckNeverClaimsWhatItCouldNotRecord(t *testing.T) {
 	replay := postNotificationAck(t, NewServer(&runTestRouter{}).WithTraceStorage(failingSetStorage{Storage: durable, err: errors.New("vault write unavailable")}).HandleLocalNotificationAck, http.MethodPost, "supervisor-2", claim)
 	if replay.status != http.StatusOK || replay.replayed != "true" {
 		t.Fatalf("un record già durabile deve rispondere in replay anche a store non scrivibile: status=%d replayed=%q", replay.status, replay.replayed)
+	}
+}
+
+// ----------------------------------------------------------------------------
+// The bounded question a run is blocked on: written where the notification is
+// written, marked where it was cut, and reachable by a redacting policy.
+// ----------------------------------------------------------------------------
+
+func waitForNotificationKind(t *testing.T, store *runtrace.Store, kind string) runtrace.Notification {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		items, _, err := store.LoadNotificationsAfter(0, 20, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range items {
+			if item.Kind == kind {
+				return item
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("nessuna notifica %q è arrivata", kind)
+	return runtrace.Notification{}
+}
+
+// TestTheElicitationQuestionTravelsBoundedAndMarked covers the whole chain the
+// supervisor sees: the question is taken where the notification is written, it
+// is cut at the declared bound with the marker as a fact, and the socket serves
+// exactly the two names the record declares. A long question is used on purpose:
+// a test with a short one would prove nothing about the bound.
+func TestTheElicitationQuestionTravelsBoundedAndMarked(t *testing.T) {
+	storage := memstore.New()
+	service := elicitation.NewService(time.Minute)
+	server := NewServer(&runTestRouter{}).WithTraceStorage(storage).WithElicitationService(service)
+
+	long := strings.Repeat("Confermi la migrazione al nuovo schema?\n", 20) + "CODA-OLTRE-LA-SOGLIA"
+	go func() {
+		service.Ask(context.Background(), middleware.ElicitationRequest{
+			ID: "session:s1", AgentID: "peer", SessionID: "s1",
+			Mode: middleware.ElicitationModeForm, Message: long,
+		})
+	}()
+	opened := waitForNotificationKind(t, server.Store(), "elicitation.opened")
+
+	want, wantTruncated := middleware.BoundElicitationQuestion(long)
+	if !wantTruncated {
+		t.Fatal("la domanda di prova non supera la soglia: il test non prova il troncamento")
+	}
+	if opened.Question != want || !opened.QuestionTruncated {
+		t.Fatalf("record: truncated=%v testo=%q, vuole %q con il marker", opened.QuestionTruncated, opened.Question, want)
+	}
+	if strings.Contains(opened.Question, "CODA-OLTRE-LA-SOGLIA") {
+		t.Fatal("la coda oltre la soglia è finita nel record")
+	}
+	if strings.ContainsAny(opened.Question, "\n\r\t") {
+		t.Fatalf("la domanda conserva un a capo: %q", opened.Question)
+	}
+
+	rec := httptest.NewRecorder()
+	server.HandleLocalNotifications(rec, httptest.NewRequest(http.MethodGet, "/v1/run-notifications", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("notification list status %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"question":`) || !strings.Contains(body, `"question_truncated":true`) {
+		t.Fatalf("il payload servito non porta la domanda marcata: %s", body)
+	}
+
+	// A resolution closes the question: there is nothing left to ask, so nothing
+	// is carried on the record that announces it.
+	if !service.Respond("session:s1", middleware.AcceptElicitation(nil)) {
+		t.Fatal("la risposta all'elicitation non è stata accettata dal servizio")
+	}
+	resolved := waitForNotificationKind(t, server.Store(), "elicitation.resolved")
+	if resolved.Question != "" || resolved.QuestionTruncated {
+		t.Fatalf("la risoluzione porta ancora la domanda: %q truncated=%v", resolved.Question, resolved.QuestionTruncated)
+	}
+}
+
+// ----------------------------------------------------------------------------
+// The growth of the acknowledgement records: declared by default, bounded by an
+// operator's window, and never silent about which of the two is in force.
+// ----------------------------------------------------------------------------
+
+// setAckWindow writes the window exactly as the operator's tooling would, bytes
+// included: `matrix vault set` stores a JSON string and a JSON tool stores a
+// number, and both have to reach the same window.
+func setAckWindow(t *testing.T, storage middleware.Storage, raw string) {
+	t.Helper()
+	if err := storage.Set(notificationAckMaxAgeKey, []byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func seedAckRecord(t *testing.T, storage middleware.Storage, key string, ackedAt time.Time) {
+	t.Helper()
+	claim := notificationAckRequest{RunID: "run-old", Sequence: 1}
+	encoded, err := json.Marshal(notificationAckRecord{
+		RunID: claim.RunID, Sequence: claim.Sequence,
+		Digest: notificationAckDigest(claim), AckedAt: ackedAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.Set(notificationAckStorageKey(key), encoded); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestAcknowledgementRecordsHaveNoWindowUntilAnOperatorSetsOne: the window a
+// legitimate replay needs is the supervisor's own cursor, which Matrix does not
+// hold, so the default is to keep the record and be honest about the growth.
+func TestAcknowledgementRecordsHaveNoWindowUntilAnOperatorSetsOne(t *testing.T) {
+	storage := memstore.New()
+	server := NewServer(&runTestRouter{}).WithTraceStorage(storage)
+	seedAckRecord(t, storage, "supervisor-1", time.Now().Add(-90*24*time.Hour))
+
+	got := postNotificationAck(t, server.HandleLocalNotificationAck, http.MethodPost, "supervisor-1", `{"run_id":"run-old","sequence":1}`)
+	if got.status != http.StatusOK || got.replayed != "true" {
+		t.Fatalf("senza finestra un record vecchio deve ancora rigiocare: status=%d replayed=%q body=%s", got.status, got.replayed, got.body)
+	}
+	if strings.Contains(got.body, "idempotency_window_seconds") {
+		t.Fatalf("nessuna finestra è configurata ma la risposta ne dichiara una: %s", got.body)
+	}
+}
+
+// TestAConfiguredWindowDeclaresItselfAndTurnsAnExpiredReplayIntoAFirstClaim is
+// the consequence the operator accepted, made visible: outside the window the
+// key is a first claim again, and the answer says which window made it one
+// instead of letting a replay look like a key nobody ever used.
+func TestAConfiguredWindowDeclaresItselfAndTurnsAnExpiredReplayIntoAFirstClaim(t *testing.T) {
+	storage := memstore.New()
+	setAckWindow(t, storage, `"60"`)
+	server := NewServer(&runTestRouter{}).WithTraceStorage(storage)
+	seedAckRecord(t, storage, "supervisor-1", time.Now().Add(-2*time.Minute))
+
+	got := postNotificationAck(t, server.HandleLocalNotificationAck, http.MethodPost, "supervisor-1", `{"run_id":"run-old","sequence":1}`)
+	if got.status != http.StatusOK {
+		t.Fatalf("status=%d body=%s", got.status, got.body)
+	}
+	if got.replayed != "" {
+		t.Fatalf("un record fuori finestra non è un replay: replayed=%q", got.replayed)
+	}
+	if !strings.Contains(got.body, `"idempotency_record_expired":true`) {
+		t.Fatalf("la risposta non dichiara che il record era scaduto: %s", got.body)
+	}
+	if !strings.Contains(got.body, `"idempotency_window_seconds":60`) {
+		t.Fatalf("la risposta non dichiara la finestra in vigore: %s", got.body)
+	}
+	record, found, err := server.loadNotificationAck("supervisor-1")
+	if err != nil || !found {
+		t.Fatalf("il record fuori finestra non è stato riscritto: found=%v err=%v", found, err)
+	}
+	if time.Since(record.AckedAt) > time.Minute {
+		t.Fatalf("il record conserva la data vecchia: %s", record.AckedAt)
+	}
+}
+
+// TestAnUnusableWindowIsRefusedRatherThanQuietlyIgnored: an operator who wrote a
+// bound down must not get an unbounded store and no message.
+func TestAnUnusableWindowIsRefusedRatherThanQuietlyIgnored(t *testing.T) {
+	for name, value := range map[string]string{"zero": `0`, "negativa": `-5`, "non numerica": `"un'ora"`} {
+		t.Run(name, func(t *testing.T) {
+			storage := memstore.New()
+			if err := storage.Set(notificationAckMaxAgeKey, []byte(value)); err != nil {
+				t.Fatal(err)
+			}
+			server := NewServer(&runTestRouter{}).WithTraceStorage(storage)
+			got := postNotificationAck(t, server.HandleLocalNotificationAck, http.MethodPost, "supervisor-1", `{"run_id":"run-1","sequence":1}`)
+			if got.status == http.StatusOK {
+				t.Fatalf("una finestra inutilizzabile è stata ignorata: status=%d body=%s", got.status, got.body)
+			}
+			if keys, err := storage.List(notificationAckPrefix); err != nil || len(keys) != 0 {
+				t.Fatalf("un ack rifiutato ha comunque scritto %v (err=%v)", keys, err)
+			}
+		})
+	}
+}
+
+// TestAConfiguredWindowEvictsExpiredRecordsInsteadOfOnlyHidingThem is what makes
+// the window a bound rather than a promise: a record that is merely ignored is
+// still a record growing the store.
+func TestAConfiguredWindowEvictsExpiredRecordsInsteadOfOnlyHidingThem(t *testing.T) {
+	storage := memstore.New()
+	setAckWindow(t, storage, `60`)
+	server := NewServer(&runTestRouter{}).WithTraceStorage(storage)
+	seedAckRecord(t, storage, "vecchia-1", time.Now().Add(-2*time.Hour))
+	seedAckRecord(t, storage, "vecchia-2", time.Now().Add(-2*time.Hour))
+	seedAckRecord(t, storage, "recente", time.Now().Add(-time.Second))
+
+	got := postNotificationAck(t, server.HandleLocalNotificationAck, http.MethodPost, "nuova", `{"run_id":"run-1","sequence":7}`)
+	if got.status != http.StatusOK {
+		t.Fatalf("status=%d body=%s", got.status, got.body)
+	}
+	keys, err := storage.List(notificationAckPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 2 {
+		t.Fatalf("record rimasti %d (%v), vuole i due dentro finestra", len(keys), keys)
+	}
+	kept := postNotificationAck(t, server.HandleLocalNotificationAck, http.MethodPost, "recente", `{"run_id":"run-old","sequence":1}`)
+	if kept.status != http.StatusOK || kept.replayed != "true" {
+		t.Fatalf("il record dentro finestra è stato raccolto: status=%d replayed=%q", kept.status, kept.replayed)
 	}
 }

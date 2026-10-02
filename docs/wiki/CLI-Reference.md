@@ -385,6 +385,17 @@ Set a vault entry.
 matrix vault set config.custom-key my-value
 ```
 
+The key is written as given, and that includes the retention keys that are not
+`config.*`. One of them bounds how long the daemon keeps an acknowledgement
+record before a replay of that key counts as a first claim again:
+
+```bash
+matrix vault set retention.notification_ack_max_age 3600
+```
+
+Unset means no expiry. See `POST /v1/run-notifications/ack` in the API reference
+for what a configured window declares and what it does not.
+
 ### `matrix vault backup`
 
 Create a vault backup.
