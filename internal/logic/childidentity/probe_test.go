@@ -4,6 +4,7 @@ package childidentity
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -65,6 +66,68 @@ func TestDoctorChildIdentityProvesTheDeclaredProcessCwd(t *testing.T) {
 	}
 	if !strings.Contains(child.Source, "/proc/") {
 		t.Fatalf("child evidence must say where it was read from, got %q", child.Source)
+	}
+	if child.StartTicks == 0 {
+		t.Fatal("the observed evidence carries no start time, so a pid recycled into another process could not be told apart")
+	}
+}
+
+// TestReadIdentityReadsTheStartTimeTheKernelReports checks the parser against
+// the kernel's own answer for a process whose parent and start time are known
+// independently of it: this test's own process. A parser that read the field
+// beside the start time, or that took the name for a position, would disagree
+// with `os.Getppid()` here.
+func TestReadIdentityReadsTheStartTimeTheKernelReports(t *testing.T) {
+	identity, err := readIdentity(os.Getpid())
+	if err != nil {
+		t.Fatalf("readIdentity(self): %v", err)
+	}
+	if identity.ParentPID != os.Getppid() {
+		t.Fatalf("parent = %d, want %d: /proc/<pid>/stat field 4 is the parent, not the process group",
+			identity.ParentPID, os.Getppid())
+	}
+	if identity.StartTicks == 0 {
+		t.Fatal("no start time reported for a live process")
+	}
+
+	again, err := readIdentity(os.Getpid())
+	if err != nil {
+		t.Fatalf("readIdentity(self) again: %v", err)
+	}
+	if again.StartTicks != identity.StartTicks {
+		t.Fatalf("the start time of one live process changed between reads: %d then %d",
+			identity.StartTicks, again.StartTicks)
+	}
+}
+
+// TestTheObservationLoopRefusesAChildTheGuardDoesNotRecognise pins the wiring,
+// not the rule: the guard's own tests prove what it refuses, and this one proves
+// the probe asks it before reporting a child as evidence. The guard is armed with
+// a start time nobody else has, so the live child in front of it is a process it
+// cannot claim — and the loop must answer with a refusal instead of an
+// observation. Removing the guard call from the loop leaves every other test in
+// this package green, which is exactly why this one exists.
+func TestTheObservationLoopRefusesAChildTheGuardDoesNotRecognise(t *testing.T) {
+	cmd := exec.Command("/bin/sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start child: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	guard := &reuseGuard{parent: os.Getpid(), started: 1, armed: true}
+	report, warnings := observeChild(cmd.Process.Pid, guard, t.TempDir())
+
+	if report.Status != "unreadable" {
+		t.Fatalf("status = %q (%s), want unreadable: the loop reported a process the guard had refused", report.Status, report.Error)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "refused") {
+		t.Fatalf("warnings = %v, want the refusal the guard produced", warnings)
+	}
+	if report.Argv != nil || report.Cwd != "" {
+		t.Fatalf("a refused observation carried evidence anyway: %+v", report)
 	}
 }
 

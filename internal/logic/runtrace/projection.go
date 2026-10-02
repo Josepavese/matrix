@@ -33,10 +33,16 @@ func Project(run Run, events []Event, notifications []Notification) Trace {
 	// strips them. It has to be: session attribution lives in protocol metadata
 	// and tool names are dropped in redacted mode, so a view computed after the
 	// policy would go blind on exactly the runs an operator is diagnosing.
+	// What the view may not do is carry content past the policy: the one piece
+	// of user text it can hold is the question a person is being asked, and that
+	// is dropped by the same rule that drops an event message.
 	stall := ObserveStall(run, events, notifications)
+	if !includesContent(run.TracePolicy) {
+		stall = withoutStallQuestion(stall)
+	}
 	events = applyTracePolicy(events, run.TracePolicy)
 	outcome := Outcome{Status: run.Status, StopReason: run.StopReason, SummaryRef: run.OutputRef, Error: run.Error}
-	if run.TracePolicy.ContentMode == ContentModeInline {
+	if includesContent(run.TracePolicy) {
 		outcome.Summary = run.Output
 	}
 	return Trace{
@@ -60,11 +66,41 @@ func applyTracePolicy(events []Event, policy TracePolicy) []Event {
 	return out
 }
 
+// includesContent is the single rule for whether a policy lets text through. An
+// event message and the question a run is blocked on are the same kind of thing
+// - text a person or a peer wrote - so they answer to one condition rather than
+// two that can drift apart, and a policy that gains a mode gains it for both.
+func includesContent(policy TracePolicy) bool {
+	return policy.ContentMode == ContentModeInline
+}
+
+// withoutStallQuestion drops the user content a stall view can carry, at both
+// places a request appears: the view's own list and the per-session lists. What
+// is left is the picture the view was built for - who is blocked, on what, since
+// when - with the text the person was shown removed.
+func withoutStallQuestion(stall StallView) StallView {
+	for i := range stall.Pending {
+		stall.Pending[i] = withoutQuestion(stall.Pending[i])
+	}
+	for i := range stall.Sessions {
+		for j := range stall.Sessions[i].Pending {
+			stall.Sessions[i].Pending[j] = withoutQuestion(stall.Sessions[i].Pending[j])
+		}
+	}
+	return stall
+}
+
+func withoutQuestion(request StallRequest) StallRequest {
+	request.Question = ""
+	request.QuestionTruncated = false
+	return request
+}
+
 func applyEventTracePolicy(event Event, policy TracePolicy) Event {
 	if !policy.IncludeProtocolMeta {
 		event.ProtocolMeta = nil
 	}
-	if policy.ContentMode != ContentModeInline {
+	if !includesContent(policy) {
 		event.Message = ""
 	}
 	if policy.ContentMode == ContentModeRedacted {

@@ -2,16 +2,15 @@ package onboarding
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 )
+
+// This file is the wizard's side of OpenRouter: which methods the provider
+// declares, and the steps the operator walks through. The OAuth mechanics it
+// starts — the PKCE URL, the callback, the token exchange and the CSRF binding —
+// live in openrouter_oauth.go, so a change to the protocol does not re-open the
+// onboarding flow and vice versa.
 
 // openrouterAuthHandler implements AuthHandler for OpenRouter (used by opencode agent).
 // Supports: api_key (direct key), quick_login (OAuth PKCE).
@@ -65,209 +64,88 @@ func (h *openrouterAuthHandler) authenticateOAuth(_ context.Context, input strin
 	return nil, "", fmt.Errorf("use HandleAuthCallback for OAuth flow completion")
 }
 
-// generateOpenRouterAuthURL creates an OAuth PKCE URL for OpenRouter.
-// The state parameter includes an HMAC to prevent CSRF attacks.
-func (h *openrouterAuthHandler) generateAuthURL(channelID string) (string, string, error) {
-	verifier, err := generateRandomString(64)
-	if err != nil {
-		return "", "", err
+// StartDeclaredMethod implements methodStarter: the OAuth method this handler
+// declares is started by this handler's own PKCE flow, and every other method
+// stays on the generic path.
+func (h *openrouterAuthHandler) StartDeclaredMethod(_ context.Context, method AuthMethod, state *WizardState) (string, bool, error) {
+	if method.ID != "quick_login" {
+		return "", false, nil
 	}
-	challenge := buildPKCEChallenge(verifier)
-	publicIP := h.wizard.getPublicIP()
-	if publicIP == "" {
-		publicIP = "your-server-ip"
-	}
-
-	callbackURL := fmt.Sprintf("http://%s:9091/v1/auth/openrouter/callback", publicIP)
-	csrfState, err := h.wizard.generateCSRFState(channelID, verifier)
-	if err != nil {
-		return "", "", err
-	}
-	authURL := fmt.Sprintf(
-		"https://openrouter.ai/auth?callback_url=%s&code_challenge=%s&code_challenge_method=S256&state=%s",
-		callbackURL,
-		challenge,
-		csrfState,
-	)
-	return authURL, verifier, nil
+	message, err := h.startOAuth(state)
+	return message, true, err
 }
 
-// HandleAuthCallback handles the OAuth callback from OpenRouter.
-// The channelID parameter is the raw state value from the callback URL,
-// which includes an HMAC token for CSRF validation.
-func (w *Wizard) HandleAuthCallback(channelID, _ string, code string) (string, error) {
-	// channelID here is the CSRF state from the OAuth callback.
-	// The actual channel ID and PKCE verifier are stored in wizard state.
-	// We validate the CSRF token against the stored verifier.
-	state, stateKey, err := w.loadWizardStateForCSRF(channelID)
-	if err != nil {
-		return "", err
-	}
-	if state.Context["auth_method"] != "quick_login" {
-		return "", fmt.Errorf("wizard not in quick_login state")
-	}
-
-	verifier := state.Context["pkce_verifier"]
-	if verifier == "" {
-		return "", fmt.Errorf("pkce verifier not found")
-	}
-
-	// Verify CSRF state matches
-	validCSRF, err := w.verifyCSRFState(channelID, verifier)
-	if err != nil {
-		return "", err
-	}
-	if !validCSRF {
-		return "", fmt.Errorf("invalid CSRF state — possible tampering")
-	}
-
-	apiKey, err := w.exchangeOpenRouterCode(code, verifier)
-	if err != nil {
-		return "", fmt.Errorf("failed to exchange code: %w", err)
-	}
-
-	state.Context["api_key"] = apiKey
-	state.Step = 5
-	w.saveState(stateKey, state)
-	return "✅ Authentication successful! Please go back to your chat and type 'done' to continue.", nil
-}
-
-func (w *Wizard) loadWizardState(channelID string) (WizardState, string, error) {
-	stateKey := "wizard.state." + channelID
-	data, err := w.storage.Get(stateKey)
-	if err != nil || len(data) == 0 {
-		return WizardState{}, "", fmt.Errorf("wizard state not found for channel %s", channelID)
-	}
-
-	var state WizardState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return WizardState{}, "", fmt.Errorf("failed to unmarshal wizard state: %w", err)
-	}
-	return state, stateKey, nil
-}
-
-func (w *Wizard) exchangeOpenRouterCode(code, verifier string) (string, error) {
-	body := map[string]string{
-		"code":          code,
-		"code_verifier": verifier,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	data, statusCode, err := w.net.PostJSON(ctx, "https://openrouter.ai/api/v1/auth/keys", body)
-	if err != nil {
-		return "", err
-	}
-	if statusCode != 200 {
-		return "", fmt.Errorf("openrouter returned status %d: %s", statusCode, string(data))
-	}
-
-	var result struct {
-		Key string `json:"key"`
-	}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return "", err
-	}
-	return result.Key, nil
-}
-
-// --- Utility functions ---
-
-func buildPKCEChallenge(verifier string) string {
-	h := sha256.New()
-	h.Write([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
-}
-
-func generateRandomString(length int) (string, error) {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
-	b := make([]byte, length)
-	randBytes := make([]byte, length)
-	if _, err := rand.Read(randBytes); err != nil {
-		return "", fmt.Errorf("crypto/rand failed: %w", err)
-	}
-	for i := range b {
-		b[i] = charset[int(randBytes[i])%len(charset)]
-	}
-	return string(b), nil
-}
-
-func (w *Wizard) getPublicIP() string {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	data, err := w.net.Fetch(ctx, "https://api.ipify.org")
-	if err != nil {
+// ProviderAuthPrompt implements providerAuthOwner: the prompt of the stage where
+// the operator picks how to authenticate against the chosen provider. The
+// provider names are data the stage carries in the wizard state, not identities
+// this code knows.
+func (h *openrouterAuthHandler) ProviderAuthPrompt(state *WizardState) string {
+	w := h.wizard
+	if state.Context["auth_method"] != "" {
 		return ""
 	}
-	return strings.TrimSpace(string(data))
+	if state.Context["provider"] == "OpenRouter" {
+		return w.localizer.GetString(state.Language, "opencode_auth_method_prompt")
+	}
+	if state.Context["provider"] != "" {
+		return fmt.Sprintf(w.localizer.GetString(state.Language, "opencode_api_key_prompt"), state.Context["provider"])
+	}
+	return ""
 }
 
-// --- CSRF State Protection ---
+// HandleProviderAuthInput implements providerAuthOwner: the input of that stage
+// belongs to the provider this handler serves.
+func (h *openrouterAuthHandler) HandleProviderAuthInput(state *WizardState, input string) (string, bool, error) {
+	if state.Context["auth_method"] != "" {
+		return "", false, nil
+	}
+	if state.Context["provider"] == "OpenRouter" {
+		response, err := h.handleAuthSelection(state, input)
+		return response, true, err
+	}
+	if state.Context["provider"] != "" {
+		response, err := h.handleAPIKey(state, input)
+		return response, true, err
+	}
+	return "", false, nil
+}
 
-// csrfHMACKey is a per-session key stored in the vault to bind OAuth state tokens.
-const csrfHMACKeyVaultKey = "system.oauth_csrf_key"
-
-// generateCSRFState creates a state parameter that binds the channelID to the PKCE verifier
-// using an HMAC. Format: <channelID>.<hmac_hex>
-func (w *Wizard) generateCSRFState(channelID, verifier string) (string, error) {
-	key, err := w.getOrCreateCSRFKey()
+// startOAuth begins the OpenRouter OAuth PKCE flow for the method this handler
+// declares, recording the verifier and the method in the wizard state.
+func (h *openrouterAuthHandler) startOAuth(state *WizardState) (string, error) {
+	w := h.wizard
+	url, verifier, err := h.generateAuthURL(state.Context["channel_id"])
 	if err != nil {
-		return "", err
+		return fmt.Sprintf("⚠️ Could not generate Auth URL: %v", err), nil
 	}
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(channelID))
-	mac.Write([]byte(verifier))
-	sig := hex.EncodeToString(mac.Sum(nil))
-	return channelID + "." + sig, nil
+	state.Context["pkce_verifier"] = verifier
+	state.Context["auth_method"] = "quick_login"
+	state.Step = 4
+	return fmt.Sprintf(w.localizer.GetString(state.Language, "opencode_openrouter_quick_auth_prompt"), url), nil
 }
 
-// verifyCSRFState checks that the state parameter was generated by this server.
-func (w *Wizard) verifyCSRFState(state, verifier string) (bool, error) {
-	// Extract channelID from state (format: <channelID>.<hmac_hex>)
-	parts := strings.SplitN(state, ".", 2)
-	if len(parts) != 2 {
-		return false, nil
-	}
-	channelID := parts[0]
-
-	key, err := w.getOrCreateCSRFKey()
-	if err != nil {
-		return false, err
-	}
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(channelID))
-	mac.Write([]byte(verifier))
-	expected := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(parts[1]), []byte(expected)), nil
-}
-
-// getOrCreateCSRFKey returns the HMAC key for CSRF state, creating one if needed.
-func (w *Wizard) getOrCreateCSRFKey() ([]byte, error) {
-	data, err := w.storage.Get(csrfHMACKeyVaultKey)
-	if err == nil && len(data) > 0 {
-		var key []byte
-		if json.Unmarshal(data, &key) == nil && len(key) == 32 {
-			return key, nil
-		}
-	}
-
-	// Generate new key
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return nil, fmt.Errorf("crypto/rand failed: %w", err)
-	}
-	keyData, _ := json.Marshal(key)
-	_ = w.storage.Set(csrfHMACKeyVaultKey, keyData)
-	return key, nil
-}
-
-// loadWizardStateForCSRF loads the wizard state by extracting the channelID from the CSRF state.
-func (w *Wizard) loadWizardStateForCSRF(csrfState string) (WizardState, string, error) {
-	channelID, _, ok := strings.Cut(csrfState, ".")
+// handleAuthSelection reads the operator's choice of provider-auth method.
+func (h *openrouterAuthHandler) handleAuthSelection(state *WizardState, input string) (string, error) {
+	w := h.wizard
+	choice, ok := map[string]string{"1": "api_key", "2": "quick_login"}[input]
 	if !ok {
-		return WizardState{}, "", fmt.Errorf("invalid OAuth state format")
+		return w.invalidSelection(state, w.promptForStep(*state)), nil
 	}
-	return w.loadWizardState(channelID)
+	state.Context["auth_method"] = choice
+	if choice != "quick_login" {
+		state.Step = 4
+		return w.promptForStep(*state), nil
+	}
+	return h.startOAuth(state)
+}
+
+// handleAPIKey records the key entered for a provider that is not OpenRouter.
+func (h *openrouterAuthHandler) handleAPIKey(state *WizardState, input string) (string, error) {
+	w := h.wizard
+	if strings.EqualFold(input, "skip") {
+		input = ""
+	}
+	state.Context["api_key"] = input
+	state.Step = 5
+	return w.promptForStep(*state), nil
 }

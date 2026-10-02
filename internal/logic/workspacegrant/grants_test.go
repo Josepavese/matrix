@@ -4,21 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/memstore"
+	"github.com/Josepavese/matrix/internal/testgit"
 )
 
+// gitCommand runs git with the environment testgit builds, so this test does not
+// read the git configuration of the machine running it: an ambient
+// commit.gpgsign or core.hooksPath would otherwise decide whether its commits
+// exist, and the test would pass or fail depending on who runs it.
 func gitCommand(t *testing.T, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
+	testgit.Run(t, args...)
 }
 
 func TestGrantCoversOnlyOwnedRepositoryAndSelectedWorktrees(t *testing.T) {

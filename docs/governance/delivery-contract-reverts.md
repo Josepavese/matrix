@@ -87,3 +87,21 @@ remembered. The rows below are what the script does that remembering it did not.
 | --- | --- |
 | the platform list drops `windows/amd64` | the report keeps no line for the platform whose build is broken: the `release-dry-run` failure of `aeb160b` (`undefined: matrixSurfaceConfig`, `undefined: resolveActiveHome`) becomes invisible again |
 | `git archive <rev>` is replaced by the working tree | the working tree builds for `windows/amd64` while the commit exported from `aeb160b` does not: the check reports on the artifact the developer has open instead of the artifact that ships |
+
+## The environment a test is run in
+
+A test that drives git must not read the configuration of the machine running it.
+An ambient `commit.gpgsign` or `core.hooksPath` decides whether its commits exist,
+and an ambient `GIT_DIR` outranks the `-C` that chooses the repository. The fix is
+one implementation, `internal/testgit`, for the five sites that used to build their
+own environment; no production binary imports it (`go list -deps ./cmd/matrix`).
+The revert below is the whole isolation: `Command` hands the process back the
+caller's environment. The last three rows share it, and each fails **only** in the
+hostile environment: in an ordinary one the same test passes.
+
+| Test | Reverted change | Observed failure |
+| --- | --- | --- |
+| `TestCommandCommitsUnderAHostileCallerEnvironment` | `internal/testgit/testgit.go` stops setting the environment (`cmd.Env = nil`) | the command is refused by the caller's environment before it can commit: `git [init -q …/repo]: exit status 128: fatal: Invalid path '/nonexistent': No such file or directory` |
+| `TestWorkspaceGrantAPIAndRunPreflight` | the same revert | under `GIT_CONFIG_GLOBAL` with `commit.gpgsign = true`: `git [-C …/repo … commit …]: exit status 128: error: gpg failed to sign the data` |
+| `TestGrantCoversOnlyOwnedRepositoryAndSelectedWorktrees` | the same revert | same failure under the same environment |
+| `TestElicitationInteropOverRealStdioProcess` | the same revert | under `GIT_DIR` pointing at another repository, `repoRoot` answers with the test's own directory: `build mock agent: exit status 1: stat …/tests/integration/cmd/mock-agent: directory not found` |

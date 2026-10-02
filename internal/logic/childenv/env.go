@@ -27,7 +27,15 @@ import "os"
 // Names is the whole environment a child of Matrix may see. It is a policy, not a
 // convenience: a name that is not here does not reach a child, and a name that is
 // here reaches every child.
-var Names = []string{"PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR"}
+//
+// The first six are what a normal process needs to run: PATH to find its helpers,
+// HOME for the operator's configuration, LANG and LC_ALL for its message locale,
+// TZ for timestamps, TMPDIR for scratch files. SystemRoot and COMSPEC are the
+// Windows half of the same need - a system tool, and a program that runs one
+// through cmd.exe, look for them - and neither is a secret nor a decision about
+// what the child works on. A daemon that does not hold a name passes nothing on,
+// so every unix child is unaffected by the last two.
+var Names = []string{"PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "SystemRoot", "COMSPEC"}
 
 // Environment builds a child's environment from the allowlist alone. A name the
 // daemon does not hold is simply absent from the result: an empty variable and an

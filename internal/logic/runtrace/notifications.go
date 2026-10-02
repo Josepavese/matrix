@@ -13,16 +13,27 @@ const notificationPrefix = "runtrace.notification."
 const notificationSequenceKey = "runtrace.notification_sequence"
 
 // Notification is the low-content wakeup envelope for local supervisors.
-// Prompt, transcript, tool output and reasoning never enter this record.
+// Prompt, transcript, tool output and reasoning never enter this record. The one
+// exception is the bounded elicitation question: a supervisor that wakes up on a
+// question it cannot show has to read the transcript to find out what the run is
+// blocked on, and that text is user content being carried to the person being
+// asked, not content Matrix harvested from the run.
 type Notification struct {
-	Sequence      uint64    `json:"sequence"`
-	Kind          string    `json:"kind"`
-	RunID         string    `json:"run_id,omitempty"`
-	AgentID       string    `json:"agent_id,omitempty"`
-	SessionID     string    `json:"session_id,omitempty"`
-	ElicitationID string    `json:"elicitation_id,omitempty"`
-	FailureCode   string    `json:"failure_code,omitempty"`
-	Timestamp     time.Time `json:"timestamp"`
+	Sequence      uint64 `json:"sequence"`
+	Kind          string `json:"kind"`
+	RunID         string `json:"run_id,omitempty"`
+	AgentID       string `json:"agent_id,omitempty"`
+	SessionID     string `json:"session_id,omitempty"`
+	ElicitationID string `json:"elicitation_id,omitempty"`
+	// Question is the bounded question a person is being asked, written where
+	// the notification is written. QuestionTruncated is the marker: a consumer
+	// that sees it knows the text was cut at the bound and is not the whole
+	// question. Wherever these are projected into a trace, the trace policy
+	// decides whether the text survives.
+	Question          string    `json:"question,omitempty"`
+	QuestionTruncated bool      `json:"question_truncated,omitempty"`
+	FailureCode       string    `json:"failure_code,omitempty"`
+	Timestamp         time.Time `json:"timestamp"`
 }
 
 func (s *Store) AppendNotification(notification Notification) (Notification, error) {

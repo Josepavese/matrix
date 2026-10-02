@@ -16,6 +16,11 @@ import (
 
 const codexAuthURL = "https://auth.openai.com/codex/device"
 
+// agentCodex is the agent this handler serves. It is data the codex flow uses to
+// name its own binary and its own configuration entry — not a dispatch that the
+// wizard makes about which agent it is talking to.
+const agentCodex = "codex"
+
 // codexAuthHandler implements AuthHandler for Codex agent.
 // Supports: chatgpt (device-auth), openai-api-key (env_var), codex-api-key (env_var).
 type codexAuthHandler struct {
@@ -91,7 +96,40 @@ func (h *codexAuthHandler) authenticateDeviceAuth(_ context.Context, input strin
 
 // --- Codex-specific helpers (kept from original wizard_codex.go) ---
 
-func (w *Wizard) ensureCodexInstalled() (string, error) {
+// PrepareSelection implements selectionPreparer: codex installs its own binary
+// when the host has none, and when it is already authenticated the flow ends
+// here instead of asking for credentials again.
+func (h *codexAuthHandler) PrepareSelection(state *WizardState) (string, error) {
+	w := h.wizard
+	installMsg, err := h.ensureInstalled()
+	if err != nil {
+		return fmt.Sprintf("⚠️ Could not install Codex: %v\n\nPlease install it manually: npm install -g @openai/codex", err), nil
+	}
+	if !h.isCodexAuthenticated() {
+		return installMsg + w.promptForStep(*state), nil
+	}
+	result, err := w.finishConfiguration(*state)
+	return installMsg + "✅ Codex is already authenticated.\n" + result, err
+}
+
+// StartDeclaredMethod implements methodStarter for the device-auth method codex
+// declares. Its API-key methods stay on the generic path, because the generic
+// flow already handles them.
+func (h *codexAuthHandler) StartDeclaredMethod(ctx context.Context, method AuthMethod, state *WizardState) (string, bool, error) {
+	if method.ID != "chatgpt" {
+		return "", false, nil
+	}
+	_, prompt, err := h.Authenticate(ctx, method, "")
+	if err != nil {
+		state.Step = 3
+		return fmt.Sprintf("⚠️ Could not start Codex login: %v", err), true, nil
+	}
+	state.Step = 4
+	return prompt, true, nil
+}
+
+func (h *codexAuthHandler) ensureInstalled() (string, error) {
+	w := h.wizard
 	if w.proc == nil || w.proc.HasExecutable(agentCodex) {
 		return "", nil
 	}

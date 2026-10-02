@@ -37,9 +37,8 @@ func (w *Wizard) activateSelectedAgent(state *WizardState, selected AgentEntry, 
 		state.Context = map[string]string{"channel_id": channelID}
 		return fmt.Sprintf(w.localizer.GetString(state.Language, "agent_install_failed"), selected.Name, err) + "\n\n" + w.promptForStep(*state), nil
 	}
-	if selected.ID == agentCodex {
-		msg, err := w.prepareCodexSelection(state)
-		return installMsg + " ✅\n" + msg, err
+	if message, owned, err := prepareSelection(w.handlers.get(selected.ID), state); owned {
+		return installMsg + " ✅\n" + message, err
 	}
 	return installMsg + " ✅\n" + w.promptForStep(*state), nil
 }

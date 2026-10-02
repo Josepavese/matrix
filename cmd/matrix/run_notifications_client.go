@@ -43,7 +43,9 @@ const (
 // notificationWakeup is the content-minimal record the socket publishes: which
 // run woke up and why, never what the agent said. Declaring the fields here,
 // rather than passing the response through, is what keeps a turn's content from
-// reaching this client by accident.
+// reaching this client by accident. The one piece of text it declares is the
+// question a person is being asked, because a supervisor woken by a question it
+// cannot show has to go and read the run to find out what is blocking it.
 type notificationWakeup struct {
 	Sequence      uint64    `json:"sequence"`
 	Kind          string    `json:"kind"`
@@ -52,7 +54,14 @@ type notificationWakeup struct {
 	FailureCode   string    `json:"failure_code,omitempty"`
 	SessionID     string    `json:"session_id,omitempty"`
 	ElicitationID string    `json:"elicitation_id,omitempty"`
-	Timestamp     time.Time `json:"timestamp"`
+	// Question is bounded where the notification is written, and it is user
+	// content: a trace policy that redacts it leaves it empty and a truncation
+	// leaves QuestionTruncated set. Absent, empty and complete are three
+	// different states, and the caller shows what it received instead of
+	// promising text that this record does not always carry.
+	Question          string    `json:"question,omitempty"`
+	QuestionTruncated bool      `json:"question_truncated,omitempty"`
+	Timestamp         time.Time `json:"timestamp"`
 }
 
 type notificationPage struct {

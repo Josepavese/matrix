@@ -97,6 +97,12 @@ type StallRequest struct {
 	SessionID string    `json:"session_id,omitempty"`
 	Since     time.Time `json:"since"`
 	Sequence  int       `json:"sequence,omitempty"`
+	// Question is what a person is being asked on this request, bounded and
+	// marked where it was cut. It is the only user content this view can carry,
+	// and it is carried so that a supervisor does not have to read a transcript
+	// to know what the run is waiting for.
+	Question          string `json:"question,omitempty"`
+	QuestionTruncated bool   `json:"question_truncated,omitempty"`
 }
 
 // StallSession is the same picture for one session observed during the run.
@@ -164,6 +170,7 @@ func (s *stallScan) consumeNotification(notification Notification) {
 		s.addRequest(StallRequest{
 			Kind: WaitElicitation, ID: notification.ElicitationID,
 			SessionID: notification.SessionID, Since: notification.Timestamp,
+			Question: notification.Question, QuestionTruncated: notification.QuestionTruncated,
 		})
 	case KindElicitationResolved:
 		s.resolve(WaitElicitation, notification.ElicitationID)

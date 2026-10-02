@@ -238,3 +238,73 @@ func TestRunWaitReportsTheElicitationSummary(t *testing.T) {
 		t.Fatalf("json report elicitations = %+v", report.Elicitations)
 	}
 }
+
+// TestRunWaitPrintsTheQuestionTheNotificationRecorded is the summary line for the
+// one piece of text the notification carries: the question a person is being
+// asked. It is user content, bounded at the record and redactable by a trace
+// policy, so the line shows what arrived and marks when it was cut — and when
+// nothing arrived it prints no question at all rather than an empty one that
+// reads like a question with no text.
+//
+// The field names are the record's (runtrace.Notification): question and
+// question_truncated. This test drives the summary directly, so it pins this side
+// of the contract; the projection that puts the text on the socket is the
+// producer's, and its own tests own that half.
+func TestRunWaitPrintsTheQuestionTheNotificationRecorded(t *testing.T) {
+	command, output := testCommand()
+	summary, ok := elicitationSummaryOf(notificationWakeup{
+		Kind: "elicitation.opened", ElicitationID: "elicit-1", SessionID: "sess-1",
+		Question: "Which database should the migration target?", QuestionTruncated: true,
+	})
+	if !ok {
+		t.Fatal("the elicitation lifecycle was not recognised")
+	}
+	printElicitation(command, summary)
+
+	text := output.String()
+	if !strings.Contains(text, `question="Which database should the migration target?"`) {
+		t.Fatalf("the question the person is being asked was not printed: %q", text)
+	}
+	if !strings.Contains(text, "truncated=true") {
+		t.Fatalf("a question cut at the record's bound was printed as if it were whole: %q", text)
+	}
+	if !strings.Contains(text, "id=elicit-1 state=opened session=sess-1 since=") {
+		t.Fatalf("the line lost the elicitation it describes: %q", text)
+	}
+
+	// Same line, no question carried: the elicitation is still reported and no
+	// text is invented for it.
+	command, output = testCommand()
+	summary, ok = elicitationSummaryOf(notificationWakeup{
+		Kind: "elicitation.opened", ElicitationID: "elicit-2", SessionID: "sess-1",
+	})
+	if !ok {
+		t.Fatal("the elicitation lifecycle was not recognised")
+	}
+	printElicitation(command, summary)
+
+	text = output.String()
+	if strings.Contains(text, "question=") || strings.Contains(text, "truncated=") {
+		t.Fatalf("an elicitation that carried no question printed one anyway: %q", text)
+	}
+	if !strings.Contains(text, "id=elicit-2 state=opened") {
+		t.Fatalf("the elicitation without a question stopped being reported: %q", text)
+	}
+
+	// --json carries the same two fields, so a machine reading the wait sees the
+	// question and the truncation marker instead of rendering it as complete.
+	encoded, err := json.Marshal(wakeupReport{
+		RunID: "run-blocked", Outcome: "cancelled", Cursor: 7,
+		Elicitations: []elicitationSummary{{
+			ID: "elicit-1", State: "opened", Question: "Which database?", Truncated: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	for _, want := range []string{`"question":"Which database?"`, `"question_truncated":true`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("the json report does not carry %s: %s", want, encoded)
+		}
+	}
+}

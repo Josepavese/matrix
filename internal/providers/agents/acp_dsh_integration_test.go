@@ -3,13 +3,13 @@ package agents
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/testgit"
 	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
@@ -111,7 +111,7 @@ func TestRealDSHWorktreePrompt(t *testing.T) {
 	for _, args := range [][]string{{"init", "-q", repo},
 		{"-C", repo, "-c", "user.name=Matrix", "-c", "user.email=matrix@example.invalid", "commit", "-q", "--allow-empty", "-m", "seed"},
 		{"-C", repo, "worktree", "add", "-q", "-b", "dsh-test", linked}} {
-		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+		if out, err := testgit.Command(t, args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v: %s", args, err, out)
 		}
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/Josepavese/matrix/internal/providers/agents"
 	execprov "github.com/Josepavese/matrix/internal/providers/exec"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
+	"github.com/Josepavese/matrix/internal/testgit"
 	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
@@ -348,9 +349,13 @@ func cleanupMockACPAgent() {
 	}
 }
 
+// repoRoot locates the module root from the working directory of this package.
+// The command runs with the environment testgit builds: an inherited GIT_DIR
+// outranks the working directory, and would silently point the mock agent build
+// at another repository.
 func repoRoot(t *testing.T) string {
 	t.Helper()
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	out, err := testgit.Command(t, "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		t.Fatalf("locate repo root: %v", err)
 	}

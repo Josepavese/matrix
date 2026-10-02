@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"os/exec"
 	"sync"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/childenv"
 	"github.com/Josepavese/matrix/internal/logic/providerdiag"
 )
 
@@ -45,7 +45,11 @@ type SpawnSpec struct {
 	// workspace, not a global setting: two runs on two workspaces must not share
 	// one child directory. Empty leaves exec's default, the caller's directory.
 	Dir string
-	// Env is appended to the inherited environment. Empty inherits it untouched.
+	// Env is what the child's own configuration declares - its credentials, the
+	// launch contract keys - and is added to the shared child allowlist. The
+	// daemon's environment is never inherited, whatever this holds: an entry here
+	// is a decision by the side that owns the agent, not by whatever the parent
+	// process happened to have around. Empty leaves the allowlist alone.
 	Env []string
 }
 
@@ -54,9 +58,13 @@ func New(ctx context.Context, executable string, spec SpawnSpec, args ...string)
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Dir = spec.Dir
 	prepareCommand(cmd)
-	if len(spec.Env) > 0 {
-		cmd.Env = append(os.Environ(), spec.Env...)
-	}
+	// The child gets the shared allowlist plus what its own configuration
+	// declares, never the daemon's environment: the daemon holds the operator's
+	// keys and the vault passphrase, and an agent is a program that runs code and
+	// can read its own environment. spec.Env is where onboarding writes the
+	// agent's own credentials and where Matrix writes the launch contract keys, so
+	// those survive; a variable neither side names does not reach the child.
+	cmd.Env = append(childenv.Environment(), spec.Env...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stdin pipe for %s: %w", executable, err)

@@ -7,11 +7,6 @@ import (
 	"strings"
 )
 
-const (
-	agentCodex    = "codex"
-	agentOpencode = "opencode"
-)
-
 func (w *Wizard) getStepRegistry() map[int]WizardStep {
 	return map[int]WizardStep{
 		1: {Prompt: w.step1Prompt, Handle: w.step1Handle},
@@ -106,26 +101,10 @@ func (w *Wizard) step2Handle(_ *Wizard, state *WizardState, input string) (strin
 	if !selected.Installed && selected.Source != "" && w.activator != nil {
 		return w.activateSelectedAgent(state, selected, channelID)
 	}
-	if selected.ID == agentCodex {
-		return w.prepareCodexSelection(state)
+	if message, owned, err := prepareSelection(w.handlers.get(selected.ID), state); owned {
+		return message, err
 	}
 	return w.promptForStep(*state), nil
-}
-
-func (w *Wizard) prepareCodexSelection(state *WizardState) (string, error) {
-	installMsg, err := w.ensureCodexInstalled()
-	if err != nil {
-		return fmt.Sprintf("⚠️ Could not install Codex: %v\n\nPlease install it manually: npm install -g @openai/codex", err), nil
-	}
-
-	handler := w.handlers.get(agentCodex)
-	codexHandler, ok := handler.(*codexAuthHandler)
-	if !ok || !codexHandler.isCodexAuthenticated() {
-		return installMsg + w.promptForStep(*state), nil
-	}
-
-	result, err := w.finishConfiguration(*state)
-	return installMsg + "✅ Codex is already authenticated.\n" + result, err
 }
 
 // step3: Auth method selection — uses AuthHandler.Methods() for dynamic dispatch
@@ -186,20 +165,14 @@ func (w *Wizard) step3Handle(_ *Wizard, state *WizardState, input string) (strin
 
 // step4: Auth input / completion
 func (w *Wizard) step4Prompt(_ *Wizard, state *WizardState) string {
-	// For opencode provider selection flow
-	if state.AgentName == agentOpencode && state.Context["provider"] == "OpenRouter" && state.Context["auth_method"] == "" {
-		return w.localizer.GetString(state.Language, "opencode_auth_method_prompt")
+	if prompt := providerAuthPrompt(w.handlers.get(state.AgentName), state); prompt != "" {
+		return prompt
 	}
-	// For opencode API key after provider selected
-	if state.AgentName == agentOpencode && state.Context["provider"] != "" && state.Context["auth_method"] == "" {
-		return fmt.Sprintf(w.localizer.GetString(state.Language, "opencode_api_key_prompt"), state.Context["provider"])
-	}
-
 	return "Reply 'done' when you have completed authentication."
 }
 
 func (w *Wizard) step4Handle(_ *Wizard, state *WizardState, input string) (string, error) {
-	if response, handled, err := w.handleOpencodeStep4(state, input); handled {
+	if response, handled, err := handleProviderAuthInput(w.handlers.get(state.AgentName), state, input); handled {
 		return response, err
 	}
 
@@ -265,48 +238,4 @@ func (w *Wizard) handleAuthInput(handler AuthHandler, method AuthMethod, state *
 
 	// Neither prompt nor result — shouldn't happen but handle gracefully
 	return w.finishConfiguration(*state)
-}
-
-// startOpenRouterOAuth initiates the OpenRouter OAuth PKCE flow for opencode.
-func (w *Wizard) startOpenRouterOAuth(state *WizardState) (string, error) {
-	handler := w.handlers.get(agentOpencode)
-	orHandler, ok := handler.(*openrouterAuthHandler)
-	if !ok {
-		return "⚠️ OpenRouter auth not available", nil
-	}
-
-	url, verifier, err := orHandler.generateAuthURL(state.Context["channel_id"])
-	if err != nil {
-		return fmt.Sprintf("⚠️ Could not generate Auth URL: %v", err), nil
-	}
-	state.Context["pkce_verifier"] = verifier
-	state.Context["auth_method"] = "quick_login"
-	state.Step = 4
-	return fmt.Sprintf(w.localizer.GetString(state.Language, "opencode_openrouter_quick_auth_prompt"), url), nil
-}
-
-// handleOpenRouterAuthSelection handles the OpenRouter auth method selection for opencode.
-func (w *Wizard) handleOpenRouterAuthSelection(state *WizardState, input string) (string, error) {
-	choice, ok := map[string]string{"1": "api_key", "2": "quick_login"}[input]
-	if !ok {
-		return w.invalidSelection(state, w.promptForStep(*state)), nil
-	}
-
-	state.Context["auth_method"] = choice
-	if choice != "quick_login" {
-		state.Step = 4
-		return w.promptForStep(*state), nil
-	}
-
-	return w.startOpenRouterOAuth(state)
-}
-
-// handleOpencodeAPIKey handles API key input for opencode with non-OpenRouter providers.
-func (w *Wizard) handleOpencodeAPIKey(state *WizardState, input string) (string, error) {
-	if strings.EqualFold(input, "skip") {
-		input = ""
-	}
-	state.Context["api_key"] = input
-	state.Step = 5
-	return w.promptForStep(*state), nil
 }

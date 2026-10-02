@@ -10,6 +10,7 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/elicitation"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/middleware"
 )
 
 // HandleLocalNotifications serves a content-minimal, durable cursor on the
@@ -110,9 +111,16 @@ func (s *Server) subscribeElicitationWakeups(service *elicitation.Service) {
 		// opening left every elicitation looking permanently unanswered, which is
 		// why the run trace could not report a run blocked on a human: a wait
 		// with no end is an accusation, not a visibility.
-		_, _ = s.runStore.AppendNotification(runtrace.Notification{
+		notification := runtrace.Notification{
 			Kind: "elicitation." + string(event.Kind), RunID: runID, AgentID: req.AgentID,
 			SessionID: req.SessionID, ElicitationID: req.ID,
-		})
+		}
+		// The question travels with the opening, because it is what the person is
+		// being asked. On the resolution there is nothing left to ask, so nothing
+		// is carried: content on the wire is a cost, and this one has no reader.
+		if event.Kind == elicitation.EventOpened {
+			notification.Question, notification.QuestionTruncated = middleware.BoundElicitationQuestion(req.Message)
+		}
+		_, _ = s.runStore.AppendNotification(notification)
 	})
 }

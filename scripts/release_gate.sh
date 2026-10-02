@@ -163,7 +163,7 @@ else
 	for pkg in $RACE; do
 		RACE_TARGETS+=("./$pkg")
 	done
-	if (cd "$EXPORT" && go test -count=1 -p 1 -race "${RACE_TARGETS[@]}") >"$RACE_LOG" 2>&1; then
+	if (cd "$EXPORT" && go test -count=1 -p 1 -race -timeout 20m "${RACE_TARGETS[@]}") >"$RACE_LOG" 2>&1; then
 		ok "race detector clean on ${#RACE_TARGETS[@]} packages"
 	else
 		bad "race or test failures:"

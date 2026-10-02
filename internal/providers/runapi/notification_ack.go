@@ -33,6 +33,21 @@ const (
 	notificationAckKeyMaxBytes = 128
 	// notificationAckBodyMaxBytes bounds a machine-written request body.
 	notificationAckBodyMaxBytes = 4 << 10
+
+	// notificationAckMaxAgeKey is where an operator sets how long an
+	// acknowledgement record may live, in seconds. Absent means no expiry, and
+	// that absence is the default on purpose: the window a legitimate replay
+	// needs is set by the supervisor's own persisted cursor, which the daemon
+	// does not hold, so any number chosen here would be a promise Matrix cannot
+	// keep. A key that expired too early turns a replay into a new claim, and
+	// the growth is therefore declared rather than bounded by a guess.
+	notificationAckMaxAgeKey = "retention.notification_ack_max_age"
+
+	// notificationAckSweepInterval rate-limits the pass that removes expired
+	// records. Without a pass the window would only hide records, not bound
+	// them; on every acknowledgement the pass would cost more than the
+	// acknowledgement it follows.
+	notificationAckSweepInterval = time.Minute
 )
 
 var errNotificationAckConflict = errors.New("idempotency key already used with a different acknowledgement")
@@ -79,9 +94,11 @@ func (s *Server) HandleLocalNotificationAck(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	// The lock makes the read-check-write atomic, so two racing retries of the
-	// same claim cannot both observe an empty record and both write one.
+	// same claim cannot both observe an empty record and both write one. It also
+	// serialises the housekeeping sweep below, which reads and deletes the same
+	// records.
 	s.idempotencyMu.Lock()
-	replay, err := s.recordNotificationAck(key, req)
+	replay, expired, window, err := s.recordNotificationAck(key, req)
 	s.idempotencyMu.Unlock()
 	if errors.Is(err, errNotificationAckConflict) {
 		writeJSON(w, http.StatusConflict, map[string]string{
@@ -98,11 +115,23 @@ func (s *Server) HandleLocalNotificationAck(w http.ResponseWriter, r *http.Reque
 	if replay {
 		w.Header().Set("Idempotency-Replayed", "true")
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	body := map[string]interface{}{
 		"status":   "acked",
 		"run_id":   req.RunID,
 		"sequence": req.Sequence,
-	})
+	}
+	// When an operator configured a window, the answer declares it: after that
+	// window the same key comes back as a first claim, and a consumer that is not
+	// told so reads a replay that turned into a new claim as a retry that never
+	// happened. The field is absent when nothing expires, because then nothing
+	// can.
+	if window > 0 {
+		body["idempotency_window_seconds"] = int64(window.Seconds())
+	}
+	if expired {
+		body["idempotency_record_expired"] = true
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func decodeNotificationAck(w http.ResponseWriter, r *http.Request) (notificationAckRequest, bool) {
@@ -136,22 +165,32 @@ func decodeNotificationAck(w http.ResponseWriter, r *http.Request) (notification
 }
 
 // recordNotificationAck stores the claim once and reports whether this call was
-// a replay of an already recorded one.
-func (s *Server) recordNotificationAck(key string, req notificationAckRequest) (bool, error) {
+// a replay of an already recorded one, whether it replaced a record that had
+// fallen outside the configured window, and which window is configured.
+func (s *Server) recordNotificationAck(key string, req notificationAckRequest) (bool, bool, time.Duration, error) {
 	storage := s.storage
 	if storage == nil {
-		return false, fmt.Errorf("run notification acknowledgement storage not available")
+		return false, false, 0, fmt.Errorf("run notification acknowledgement storage not available")
+	}
+	maxAge, err := notificationAckMaxAge(storage)
+	if err != nil {
+		return false, false, 0, err
 	}
 	storageKey := notificationAckStorageKey(key)
 	previous, found, err := loadNotificationAckRecord(storage, storageKey)
 	if err != nil {
-		return false, err
+		return false, false, 0, err
 	}
-	if found {
+	// A record past the window is not a record any more: it is what the operator
+	// asked Matrix to forget. It is treated as absent rather than as a conflict,
+	// because the claim it held is no longer inside the guarantee, and the answer
+	// says so instead of letting a replay look like a fresh key.
+	expired := found && maxAge > 0 && time.Since(previous.AckedAt) >= maxAge
+	if found && !expired {
 		if previous.Digest != notificationAckDigest(req) {
-			return false, errNotificationAckConflict
+			return false, false, 0, errNotificationAckConflict
 		}
-		return true, nil
+		return true, false, maxAge, nil
 	}
 	record := notificationAckRecord{
 		RunID:    req.RunID,
@@ -161,12 +200,69 @@ func (s *Server) recordNotificationAck(key string, req notificationAckRequest) (
 	}
 	encoded, err := json.Marshal(record)
 	if err != nil {
-		return false, err
+		return false, false, 0, err
 	}
 	if err := storage.Set(storageKey, encoded); err != nil {
-		return false, err
+		return false, false, 0, err
 	}
-	return false, nil
+	s.sweepExpiredNotificationAcks(storage, maxAge)
+	return false, expired, maxAge, nil
+}
+
+// notificationAckMaxAge reads the configured window. Zero means no expiry, which
+// is both the default and the only value Matrix chooses for an operator. A value
+// that is present but unusable is an error rather than a silent fallback: an
+// operator who wrote a bound down and got an unbounded store instead would have
+// been told nothing.
+func notificationAckMaxAge(storage middleware.Storage) (time.Duration, error) {
+	data, err := storage.Get(notificationAckMaxAgeKey)
+	if err != nil {
+		return 0, fmt.Errorf("read %s: %w", notificationAckMaxAgeKey, err)
+	}
+	if len(data) == 0 {
+		return 0, nil
+	}
+	var seconds int64
+	if err := json.Unmarshal(data, &seconds); err != nil {
+		return 0, fmt.Errorf("%s must be a number of seconds: %w", notificationAckMaxAgeKey, err)
+	}
+	if seconds <= 0 {
+		return 0, fmt.Errorf("%s must be a positive number of seconds, got %d: remove the key for no expiry", notificationAckMaxAgeKey, seconds)
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
+// sweepExpiredNotificationAcks removes records older than the configured window.
+// This is what makes the window a bound instead of a promise: a record that is
+// only ignored still grows the store, which is the whole complaint against an
+// unbounded set of them. The caller holds idempotencyMu, which is what keeps the
+// last-sweep mark single-writer, and the pass is best effort: the claim this
+// call just wrote is durable, and housekeeping that fails must not turn it into
+// a refused one. Records then live until the next pass, which is a late
+// collection, not a lost guarantee.
+func (s *Server) sweepExpiredNotificationAcks(storage middleware.Storage, maxAge time.Duration) {
+	if maxAge <= 0 || time.Since(s.lastAckSweep) < notificationAckSweepInterval {
+		return
+	}
+	s.lastAckSweep = time.Now()
+	keys, err := storage.List(notificationAckPrefix)
+	if err != nil {
+		slog.Warn("notification acknowledgement sweep could not list records", "error", err)
+		return
+	}
+	evicted := 0
+	for _, key := range keys {
+		record, found, err := loadNotificationAckRecord(storage, key)
+		if err != nil || !found || time.Since(record.AckedAt) < maxAge {
+			continue
+		}
+		if err := storage.Delete(key); err == nil {
+			evicted++
+		}
+	}
+	if evicted > 0 {
+		slog.Info("expired notification acknowledgements removed", "count", evicted)
+	}
 }
 
 // loadNotificationAck exposes the durable record behind one key. It exists so

@@ -8,15 +8,26 @@ import (
 	"os/exec"
 	"os/user"
 	"strings"
+
+	"github.com/Josepavese/matrix/internal/logic/childenv"
 )
+
+// icaclsCommand is the system tool that reads and writes Windows ACLs, started
+// with the shared child allowlist instead of the daemon's environment: hardening
+// a vault file needs the ACL tool, not the operator's keys, and a child of Matrix
+// is never handed what it does not need.
+func icaclsCommand(args ...string) *exec.Cmd {
+	cmd := exec.Command("icacls", args...)
+	cmd.Env = childenv.Environment()
+	return cmd
+}
 
 func ApplySecurePermissions(path string) error {
 	current, err := user.Current()
 	if err != nil {
 		return fmt.Errorf("failed to resolve current user for ACL hardening: %w", err)
 	}
-	cmd := exec.Command(
-		"icacls",
+	cmd := icaclsCommand(
 		path,
 		"/inheritance:r",
 		"/remove:g", "*S-1-1-0", "*S-1-5-11", "*S-1-5-32-545",
@@ -44,7 +55,7 @@ func securePathPermissions(path string, mode os.FileMode) bool {
 	if !mode.IsRegular() {
 		return false
 	}
-	output, err := exec.Command("icacls", path).CombinedOutput()
+	output, err := icaclsCommand(path).CombinedOutput()
 	if err != nil {
 		return false
 	}

@@ -3,54 +3,14 @@ package runapi
 import (
 	"encoding/json"
 	"net/http"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Josepavese/matrix/internal/logic/workspace"
 	runresponse "github.com/Josepavese/matrix/internal/providers/runapi/response"
+	"github.com/Josepavese/matrix/internal/testgit"
 )
-
-// gitWithoutAmbientConfiguration drives a real git whose configuration comes from
-// files this test creates, not from the machine running it. A global
-// commit.gpgsign, core.hooksPath or init.templateDir would otherwise decide
-// whether the provider's commit exists at all: the test would then describe the
-// gitconfig of whoever runs it, and pass or fail depending on that.
-func gitWithoutAmbientConfiguration(t *testing.T) func(args ...string) string {
-	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Fatalf("this test plays the provider's side with a real git: %v", err)
-	}
-	configured := t.TempDir()
-	global := filepath.Join(configured, "global")
-	system := filepath.Join(configured, "system")
-	for _, path := range []string{global, system} {
-		if err := os.WriteFile(path, nil, 0o600); err != nil {
-			t.Fatalf("write %s: %v", path, err)
-		}
-	}
-	return func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Env = append(os.Environ(),
-			"GIT_CONFIG_GLOBAL="+global,
-			"GIT_CONFIG_SYSTEM="+system,
-			"GIT_TERMINAL_PROMPT=0",
-			"GIT_ASKPASS=",
-			"GIT_AUTHOR_NAME=Matrix",
-			"GIT_AUTHOR_EMAIL=matrix@example.invalid",
-			"GIT_COMMITTER_NAME=Matrix",
-			"GIT_COMMITTER_EMAIL=matrix@example.invalid",
-		)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-}
 
 // sameDirectory compares two paths as directories: a temporary directory can be
 // reached through a symlink (/tmp on macOS, /var on some hosts), and a test that
@@ -98,7 +58,10 @@ func TestProviderCommittingOutsideTheResolvedWorkspaceIsNamedByTheArtifact(t *te
 	base := t.TempDir()
 	root := filepath.Join(base, "root")
 	worktree := filepath.Join(base, "worktree")
-	git := gitWithoutAmbientConfiguration(t)
+	git := func(args ...string) string {
+		t.Helper()
+		return testgit.Output(t, args...)
+	}
 
 	git("init", "-q", root)
 	git("-C", root, "commit", "-q", "--allow-empty", "-m", "seed")

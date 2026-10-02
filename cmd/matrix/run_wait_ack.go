@@ -138,13 +138,23 @@ type wakeupReport struct {
 }
 
 // elicitationSummary is the short form of one elicitation: which one, whether it
-// is open or answered, and since when. It carries no prompt text, because the
-// notification stream does not carry one.
+// is open or answered, since when, and the question it is asking.
+//
+// The question IS carried, and it is user content — the text the person being
+// asked has to answer. It is bounded where the notification is written, with the
+// producer's own marker: Truncated is a boolean rather than a suffix to
+// interpret, and the text travels with its spaces collapsed so one elicitation
+// stays one line. A trace policy can redact it, and only the opening event
+// carries it. The caller must therefore treat the field as possibly absent: an
+// empty Question means "not carried here", and it never means "there is no
+// question".
 type elicitationSummary struct {
 	ID        string `json:"id,omitempty"`
 	State     string `json:"state"`
 	SessionID string `json:"session_id,omitempty"`
 	Since     string `json:"since,omitempty"`
+	Question  string `json:"question,omitempty"`
+	Truncated bool   `json:"question_truncated,omitempty"`
 }
 
 // elicitationSummaryOf recognises the elicitation lifecycle by prefix rather
@@ -158,12 +168,29 @@ func elicitationSummaryOf(wakeup notificationWakeup) (elicitationSummary, bool) 
 	return elicitationSummary{
 		ID: wakeup.ElicitationID, State: state,
 		SessionID: wakeup.SessionID, Since: wakeup.Timestamp.UTC().Format(time.RFC3339),
+		Question: wakeup.Question, Truncated: wakeup.QuestionTruncated,
 	}, true
 }
 
 func printElicitation(cmd *cobra.Command, summary elicitationSummary) {
-	cmd.Printf("elicitation id=%s state=%s session=%s since=%s\n",
-		summary.ID, summary.State, summary.SessionID, summary.Since)
+	cmd.Printf("elicitation id=%s state=%s session=%s since=%s%s\n",
+		summary.ID, summary.State, summary.SessionID, summary.Since, questionSuffix(summary))
+}
+
+// questionSuffix renders the question when the notification carried one, quoted
+// because it is a sentence a person is being asked rather than a token, and
+// marked when the record says it was cut at the bound. When nothing was carried
+// the suffix is empty: the summary keeps reporting the elicitation without
+// inventing text for it.
+func questionSuffix(summary elicitationSummary) string {
+	if summary.Question == "" {
+		return ""
+	}
+	suffix := fmt.Sprintf(" question=%q", summary.Question)
+	if summary.Truncated {
+		suffix += " truncated=true"
+	}
+	return suffix
 }
 
 func printWakeupOutcome(cmd *cobra.Command, report wakeupReport) {

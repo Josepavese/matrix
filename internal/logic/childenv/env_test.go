@@ -11,7 +11,7 @@ import (
 // agree with the change - the predicate would simply answer true for the new name
 // - and a leak or a moved verdict would arrive with the suite green.
 func TestTheAllowlistIsPinnedAsData(t *testing.T) {
-	want := []string{"PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR"}
+	want := []string{"PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "SystemRoot", "COMSPEC"}
 	if len(Names) != len(want) {
 		t.Fatalf("the child allowlist is %v, want %v", Names, want)
 	}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,13 +13,16 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/logic/workspacegrant"
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/testgit"
 )
 
+// testGit runs git with the environment testgit builds, so this test does not
+// read the git configuration of the machine running it: an ambient
+// commit.gpgsign or core.hooksPath would otherwise decide whether its commits
+// exist, and the test would pass or fail depending on who runs it.
 func testGit(t *testing.T, args ...string) {
 	t.Helper()
-	if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
+	testgit.Run(t, args...)
 }
 
 func TestWorkspaceGrantAPIAndRunPreflight(t *testing.T) {

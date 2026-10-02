@@ -6,11 +6,8 @@ import (
 )
 
 func (w *Wizard) handleSelectedAuthMethod(ctx context.Context, handler AuthHandler, method AuthMethod, state *WizardState) (string, error) {
-	if state.AgentName == agentOpencode && method.ID == "quick_login" {
-		return w.startOpenRouterOAuth(state)
-	}
-	if state.AgentName == agentCodex && method.ID == "chatgpt" {
-		return w.startCodexDeviceAuth(ctx, handler, method, state)
+	if message, owned, err := startDeclaredMethod(ctx, handler, method, state); owned {
+		return message, err
 	}
 	if method.Type == "env_var" {
 		return w.promptForEnvAuth(ctx, handler, method, state), nil
@@ -24,16 +21,6 @@ func selectedMethodFromInput(input string, methods []AuthMethod) (AuthMethod, bo
 		return AuthMethod{}, false
 	}
 	return methods[idx-1], true
-}
-
-func (w *Wizard) startCodexDeviceAuth(ctx context.Context, handler AuthHandler, method AuthMethod, state *WizardState) (string, error) {
-	_, prompt, err := handler.Authenticate(ctx, method, "")
-	if err != nil {
-		state.Step = 3
-		return fmt.Sprintf("⚠️ Could not start Codex login: %v", err), nil
-	}
-	state.Step = 4
-	return prompt, nil
 }
 
 func (w *Wizard) promptForEnvAuth(ctx context.Context, handler AuthHandler, method AuthMethod, state *WizardState) string {
@@ -55,21 +42,6 @@ func (w *Wizard) promptOrFinishAuth(ctx context.Context, handler AuthHandler, me
 		return prompt, nil
 	}
 	return w.finishConfiguration(*state)
-}
-
-func (w *Wizard) handleOpencodeStep4(state *WizardState, input string) (string, bool, error) {
-	if state.AgentName != agentOpencode || state.Context["auth_method"] != "" {
-		return "", false, nil
-	}
-	if state.Context["provider"] == "OpenRouter" {
-		response, err := w.handleOpenRouterAuthSelection(state, input)
-		return response, true, err
-	}
-	if state.Context["provider"] != "" {
-		response, err := w.handleOpencodeAPIKey(state, input)
-		return response, true, err
-	}
-	return "", false, nil
 }
 
 func (w *Wizard) selectedAuthMethod(ctx context.Context, handler AuthHandler, state *WizardState) (AuthMethod, error) {

@@ -46,6 +46,10 @@ type Server struct {
 	runCancels       map[string]context.CancelFunc
 	runMu            sync.Mutex
 	idempotencyMu    sync.Mutex
+	// lastAckSweep marks the last pass that removed expired notification
+	// acknowledgements. It is read and written under idempotencyMu, which the
+	// acknowledgement path already holds.
+	lastAckSweep time.Time
 	// deliveryMu serialises settling a delivery contract. The check for an
 	// existing verdict and the append of a new one are two steps, and two
 	// terminal paths can reach them at once — a cancel racing a completion, for
