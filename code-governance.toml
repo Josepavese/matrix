@@ -223,7 +223,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # sessions. Three of these packages are written concurrently by separate
 # workstreams, so the ceiling is shared and is not permission for growth:
 # a workstream that needs more reports it to the release captain first.
-"internal/logic/agentmgr" = 1202
+"internal/logic/agentmgr" = 1212
 # 2026-07-22: ACP message identity and structured final/progress projection add
 # lossless messageId/phase handling without provider-text heuristics. 2026-07-19:
 # stable ACP v1.19 and A2A v1.0.1 coverage expansion adds

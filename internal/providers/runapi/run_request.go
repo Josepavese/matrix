@@ -69,8 +69,10 @@ func validateRunModels(w http.ResponseWriter, req *runRequest) bool {
 //
 // The remedies are worded to match the runtime status the operator sees for the
 // same window — agentmgr reports a registered-but-unapplied agent as
-// "pending_apply" with "restart the daemon or wait for the next refresh" — so
-// the 409 and the status do not send the operator in two directions.
+// "pending_apply" with "restart the daemon or wait for the next refresh", and a
+// transport served on demand reports "ready_on_demand" instead, since for those
+// nothing has to be applied — so the 409 and the status do not send the
+// operator in two directions.
 func modelIDConflictMessage(agentID string) string {
 	agent := "the requested agent"
 	if name := strings.TrimSpace(agentID); name != "" {
