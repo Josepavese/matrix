@@ -142,6 +142,10 @@ Inspect or clear raw SSOT overrides.
 matrix agent override show opencode
 ```
 
+`show` reports the names the override sets and how many, never the values:
+stdout reaches logs, shell history and shared screens. Add `--reveal-values` to
+print the values, as `NAME=Value` entries.
+
 ### `matrix agent env set <agent-id> <key> <value>`
 
 Set environment variables for an agent.
@@ -150,6 +154,13 @@ Set environment variables for an agent.
 matrix agent env set claude ANTHROPIC_API_KEY sk-...
 ```
 
+### `matrix agent env list <agent-id>`
+
+List the environment variables an agent's override sets: the names by default,
+one per line. `matrix agent env list <agent-id> --reveal-values` prints the
+entries themselves, `NAME=Value`, because only the operator can decide that
+stdout is not going into a log.
+
 ### `matrix agent show <agent-id>`
 
 Show the full agent definition.
@@ -157,6 +168,13 @@ Show the full agent definition.
 ```bash
 matrix agent show claude
 ```
+
+The report carries the configuration, the environment it will apply and the
+override: the environment variables and the endpoint headers are named and
+counted (`env_names`, `env_count`, `header_names`, `header_count`) and their
+values are not printed. `matrix agent show <agent-id> --reveal-values` prints the
+values too. This is the same rule `matrix agent doctor` follows with
+`effective_env_count` and `matrix agent set-endpoint` with `header_names`.
 
 ---
 

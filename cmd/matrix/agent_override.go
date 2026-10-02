@@ -34,11 +34,13 @@ var agentOverrideListCmd = &cobra.Command{
 	},
 }
 
+var agentOverrideRevealValues bool
+
 var agentOverrideShowCmd = &cobra.Command{
 	Use:   "show <agent_id>",
 	Short: "Show the raw SSOT override for an agent",
 	Args:  cobra.ExactArgs(1),
-	Run: func(_ *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, args []string) {
 		agentID := args[0]
 		ctx, cleanup, err := NewAgentContext(DefaultVaultPath)
 		if err != nil {
@@ -50,14 +52,15 @@ var agentOverrideShowCmd = &cobra.Command{
 		if err != nil {
 			exitf("Error: %v", err)
 		}
-		out, err := json.MarshalIndent(map[string]any{
-			"agent_id": agentID,
-			"override": override,
-		}, "", "  ")
+		payload, err := agentOverrideReport(agentID, override, agentOverrideRevealValues)
 		if err != nil {
 			exitf("Error: %v", err)
 		}
-		fmt.Println(string(out))
+		out, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			exitf("Error: %v", err)
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(out))
 	},
 }
 
@@ -81,6 +84,8 @@ var agentOverrideClearCmd = &cobra.Command{
 }
 
 func init() {
+	agentOverrideShowCmd.Flags().BoolVar(&agentOverrideRevealValues, "reveal-values", false,
+		"Print the values the override sets; without it the report names the environment variables and counts them, because this output reaches logs, shell history and shared screens")
 	agentOverrideCmd.AddCommand(agentOverrideListCmd)
 	agentOverrideCmd.AddCommand(agentOverrideShowCmd)
 	agentOverrideCmd.AddCommand(agentOverrideClearCmd)

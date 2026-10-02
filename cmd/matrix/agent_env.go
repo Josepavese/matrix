@@ -16,7 +16,7 @@ var agentEnvListCmd = &cobra.Command{
 	Use:   "list <agent_id>",
 	Short: "List SSOT environment overrides for an agent",
 	Args:  cobra.ExactArgs(1),
-	Run: func(_ *cobra.Command, args []string) {
+	Run: func(cmd *cobra.Command, args []string) {
 		agentID := args[0]
 		ctx, cleanup, err := NewAgentContext(DefaultVaultPath)
 		if err != nil {
@@ -28,8 +28,8 @@ var agentEnvListCmd = &cobra.Command{
 		if err != nil {
 			exitf("Error: %v", err)
 		}
-		for _, env := range override.Env {
-			fmt.Println(env)
+		for _, line := range agentEnvLines(override.Env, agentEnvRevealValues) {
+			fmt.Fprintln(cmd.OutOrStdout(), line)
 		}
 	},
 }
@@ -82,7 +82,11 @@ var agentEnvUnsetCmd = &cobra.Command{
 	},
 }
 
+var agentEnvRevealValues bool
+
 func init() {
+	agentEnvListCmd.Flags().BoolVar(&agentEnvRevealValues, "reveal-values", false,
+		"Print the values the override sets, as NAME=Value; without it only the names are listed, because this output reaches logs, shell history and shared screens")
 	agentEnvCmd.AddCommand(agentEnvListCmd)
 	agentEnvCmd.AddCommand(agentEnvSetCmd)
 	agentEnvCmd.AddCommand(agentEnvUnsetCmd)

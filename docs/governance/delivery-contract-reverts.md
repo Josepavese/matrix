@@ -137,3 +137,25 @@ the window cannot look like a replay that never happened.
 | `TestAConfiguredWindowEvictsExpiredRecordsInsteadOfOnlyHidingThem` | the sweep is removed | 4 acknowledgement records remain where 2 are inside the window: the window hides records instead of bounding them |
 | `TestAnUnusableWindowIsRefusedRatherThanQuietlyIgnored` | an unusable window falls back to no expiry | `0`, `-5` and a non-numeric value all answer `200` and store a record, want a refusal and nothing written |
 | `TestAConfiguredWindowDeclaresItselfAndTurnsAnExpiredReplayIntoAFirstClaim` | the JSON-string spelling that `matrix vault set` writes is not read | the documented way to set the window answers `500 ... must be a number of seconds`, so a configured window is an outage of the endpoint |
+
+## What the agent reports print: names and counts, values on request
+
+An agent configuration holds the environment and the endpoint headers, and both
+carry values. The reports that print a configuration - `agent show`,
+`agent override show`, and `agent env list`, which printed `NAME=Value` verbatim
+- now print names and counts, and print the values only when the operator asks
+for them with `--reveal-values`. The reason is where this output goes: stdout
+ends up in a log, in shell history and on a shared screen, and a value printed
+there has left the vault for good. The repository already spoke this way in two
+places - `agent doctor` prints `effective_env_count` and `override_env_count`,
+and `agent set-endpoint` prints `header_names` - so this is that rule applied to
+the rest, not an exception carved out for two commands. The values were never
+hidden from the operator: they are one flag away, and the report still says which
+names it is not showing.
+
+| Test | Reverted change | Observed failure |
+| --- | --- | --- |
+| `TestNoAgentReportPrintsACredentialUnlessItWasAskedFor` | `addAgentConfigReport` puts the raw configuration, override and environment in the report | `agent show stampa la credenziale senza che nessuno l'abbia chiesta`, with `SENTINEL-CREDENTIAL-5c1e07` in the printed JSON |
+| `TestNoAgentReportPrintsACredentialUnlessItWasAskedFor` | `agentOverrideReport` puts the raw override in the report | `agent override show stampa la credenziale senza che nessuno l'abbia chiesta` |
+| `TestNoAgentReportPrintsACredentialUnlessItWasAskedFor` | `agentEnvLines` returns the entries instead of the names | `agent env list stampa la credenziale senza che nessuno l'abbia chiesta` |
+| `TestTheDisplayOfAConfigurationNamesAndCountsAndCarriesNoValue` | `DisplayConfig` hides the values only when the caller asks to (the flag read backwards) | `il report di default porta un valore`, with the sentinel inside the default report |

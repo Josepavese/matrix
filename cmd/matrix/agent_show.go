@@ -14,6 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var agentShowRevealValues bool
+
 var agentShowCmd = &cobra.Command{
 	Use:   "show <agent_id>",
 	Short: "Show effective and override configuration for an agent",
@@ -56,8 +58,7 @@ var agentShowCmd = &cobra.Command{
 		resolved, policyErr := agentlaunch.ResolveEndpoint(agentID, endpoint)
 
 		payload := map[string]any{
-			"agent_id":  agentID,
-			"effective": cfg,
+			"agent_id": agentID,
 			"normalized_endpoint": map[string]any{
 				"kind":             endpoint.Kind,
 				"transport":        endpoint.Transport,
@@ -68,9 +69,10 @@ var agentShowCmd = &cobra.Command{
 				"tenant":           endpoint.Tenant,
 				"protocol_version": endpoint.ProtocolVersion,
 			},
-			"override":   override,
-			"is_active":  cfg.IsActive(),
-			"env_effect": cfg.Env,
+			"is_active": cfg.IsActive(),
+		}
+		if err := addAgentConfigReport(payload, cfg, override, agentShowRevealValues); err != nil {
+			exitf("Error: %v", err)
 		}
 		// The runtime block is what tells a registered agent apart from a failed
 		// one: it is read from the runtime's own record. An agent the runtime
@@ -114,5 +116,7 @@ var agentShowCmd = &cobra.Command{
 }
 
 func init() {
+	agentShowCmd.Flags().BoolVar(&agentShowRevealValues, "reveal-values", false,
+		"Print the values of the agent's environment and endpoint headers; without it the report names them and counts them, because this output reaches logs, shell history and shared screens")
 	agentCmd.AddCommand(agentShowCmd)
 }
