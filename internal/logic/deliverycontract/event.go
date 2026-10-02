@@ -14,6 +14,13 @@ import "encoding/json"
 const (
 	EventDeclared = "run.delivery.declared"
 	EventVerified = "run.delivery.verified"
+	// EventValidatorExecuted is written once per validator execution. Caller
+	// supplied code runs inside the daemon's own privilege, so every run of it
+	// leaves a record naming what ran: the argv as declared and the binary the
+	// daemon resolved. The command's output is absent by construction and must
+	// stay absent, which is why this event carries facts about the execution
+	// rather than its result.
+	EventValidatorExecuted = "run.delivery.validator.executed"
 )
 
 // MetadataKey is where the payload sits inside an event's metadata.

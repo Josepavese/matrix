@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -407,5 +409,90 @@ func TestSimultaneousTerminalsRecordExactlyOneVerdict(t *testing.T) {
 	}
 	if verdicts != 1 {
 		t.Fatalf("%d simultaneous terminal paths recorded %d verdicts, want exactly one", terminals, verdicts)
+	}
+}
+
+// TestEveryValidatorExecutionLeavesAnAuditRecord: caller-supplied code runs with
+// the daemon's own privilege, so the record of what ran cannot depend on the
+// caller's goodwill. The event names the binary and the argv and carries nothing
+// the command wrote.
+func TestEveryValidatorExecutionLeavesAnAuditRecord(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skipf("no shell available: %v", err)
+	}
+	server, _ := traceExportServer(t)
+	runID, workspace := "run-audit", t.TempDir()
+	seedContractedRun(t, server, runID, workspace, runtrace.StatusCompleted, &deliverycontract.Contract{
+		Validator: &deliverycontract.Validator{Command: []string{"sh", "-c", "exit 0"}},
+	})
+	server.recordDeliveryVerdict(loadContractedRun(t, server, runID))
+
+	events, err := server.Store().LoadEvents(runID, 0)
+	if err != nil {
+		t.Fatalf("LoadEvents: %v", err)
+	}
+	for _, event := range events {
+		if event.Kind != deliverycontract.EventValidatorExecuted {
+			continue
+		}
+		if got := event.Metadata["command"]; !reflect.DeepEqual(got, []interface{}{"sh", "-c", "exit 0"}) {
+			t.Fatalf("the audit record does not name the argv that ran: %#v", got)
+		}
+		resolved, ok := event.Metadata["resolved_binary"].(string)
+		if !ok || resolved == "" {
+			t.Fatalf("the audit record says nothing was resolved: %#v", event.Metadata["resolved_binary"])
+		}
+		if want := deliverycontract.ResolveValidatorBinary([]string{"sh"}); resolved != want {
+			t.Fatalf("resolved binary = %q, want the one the child will run (%q)", resolved, want)
+		}
+		for key := range event.Metadata {
+			if strings.Contains(strings.ToLower(key), "output") || strings.Contains(strings.ToLower(key), "stdout") {
+				t.Fatalf("the audit record carries command output: %q", key)
+			}
+		}
+		return
+	}
+	t.Fatal("a validator ran and left no audit record")
+}
+
+// TestTheValidatorSwitchRefusesContractsThatDeclareOne: with validators off, a
+// contract declaring one must be refused at the boundary. Evaluating it as if it
+// had passed would report a delivery that nobody checked.
+func TestTheValidatorSwitchRefusesContractsThatDeclareOne(t *testing.T) {
+	t.Setenv(validatorDisabledEnv, "off")
+	declaring := deliverycontract.Contract{Validator: &deliverycontract.Validator{Command: []string{"true"}}}
+	if _, err := (runRequest{DeliveryContract: &declaring}).declaredContract(); err == nil {
+		t.Fatal("a contract declaring a validator was accepted while validators are off")
+	}
+	// Artifacts are unaffected: the switch is about running code, not about
+	// checking a delivery.
+	artifactsOnly := deliverycontract.Contract{Artifacts: []deliverycontract.Artifact{{Path: "REPORT.md"}}}
+	if _, err := (runRequest{DeliveryContract: &artifactsOnly}).declaredContract(); err != nil {
+		t.Fatalf("the switch also refused a contract that runs nothing: %v", err)
+	}
+}
+
+// TestTheValidatorSwitchIsOffOnlyWhenTheOperatorSaysSo pins both sides: an unset
+// or unrelated value leaves validators running, so the switch cannot be tripped
+// by accident, while the operator's spelling is still tolerated in case and
+// padding so an env file that reads OFF does what it looks like it does.
+func TestTheValidatorSwitchIsOffOnlyWhenTheOperatorSaysSo(t *testing.T) {
+	for _, value := range []string{"", "on", "officer", "true"} {
+		t.Run("value="+value, func(t *testing.T) {
+			t.Setenv(validatorDisabledEnv, value)
+			declaring := deliverycontract.Contract{Validator: &deliverycontract.Validator{Command: []string{"true"}}}
+			if _, err := (runRequest{DeliveryContract: &declaring}).declaredContract(); err != nil {
+				t.Fatalf("%q turned validators off: %v", value, err)
+			}
+		})
+	}
+	for _, value := range []string{"off", "OFF", "off ", " off"} {
+		t.Run("tolerated="+value, func(t *testing.T) {
+			t.Setenv(validatorDisabledEnv, value)
+			declaring := deliverycontract.Contract{Validator: &deliverycontract.Validator{Command: []string{"true"}}}
+			if _, err := (runRequest{DeliveryContract: &declaring}).declaredContract(); err == nil {
+				t.Fatalf("%q did not turn validators off", value)
+			}
+		})
 	}
 }

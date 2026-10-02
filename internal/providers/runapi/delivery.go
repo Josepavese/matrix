@@ -2,6 +2,9 @@ package runapi
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/deliverycontract"
@@ -16,9 +19,25 @@ import (
 // A contract that declares nothing is not a contract. It returns nil so the run
 // proceeds with no declaration at all, rather than with an empty one that a
 // reader could mistake for a satisfied requirement list.
+// validatorDisabledEnv turns delivery validators off for the whole daemon. It
+// exists because a validator is caller-supplied code: an operator who does not
+// want Matrix running it must be able to say so without editing every contract,
+// and the switch has to be visible to the caller rather than silently dropping
+// the requirement.
+const validatorDisabledEnv = "MATRIX_DELIVERY_VALIDATOR"
+
+// validatorDisabled reports whether the operator turned validators off.
+func validatorDisabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv(validatorDisabledEnv)), "off")
+}
+
 func (req runRequest) declaredContract() (*deliverycontract.Contract, error) {
 	if req.DeliveryContract == nil {
 		return nil, nil
+	}
+	if validatorDisabled() && req.DeliveryContract.Validator != nil {
+		return nil, fmt.Errorf("%s is off, so a contract that declares a validator cannot be honoured: "+
+			"remove the validator from the contract or unset %s", validatorDisabledEnv, validatorDisabledEnv)
 	}
 	if err := req.DeliveryContract.Validate(); err != nil {
 		return nil, err
@@ -61,6 +80,7 @@ func (s *Server) recordDeliveryVerdict(run runtrace.Run) {
 		return
 	}
 	verdict := deliverycontract.Evaluate(context.Background(), run.WorkspacePath, contract)
+	s.recordValidatorExecutions(run.ID, contract, verdict)
 	_, _ = s.runStore.AppendEvent(runtrace.Event{
 		RunID: run.ID, Kind: deliverycontract.EventVerified, Actor: "matrix",
 		Status: verdict.Status, Timestamp: time.Now().UTC(),
@@ -112,4 +132,32 @@ func deliveryExplanation(events []runtrace.Event) (string, *deliverycontract.Ver
 		return event.Status, &deliverycontract.Verdict{Status: event.Status}
 	}
 	return deliverycontract.StatusUnverifiable, nil
+}
+
+// recordValidatorExecutions writes the audit trail for caller-supplied code.
+// One event per execution, carrying the resolved binary and the argv and nothing
+// the command wrote. It is appended before the verdict so the record of what ran
+// exists even if a later step fails.
+func (s *Server) recordValidatorExecutions(runID string, contract deliverycontract.Contract, verdict deliverycontract.Verdict) {
+	if contract.Validator == nil || len(contract.Validator.Command) == 0 {
+		return
+	}
+	for _, check := range verdict.Checks {
+		if check.Target != "validator" {
+			continue
+		}
+		metadata := map[string]interface{}{
+			"command":         contract.Validator.Command,
+			"resolved_binary": deliverycontract.ResolveValidatorBinary(contract.Validator.Command),
+			"exit_status":     check.Status,
+		}
+		_, _ = s.runStore.AppendEvent(runtrace.Event{
+			RunID:     runID,
+			Kind:      deliverycontract.EventValidatorExecuted,
+			Actor:     "matrix",
+			Status:    runtrace.StatusRunning,
+			Timestamp: time.Now().UTC(),
+			Metadata:  metadata,
+		})
+	}
 }

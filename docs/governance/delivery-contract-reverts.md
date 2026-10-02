@@ -63,3 +63,27 @@ Format: | Test | Reverted change | Observed failure |
 | `TestTheRunRecordsTheContractBeforeItIsDispatched` | the declaration event is appended | the run is dispatched with no contract recorded |
 | `TestModelIDConflictNamesTheAgentAndTheRemedy` | the generic 409 text is restored | the answer names neither the agent nor the remedy |
 | `TestModelIDConflictKeepsTheRemediesTheRuntimeStatusOffers` | the shared remedy is rewritten on one side only | the two surfaces contradict each other on what the operator should do |
+
+## Workspace evidence: the disagreement a provider creates
+
+EP-03.C (run `54f552c5`) was left open because the provider's logs were said to be
+needed. They are needed for the attribution, which stays out of reach; they are not
+needed for the disagreement, and the test below is the demonstration: a provider
+commits with `git -C <root>` while the run's workspace is a linked worktree of that
+same repository, and the artifact plus that repository name the two sides.
+
+| Test | Reverted change | Observed failure |
+| --- | --- | --- |
+| `TestProviderCommittingOutsideTheResolvedWorkspaceIsNamedByTheArtifact` | `run_workspace_resolution.go:121` stops publishing `workspace_requested` | `the artifact does not publish the requested workspace` — the two sides stop travelling together, so nothing can be compared |
+| `TestProviderCommittingOutsideTheResolvedWorkspaceIsNamedByTheArtifact` | `run_workspace_resolution.go:123` stops publishing `workspace_not_derived` | `the artifact does not declare what it did not derive` — an absent repository field reads as an agreement |
+| `TestProviderCommittingOutsideTheResolvedWorkspaceIsNamedByTheArtifact` | `run_workspace_resolution.go:122` publishes the requested observation as the resolved one | `the artifact does not say where the run was dispatched: map[workspace_id:ws-worktree]` — the recorded dispatch disappears and the comparison has no left side |
+
+## The release gate
+
+`scripts/release_gate.sh` is the check that used to be a sentence someone
+remembered. The rows below are what the script does that remembering it did not.
+
+| Reverted change | Observed difference |
+| --- | --- |
+| the platform list drops `windows/amd64` | the report keeps no line for the platform whose build is broken: the `release-dry-run` failure of `aeb160b` (`undefined: matrixSurfaceConfig`, `undefined: resolveActiveHome`) becomes invisible again |
+| `git archive <rev>` is replaced by the working tree | the working tree builds for `windows/amd64` while the commit exported from `aeb160b` does not: the check reports on the artifact the developer has open instead of the artifact that ships |

@@ -199,10 +199,14 @@ reason = "Raw bbolt access is provider-owned; logic and CLI diagnostics must use
 [pattern_budget.agent_name_literals_in_logic]
 roots = ["cmd", "internal", "pkg"]
 patterns = ["\"opencode\"", "\"codex\"", "\"claude\"", "\"gemini\""]
-exclude_suffixes = ["_test.go"]
+exclude_suffixes = ["_test.go", ".md"]
+# 2026-10-02: documentation is excluded because these budgets measure behaviour
+# and a markdown file cannot run. A revert register has to name the agent whose
+# branch it describes, which is exactly the text these budgets count: keeping it
+# in scope forced a choice between an unreadable register and a red gate.
 exclude_dirs = ["testdata"]
-max = 14
-reason = "AGNOSTICISM RATCHET: 16 literals at baseline 6a4c745, 14 measured at 664ac61 after the declaration-based launch refactor removed two — the ratchet moves down with the tree, so what was removed cannot come back unnoticed. A new literal needs the Lead's justification: adding support for a new agent is exactly the case that must be a reviewed decision, not a silent branch."
+max = 13
+reason = "AGNOSTICISM RATCHET: 16 literals at baseline 6a4c745, 14 measured at 664ac61 after the declaration-based launch refactor removed two, 13 measured 2026-10-02 when the wizard's seven name dispatches became flow ownership — the last literal that existed only to name an agent in a branch went with them. The thirteen that remain are data, not dispatch: the default agent, the codex handler's own agent (the binary and config entry its own flow uses), and the registry keys that bind a flow to the agents using it. The ratchet moves down with the tree, so what was removed cannot come back unnoticed. A new literal needs the Lead's justification: adding support for a new agent is exactly the case that must be a reviewed decision, not a silent branch."
 
 # ZERO TOLERANCE. These names have no legitimate producer-side occurrence at
 # baseline: any literal in production code is an agent-specific patch. The test
@@ -211,7 +215,7 @@ reason = "AGNOSTICISM RATCHET: 16 literals at baseline 6a4c745, 14 measured at 6
 [pattern_budget.adhoc_agent_name_literals]
 roots = ["cmd", "internal", "pkg"]
 patterns = ["\"mimo\"", "\"minimax\"", "\"halfpocket\"", "\"kimi\"", "\"deepseek\""]
-exclude_suffixes = ["_test.go"]
+exclude_suffixes = ["_test.go", ".md"]
 exclude_dirs = ["testdata"]
 max = 0
 reason = "AGNOSTICISM: zero occurrences at baseline; a literal here is a patch for a specific agent, which the user forbade."
@@ -229,7 +233,7 @@ regex_patterns = [
   "EqualFold\\s*\\(\\s*strings\\.TrimSpace\\((agentID|agentName|AgentID|agent_id)\\)\\s*,\\s*\"",
   "switch\\s+(agentID|agentName|AgentID|agent_id)\\b"
 ]
-exclude_suffixes = ["_test.go"]
+exclude_suffixes = ["_test.go", ".md"]
 exclude_dirs = ["testdata"]
 max = 0
 reason = "AGNOSTICISM: 2 branch-shaped comparisons at baseline 6a4c745 (agentlaunch/codex.go:34, onboarding/wizard.go:308); both are gone — the first with the file, deleted in 39ae9cb, the second rewritten in 92144aa to read the auth method's own declaration — so the budget closes at zero. Verified by probe: a scratch `agentID == \"codex\"` in production fails with count 1 exceeds max 0. The generic-variable limit this budget could not close is closed by identity_comparison_shape below."
@@ -293,17 +297,17 @@ reviewed_pairs = [
   "name=fork",             # ACP capability name, defined by the protocol
   # A constant that denominates an agent is reviewed as `name=const:ConstName`, so a
   # cleared literal can never silently clear a constant and a renamed constant
-  # re-opens the review. The six below are the whole pre-existing set the constant
-  # rule found (10 comparisons), measured on this tree, none of them added here.
+  # re-opens the review. The three below are what is left of the pre-existing set
+  # the constant rule found (10 comparisons). The other seven — the wizard's
+  # per-agent branches — were healed on 2026-10-02: the flow is owned by the
+  # handler the registry resolves for the selected agent, so nothing in the wizard
+  # asks who the agent is, and their pairs are gone with them.
   "agentID=const:CanonicalCodexAgentID",         # agentidentity: the canonical ID maps to the ACP registry id
   "agentID=const:CodexRegistryID",               # agentidentity: refuses the registry id as a public Matrix id
   "agentID=const:agentidentity.CodexRegistryID", # agentmgr: same refusal while resolving the registry entry
-  "ID=const:agentCodex",         # onboarding: the wizard's install path after the operator chose that agent
-  "AgentName=const:agentCodex",  # onboarding: the chatgpt device flow, a flow-correctness guard (T13)
-  "AgentName=const:agentOpencode", # onboarding: OpenRouter quick login and prompts; :9 is a misrouting guard (T13)
   "ID=const:acpModelConfigOptionID", # ACP protocol: the session config option id "model", a closed vocabulary
 ]
-exclude_suffixes = ["_test.go"]
+exclude_suffixes = ["_test.go", ".md"]
 exclude_dirs = ["testdata"]
 max = 0
-reason = "AGNOSTICISM SHAPE CHECK: a comparison of an identity variable against a string literal, or against a package CONSTANT standing in for one, because the constant is the same branch with the value one indirection away — and that is why it passed every budget. Measured at the extension: a scratch `agentID == \"codex\"` failed three budgets while `agentID == CanonicalCodexAgentID` passed all of them; the constant is now read from the tree (same package, or a qualified constant resolved through the file's imports and go.mod) and the branch fails. The finding is decided by the SHAPE, as the literal rule is; agent_name_values only decides what the finding says. Gating the finding on the constant's VALUE was measured and rejected: it costs no review on this tree, but a brand-new agent name behind a brand-new constant passed it (probe: failures 0). The shape rule costs exactly one review here — ID=const:acpModelConfigOptionID, an ACP config-option id — and closes that hole. Measured on this tree: 11 constant comparisons (10 naming an agent, 1 a protocol id) and 0 literal comparisons, all 11 pre-existing and cleared by the pairs above. The budget closes at zero: the FIRST new comparison of an identity variable against any literal or any constant — including a name nobody has seen — fails the gate. To clear a finding: if the compared value is a closed protocol vocabulary, add the name/value PAIR to reviewed_pairs with the reason it is not an identity; if it is which agent or provider is being talked to, it is the patch this check exists to stop. Known limits, both declared rather than papered over: (1) a comparison whose left side is a call result or a dereference carries no name and is not matched; (2) a package-level `var` is not read, because it can be reassigned and its value at the comparison would not be a property of the tree; the literal budgets above still cover the names they enumerate there."
+reason = "AGNOSTICISM SHAPE CHECK: a comparison of an identity variable against a string literal, or against a package CONSTANT standing in for one, because the constant is the same branch with the value one indirection away — and that is why it passed every budget. Measured at the extension: a scratch `agentID == \"codex\"` failed three budgets while `agentID == CanonicalCodexAgentID` passed all of them; the constant is now read from the tree (same package, or a qualified constant resolved through the file's imports and go.mod) and the branch fails. The finding is decided by the SHAPE, as the literal rule is; agent_name_values only decides what the finding says. Gating the finding on the constant's VALUE was measured and rejected: it costs no review on this tree, but a brand-new agent name behind a brand-new constant passed it (probe: failures 0). The shape rule costs exactly one review here — ID=const:acpModelConfigOptionID, an ACP config-option id — and closes that hole. Measured on this tree: 4 constant comparisons (3 naming an agent, 1 a protocol id) and 0 literal comparisons, all pre-existing and cleared by the pairs above. The seven onboarding comparisons this budget first caught — the wizard's per-agent branches — are gone as of 2026-10-02 (the handler the registry resolves for the selected agent owns its own flow), and their pairs were removed with them, so the exception list cannot hide a branch that comes back. The budget closes at zero: the FIRST new comparison of an identity variable against any literal or any constant — including a name nobody has seen — fails the gate. To clear a finding: if the compared value is a closed protocol vocabulary, add the name/value PAIR to reviewed_pairs with the reason it is not an identity; if it is which agent or provider is being talked to, it is the patch this check exists to stop. Known limits, both declared rather than papered over: (1) a comparison whose left side is a call result or a dereference carries no name and is not matched; (2) a package-level `var` is not read, because it can be reassigned and its value at the comparison would not be a property of the tree; the literal budgets above still cover the names they enumerate there."

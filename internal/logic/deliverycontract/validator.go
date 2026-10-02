@@ -59,6 +59,38 @@ func validatorTimeout(validator Validator) time.Duration {
 // this function. A validator that could write into the run trace would be a side
 // channel for content Matrix never asked for and cannot redact, which is the
 // same reason the acceptance verdict never carries a transcript.
+//
+// CONTAINMENT, stated as a limit and not as a defence: a validator is confined
+// by nothing beyond the operating-system user the daemon runs as. The environment
+// allowlist above keeps the daemon's keys out of the child, but the child can
+// still read and write anywhere that user can — inside and outside the run
+// workspace, including the rest of the host. The working directory is set for the
+// validator's convenience, not to fence it in. Running a delivery contract is
+// therefore trusting the caller's command as much as running any other child
+// process, and an operator who needs a fence needs an OS-level sandbox that this
+// package does not provide.
+// ResolveValidatorBinary reports which binary the daemon will actually execute.
+// It is exported because the audit record needs the same answer the child
+// process will get, and two implementations of "what will run" would eventually
+// disagree. It is best-effort on purpose: a command that cannot be resolved is
+// still attempted, so the failure surfaces on the exit path rather than as a
+// refusal here.
+//
+// The answer stays out of the acceptance verdict on purpose. The verdict answers
+// "was the delivery accepted" and carries no caller-supplied text; what ran
+// belongs to the audit record, which is a separate question with a separate
+// reader.
+func ResolveValidatorBinary(argv []string) string {
+	if len(argv) == 0 {
+		return ""
+	}
+	resolved, err := exec.LookPath(argv[0])
+	if err != nil {
+		return ""
+	}
+	return resolved
+}
+
 func runValidatorProcess(ctx context.Context, workspace string, argv []string) (int, error) {
 	if len(argv) == 0 {
 		return 0, errors.New("no command")
