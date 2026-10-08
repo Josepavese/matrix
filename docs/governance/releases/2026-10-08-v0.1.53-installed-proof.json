@@ -1,0 +1,59 @@
+{
+  "version": "matrix 0.1.53\ncommit 9747f90dd7a1a84e137bc0292b493daa2e07c83f\nbuilt 2026-10-08T17:07:02Z",
+  "service_real": true,
+  "runtime_authenticated_http_200": true,
+  "running_executable_matches_installed": true,
+  "endpoint_checks": {
+    "/_matrix/runtime:unauthenticated": 401,
+    "/_matrix/runtime:authenticated": 200,
+    "/_matrix/capacity:unauthenticated": 401,
+    "/_matrix/capacity:authenticated": 200,
+    "/_matrix/telemetry:unauthenticated": 401,
+    "/_matrix/telemetry:authenticated": 200,
+    "/_matrix/fs/:unauthenticated": 401,
+    "/_matrix/fs/:authenticated": 200,
+    "/_matrix/capacity:mutation": 405,
+    "/_matrix/telemetry:mutation": 405,
+    "/_matrix/fs/:mutation": 405
+  },
+  "capacity_observed": {
+    "available": true,
+    "logical_cpus": 8,
+    "disk_free_bytes": 4544688128,
+    "memory_source": "linux:sysinfo_physical_free_excludes_reclaimable_cache"
+  },
+  "initial_admission": {
+    "scope": "this_runtime_active_routes",
+    "active": 1,
+    "reserved_disk_bytes_by_volume": {}
+  },
+  "collector_enabled": false,
+  "workspace_isolated": true,
+  "existing_agent": "mimo",
+  "terminal": {
+    "run_id": "run-d1a04e23-f64b-4a55-afdd-e7788ade0980",
+    "outcome": "completed",
+    "kind": "run.completed",
+    "sequence": 3870,
+    "cursor": 3873
+  },
+  "fresh_artifact_read": true,
+  "requested_model": "deepseek/deepseek-flash",
+  "effective_model": "deepseek/deepseek-flash",
+  "model_verification": "provider_confirmed",
+  "logical_session_id": "1e9205cf-315d-4bbf-9786-3447ac83c8e6",
+  "remote_session_id": "ses_ffe5ee304f84effeRd8hpwZoA1",
+  "tool_events_observed": true,
+  "semantic_cli_http_fresh_and_private_fields_excluded": true,
+  "capacity_api_existing_registered_workspace_observed": true,
+  "capacity_refusal_http": 429,
+  "capacity_refusal_code": "capacity_disk_exhausted",
+  "capacity_refusal_terminal_failed": true,
+  "session_cleanup_recorded": true,
+  "probe_cleanup": {
+    "cleanup_policy": "forget_local",
+    "clean": true,
+    "strong_cleanup": true,
+    "process_reaped": true
+  }
+}

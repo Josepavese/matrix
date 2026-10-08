@@ -94,8 +94,9 @@ Gate locali: deploy preflight, quality gate con tutte le soglie di copertura,
 lint, governance, scansione dello stage e diff check completati sul codice.
 Release v0.1.53 verificata con 88 controlli e firme di tutti i 12 archivi/SBOM,
 vincolate a tag, SHA sorgente e workflow. Installer pubblico isolato collaudato.
-Il servizio locale resta in attesa della conclusione dei task già attivi prima
-del backup coerente e del riavvio; lo stato è esplicito nel verbale della release.
+Installazione locale completata dopo la conclusione dei task attivi: backup
+coerente verificato, configurazioni preservate, servizio v0.1.53 attivo e
+collaudo reale CLI/API/provider superato. Prove e limiti nel verbale della release.
 
 ## Difetti emersi dalla prima CI nativa
 

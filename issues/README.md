@@ -14,7 +14,7 @@ accettati sono espliciti nel riepilogo; l'archiviazione non li certifica risolti
 
 Le quattro evolutive sono implementate e archiviate dopo gate locali e CI nativa Linux/Windows/macOS. La consegna release/installazione è tracciata nel [ledger PAL](../docs/governance/pal_implementation_2026-10-08.md):
 
-La [release v0.1.53](../docs/governance/releases/2026-10-08-v0.1.53.md) è pubblicata e verificata. L’aggiornamento del servizio locale attende la fine dei task già attivi.
+La [release v0.1.53](../docs/governance/releases/2026-10-08-v0.1.53.md) è pubblicata, verificata e installata localmente. Backup, configurazioni e collaudo reale del servizio sono documentati nel verbale.
 
 - [Sandbox e policy provider](closed/2026-10-08-pal-01-sandbox.md).
 - [Capacità e ammissione](closed/2026-10-08-pal-02-capacity.md).

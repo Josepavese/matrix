@@ -1,6 +1,6 @@
 # Sviluppo PAL — 03-semantic-filesystem
 
-Stato: gestita; sviluppo, gate locali e CI nativa Linux/Windows/macOS completati. Release v0.1.53 pubblicata e verificata; aggiornamento locale in attesa dei task già attivi.
+Stato: gestita; sviluppo, gate locali e CI nativa Linux/Windows/macOS completati. Release v0.1.53 pubblicata, verificata e installata localmente; collaudo reale superato dopo la conclusione dei task attivi.
 
 Autorizzazione: richiesta esplicita dell’utente del 2026-10-08 per tutti e quattro gli sviluppi e requisito PAL Linux/Windows/macOS.
 
