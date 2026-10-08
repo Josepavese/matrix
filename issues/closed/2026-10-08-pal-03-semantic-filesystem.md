@@ -1,6 +1,6 @@
 # Sviluppo PAL — 03-semantic-filesystem
 
-Stato: sviluppo implementato; gate locali e prove Linux completati, verifica CI nativa e consegna release in corso.
+Stato: gestita; sviluppo, gate locali e CI nativa Linux/Windows/macOS completati. Consegna release/installazione in corso nel goal.
 
 Autorizzazione: richiesta esplicita dell’utente del 2026-10-08 per tutti e quattro gli sviluppi e requisito PAL Linux/Windows/macOS.
 
@@ -14,4 +14,4 @@ Verifiche, documentazione, release e installazione locale. Archiviare in closed 
 
 ## Evidenze dello sviluppo
 
-Vedi [ledger PAL](../docs/governance/pal_implementation_2026-10-08.md) e [guida operativa](../docs/wiki/PAL-Execution-and-Observability.md). Le qualifiche fisiche dei driver opzionali sono distinte per piattaforma.
+Vedi [ledger PAL](../../docs/governance/pal_implementation_2026-10-08.md) e [guida operativa](../../docs/wiki/PAL-Execution-and-Observability.md). Le qualifiche fisiche dei driver opzionali sono distinte per piattaforma.

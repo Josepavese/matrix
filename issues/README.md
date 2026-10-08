@@ -12,9 +12,9 @@ accettati sono espliciti nel riepilogo; l'archiviazione non li certifica risolti
 
 ## Nuovo sviluppo PAL autorizzato
 
-Le seguenti evolutive sono aperte e in implementazione su richiesta successiva dell’utente:
+Le quattro evolutive sono implementate e archiviate dopo gate locali e CI nativa Linux/Windows/macOS. La consegna release/installazione è tracciata nel [ledger PAL](../docs/governance/pal_implementation_2026-10-08.md):
 
-- [Sandbox e policy provider](2026-10-08-pal-01-sandbox.md).
-- [Capacità e ammissione](2026-10-08-pal-02-capacity.md).
-- [Filesystem semantico](2026-10-08-pal-03-semantic-filesystem.md).
-- [Telemetria e collector](2026-10-08-pal-04-telemetry.md).
+- [Sandbox e policy provider](closed/2026-10-08-pal-01-sandbox.md).
+- [Capacità e ammissione](closed/2026-10-08-pal-02-capacity.md).
+- [Filesystem semantico](closed/2026-10-08-pal-03-semantic-filesystem.md).
+- [Telemetria e collector](closed/2026-10-08-pal-04-telemetry.md).
