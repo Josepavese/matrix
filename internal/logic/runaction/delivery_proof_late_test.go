@@ -34,7 +34,11 @@ func TestLateProofIsRecordedWhenTheWatcherLeavesOnCancellation(t *testing.T) {
 	watch := deliveryWatch{
 		run:        run,
 		deliveryID: "delivery-late",
-		cancel:     func() {},
+		cancel: func() {
+			if recordings != 1 {
+				t.Fatal("provider cancellation happened before the terminal proof was published")
+			}
+		},
 		recordLate: func(runtrace.Run, deliveryState, bool) { recordings++ },
 	}
 	service := New(store, fakeAttacher{}, nil)

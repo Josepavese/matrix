@@ -105,3 +105,17 @@ restano rifiutati. I log Windows usano una DACL protetta dell'account corrente,
 applicata alla creazione e ai file esistenti prima delle scritture; i test
 verificano l'ACL Windows invece di richiedere mode bits Unix.
 Le correzioni sono sottoposte nuovamente alla stessa CI nativa.
+
+### Qualifica nativa osservata
+
+PAL run [37794391626](https://github.com/Josepavese/matrix/actions/runs/37794391626)
+su SHA `b9b369c4adc21d6e16f2da6367c1feb58a9b52d8`: Ubuntu, Windows e macOS
+PASS. Capacità/ram, contratti, guardie, API e CLI sono prove native, non cross-build.
+Il confronto ACL Windows usa SID binario e diritti effettivi: la stringa SDDL
+può abbreviare un SID conosciuto e non è un confronto di identità affidabile.
+
+La CI generale ha inoltre fatto emergere una race residua del live context:
+il watcher cancellava il provider prima di pubblicare la prova terminale,
+permettendo al recorder concorrente di registrare `failed` al posto di `late`.
+La prova viene ora pubblicata prima della cancellazione, con regressione
+che verifica deterministicamente l'ordine e ripetizioni sotto race detector.

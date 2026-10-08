@@ -215,8 +215,9 @@ func (s Service) recordLateProofIfRunStopped(watch deliveryWatch) bool {
 	if ok {
 		return false
 	}
-	watch.cancel()
 	watch.recordLate(current, deliveryState{ID: watch.deliveryID, Status: deliveryStatusLate, Message: "Live context delivery was still pending when the run completed.", Class: deliveryClassRunCompletedBeforeReturn}, false)
+	// Publish before cancellation wakes the provider and its competing recorder.
+	watch.cancel()
 	return true
 }
 
