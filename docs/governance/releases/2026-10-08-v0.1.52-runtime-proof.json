@@ -1,0 +1,40 @@
+{
+  "attention": {
+    "run_id": "run-1bc312b0-cea2-4267-a1d0-ee96366c5ccd",
+    "outcome": "attention_required",
+    "kind": "run.attention_required",
+    "sequence": 15,
+    "cursor": 15,
+    "failure_code": "activity_unobserved"
+  },
+  "completed": {
+    "run_id": "run-1bc312b0-cea2-4267-a1d0-ee96366c5ccd",
+    "outcome": "completed",
+    "kind": "run.completed",
+    "sequence": 18,
+    "cursor": 18
+  },
+  "cancelled": {
+    "run_id": "run-d5eb1246-22a7-4e0d-8ad9-196e6c16f611",
+    "outcome": "cancelled",
+    "kind": "run.cancelled",
+    "sequence": 20,
+    "cursor": 20
+  },
+  "resumed": {
+    "run_id": "run-a9fc24e5-f4bc-4332-9c54-9d942bf0eed4",
+    "outcome": "completed",
+    "kind": "run.completed",
+    "sequence": 24,
+    "cursor": 24
+  },
+  "logical_session_id": "f9feee43-371a-4b94-b6df-7f20fc0b1182",
+  "remote_session_id": "ses_ffe5ee57326dfffe5K6TpGreYM",
+  "strict_remote_reused": true,
+  "known_remote_visible_before_cancel": true,
+  "artifact_read": true,
+  "requested_model": "deepseek/deepseek-flash",
+  "model_verification": "provider_confirmed",
+  "candidate_home_isolated": true,
+  "native_stdout_ack_idempotent": true
+}

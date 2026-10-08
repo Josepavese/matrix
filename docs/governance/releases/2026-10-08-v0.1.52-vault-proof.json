@@ -1,0 +1,31 @@
+{
+  "phase": "after conversion and before daemon restart",
+  "original": {
+    "records": 916002,
+    "v1": 916002,
+    "v2": 0,
+    "plaintext": 0,
+    "raw_sha256": "d85d15e9ebb21c4b848bcfba31d6d0abdc2cb03a691a8694a75e641acede3dd2",
+    "plaintext_sha256": "b2444cf83e82dfd2b656246b9faf18c1598b024c9315cadca3b334af7b871fff"
+  },
+  "after": {
+    "records": 916002,
+    "v1": 0,
+    "v2": 916002,
+    "plaintext": 0,
+    "raw_sha256": "6d96bad6b74ffe586d7d0b513ca26a4c166b651f3917dd987f82b6531bf875ad",
+    "plaintext_sha256": "b2444cf83e82dfd2b656246b9faf18c1598b024c9315cadca3b334af7b871fff"
+  },
+  "retained_backup": {
+    "records": 916002,
+    "v1": 916002,
+    "v2": 0,
+    "plaintext": 0,
+    "raw_sha256": "d85d15e9ebb21c4b848bcfba31d6d0abdc2cb03a691a8694a75e641acede3dd2",
+    "plaintext_sha256": "b2444cf83e82dfd2b656246b9faf18c1598b024c9315cadca3b334af7b871fff"
+  },
+  "interrupted_copy_rollback_verified": true,
+  "all_plaintext_values_and_bucket_sequences_preserved": true,
+  "new_format_only": true,
+  "canonical_backup_path": "/media/jose/Data/matrix-v0.1.52-backup-20261008/matrix-vault.db.pre-encv2-1791450739422641704.bak"
+}

@@ -1,0 +1,25 @@
+{
+  "version": "matrix 0.1.52\ncommit d08fe8fc431e7fdb66cf73d9621c61d11d08ece2\nbuilt 2026-10-08T08:58:05Z",
+  "runtime_authenticated_http_200": true,
+  "service_real": true,
+  "workspace_isolated": true,
+  "existing_agent": "mimo",
+  "terminal": {
+    "run_id": "run-5f55e322-0975-4cf5-84d4-f8740a16c7de",
+    "outcome": "completed",
+    "kind": "run.completed",
+    "sequence": 3848,
+    "cursor": 3848
+  },
+  "fresh_artifact_read": true,
+  "requested_model": "deepseek/deepseek-flash",
+  "model_verification": "provider_confirmed",
+  "logical_session_id": "be811bb9-4fa1-4e40-b005-d8fcf4970558",
+  "remote_session_id": "ses_ffe5ee526a19cffeGtXkPy17aI",
+  "probe_cleanup": {
+    "cleanup_policy": "forget_local",
+    "clean": true,
+    "strong_cleanup": true,
+    "process_reaped": true
+  }
+}

@@ -1,0 +1,176 @@
+package main
+
+import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	bolt "go.etcd.io/bbolt"
+	"hash"
+	"os"
+	"strings"
+	"time"
+)
+
+type report struct {
+	Records  int    `json:"records"`
+	V1       int    `json:"v1"`
+	V2       int    `json:"v2"`
+	Plain    int    `json:"plaintext"`
+	RawSHA   string `json:"raw_sha256"`
+	PlainSHA string `json:"plaintext_sha256"`
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+func run() error {
+	if len(os.Args) < 3 {
+		return fmt.Errorf("usage: inspect|compact source [destination]")
+	}
+	keyText := os.Getenv("MATRIX_VAULT_MASTER_KEY")
+	keyPath := os.Getenv("MATRIX_VAULT_MASTER_KEY_FILE")
+	if keyPath != "" || keyText == "" {
+		if keyPath == "" {
+			keyPath = "/home/jose/.local/share/matrix/configs/vault-master.key"
+		}
+		key, err := os.ReadFile(keyPath)
+		if err != nil {
+			return err
+		}
+		keyText = string(key)
+	}
+	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(keyText))
+	if err != nil || len(key) != 32 {
+		key, err = hex.DecodeString(strings.TrimSpace(keyText))
+	}
+	if err != nil {
+		return err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return err
+	}
+	db, err := bolt.Open(os.Args[2], 0600, &bolt.Options{ReadOnly: true, Timeout: time.Second})
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	original, err := inspect(db, gcm)
+	if err != nil {
+		return err
+	}
+	if os.Args[1] == "compact" {
+		if len(os.Args) != 4 {
+			return fmt.Errorf("destination required")
+		}
+		f, err := os.OpenFile(os.Args[3], os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		if err = f.Close(); err != nil {
+			return err
+		}
+		target, err := bolt.Open(os.Args[3], 0600, nil)
+		if err != nil {
+			return err
+		}
+		defer target.Close()
+		if err = bolt.Compact(target, db, 64<<20); err != nil {
+			return err
+		}
+		if err = target.Sync(); err != nil {
+			return err
+		}
+		actual, err := inspect(target, gcm)
+		if err != nil {
+			return err
+		}
+		if original != actual {
+			return fmt.Errorf("compact copy fingerprint differs")
+		}
+	} else if os.Args[1] != "inspect" {
+		return fmt.Errorf("unsupported mode")
+	}
+	return json.NewEncoder(os.Stdout).Encode(original)
+}
+func inspect(db *bolt.DB, gcm cipher.AEAD) (report, error) {
+	var r report
+	rawHash, plainHash := sha256.New(), sha256.New()
+	err := db.View(func(tx *bolt.Tx) error {
+		for err := range tx.Check() {
+			if err != nil {
+				return err
+			}
+		}
+		return tx.ForEach(func(name []byte, b *bolt.Bucket) error {
+			write(rawHash, name)
+			write(plainHash, name)
+			return visit(b, gcm, bytes.Equal(name, []byte("matrix_vault")), rawHash, plainHash, &r)
+		})
+	})
+	r.RawSHA = hex.EncodeToString(rawHash.Sum(nil))
+	r.PlainSHA = hex.EncodeToString(plainHash.Sum(nil))
+	return r, err
+}
+func write(h hash.Hash, data []byte) { fmt.Fprintf(h, "%d:", len(data)); h.Write(data) }
+func visit(b *bolt.Bucket, gcm cipher.AEAD, sealed bool, rawHash, plainHash hash.Hash, r *report) error {
+	fmt.Fprintf(rawHash, "seq=%d[", b.Sequence())
+	fmt.Fprintf(plainHash, "seq=%d[", b.Sequence())
+	err := b.ForEach(func(k, v []byte) error {
+		write(rawHash, k)
+		write(plainHash, k)
+		if child := b.Bucket(k); child != nil {
+			return visit(child, gcm, sealed, rawHash, plainHash, r)
+		}
+		plain := v
+		if sealed {
+			r.Records++
+			var aad []byte
+			var prefix string
+			switch {
+			case bytes.HasPrefix(v, []byte("ENCV2:")):
+				r.V2++
+				prefix = "ENCV2:"
+				aad = k
+			case bytes.HasPrefix(v, []byte("ENCV1:")):
+				r.V1++
+				prefix = "ENCV1:"
+			case bytes.HasPrefix(v, []byte("ENCV")):
+				return fmt.Errorf("unknown encryption format")
+			default:
+				r.Plain++
+			}
+			if prefix != "" {
+				payload, err := base64.StdEncoding.DecodeString(string(v[len(prefix):]))
+				if err != nil {
+					return err
+				}
+				if len(payload) < gcm.NonceSize() {
+					return fmt.Errorf("truncated ciphertext")
+				}
+				plain, err = gcm.Open(nil, payload[:gcm.NonceSize()], payload[gcm.NonceSize():], aad)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		write(rawHash, v)
+		write(plainHash, plain)
+		return nil
+	})
+	rawHash.Write([]byte("]"))
+	plainHash.Write([]byte("]"))
+	return err
+}
