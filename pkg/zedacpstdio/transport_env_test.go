@@ -63,17 +63,28 @@ func TestTheAgentChildStartsThroughTheRealLaunchPreamble(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash is not available")
 	}
+	// Source a controlled nvm fixture through the real preamble. A runner's
+	// installed nvm can exceed the observation deadline under race-test load.
+	// The exported marker also proves sourcing, not just setting NVM_DIR.
+	home := t.TempDir()
+	nvmDir := filepath.Join(home, ".nvm")
+	if err := os.Mkdir(nvmDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nvmDir, "nvm.sh"), []byte("export MATRIX_NVM_FIXTURE_LOADED=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	dump := filepath.Join(t.TempDir(), "agent-environment.txt")
 	command, args := agentlaunch.PrepareStdio("/bin/sh", []string{"-c", "env > " + dump}, true)
 
-	transport, err := New(context.Background(), command, SpawnSpec{Env: []string{"AGENT_CREDENTIAL=sk-agent-own"}}, args...)
+	transport, err := New(context.Background(), command, SpawnSpec{Env: []string{"HOME=" + home, "AGENT_CREDENTIAL=sk-agent-own"}}, args...)
 	if err != nil {
 		t.Fatalf("starting the agent through the real launch preamble: %v", err)
 	}
 	t.Cleanup(func() { _ = transport.Close() })
 
 	seen := readChildEnvironment(t, dump)
-	for _, want := range []string{"NVM_DIR=", "AGENT_CREDENTIAL=sk-agent-own"} {
+	for _, want := range []string{"NVM_DIR=" + nvmDir, "MATRIX_NVM_FIXTURE_LOADED=1", "AGENT_CREDENTIAL=sk-agent-own"} {
 		if !strings.Contains(seen, want) {
 			t.Fatalf("the launch preamble must still hand the agent %q, got:\n%s", want, seen)
 		}
