@@ -177,21 +177,19 @@ func buildRuntimeReport(input inspectInput, canDial func(string) bool) AgentRunt
 		Status:               "unknown",
 		ArtifactVerification: input.Meta.ArtifactVerification,
 	}
-	if !report.Active {
-		report.Status = "inactive"
-		return report
-	}
-	if policy, err := agentlaunch.ReadSandbox(endpoint); err != nil {
+	if policy, err := agentlaunch.ReadSandbox(endpoint); report.Active && err != nil {
 		report.Status = "launch_policy_invalid"
 		report.Warnings = append(report.Warnings, err.Error())
 		return report
-	} else if policy != nil && policy.Container != nil {
+	} else if report.Active && policy != nil && policy.Container != nil {
 		report.Status = "sandbox_requires_workspace_probe"
 		report.Warnings = append(report.Warnings, "provider command is in the container image; host executable checks do not attest it")
 		return report
 	}
 
 	switch {
+	case !report.Active:
+		report.Status = "inactive"
 	case !report.Installed:
 		report.Status = "missing_executable"
 		report.Warnings = append(report.Warnings, "executable not found in PATH")
