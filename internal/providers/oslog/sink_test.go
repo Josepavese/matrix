@@ -53,13 +53,7 @@ func TestFactoryBuildFileSinkRestrictsPermissions(t *testing.T) {
 	}
 	defer func() { _ = sink.Close() }()
 
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat log file: %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("log file permissions = %o, want 600", got)
-	}
+	assertPrivateLogPermissions(t, path)
 }
 
 func TestFactoryBuildBothSink(t *testing.T) {

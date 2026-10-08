@@ -71,8 +71,12 @@ func ResolveEndpoint(_ string, endpoint middleware.ProtocolEndpoint, launchArgs 
 	endpoint.Env = append([]string{}, endpoint.Env...)
 	for _, adapter := range policyAdapters {
 		if adapter.Matches(endpoint) {
-			return adapter.Resolve(endpoint)
+			result, err := adapter.Resolve(endpoint)
+			if err != nil {
+				return result, err
+			}
+			return resolveSandbox(result)
 		}
 	}
-	return Resolution{Endpoint: endpoint}, nil
+	return resolveSandbox(Resolution{Endpoint: endpoint})
 }

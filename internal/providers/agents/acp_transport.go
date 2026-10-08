@@ -10,6 +10,7 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/containersandbox"
 	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
@@ -22,7 +23,9 @@ type transportSpec struct {
 	EnvIsolation bool
 	// Cwd is the working directory the child process is started in. It is the
 	// run's workspace, so it is resolved per run and never pinned globally.
-	Cwd string
+	Cwd      string
+	Sandbox  *middleware.SandboxPolicy
+	Identity string
 }
 
 func createTransport(ctx context.Context, spec transportSpec) (middleware.AgentTransport, error) {
@@ -36,6 +39,9 @@ func createTransport(ctx context.Context, spec transportSpec) (middleware.AgentT
 	case "stdio", "acp":
 		if err := verifyChildWorkspace(spec); err != nil {
 			return nil, err
+		}
+		if spec.Sandbox != nil && spec.Sandbox.Container != nil {
+			return containersandbox.Start(ctx, containersandbox.Launch{Policy: *spec.Sandbox.Container, Workspace: spec.Cwd, Command: spec.Command, Args: spec.Args, Env: spec.Env, Identity: spec.Identity})
 		}
 		command, args := agentlaunch.PrepareStdio(spec.Command, spec.Args, spec.EnvIsolation)
 		return zedacp.NewStdioTransportWith(ctx, command, zedacp.StdioSpawnSpec{Dir: spec.Cwd, Env: spec.Env}, args...)

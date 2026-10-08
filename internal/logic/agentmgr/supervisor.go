@@ -105,6 +105,10 @@ func (s *Supervisor) startOnDemand(ctx context.Context, log *slog.Logger, agentI
 		return
 	}
 	endpoint = resolved.Endpoint
+	if endpoint.Sandbox != nil && endpoint.Sandbox.Container != nil {
+		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint), Status: "sandbox_requires_workspace_probe"})
+		return
+	}
 	if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && !s.proc.HasExecutable(cfg.Command) {
 		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint), Status: "missing_executable", Error: "executable not found in PATH"})
 		log.Warn("agent not found in path, skipping supervision", "event", "agent_missing", "agent", agentID, "command", cfg.Command)
@@ -117,22 +121,6 @@ func (s *Supervisor) startOnDemand(ctx context.Context, log *slog.Logger, agentI
 	}
 	s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint), Status: "ready_on_demand"})
 	log.Info("agent is on-demand, skipping background supervision", "event", "agent_on_demand", "agent", agentID, "protocol_kind", endpoint.Kind, "transport", endpoint.Transport)
-}
-
-func (s *Supervisor) probeOnDemand(ctx context.Context, log *slog.Logger, agentID string, endpoint middleware.ProtocolEndpoint) {
-	probeCtx, cancel := context.WithTimeout(ctx, onDemandProbeTimeout)
-	err := s.probe(probeCtx, endpoint)
-	cancel()
-	state := RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint), Status: "ready_on_demand"}
-	if err != nil {
-		state.Status = "initialize_failed"
-		state.Error = err.Error()
-		s.persistRuntimeState(log, state)
-		log.Warn("agent initialize probe failed", "event", "agent_initialize_failed", "agent", agentID, "error", err)
-		return
-	}
-	s.persistRuntimeState(log, state)
-	log.Info("agent initialize probe passed", "event", "agent_initialize_ready", "agent", agentID)
 }
 
 // GetAgentEndpoint returns the normalized endpoint description for the agent.

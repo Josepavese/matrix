@@ -43,9 +43,17 @@ func (c *acpConversationClient) materializeRemoteSessionOnce(ctx context.Context
 
 // createACPRemoteSession asks the peer for a new session.
 func (c *acpConversationClient) createACPRemoteSession(ctx context.Context, req middleware.SessionMaterializeRequest) (*acpNewSessionResponse, error) {
+	if err := c.validateSandboxTurn(middleware.ConversationTurn{WorkspacePath: req.WorkspacePath, Tools: req.Tools, McpServers: req.McpServers, AdditionalDirectories: req.AdditionalDirectories}); err != nil {
+		return nil, err
+	}
 	cwd := strings.TrimSpace(req.WorkspacePath)
 	if cwd == "" {
 		cwd = c.cwd
+	}
+	var workspaceErr error
+	cwd, workspaceErr = c.sandboxWorkspace(cwd)
+	if workspaceErr != nil {
+		return nil, workspaceErr
 	}
 	additionalDirectories, err := c.additionalDirectories(req.AdditionalDirectories)
 	if err != nil {

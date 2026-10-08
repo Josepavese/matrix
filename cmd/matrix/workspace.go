@@ -7,6 +7,7 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/cmdutil"
 	"github.com/Josepavese/matrix/internal/logic/session"
 	"github.com/Josepavese/matrix/internal/logic/workspace"
+	"github.com/Josepavese/matrix/internal/providers/oscapacity"
 	"github.com/spf13/cobra"
 )
 
@@ -119,6 +120,7 @@ var (
 			payload := map[string]any{
 				"workspace":       meta,
 				"recent_sessions": sessions,
+				"capacity":        workspace.ObserveCapacity(meta.RootPath, oscapacity.New()),
 			}
 			if err := cmdutil.PrintJSON(cmd, payload); err != nil {
 				exitf("failed to print workspace: %v", err)

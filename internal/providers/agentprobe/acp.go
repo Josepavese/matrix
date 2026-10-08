@@ -12,6 +12,14 @@ import (
 
 // ACPInitialize verifies that a stdio provider completes protocol v1 initialization.
 func ACPInitialize(ctx context.Context, endpoint middleware.ProtocolEndpoint) error {
+	resolved, err := agentlaunch.ResolveEndpoint("", endpoint)
+	if err != nil {
+		return err
+	}
+	endpoint = resolved.Endpoint
+	if endpoint.Sandbox != nil && endpoint.Sandbox.Container != nil {
+		return fmt.Errorf("container sandbox handshake requires an explicit workspace; use matrix sandbox doctor --workspace")
+	}
 	command, args := agentlaunch.PrepareStdio(endpoint.Command, endpoint.Args, endpoint.EnvIsolation)
 	transport, err := zedacp.NewStdioTransport(ctx, command, endpoint.Env, args...)
 	if err != nil {

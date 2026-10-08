@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/childenv"
 )
 
@@ -21,12 +22,21 @@ const (
 // cannot drift away from the process it stands for.
 var runValidatorCommand = runValidatorProcess
 
-func checkValidator(ctx context.Context, workspace string, validator Validator) Check {
+type ValidatorRunner func(context.Context, string, Validator) (int, error)
+
+func validateValidatorSandbox(validator *Validator) error {
+	if validator == nil || validator.Sandbox == nil {
+		return nil
+	}
+	return agentlaunch.ValidateContainerSandbox(*validator.Sandbox)
+}
+
+func checkValidatorWithRunner(ctx context.Context, workspace string, validator Validator, runner ValidatorRunner) Check {
 	check := Check{Target: "validator"}
 	timeout := validatorTimeout(validator)
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	code, err := runValidatorCommand(runCtx, workspace, validator.Command)
+	code, err := runRequestedValidator(runCtx, workspace, validator, runner)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return check.as(CheckError, fmt.Sprintf("the validator did not finish within %s", timeout))
@@ -114,4 +124,14 @@ func runValidatorProcess(ctx context.Context, workspace string, argv []string) (
 		return exit.ExitCode(), nil
 	}
 	return 0, err
+}
+
+func runRequestedValidator(ctx context.Context, workspace string, validator Validator, runner ValidatorRunner) (int, error) {
+	if validator.Sandbox == nil {
+		return runValidatorCommand(ctx, workspace, validator.Command)
+	}
+	if runner == nil {
+		return 0, errors.New("requested validator sandbox runner unavailable")
+	}
+	return runner(ctx, workspace, validator)
 }

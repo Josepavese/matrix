@@ -38,6 +38,13 @@ type Report struct {
 // through `env -C`, or one whose process cwd never changed, is reported as it
 // is instead of as it was configured.
 func Probe(endpoint middleware.ProtocolEndpoint, processCwd string) (Report, []string) {
+	policy, policyErr := agentlaunch.ReadSandbox(endpoint)
+	if policyErr != nil {
+		return Report{Status: "launch_policy_invalid"}, []string{policyErr.Error()}
+	}
+	if policy != nil && policy.Container != nil {
+		return Report{Status: "container_process_unobserved"}, []string{"host child identity probe is unavailable for a workspace-bound container"}
+	}
 	if endpoint.Kind != middleware.ProtocolKindACP || endpoint.Transport != "stdio" || endpoint.Command == "" {
 		return Report{}, nil
 	}

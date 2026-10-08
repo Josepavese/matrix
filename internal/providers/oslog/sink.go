@@ -9,10 +9,15 @@ import (
 	"sync"
 
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/otlplog"
 )
 
 // Factory creates log sinks backed by the local OS.
-type Factory struct{}
+type Factory struct {
+	mu         sync.Mutex
+	collector  *otlplog.Exporter
+	credential func() (string, error)
+}
 
 // NewFactory returns a new oslog Factory.
 func NewFactory() *Factory {
@@ -21,6 +26,29 @@ func NewFactory() *Factory {
 
 // Build creates a log sink based on the provided options.
 func (f *Factory) Build(options middleware.LogSinkOptions) (middleware.LogSink, error) {
+	primary, err := f.buildPrimary(options)
+	if err != nil {
+		return nil, err
+	}
+	if options.Collector == nil {
+		return primary, nil
+	}
+	collectorOptions := *options.Collector
+	if collectorOptions.Credential == nil {
+		collectorOptions.Credential = f.credential
+	}
+	exporter, err := otlplog.New(collectorOptions)
+	if err != nil {
+		_ = primary.Close()
+		return nil, err
+	}
+	f.mu.Lock()
+	f.collector = exporter
+	f.mu.Unlock()
+	return &collectorSink{primary: primary, exporter: exporter}, nil
+}
+
+func (f *Factory) buildPrimary(options middleware.LogSinkOptions) (middleware.LogSink, error) {
 	switch options.Target {
 	case "stderr":
 		return &stderrSink{}, nil
@@ -54,13 +82,9 @@ func newFileSink(path string, maxBytes int64, maxBackups int) (*fileSink, error)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create log directory: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := openPrivateLogFile(path, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open log file %s: %w", path, err)
-	}
-	if err := f.Chmod(0o600); err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("failed to restrict log file permissions %s: %w", path, err)
 	}
 	info, err := f.Stat()
 	if err != nil {
@@ -126,13 +150,9 @@ func (s *fileSink) rotate() error {
 		}
 	}
 
-	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|os.O_TRUNC, 0o600)
+	f, err := openPrivateLogFile(s.path, true)
 	if err != nil {
 		return fmt.Errorf("failed to reopen rotated log file %s: %w", s.path, err)
-	}
-	if err := f.Chmod(0o600); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("failed to restrict rotated log file permissions %s: %w", s.path, err)
 	}
 
 	s.file = f

@@ -59,6 +59,7 @@ type Server struct {
 }
 
 type runRequest struct {
+	Capacity               *middleware.CapacityRequest `json:"capacity,omitempty"`
 	ChannelID              string                      `json:"channel_id"`
 	Input                  runpayload.Input            `json:"input"`
 	AgentID                string                      `json:"agent_id"`

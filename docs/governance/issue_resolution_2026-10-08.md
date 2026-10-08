@@ -110,3 +110,7 @@ Il formato ENCV2 è letto solo dalla nuova versione: un rollback applicativo usa
 il backup precedente insieme alla chiave originale. La copia conserva record
 cifrati/segreti e non va pubblicata; resta nel PAL home o nella directory assoluta
 scelta esplicitamente con `MATRIX_VAULT_MIGRATION_BACKUP_DIR`.
+
+## Evolutive approvate successivamente
+
+Dopo la consegna v0.1.52 l’utente ha richiesto esplicitamente lo sviluppo di sandbox, capacità, filesystem semantico e collector, tutti con PAL Linux/Windows/macOS. Il rifiuto precedente resta una decisione storica del primo ambito e viene superato da questo nuovo mandato. La capacità per workspace di EP-07.C era stata aggregata impropriamente al capacity manager del cliente: è una superficie generica di Matrix e viene accolta. Le nuove schede sono nell’indice `issues/README.md`; l’isolamento OS e le policy offerte da OpenCode/MiMo saranno dichiarati e verificati separatamente.

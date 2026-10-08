@@ -54,7 +54,7 @@ cleanup_preflight_home() {
 trap cleanup_preflight_home EXIT
 mkdir -p "$preflight_home/configs"
 cp -R configs/. "$preflight_home/configs/"
-MATRIX_HOME="$preflight_home" go run ./cmd/matrix orchestration capabilities >/tmp/matrix-orchestration-capabilities.json
+MATRIX_HOME="$preflight_home" go run ./cmd/matrix orchestration capabilities >"$preflight_home/orchestration-capabilities.json"
 cleanup_preflight_home
 trap - EXIT
 

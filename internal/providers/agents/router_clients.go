@@ -181,6 +181,15 @@ func (r *Router) getOrCreateClient(ctx context.Context, agentID string, cwd stri
 func (r *Router) getOrCreateClientLocked(ctx context.Context, agentID string, cwd string, launchArgs ...string) (middleware.ConversationClient, error) {
 	key := clientCacheKey(agentID, cwd, launchArgs...)
 	log := slog.With("component", "agent_router", "agent", agentID, "cwd", cwd)
+	if cached := r.clients[key]; cached != nil {
+		matches, err := r.cachedLaunchMatches(key, cached)
+		if err != nil {
+			return nil, err
+		}
+		if !matches {
+			return nil, fmt.Errorf("sandbox launch policy changed: reap the previous workspace client before dispatch")
+		}
+	}
 	if client, ok := r.lookupReusableClientLocked(key); ok {
 		log.Debug("reusing cached conversation client", "event", "client_reused")
 		return client, nil
@@ -274,19 +283,10 @@ func (r *Router) lookupReusableClientLocked(key string) (middleware.Conversation
 	if !ok || !isReusableClient(client) {
 		return nil, false
 	}
-	return client, true
-}
-
-func (r *Router) lookupAnyReusableClientForAgent(agentID string) (middleware.ConversationClient, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for key, client := range r.clients {
-		candidateAgentID, _ := splitClientCacheKey(key)
-		if candidateAgentID == agentID && isReusableClient(client) {
-			return client, true
-		}
+	if matches, err := r.cachedLaunchMatches(key, client); err != nil || !matches {
+		return nil, false
 	}
-	return nil, false
+	return client, true
 }
 
 func (r *Router) effectiveCwd(workspacePath string) string {

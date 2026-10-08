@@ -290,6 +290,7 @@ func (c *acpConversationClient) reconnectACPConnection(ctx context.Context) erro
 		return err
 	}
 	c.replaceACPClient(client, resp)
+	c.recordSandboxEvidence(transport)
 	return nil
 }
 
@@ -301,6 +302,9 @@ func (c *acpConversationClient) connectionTransportSpec() transportSpec {
 		Args:         c.endpoint.Args,
 		Env:          c.endpoint.Env,
 		EnvIsolation: c.endpoint.EnvIsolation,
+		Cwd:          c.cwd,
+		Sandbox:      c.endpoint.Sandbox,
+		Identity:     c.deps.AgentID,
 	}
 }
 
@@ -385,11 +389,15 @@ func (c *acpConversationClient) retryAuthenticationMethod() (middleware.Authenti
 // it: a request the agent gated behind a login is logged in and retried once
 // instead of surfacing as a provider failure.
 func (c *acpConversationClient) ExecuteTurn(ctx context.Context, turn middleware.ConversationTurn) (middleware.ConversationResult, error) {
+	if err := c.validateSandboxTurn(turn); err != nil {
+		return middleware.ConversationResult{}, err
+	}
 	var result middleware.ConversationResult
 	err := c.withAuthenticationRetry(ctx, func() error {
 		var turnErr error
 		result, turnErr = c.executeTurnOnce(ctx, turn)
 		return turnErr
 	})
+	c.reportSandboxExecution(&result)
 	return result, err
 }

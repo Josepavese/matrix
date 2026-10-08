@@ -3,6 +3,7 @@ package runapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/Josepavese/matrix/internal/logic/runactivity"
@@ -84,6 +85,10 @@ func terminalRunResult(run runtrace.Run, res runExecutionResult) (runresponse.Su
 // failure is preferred in every case, so the code and diagnostics a caller
 // already receives survive the terminal transition.
 func terminalFailure(run runtrace.Run, res runExecutionResult) error {
+	var coded interface{ FailureCode() string }
+	if errors.As(res.routeErr, &coded) {
+		return res.routeErr
+	}
 	if _, typed := providerfailure.As(res.routeErr); typed {
 		return res.routeErr
 	}

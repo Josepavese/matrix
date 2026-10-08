@@ -544,11 +544,19 @@ matrix orchestration capabilities
 
 ### `matrix fuse`
 
-FUSE filesystem operations (experimental).
+Read-only semantic mount using an explicitly installed PAL driver.
 
 ```bash
-matrix fuse
+matrix fs list
+matrix fs path runs <run-id>
+matrix fs read runs/<encoded-id>/status.json
+matrix fuse mount /existing/empty/mountpoint --driver-path /path/to/rclone
+matrix capacity /existing/workspace
+matrix sandbox doctor <agent-id> --workspace /existing/workspace
 ```
+
+See [PAL execution and observability](PAL-Execution-and-Observability.md) for
+sandbox contracts, native prerequisites, admission and the optional collector.
 
 ---
 

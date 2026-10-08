@@ -1,6 +1,7 @@
 package fusefs
 
 import (
+	"io/fs"
 	"os"
 	"sync"
 
@@ -10,9 +11,11 @@ import (
 // Provider implements middleware.FS.
 // Mount/unmount behavior is platform-specific and lives in build-tagged files.
 type Provider struct {
-	mu      sync.Mutex
-	server  unmountable
-	mounted bool
+	view       fs.FS
+	driverPath string
+	mu         sync.Mutex
+	server     unmountable
+	mounted    bool
 }
 
 type unmountable interface {
@@ -23,6 +26,10 @@ type unmountable interface {
 func NewProvider() *Provider {
 	return &Provider{}
 }
+
+// WithView selects the read-only semantic projection mounted by the PAL driver.
+func (p *Provider) WithView(view fs.FS) *Provider        { p.view = view; return p }
+func (p *Provider) WithDriverPath(path string) *Provider { p.driverPath = path; return p }
 
 // CreateDirectory ensures the directory exists (MkdirAll).
 func (p *Provider) CreateDirectory(path string) error {

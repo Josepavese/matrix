@@ -47,7 +47,6 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 
 	queue := m.getOrCreateQueue(channelID)
 	seq := queue.NextSeq()
-
 	meta, effectiveAgentID := m.resolveRouteMeta(sessionID, agentID)
 	if meta.Mode == "" {
 		meta.Mode = modeImplementation
@@ -64,7 +63,7 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 	}
 	routeReq := buildRouteRequest(req, meta, sessionID, message)
 	routeReq.ThoughtNotifier = m.remoteBinding(sessionID, routeReq.ThoughtNotifier)
-	responseTxt, newAgentSessionID, toolCalls, metadata, routeErr := m.router.Route(ctx, routeReq)
+	responseTxt, newAgentSessionID, toolCalls, metadata, routeErr := m.routeWithCapacity(ctx, req.Capacity, routeReq)
 	m.applyPendingHandoff(&meta, channelID, log, routeErr)
 
 	responseTxt = m.applyToolCalls(responseTxt, routeReq.Tools, toolCalls)

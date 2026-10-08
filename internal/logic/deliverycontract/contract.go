@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/Josepavese/matrix/internal/middleware"
 	"io"
 	"io/fs"
 	"os"
@@ -80,8 +81,9 @@ type Artifact struct {
 // "formatted" or "tests passed" stay the caller's definitions: Matrix runs the
 // check and reports the exit code instead of learning what a commit is.
 type Validator struct {
-	Command        []string `json:"command"`
-	TimeoutSeconds int      `json:"timeout_seconds,omitempty"`
+	Sandbox        *middleware.ContainerSandbox `json:"sandbox,omitempty"`
+	Command        []string                     `json:"command"`
+	TimeoutSeconds int                          `json:"timeout_seconds,omitempty"`
 }
 
 // Check is one evaluated requirement, kept as its own record so a reader can see
@@ -146,6 +148,9 @@ func (c Contract) validateQuantity() error {
 // to stat, a digest that is one, a validator that is an argv array with a
 // non-negative timeout.
 func (c Contract) validateShape() error {
+	if err := validateValidatorSandbox(c.Validator); err != nil {
+		return err
+	}
 	for _, artifact := range c.Artifacts {
 		if strings.TrimSpace(artifact.Path) == "" {
 			return errors.New("delivery contract: an artifact is declared without a path")
@@ -185,6 +190,12 @@ func isHexDigest(value string) bool {
 // because "could not check" is a fact the caller needs and an error return would
 // push the caller into reporting either success or failure.
 func Evaluate(ctx context.Context, workspace string, contract Contract) Verdict {
+	return EvaluateWithValidator(ctx, workspace, contract, nil)
+}
+
+// EvaluateWithValidator requires a supplied execution boundary when isolation
+// was requested; absence of a runner never causes host execution as a fallback.
+func EvaluateWithValidator(ctx context.Context, workspace string, contract Contract, runner ValidatorRunner) Verdict {
 	if !contract.Declared() {
 		return Verdict{Status: StatusNotDeclared, Reason: "no delivery contract was declared for this run"}
 	}
@@ -199,7 +210,7 @@ func Evaluate(ctx context.Context, workspace string, contract Contract) Verdict 
 		verdict.add(checkArtifact(workspace, artifact))
 	}
 	if contract.Validator != nil {
-		verdict.add(checkValidator(ctx, workspace, *contract.Validator))
+		verdict.add(checkValidatorWithRunner(ctx, workspace, *contract.Validator, runner))
 	}
 	if len(verdict.Checks) == 0 {
 		return Verdict{Status: StatusNotDeclared, Reason: "no delivery contract was declared for this run"}
@@ -297,10 +308,18 @@ func digestFile(path string) (string, error) {
 // resolving symlinks, so a link planted inside the workspace cannot point the
 // check at a file the run was never entitled to have verified.
 func resolveArtifact(workspace, target string) (string, error) {
-	if filepath.IsAbs(target) {
+	if absoluteArtifactPath(target) {
 		return "", fmt.Errorf("declared path %q is absolute; contract paths are relative to the run workspace", target)
 	}
-	root := filepath.Clean(workspace)
+	root, err := filepath.Abs(workspace)
+	if err != nil {
+		return "", err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("workspace cannot be resolved: %w", err)
+	}
+	target = filepath.FromSlash(strings.ReplaceAll(target, "\\", "/"))
 	path := filepath.Clean(filepath.Join(root, target))
 	if !within(root, path) {
 		return "", fmt.Errorf("declared path %q resolves outside the run workspace", target)
@@ -323,11 +342,16 @@ func resolveArtifact(workspace, target string) (string, error) {
 }
 
 func within(root, path string) bool {
-	return path != root && strings.HasPrefix(path, root+string(filepath.Separator))
+	relative, err := filepath.Rel(root, path)
+	return err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func (c Check) as(status, detail string) Check {
 	c.Status = status
 	c.Detail = detail
 	return c
+}
+
+func absoluteArtifactPath(target string) bool {
+	return filepath.IsAbs(target) || strings.HasPrefix(target, "/") || strings.HasPrefix(target, "\\") || (len(target) >= 2 && target[1] == ':')
 }

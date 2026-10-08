@@ -1,0 +1,55 @@
+name: PAL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            suffix: ''
+          - os: windows-latest
+            suffix: '.exe'
+          - os: macos-latest
+            suffix: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version: '1.27.1'
+      - name: Native disk, memory, admission, privacy and collector contracts
+        shell: bash
+        run: >-
+          go test -race -count=1 -v
+          ./internal/providers/oscapacity ./internal/logic/admission
+          ./internal/logic/agentlaunch ./internal/providers/containersandbox
+          ./internal/logic/semanticfs ./internal/providers/fusefs
+          ./internal/providers/otlplog ./internal/providers/oslog
+          ./internal/logic/deliverycontract ./internal/logic/agentdoctor
+      - name: Native ACP boundary and authenticated runtime API
+        shell: bash
+        run: |
+          go test -race -count=1 -v ./internal/providers/agents -run 'TestSandbox|TestCachedLaunch|TestRouterCodexPolicy'
+          go test -race -count=1 -v ./cmd/matrix -run 'TestPAL|TestCapacity'
+      - name: Native CLI including workspace path with spaces
+        shell: bash
+        run: |
+          go build -o "$RUNNER_TEMP/matrix-pal${{ matrix.suffix }}" ./cmd/matrix
+          MATRIX_PAL_BINARY="$RUNNER_TEMP/matrix-pal${{ matrix.suffix }}" go test ./tests/integration -run '^TestSmokePALNativeCapacityCLI$' -count=1 -v
+      - name: Native physical mount prerequisites
+        shell: bash
+        run: |
+          echo 'Physical mounts require installed rclone plus Linux FUSE, macFUSE/FUSE-T, or Windows WinFsp. Native unit/API/CLI tests above do not attest those optional drivers.'

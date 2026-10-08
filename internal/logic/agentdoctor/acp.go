@@ -18,6 +18,9 @@ func InspectACP(endpoint middleware.ProtocolEndpoint, handshake HandshakeProbe) 
 	if endpoint.Kind != middleware.ProtocolKindACP || endpoint.Transport != "stdio" || endpoint.Command == "" {
 		return result, nil
 	}
+	if blocked, report, warnings := sandboxProbeReport(endpoint); blocked {
+		return report, warnings
+	}
 	probe := ProbeCommand(endpoint.Command, endpoint.Args, endpoint.Env, endpoint.EnvIsolation)
 	result["command_probe_ok"] = probe.OK
 	result["command_probe_exit_code"] = probe.ExitCode

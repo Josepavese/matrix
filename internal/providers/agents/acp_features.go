@@ -73,6 +73,9 @@ func (c *acpConversationClient) validatePromptContent(blocks []middleware.Conten
 }
 
 func (c *acpConversationClient) validateMCPServers(servers []acpMcpServerConfig) error {
+	if c.endpoint.Sandbox != nil && len(servers) > 0 {
+		return fmt.Errorf("sandbox MCP servers require a separately governed execution boundary")
+	}
 	for _, server := range servers {
 		switch strings.ToLower(strings.TrimSpace(server.Type)) {
 		case "", "stdio":

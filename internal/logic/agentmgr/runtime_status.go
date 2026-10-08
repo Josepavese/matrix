@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -175,6 +176,15 @@ func buildRuntimeReport(input inspectInput, canDial func(string) bool) AgentRunt
 		Installed:            input.Installed,
 		Status:               "unknown",
 		ArtifactVerification: input.Meta.ArtifactVerification,
+	}
+	if policy, err := agentlaunch.ReadSandbox(endpoint); report.Active && err != nil {
+		report.Status = "launch_policy_invalid"
+		report.Warnings = append(report.Warnings, err.Error())
+		return report
+	} else if report.Active && policy != nil && policy.Container != nil {
+		report.Status = "sandbox_requires_workspace_probe"
+		report.Warnings = append(report.Warnings, "provider command is in the container image; host executable checks do not attest it")
+		return report
 	}
 
 	switch {

@@ -229,3 +229,9 @@ For contributors and those interested in the product direction:
 - **Tone:** sharp, operator-first, technical, controlled
 - **Primary:** `#0B1020` `#00D1B2` `#3B82F6` `#F5F7FB`
 - **Accent:** `#FF7A59` `#A3E635`
+
+### PAL execution and observability
+
+Optional provider permissions and container isolation, native workspace capacity,
+read-only semantic state and bounded OTLP operational log export share contracts
+on Linux, Windows and macOS. See [configuration and prerequisites](docs/wiki/PAL-Execution-and-Observability.md).

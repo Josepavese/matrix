@@ -33,6 +33,7 @@ type ProtocolEndpoint struct {
 	EnvIsolation    bool
 	ProtocolVersion string
 	CardURL         string
+	Sandbox         *SandboxPolicy
 }
 
 // ConversationTurn is the protocol-neutral representation of a single user turn.

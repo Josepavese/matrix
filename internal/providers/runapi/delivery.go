@@ -9,6 +9,7 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/deliverycontract"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/providers/containersandbox"
 )
 
 // declaredContract validates the caller's contract before any run exists. A
@@ -79,7 +80,7 @@ func (s *Server) recordDeliveryVerdict(run runtrace.Run) {
 	if !declared || decided {
 		return
 	}
-	verdict := deliverycontract.Evaluate(context.Background(), run.WorkspacePath, contract)
+	verdict := deliverycontract.EvaluateWithValidator(context.Background(), run.WorkspacePath, contract, runIsolatedValidator)
 	s.recordValidatorExecutions(run.ID, contract, verdict)
 	_, _ = s.runStore.AppendEvent(runtrace.Event{
 		RunID: run.ID, Kind: deliverycontract.EventVerified, Actor: "matrix",
@@ -151,6 +152,11 @@ func (s *Server) recordValidatorExecutions(runID string, contract deliverycontra
 			"resolved_binary": deliverycontract.ResolveValidatorBinary(contract.Validator.Command),
 			"exit_status":     check.Status,
 		}
+		if contract.Validator.Sandbox != nil {
+			metadata["resolved_binary"] = contract.Validator.Command[0]
+			metadata["resolution_scope"] = "container_image"
+			metadata["sandbox_driver"] = "local-docker-linux-containers"
+		}
 		_, _ = s.runStore.AppendEvent(runtrace.Event{
 			RunID:     runID,
 			Kind:      deliverycontract.EventValidatorExecuted,
@@ -160,4 +166,11 @@ func (s *Server) recordValidatorExecutions(runID string, contract deliverycontra
 			Metadata:  metadata,
 		})
 	}
+}
+
+func runIsolatedValidator(ctx context.Context, workspace string, validator deliverycontract.Validator) (int, error) {
+	if len(validator.Command) == 0 || validator.Sandbox == nil {
+		return 0, fmt.Errorf("validator sandbox command and policy required")
+	}
+	return containersandbox.Exec(ctx, containersandbox.Launch{Policy: *validator.Sandbox, Workspace: workspace, Command: validator.Command[0], Args: validator.Command[1:], Identity: "delivery-validator"})
 }
