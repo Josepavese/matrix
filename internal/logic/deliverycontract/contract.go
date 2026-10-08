@@ -308,10 +308,18 @@ func digestFile(path string) (string, error) {
 // resolving symlinks, so a link planted inside the workspace cannot point the
 // check at a file the run was never entitled to have verified.
 func resolveArtifact(workspace, target string) (string, error) {
-	if filepath.IsAbs(target) {
+	if absoluteArtifactPath(target) {
 		return "", fmt.Errorf("declared path %q is absolute; contract paths are relative to the run workspace", target)
 	}
-	root := filepath.Clean(workspace)
+	root, err := filepath.Abs(workspace)
+	if err != nil {
+		return "", err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("workspace cannot be resolved: %w", err)
+	}
+	target = filepath.FromSlash(strings.ReplaceAll(target, "\\", "/"))
 	path := filepath.Clean(filepath.Join(root, target))
 	if !within(root, path) {
 		return "", fmt.Errorf("declared path %q resolves outside the run workspace", target)
@@ -334,11 +342,16 @@ func resolveArtifact(workspace, target string) (string, error) {
 }
 
 func within(root, path string) bool {
-	return path != root && strings.HasPrefix(path, root+string(filepath.Separator))
+	relative, err := filepath.Rel(root, path)
+	return err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func (c Check) as(status, detail string) Check {
 	c.Status = status
 	c.Detail = detail
 	return c
+}
+
+func absoluteArtifactPath(target string) bool {
+	return filepath.IsAbs(target) || strings.HasPrefix(target, "/") || strings.HasPrefix(target, "\\") || (len(target) >= 2 && target[1] == ':')
 }

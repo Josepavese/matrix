@@ -94,3 +94,14 @@ Gate locali: deploy preflight, quality gate con tutte le soglie di copertura,
 lint e governance completati; scansione dei nuovi file da ripetere sullo stage.
 Release, checksum, installazione pubblica isolata e servizio locale sono i
 passaggi successivi della consegna, registrati nel verbale della release.
+
+## Difetti emersi dalla prima CI nativa
+
+La prima esecuzione PAL su Windows/macOS ha trovato difetti reali preesistenti
+nei percorsi dei validatori e nei permessi dei log. I workspace vengono ora
+canonicalizzati prima del confronto e gli artifact path radicati/drive-qualified
+sono rifiutati su tutti gli OS. Alias di workspace restano validi, link esterni
+restano rifiutati. I log Windows usano una DACL protetta dell'account corrente,
+applicata alla creazione e ai file esistenti prima delle scritture; i test
+verificano l'ACL Windows invece di richiedere mode bits Unix.
+Le correzioni sono sottoposte nuovamente alla stessa CI nativa.

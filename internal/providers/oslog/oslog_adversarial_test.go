@@ -1,7 +1,6 @@
 package oslog
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,17 +40,12 @@ func TestBuildRequiresAUsablePathForFileSinks(t *testing.T) {
 		t.Fatalf("the sink must create its directory: %v", err)
 	}
 	defer func() { _ = sink.Close() }()
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
+	assertPrivateLogPermissions(t, path)
+	// A regular file as parent is unusable on every OS.
+	if _, err := factory.Build(middleware.LogSinkOptions{Target: "file", FilePath: filepath.Join(path, "nested.log")}); err == nil {
+		t.Fatal("unusable log path accepted")
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("log file mode is %v, want 0600", info.Mode().Perm())
-	}
-	// An unusable location must still be refused rather than silently dropped.
-	if _, err := factory.Build(middleware.LogSinkOptions{Target: "file", FilePath: "/proc/denied/matrix.log"}); err == nil {
-		t.Fatal("an unusable log path must be refused")
-	}
+
 }
 
 func TestBuildAcceptsTheDocumentedTargets(t *testing.T) {
