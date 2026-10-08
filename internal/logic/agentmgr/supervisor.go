@@ -48,8 +48,11 @@ type Supervisor struct {
 	registry *Registry
 	probe    func(context.Context, middleware.ProtocolEndpoint) error
 
-	mu      sync.RWMutex
-	running map[string]*AgentProcess
+	mu       sync.RWMutex
+	running  map[string]*AgentProcess
+	lifetime context.Context
+	watching map[string]chan struct{}
+	failed   map[string]bool
 }
 
 // SetOnDemandProbe configures the daemon-owned bounded readiness handshake.
@@ -71,6 +74,9 @@ func NewSupervisor(proc middleware.Process, netprov middleware.Network, store mi
 // StartAll reads the registry and starts all installed/enabled agents.
 func (s *Supervisor) StartAll(ctx context.Context) error {
 	log := slog.With("component", "agent_supervisor")
+	s.mu.Lock()
+	s.lifetime = ctx
+	s.mu.Unlock()
 
 	for _, agentID := range s.registry.List() {
 		cfg, err := s.registry.Get(agentID)
@@ -90,36 +96,26 @@ func (s *Supervisor) StartAll(ctx context.Context) error {
 	return nil
 }
 
-func (s *Supervisor) startSupervised(ctx context.Context, log *slog.Logger, agentID string, cfg AgentConfig) {
-	endpoint := protocolEndpointFromAgentConfig(cfg)
-	if !s.proc.HasExecutable(cfg.Command) {
-		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "missing_executable", Error: "executable not found in PATH"})
-		log.Warn("agent not found in path, skipping supervision", "event", "agent_missing", "agent", agentID, "command", cfg.Command)
-		return
-	}
-	go s.watchdog(ctx, agentID, cfg)
-}
-
 func (s *Supervisor) startOnDemand(ctx context.Context, log *slog.Logger, agentID string, cfg AgentConfig) {
 	endpoint := protocolEndpointFromAgentConfig(cfg)
 	resolved, policyErr := agentlaunch.ResolveEndpoint(agentID, endpoint)
 	if policyErr != nil {
-		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "launch_policy_invalid", Error: policyErr.Error()})
+		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint), Status: "launch_policy_invalid", Error: policyErr.Error()})
 		log.Warn("agent launch policy is not applicable", "event", "agent_launch_policy_invalid", "agent", agentID, "error", policyErr)
 		return
 	}
 	endpoint = resolved.Endpoint
 	if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && !s.proc.HasExecutable(cfg.Command) {
-		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "missing_executable", Error: "executable not found in PATH"})
+		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint), Status: "missing_executable", Error: "executable not found in PATH"})
 		log.Warn("agent not found in path, skipping supervision", "event", "agent_missing", "agent", agentID, "command", cfg.Command)
 		return
 	}
 	if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Transport == "stdio" && s.probe != nil {
-		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "probing"})
+		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint), Status: "probing"})
 		go s.probeOnDemand(ctx, log, agentID, endpoint)
 		return
 	}
-	s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "ready_on_demand"})
+	s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint), Status: "ready_on_demand"})
 	log.Info("agent is on-demand, skipping background supervision", "event", "agent_on_demand", "agent", agentID, "protocol_kind", endpoint.Kind, "transport", endpoint.Transport)
 }
 
@@ -127,7 +123,7 @@ func (s *Supervisor) probeOnDemand(ctx context.Context, log *slog.Logger, agentI
 	probeCtx, cancel := context.WithTimeout(ctx, onDemandProbeTimeout)
 	err := s.probe(probeCtx, endpoint)
 	cancel()
-	state := RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "ready_on_demand"}
+	state := RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint), Status: "ready_on_demand"}
 	if err != nil {
 		state.Status = "initialize_failed"
 		state.Error = err.Error()
@@ -164,6 +160,12 @@ func (s *Supervisor) GetAgentEndpoint(agentID string) (middleware.ProtocolEndpoi
 		return middleware.ProtocolEndpoint{}, fmt.Errorf("agent %s is configured but inactive", agentID)
 	}
 
+	if isRemoteACPEndpoint(cfg, endpoint) {
+		return endpoint, nil
+	}
+	if err := s.ensureSupervision(agentID, cfg); err != nil {
+		return middleware.ProtocolEndpoint{}, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -204,7 +206,7 @@ func (s *Supervisor) watchdog(ctx context.Context, agentID string, cfg AgentConf
 			// child somewhere else would be a silent substitution, and it is
 			// exactly the wrong directory that this declaration exists to
 			// prevent.
-			s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "process_cwd_invalid", Error: cwdErr.Error()})
+			s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint), Status: "process_cwd_invalid", Error: cwdErr.Error()})
 			log.Error("refusing to start supervised agent: declared process cwd is unusable",
 				"event", "agent_process_cwd_invalid", "error", cwdErr, "retry_in", "5s")
 			if !delayOrDone(ctx, 5*time.Second) {
@@ -214,13 +216,13 @@ func (s *Supervisor) watchdog(ctx context.Context, agentID string, cfg AgentConf
 		}
 		log.Info("starting supervised agent", "event", "agent_starting", "port", port, "command", cfg.Command, "args", args, "process_cwd", processCwd)
 		spec := middleware.CommandSpec{Runner: cfg.Command, Args: args, Env: cfg.Env, EnvIsolation: cfg.EnvIsolation, Dir: processCwd}
-		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint.Transport), Status: "starting", Port: port, Address: fmt.Sprintf("127.0.0.1:%d", port)})
+		s.persistRuntimeState(log, RuntimeState{AgentID: agentID, Protocol: string(endpoint.Kind), Mode: runtimeMode(endpoint), Status: "starting", Port: port, Address: fmt.Sprintf("127.0.0.1:%d", port)})
 
 		run, ok := s.startAgent(ctx, log, supervisedStartRequest{
 			agentID:  agentID,
 			port:     port,
 			protocol: string(endpoint.Kind),
-			mode:     runtimeMode(endpoint.Transport),
+			mode:     runtimeMode(endpoint),
 			spec:     spec,
 		})
 		if !ok {
@@ -262,6 +264,13 @@ func (s *Supervisor) startAgent(ctx context.Context, log *slog.Logger, req super
 
 	s.mu.Lock()
 	s.running[req.agentID] = &AgentProcess{AgentID: req.agentID, Port: req.port, Handle: handle}
+	if ready := s.watching[req.agentID]; ready != nil {
+		select {
+		case <-ready:
+		default:
+			close(ready)
+		}
+	}
 	s.mu.Unlock()
 	s.persistRuntimeState(log, RuntimeState{AgentID: req.agentID, Protocol: req.protocol, Mode: req.mode, Status: "running", Port: req.port, Address: fmt.Sprintf("127.0.0.1:%d", req.port), PID: handle.GetPID()})
 	return supervisedRun{AgentID: req.agentID, Handle: handle, StartedAt: startedAt}, true

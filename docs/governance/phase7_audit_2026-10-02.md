@@ -363,3 +363,11 @@ Controllo meccanico: ogni nome di test citato nella prima colonna esiste nell'al
 
 Un artefatto di governance che dice il falso è peggio di uno mancante: questa è l'unica riga, su 126,
 che va sistemata prima del taglio.
+
+
+## Stato delle segnalazioni aggiornato — 2026-10-08
+
+Questo documento conserva il suo snapshot storico. La verifica del codice
+corrente, le correzioni successive e i limiti accettati sono nel
+[registro completo del 2026-10-08](issue_resolution_2026-10-08.md).
+Una qualifica esterna o una revisione umana non è certificata da questa nota.

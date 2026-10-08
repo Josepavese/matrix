@@ -160,3 +160,12 @@ cui riga d'indice sopra nomina solo EP-08. Riga mancante:
 Conseguenza pratica di entrambi: **11 episodi, 10 etichette**, e il più
 importante era il non indicizzato. Chi cerchi per numero trova due cose
 diverse; chi cerchi per indice non trova il P1.
+
+
+## Decisione del manutentore — 2026-10-08
+
+Indice storico versionato e interamente revisionato; tutti gli episodi gestiti. Le istruzioni del reporter descrivono il suo incarico originario.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.

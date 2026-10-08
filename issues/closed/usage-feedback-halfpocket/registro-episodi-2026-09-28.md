@@ -141,3 +141,12 @@ Ad ogni nuova anomalia reale:
 ## Spazio per note non committate dei maintainers
 
 (Sezione vuota. Chi vuole può annotare qui sotto senza riaprire righe sopra.)
+
+
+## Decisione del manutentore — 2026-10-08
+
+Registro storico preservato; tutte le righe riconciliate nel riepilogo corrente.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.

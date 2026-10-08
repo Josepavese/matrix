@@ -9,6 +9,7 @@ import (
 
 func setTestVaultKey(t *testing.T) {
 	t.Helper()
+	t.Setenv("MATRIX_VAULT_MIGRATION_BACKUP_DIR", "")
 	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
 	t.Setenv("MATRIX_VAULT_MASTER_KEY", base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32)))
 }

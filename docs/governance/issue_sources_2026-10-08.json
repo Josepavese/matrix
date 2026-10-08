@@ -1,0 +1,97 @@
+{
+  "date": "2026-10-08",
+  "scope": "All reports outside issues/closed at baseline",
+  "originals_preserved_as_prefix": true,
+  "sources": [
+    {
+      "source": "issues/2026-10-02-external-halfpocket-mimo-worktree-cwd-acceptance.md",
+      "archive": "issues/closed/2026-10-02-external-halfpocket-mimo-worktree-cwd-acceptance.md",
+      "original_sha256": "89283819e7582d66439bc2eac333481e2c44c77a67924542dc5097a9ec77c8c3",
+      "decision": "Già corretto; accettazione reale preservata. Il workaround cwd è ritirato."
+    },
+    {
+      "source": "issues/2026-10-07-external-mimocode-quota-block-running-no-actionable-event.md",
+      "archive": "issues/closed/2026-10-07-external-mimocode-quota-block-running-no-actionable-event.md",
+      "original_sha256": "1b4c27d1d5763165afa563f6f165a7d54d62dc022aa7ae0f2ae3a08295055e29",
+      "decision": "Accolti errori runtime, avviso di inattività, binding remoto precoce e log limitati. Lettura di log privati del harness e retry/fallback impliciti rifiutati: fuori dal contratto Matrix."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/README.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/README.md",
+      "original_sha256": "eca07f79a540fa79e7de339899621d08f36827c681e469a34c45a534dc081e1f",
+      "decision": "Indice storico versionato e interamente revisionato; tutti gli episodi gestiti. Le istruzioni del reporter descrivono il suo incarico originario."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/REVISIONE-PM-2026-09-28.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/REVISIONE-PM-2026-09-28.md",
+      "original_sha256": "7cd375cb2ae1568a22bba24aa78245257111899b019784099581ecbadee22b99",
+      "decision": "EP08/EP09a errori del chiamante, discovery/schema corretti; EP09b limite provider, EP10 storico delivery già implementato. Non coincide con EP10-20261006."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/ep-01-agent-acp-native-registration.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/ep-01-agent-acp-native-registration.md",
+      "original_sha256": "b4d51c0c9471dceb315c83164f343304e1c277a7bd73ff7f38f09226d1b5cdb9",
+      "decision": "Registrazione e registro vivo già corretti; completati avvio supervisionato tardivo ed endpoint esterni."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/ep-02-mimo-cwd-via-env-wrapper.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/ep-02-mimo-cwd-via-env-wrapper.md",
+      "original_sha256": "aa3b8f6f083d0d331541b008ea46962ec5bc0a368c3411a9bebae44a54135c07",
+      "decision": "Correzione cwd già presente e accettata il 2 ottobre; ulteriore prova reale MiMo su workspace temporaneo."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/ep-03-workspace-id-inventati-vs-add.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/ep-03-workspace-id-inventati-vs-add.md",
+      "original_sha256": "a3fbab82fdf72879240d897c475bd60f914818b4954a22de30639fb97926947a",
+      "decision": "Mapping workspace già corretto; ID inventati sono uso errato. Commit sul ROOT non attribuibile a Matrix dalle evidenze disponibili. Workflow Git del cliente fuori scope."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/ep-04-cli-vault-get-typed-parse.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/ep-04-cli-vault-get-typed-parse.md",
+      "original_sha256": "4a1edca7162158eb33e37caa121c100f3a594a90b3271c61b70b59a51c8b6c02",
+      "decision": "Getter scalare su record strutturato: uso errato. Summary e limiti già implementati."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/ep-05-sse-run-notifications-positivo.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/ep-05-sse-run-notifications-positivo.md",
+      "original_sha256": "038adf1c18087319b697ad8fe5d6cae613c3880dc9d916d83a5c3de5537220c2",
+      "decision": "Socket/cursor/replay/ack/elicitation già implementati; estensione opt-in con wakeup attention_required."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/ep-06-model-request-vs-actual.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/ep-06-model-request-vs-actual.md",
+      "original_sha256": "69c26e2add10d1376f7ff5b58304160cb480f423cc9b774f46c48d82c59c3986",
+      "decision": "Attestazione provider e fallback opt-in già implementati. Nome fisico/fatturato non attestabile; valori segreti nascosti per default."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/ep-07-quota-429-retry-after.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/ep-07-quota-429-retry-after.md",
+      "original_sha256": "6b3cfff02897398cf0eb17e71aee16c8e5b7477ef2b16f6b094ace5ed1303742",
+      "decision": "Diagnostica strutturata e avviso accolti. Reset UTC da prosa, 429 sempre quota, retry/fallback impliciti e capacity manager cliente rifiutati con motivi nel riepilogo."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/ep-09-mimocode-live-context-unsupported-2026-09-29.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/ep-09-mimocode-live-context-unsupported-2026-09-29.md",
+      "original_sha256": "16489f058677e9c05443a07e7b419bcf7a0aa861bedc2625e0858b877a80f03b",
+      "decision": "Doctor e delivery separati; limite live-attach MiMo conservato come limite del provider, senza falsi riusi remoti."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/ep-10-mid-run-quota-classified-preflight-2026-10-06.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/ep-10-mid-run-quota-classified-preflight-2026-10-06.md",
+      "original_sha256": "93d739b1e7ef5ed0fefa1be22287bc48e7e672bf5d0c77239f25a8506d839375",
+      "decision": "Bug corretto: errore durante session/prompt è runtime. ID EP10-20261006 distinto dall’EP10 storico di delivery."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/ep-11-long-silence-stall-observability-2026-10-06.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/ep-11-long-silence-stall-observability-2026-10-06.md",
+      "original_sha256": "ba4e01126ec64fc0ab2d8a848301bf50e0e20de83849a8cce9131080a1104b99",
+      "decision": "Corrette correlazione per sessione, completezza della finestra e causa unknown; avviso opzionale senza cancellazione automatica."
+    },
+    {
+      "source": "issues/usage-feedback-halfpocket/registro-episodi-2026-09-28.md",
+      "archive": "issues/closed/usage-feedback-halfpocket/registro-episodi-2026-09-28.md",
+      "original_sha256": "7d6986942a10203a6cdf1239b07e565e8f6d7543fa3374a042ab6749a3b87808",
+      "decision": "Registro storico preservato; tutte le righe riconciliate nel riepilogo corrente."
+    }
+  ]
+}

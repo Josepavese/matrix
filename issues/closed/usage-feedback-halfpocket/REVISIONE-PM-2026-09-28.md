@@ -115,3 +115,12 @@ transcript. Per cancellazioni: piano esatto e provenienza verificabile,
 preferibilmente quarantena recuperabile; non un generico permesso basato
 sul nome 'cache' o 'test'. Eventuali guardie native vanno verificate prima
 di proporne di duplicate. Non e' stata modificata la logica Matrix.
+
+
+## Decisione del manutentore — 2026-10-08
+
+EP08/EP09a errori del chiamante, discovery/schema corretti; EP09b limite provider, EP10 storico delivery già implementato. Non coincide con EP10-20261006.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.

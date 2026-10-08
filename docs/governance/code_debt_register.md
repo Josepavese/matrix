@@ -197,3 +197,16 @@ Reduction strategy:
 - Keep protocol and channel behavior unchanged.
 - Prefer lower branch count without moving complexity into equally large replacement functions.
 - After each reduction, lower the warning budget baseline.
+
+## 2026-10-08: runtime intervention and continuity
+
+- Exact package ceilings updated for product growth: agentmgr 1212 -> 1305
+  (late managed supervision, crash-loop boundary and external endpoint ownership), runtrace 1703 ->
+  1754 (durable nonterminal attention and serialized metadata), session 5800 ->
+  5826 (provider-confirmed identity persisted before a cancelled turn returns),
+  runapi 2640 -> 2649 (explicit inactivity notice request and wiring).
+- No file/function/branch-warning ceiling is raised. Supervision launch code
+  is moved to its dedicated lifecycle file; CLI outcome handling is factored.
+- Causal tests cover cancellation, terminal reconciliation, cross-session tool
+  IDs, bounded stderr, concurrent late enable and native Unix notification
+  delivery. These ceilings are measured limits, not spare growth allowance.

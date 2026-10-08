@@ -73,6 +73,7 @@ type runRequest struct {
 	SessionPolicy          string                      `json:"session_policy,omitempty"`
 	CleanupPolicy          string                      `json:"cleanup_policy,omitempty"`
 	EmergencyKillSeconds   int                         `json:"emergency_kill_seconds,omitempty"`
+	ActivityNoticeSeconds  int                         `json:"activity_notice_seconds,omitempty"`
 	ActivityTimeoutSeconds int                         `json:"activity_timeout_seconds,omitempty"`
 	Context                []runtrace.ContextRef       `json:"context,omitempty"`
 	SidecarCapsules        []middleware.SidecarCapsule `json:"sidecar_capsules,omitempty"`
@@ -97,6 +98,7 @@ type runExecution struct {
 	agentID          string
 	emergencyTimeout time.Duration
 	activityTimeout  time.Duration
+	activityNotice   time.Duration
 }
 
 type runExecutionResult struct {

@@ -17,7 +17,7 @@ import (
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
-const encryptedPrefix = "ENCV1:"
+const encryptedPrefix = "ENCV2:"
 const defaultMasterKeyPath = "configs/vault-master.key"
 
 // KeyStatus describes the state of the vault encryption master key.
@@ -171,69 +171,71 @@ func writeMasterKeyFile(fs middleware.FS, filePath string, data []byte) error {
 	return ApplySecurePermissions(filePath)
 }
 
-// EncryptBytes encrypts a byte slice using AES-GCM with the resolved master key.
-func EncryptBytes(plain []byte) ([]byte, error) {
+// valueCipher resolves the configured AES-GCM cipher for vault values.
+func valueCipher() (cipher.AEAD, error) {
 	key, _, err := ResolveMasterKey(nil)
 	if err != nil {
 		return nil, err
 	}
 	if len(key) == 0 {
-		return nil, errors.New("vault master key is required to encrypt values")
+		return nil, errors.New("vault master key is required")
 	}
-
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
-	gcm, err := cipher.NewGCM(block)
+	return cipher.NewGCM(block)
+}
+
+// EncryptBytes binds a vault value to its exact storage key through AEAD data.
+func EncryptBytes(storageKey string, plain []byte) ([]byte, error) {
+	if storageKey == "" {
+		return nil, errors.New("vault storage key is required")
+	}
+	gcm, err := valueCipher()
 	if err != nil {
 		return nil, err
+	}
+	return sealValue(gcm, storageKey, plain)
+}
+
+func sealValue(gcm cipher.AEAD, storageKey string, plain []byte) ([]byte, error) {
+	if storageKey == "" {
+		return nil, errors.New("vault storage key is required")
 	}
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	sealed := gcm.Seal(nil, nonce, plain, nil)
+	sealed := gcm.Seal(nil, nonce, plain, []byte(storageKey))
 	payload := append(append([]byte{}, nonce...), sealed...)
-	encoded := base64.StdEncoding.EncodeToString(payload)
-	return []byte(encryptedPrefix + encoded), nil
+	return []byte(encryptedPrefix + base64.StdEncoding.EncodeToString(payload)), nil
 }
 
-// DecryptBytes decrypts a byte slice that was encrypted with EncryptBytes.
-func DecryptBytes(raw []byte) ([]byte, error) {
-	if !IsEncryptedValue(raw) {
-		return raw, nil
+// DecryptBytes only reads the current key-bound format. Older data is handled
+// by the one-time writable migration, never by a live fallback decoder.
+func DecryptBytes(storageKey string, raw []byte) ([]byte, error) {
+	if storageKey == "" || !IsEncryptedValue(raw) {
+		return nil, errors.New("vault value requires key-bound ENCV2 migration")
 	}
+	gcm, err := valueCipher()
+	if err != nil {
+		return nil, err
+	}
+	return openValue(gcm, raw, encryptedPrefix, []byte(storageKey))
+}
 
-	key, _, err := ResolveMasterKey(nil)
-	if err != nil {
-		return nil, err
-	}
-	if len(key) == 0 {
-		return nil, errors.New("vault master key is required to decrypt encrypted values")
-	}
-
-	payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(string(raw), encryptedPrefix))
-	if err != nil {
-		return nil, err
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
+func openValue(gcm cipher.AEAD, raw []byte, prefix string, associated []byte) ([]byte, error) {
+	payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(string(raw), prefix))
 	if err != nil {
 		return nil, err
 	}
 	if len(payload) < gcm.NonceSize() {
 		return nil, errors.New("encrypted payload is truncated")
 	}
-	nonce := payload[:gcm.NonceSize()]
-	ciphertext := payload[gcm.NonceSize():]
-	return gcm.Open(nil, nonce, ciphertext, nil)
+	return gcm.Open(nil, payload[:gcm.NonceSize()], payload[gcm.NonceSize():], associated)
 }
 
-// IsEncryptedValue reports whether a byte slice starts with the encrypted prefix.
 func IsEncryptedValue(raw []byte) bool {
 	return strings.HasPrefix(string(raw), encryptedPrefix)
 }

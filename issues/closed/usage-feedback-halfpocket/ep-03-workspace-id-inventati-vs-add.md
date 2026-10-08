@@ -32,3 +32,12 @@ I primi run GLM/M3 con `workspace_id` inventati sono falliti prima del provider 
 ## Follow-up
 
 Nessuno in questo task.
+
+
+## Decisione del manutentore — 2026-10-08
+
+Mapping workspace già corretto; ID inventati sono uso errato. Commit sul ROOT non attribuibile a Matrix dalle evidenze disponibili. Workflow Git del cliente fuori scope.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.

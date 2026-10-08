@@ -19,10 +19,12 @@ type Timeout struct {
 }
 
 type notifier struct {
-	inner middleware.ThoughtNotifier
-	mu    sync.Mutex
-	timer *time.Timer
-	after time.Duration
+	inner   middleware.ThoughtNotifier
+	mu      sync.Mutex
+	timer   *time.Timer
+	after   time.Duration
+	stopped bool
+	dueAt   time.Time
 }
 
 func WithTimeout(ctx context.Context, after time.Duration, inner middleware.ThoughtNotifier) (context.Context, middleware.ThoughtNotifier, *Timeout, func()) {
@@ -31,14 +33,19 @@ func WithTimeout(ctx context.Context, after time.Duration, inner middleware.Thou
 		return ctx, inner, state, func() {}
 	}
 	runCtx, cancel := context.WithCancel(ctx)
-	wrapped := &notifier{inner: inner, after: after}
+	wrapped := &notifier{inner: inner, after: after, dueAt: time.Now().Add(after)}
 	wrapped.timer = time.AfterFunc(after, func() {
-		state.fired.Store(true)
-		cancel()
+		wrapped.mu.Lock()
+		defer wrapped.mu.Unlock()
+		if !wrapped.stopped && !time.Now().Before(wrapped.dueAt) {
+			state.fired.Store(true)
+			cancel()
+		}
 	})
 	stop := func() {
 		wrapped.mu.Lock()
 		if wrapped.timer != nil {
+			wrapped.stopped = true
 			wrapped.timer.Stop()
 		}
 		wrapped.mu.Unlock()
@@ -49,7 +56,8 @@ func WithTimeout(ctx context.Context, after time.Duration, inner middleware.Thou
 
 func (n *notifier) OnThought(update middleware.ThoughtUpdate) {
 	n.mu.Lock()
-	if n.timer != nil {
+	if n.timer != nil && !n.stopped {
+		n.dueAt = time.Now().Add(n.after)
 		n.timer.Reset(n.after)
 	}
 	n.mu.Unlock()

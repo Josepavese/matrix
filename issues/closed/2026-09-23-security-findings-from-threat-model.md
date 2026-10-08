@@ -133,3 +133,13 @@ support; the documents should be corrected whichever way the decision goes:
   not a substitute.
 - The Windows-side items (ACLs, `install.ps1`) and real-agent tool-call behaviour
   are recorded as Unknowns in the document rather than assumed.
+
+
+## Ulteriore verifica e correzione — 2026-10-08
+
+Il threat model conteneva anche G12 (valore cifrato non legato alla sua chiave),
+ancora presente nel codice corrente. Corretto con AAD per chiave nel formato
+ENCV2, conversione transazionale con backup compatto verificato e controllo di
+spazio. Una conversione fallita conserva tutti i record; il reader corrente non
+accetta il formato ritirato. Prove e limiti nel
+[registro completo](../../docs/governance/issue_resolution_2026-10-08.md).

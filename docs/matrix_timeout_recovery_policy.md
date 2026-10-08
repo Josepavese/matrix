@@ -16,6 +16,7 @@ Timeouts are allowed only around bounded infrastructure operations. Every timeou
 | --- | --- | --- |
 | `/v1/runs` agent turn | none by default | observe through events/SSE, use explicit `cancel`/`stop`, or opt into `emergency_kill_seconds` or `activity_timeout_seconds` |
 | `/v1/runs` emergency kill | caller-provided `emergency_kill_seconds` | run is marked `cancelled` with `emergency_kill_timeout`; caller can inspect trace and start a new run |
+| `/v1/runs` silence notice | caller-provided `activity_notice_seconds`, disabled by default | nonterminal `run.attention_required`; observer knows no provider cause, run remains active |
 | `/v1/runs` idle activity watchdog | caller-provided `activity_timeout_seconds` | run is marked `cancelled` with `activity_timeout`; cleanup still uses a detached bounded cleanup context |
 | `/v1/runs` cleanup after cancel | 30s cleanup context | cleanup uses a context detached from the canceled run context; trace records `session.cleanup` with `clean`, `warnings`, and `failure_code` |
 | `/v1/runs` post-cleanup client reconcile | 30s cleanup context | unreferenced provider clients are closed and reported as related cleanup evidence; reconcile failure fails cleanup explicitly |

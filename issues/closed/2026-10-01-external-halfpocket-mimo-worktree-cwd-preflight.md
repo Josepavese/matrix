@@ -60,3 +60,11 @@ dell'accordo concordano senza override. Evidenza in
 
 Limite della prova, dichiarato da chi l'ha eseguita: prompi minimali — copre
 avvio sessione, prompt e completamento, **non** un turno di lavoro con strumenti.
+
+
+## Stato aggiornato — 2026-10-08
+
+L'accettazione reale del 2 ottobre è ora archiviata in
+[questa scheda](2026-10-02-external-halfpocket-mimo-worktree-cwd-acceptance.md).
+Il precedente «NON fatto» è storico. Prova reale aggiuntiva su MiMo: cwd temporanea,
+resume e lettura di token casuale; dettagli nel riepilogo del 2026-10-08.

@@ -312,3 +312,11 @@ file is the one a reader can check.
   `docs/governance/delivery-contract-reverts.md` declares **31** rows; the number
   in the file is the one a reader can check. Nothing else in his summary of the
   reverts was wrong.
+
+
+## Stato delle segnalazioni aggiornato — 2026-10-08
+
+Questo documento conserva il suo snapshot storico. La verifica del codice
+corrente, le correzioni successive e i limiti accettati sono nel
+[registro completo del 2026-10-08](issue_resolution_2026-10-08.md).
+Una qualifica esterna o una revisione umana non è certificata da questa nota.

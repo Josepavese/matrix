@@ -19,6 +19,8 @@ const (
 	ModelUnavailable                 = "provider_model_unavailable"
 	AuthMismatch                     = "provider_auth_mismatch"
 	PreflightFailed                  = "agent_preflight_failed"
+	RuntimeFailed                    = "provider_runtime_failed"
+	APIError                         = "provider_api_error"
 	WorkspaceRejected                = "provider_workspace_rejected"
 	WorkspaceNotGranted              = "matrix_workspace_not_granted"
 	AdditionalDirectoriesUnsupported = "additional_directories_unsupported"
@@ -45,7 +47,7 @@ func (e *Failure) Error() string {
 		}
 	}
 	if e.Err != nil {
-		base += ": " + e.Err.Error()
+		base += ": " + boundedDiagnostic(e.Err.Error())
 	}
 	return base
 }
@@ -143,7 +145,7 @@ func Diagnostics(endpoint middleware.ProtocolEndpoint, err error) map[string]str
 		diagnostics["protocol_version"] = endpoint.ProtocolVersion
 	}
 	if err != nil {
-		diagnostics["provider_error"] = err.Error()
+		diagnostics["provider_error"] = boundedDiagnostic(err.Error())
 		AppendRPCErrorDiagnostics(diagnostics, err)
 		diagnostics["failure_reason"] = failureReason(err)
 		AppendProcessDiagnostics(diagnostics, err)
@@ -193,6 +195,7 @@ const maxDiagnosticLength = 512
 // boundedDiagnostic keeps a diagnostic value short enough to read in a trace.
 // The cut is marked, never silent, so a reader knows the value continues.
 func boundedDiagnostic(value string) string {
+	value = providerdiag.Redact(value)
 	if len(value) <= maxDiagnosticLength {
 		return value
 	}
@@ -241,7 +244,7 @@ func AppendRunEvent(store *runtrace.Store, runID string, err error) {
 		metadata[key] = value
 	}
 	_, _ = store.AppendEvent(runtrace.Event{
-		RunID: runID, Kind: "provider.preflight.failed", Actor: "matrix", Status: runtrace.StatusFailed,
+		RunID: runID, Kind: failure.EventKind(), Actor: "matrix", Status: runtrace.StatusFailed,
 		Timestamp: time.Now().UTC(), Protocol: failure.Protocol, ProtocolMethod: failure.Phase,
 		Message: failure.Message, Metadata: metadata,
 	})

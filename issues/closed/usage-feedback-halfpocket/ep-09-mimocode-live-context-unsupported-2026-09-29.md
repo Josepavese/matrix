@@ -49,3 +49,12 @@ deve continuare a essere recapitato indipendentemente dal live attach.
 
 Resta aperta l'attribuzione precisa del limite a provider/adapter/runtime;
 nessuna modifica a monte richiesta come prerequisito del MVP Half Pocket.
+
+
+## Decisione del manutentore — 2026-10-08
+
+Doctor e delivery separati; limite live-attach MiMo conservato come limite del provider, senza falsi riusi remoti.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.

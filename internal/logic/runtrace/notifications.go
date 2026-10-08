@@ -142,7 +142,7 @@ func (s *Store) existingTerminalWakeups() (map[string]bool, error) {
 		if err := json.Unmarshal(data, &item); err != nil {
 			return nil, err
 		}
-		if isWakeupEvent(item.Kind) {
+		if isTerminalWakeup(item.Kind) {
 			seen[item.RunID] = true
 		}
 	}
@@ -235,6 +235,10 @@ func (s *Store) FindRunningRunForSession(agentID, sessionID string) string {
 }
 
 func isWakeupEvent(kind string) bool {
+	return kind == "run.attention_required" || isTerminalWakeup(kind)
+}
+
+func isTerminalWakeup(kind string) bool {
 	switch kind {
 	case "run.completed", "run.failed", "run.cancelled", "run.outcome_unknown":
 		return true

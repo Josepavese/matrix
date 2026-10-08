@@ -217,11 +217,11 @@ func TestEnsureDefaultMasterKeyIsIdempotentAndPrivate(t *testing.T) {
 
 	// The generated key must be usable for encryption.
 	plain := []byte("secret")
-	sealed, err := EncryptBytes(plain)
+	sealed, err := EncryptBytes("fixture.key", plain)
 	if err != nil {
 		t.Fatalf("encrypt with the generated key: %v", err)
 	}
-	opened, err := DecryptBytes(sealed)
+	opened, err := DecryptBytes("fixture.key", sealed)
 	if err != nil {
 		t.Fatalf("decrypt with the generated key: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestDecryptRejectsTamperedCiphertext(t *testing.T) {
 	t.Setenv("MATRIX_VAULT_MASTER_KEY", base64.StdEncoding.EncodeToString(testKey(t)))
 	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
 
-	sealed, err := EncryptBytes([]byte("payload"))
+	sealed, err := EncryptBytes("fixture.key", []byte("payload"))
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
@@ -249,11 +249,11 @@ func TestDecryptRejectsTamperedCiphertext(t *testing.T) {
 	} else {
 		body[0] = 'A'
 	}
-	if _, err := DecryptBytes(tampered); err == nil {
+	if _, err := DecryptBytes("fixture.key", tampered); err == nil {
 		t.Fatal("a tampered ciphertext must not decrypt")
 	}
 	// A malformed base64 payload must also fail rather than return garbage.
-	if _, err := DecryptBytes([]byte(encryptedPrefix + "!!!not-base64!!!")); err == nil {
+	if _, err := DecryptBytes("fixture.key", []byte(encryptedPrefix+"!!!not-base64!!!")); err == nil {
 		t.Fatal("malformed ciphertext must not decrypt")
 	}
 }
@@ -767,23 +767,23 @@ func TestEncryptDecryptThroughTheOSKeyPath(t *testing.T) {
 	if _, err := EnsureDefaultMasterKey(nil); err != nil {
 		t.Fatal(err)
 	}
-	sealed, err := EncryptBytes([]byte("payload"))
+	sealed, err := EncryptBytes("fixture.key", []byte("payload"))
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
 	if !IsEncryptedValue(sealed) {
 		t.Fatal("sealed values must be recognisable")
 	}
-	opened, err := DecryptBytes(sealed)
+	opened, err := DecryptBytes("fixture.key", sealed)
 	if err != nil {
 		t.Fatalf("decrypt: %v", err)
 	}
 	if string(opened) != "payload" {
 		t.Fatal("round trip failed on the OS key path")
 	}
-	// Plaintext must pass through unchanged.
-	if plain, err := DecryptBytes([]byte("clear")); err != nil || string(plain) != "clear" {
-		t.Fatalf("plaintext passthrough changed behaviour: %q %v", plain, err)
+	// Plaintext is converted by writable migration, never by the live reader.
+	if _, err := DecryptBytes("fixture.key", []byte("clear")); err == nil {
+		t.Fatal("plaintext bypassed key-bound migration")
 	}
 	// Encrypting with no key configured anywhere must be refused, not silently
 	// skipped. Both the explicit home and the user home are emptied so the
@@ -792,10 +792,10 @@ func TestEncryptDecryptThroughTheOSKeyPath(t *testing.T) {
 	t.Setenv("MATRIX_VAULT_MASTER_KEY", "")
 	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
 	t.Setenv("HOME", t.TempDir())
-	if _, err := EncryptBytes([]byte("x")); err == nil {
+	if _, err := EncryptBytes("fixture.key", []byte("x")); err == nil {
 		t.Fatal("encryption without a key must be refused")
 	}
-	if _, err := DecryptBytes([]byte(encryptedPrefix + "AAAA")); err == nil {
+	if _, err := DecryptBytes("fixture.key", []byte(encryptedPrefix+"AAAA")); err == nil {
 		t.Fatal("decryption without a key must be refused")
 	}
 }

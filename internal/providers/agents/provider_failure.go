@@ -17,8 +17,7 @@ func classifyProviderFailure(agentID string, endpoint middleware.ProtocolEndpoin
 	}
 
 	errText := err.Error()
-	code := providerfailure.PreflightFailed
-	message := "agent provider preflight failed"
+	code, message := providerfailure.DefaultClassification(phase, err)
 	model := ""
 	lower := strings.ToLower(errText)
 	switch {

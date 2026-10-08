@@ -71,7 +71,7 @@ func explainRun(run runtrace.Run, events []runtrace.Event, lang string) runExpla
 	}
 	out.AcceptanceStatus, out.Delivery = deliveryExplanation(events)
 	for _, event := range events {
-		if event.Kind == "provider.preflight.failed" {
+		if event.Kind == "provider.preflight.failed" || event.Kind == "provider.runtime.failed" {
 			out.Phase = event.ProtocolMethod
 			if code, ok := event.Metadata["code"].(string); ok {
 				out.FailureCode = code

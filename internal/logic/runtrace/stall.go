@@ -141,6 +141,8 @@ type StallView struct {
 	Pending         []StallRequest `json:"pending,omitempty"`
 	Sessions        []StallSession `json:"sessions,omitempty"`
 	WindowTruncated bool           `json:"window_truncated,omitempty"`
+	PendingComplete bool           `json:"pending_complete"`
+	Cause           string         `json:"cause"`
 }
 
 // ObserveStall derives the view from what Matrix already recorded: the run
@@ -173,7 +175,7 @@ func (s *stallScan) consumeNotification(notification Notification) {
 			Question: notification.Question, QuestionTruncated: notification.QuestionTruncated,
 		})
 	case KindElicitationResolved:
-		s.resolve(WaitElicitation, notification.ElicitationID)
+		s.resolve(WaitElicitation, notification.ElicitationID, notification.SessionID)
 	}
 }
 
@@ -209,11 +211,11 @@ func (s *stallScan) consumeRequest(event Event) {
 	case KindToolCallRequested:
 		s.addRequest(requestFrom(event, WaitToolResult, event.ToolCallID, event.ToolName))
 	case KindToolResultReceived:
-		s.resolve(WaitToolResult, event.ToolCallID)
+		s.resolve(WaitToolResult, event.ToolCallID, eventSessionID(event))
 	case KindPermissionRequested:
 		s.addRequest(requestFrom(event, WaitPermission, event.PermissionID, event.Summary))
 	case KindPermissionResolved:
-		s.resolve(WaitPermission, event.PermissionID)
+		s.resolve(WaitPermission, event.PermissionID, eventSessionID(event))
 	case KindPromptSent:
 		s.promptSent = true
 	}
@@ -236,8 +238,8 @@ func (s *stallScan) addRequest(request StallRequest) {
 	s.requests = append(s.requests, request)
 }
 
-func (s *stallScan) resolve(kind, id string) {
-	s.resolved[requestKey(kind, id)] = true
+func (s *stallScan) resolve(kind, id, session string) {
+	s.resolved[requestKey(kind, id, session)] = true
 }
 
 func (s *stallScan) finish(run Run) StallView {
@@ -248,8 +250,13 @@ func (s *stallScan) finish(run Run) StallView {
 		Pending:         pending,
 		Sessions:        s.sessions(pending),
 		WindowTruncated: s.firstSeq > 1,
+		PendingComplete: s.firstSeq <= 1,
+		Cause:           WaitUnknown,
 	}
 	view.Waiting, view.WaitingSince = waitState(pending, !isTerminalStatus(run.Status), view.LastActivity, s.promptSent)
+	if isTerminalStatus(run.Status) {
+		view.Cause = WaitNone
+	}
 	return view
 }
 
@@ -257,9 +264,12 @@ func (s *stallScan) finish(run Run) StallView {
 // that order for free, so the oldest outstanding wait is the head of the list.
 func (s *stallScan) pending() []StallRequest {
 	pending := make([]StallRequest, 0, len(s.requests))
+	seen := map[string]bool{}
 	for _, request := range s.requests {
-		if !s.resolved[requestKey(request.Kind, request.ID)] {
+		key := requestKey(request.Kind, request.ID, request.SessionID)
+		if !s.resolved[key] && !seen[key] {
 			pending = append(pending, request)
+			seen[key] = true
 		}
 	}
 	return pending
@@ -318,8 +328,8 @@ func waitState(pending []StallRequest, active bool, last *StallActivity, promptS
 	return WaitUnknown, time.Time{}
 }
 
-func requestKey(kind, id string) string {
-	return kind + "\x00" + id
+func requestKey(kind, id, session string) string {
+	return kind + "\x00" + id + "\x00" + session
 }
 
 func lastOf(activities []StallActivity) *StallActivity {

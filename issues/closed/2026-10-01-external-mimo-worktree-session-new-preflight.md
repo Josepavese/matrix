@@ -37,3 +37,11 @@ Una risposta contestuale sulla sessione MiMo esistente, con workspace path `/hom
 Riprodurre una `session/new` MiMo su un worktree Git con `.git` file e cwd sotto `/media/jose/Data`, acquisendo diagnostica ACP redatta senza segreti. Chiarire se Matrix debba validare/normalizzare il workspace prima del provider o esporre l'errore MiMo originale al posto di `Internal error (map[])`. Distinguere esplicitamente causa Matrix da causa MiMoCode; non introdurre fallback silenzioso di modello o sessione.
 
 Decisioni già prese: non sono stati riavviati Matrix o MiMoCode, non sono state cancellate sessioni, non è stato creato un nuovo writer sullo stesso albero; per proseguire il lavoro è stata riusata la conversazione MiMo già funzionante e il worktree è indicato come unica area di scrittura.
+
+
+## Stato aggiornato — 2026-10-08
+
+L'accettazione reale del 2 ottobre è ora archiviata in
+[questa scheda](2026-10-02-external-halfpocket-mimo-worktree-cwd-acceptance.md).
+Il precedente «NON fatto» è storico. Prova reale aggiuntiva su MiMo: cwd temporanea,
+resume e lettura di token casuale; dettagli nel riepilogo del 2026-10-08.

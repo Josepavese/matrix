@@ -137,3 +137,11 @@ the first-run path, but not a second operating system.
   needs a Windows host.
 - The `gosec` run is a point-in-time snapshot; it is installed ad hoc and is not
   yet part of the preflight.
+
+
+## Stato delle segnalazioni aggiornato — 2026-10-08
+
+Questo documento conserva il suo snapshot storico. La verifica del codice
+corrente, le correzioni successive e i limiti accettati sono nel
+[registro completo del 2026-10-08](issue_resolution_2026-10-08.md).
+Una qualifica esterna o una revisione umana non è certificata da questa nota.

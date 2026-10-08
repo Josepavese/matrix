@@ -31,3 +31,5 @@ Operational templates:
 - [ZERO-LEGACY policy](zero_legacy_governance.md)
 - [Zed ACP compliance](../matrix_zed_acp_compliance.md)
 - [ACP and A2A protocol coverage](../protocol_coverage.md)
+
+- [Complete issue resolution, 2026-10-08](issue_resolution_2026-10-08.md)

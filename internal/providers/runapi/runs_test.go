@@ -1182,8 +1182,8 @@ func TestHandleRuns_ProviderFailureIsTyped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load events: %v", err)
 	}
-	if !hasEventKind(events, "provider.preflight.failed") {
-		t.Fatalf("expected provider preflight event, got %+v", events)
+	if !hasEventKind(events, "provider.runtime.failed") {
+		t.Fatalf("expected provider runtime event, got %+v", events)
 	}
 }
 

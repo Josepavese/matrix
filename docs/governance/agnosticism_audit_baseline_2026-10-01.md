@@ -667,3 +667,11 @@ install/adapters — più `agentlaunch/policy.go:27`, che seleziona il `codexPol
 decisione è comunque sul contenuto (`active()` è vero solo se l'endpoint dichiara env di policy), ma è
 una dispatch per nome in più da mettere nel rapporto, non da nascondere. I fix non ne hanno introdotta
 nessuna.
+
+
+## Stato delle segnalazioni aggiornato — 2026-10-08
+
+Questo documento conserva il suo snapshot storico. La verifica del codice
+corrente, le correzioni successive e i limiti accettati sono nel
+[registro completo del 2026-10-08](issue_resolution_2026-10-08.md).
+Una qualifica esterna o una revisione umana non è certificata da questa nota.

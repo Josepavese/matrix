@@ -124,6 +124,12 @@ func (s *Server) executeRun(ctx context.Context, exec runExecution) (runExecutio
 	notifier := runnotifier.New(s.runStore, exec.runID, exec.agentID, s.resolveProtocol(exec.agentID))
 	routeCtx, routeNotifier, activityState, stopActivityWatch := runactivity.WithTimeout(ctx, exec.activityTimeout, notifier)
 	defer stopActivityWatch()
+	routeNotifier, stopNotice := runactivity.WithNotice(exec.activityNotice, routeNotifier, func() {
+		if err := s.runStore.NotifyUnobservedActivity(exec.runID); err != nil {
+			slog.Error("run activity notice failed", "run_id", exec.runID, "error", err)
+		}
+	})
+	defer stopNotice()
 	res, err := s.route(routeCtx, exec, sessionCtx.prepared, routeNotifier)
 	if err != nil {
 		return s.abortRun(runAbort{ctx: ctx, exec: exec, sessionCtx: sessionCtx, res: res, activity: activityState, err: err})

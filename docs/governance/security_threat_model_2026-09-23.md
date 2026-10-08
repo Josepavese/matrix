@@ -479,3 +479,19 @@ The full record, including the revert experiment that fails each test, is in
 `issues/closed/2026-09-23-agent-install-fail-closed-and-command-containment.md`.
 G7 is untouched by both decisions: registry-supplied arguments and environment
 for npx/uvx remain unconstrained.
+
+
+## Stato delle segnalazioni aggiornato — 2026-10-08
+
+Questo documento conserva il suo snapshot storico. La verifica del codice
+corrente, le correzioni successive e i limiti accettati sono nel
+[registro completo del 2026-10-08](issue_resolution_2026-10-08.md).
+Una qualifica esterna o una revisione umana non è certificata da questa nota.
+
+
+### G12 corretto — 2026-10-08
+
+I valori del vault ENCV2 sono autenticati anche rispetto alla chiave di storage
+tramite AES-GCM AAD. L'upgrade preserva ENCV1 e plaintext in un backup privato
+verificato e li converte in una transazione; errore/capacità insufficiente non
+producono conversioni parziali. Non viene aggiunto un fallback legacy al reader.

@@ -15,21 +15,22 @@ func (n *Notifier) OnModelSelection(selection middleware.ModelSelection) {
 	if n == nil || n.store == nil {
 		return
 	}
-	run, found, err := n.store.LoadRun(n.runID)
-	if err != nil || !found {
-		return
-	}
-	run.ConfiguredModel = selection.ConfiguredModel
-	run.EffectiveModel = selection.EffectiveModel
-	run.ModelVerification = selection.Verification
-	run.ModelFallbackUsed = selection.FallbackUsed
-	run.ModelFallbackReason = selection.FallbackReason
-	if err := n.store.SaveRun(run); err != nil {
+	var requestedModel string
+	err := n.store.UpdateRun(n.runID, func(run *runtrace.Run) {
+		requestedModel = run.RequestedModel
+		run.ConfiguredModel = selection.ConfiguredModel
+		run.EffectiveModel = selection.EffectiveModel
+		run.ModelVerification = selection.Verification
+		run.ModelFallbackUsed = selection.FallbackUsed
+		run.ModelFallbackReason = selection.FallbackReason
+	})
+	if err != nil {
 		slog.Warn("failed to record model selection", "error", err, "run_id", n.runID)
 		return
 	}
+
 	_, _ = n.store.AppendEvent(runtrace.Event{RunID: n.runID, Kind: "model.selection",
-		Metadata: modelSelectionMetadata(run, selection)})
+		Metadata: modelSelectionMetadata(requestedModel, selection)})
 }
 
 // modelSelectionMetadata describes one model selection at the three levels a
@@ -50,9 +51,9 @@ func (n *Notifier) OnModelSelection(selection middleware.ModelSelection) {
 // they say why the provider did not confirm the selection and which protocol
 // response was inspected, so a provider that never attests is distinguishable
 // from a session whose verification was not repeated.
-func modelSelectionMetadata(run runtrace.Run, selection middleware.ModelSelection) map[string]interface{} {
+func modelSelectionMetadata(requestedModel string, selection middleware.ModelSelection) map[string]interface{} {
 	return map[string]interface{}{
-		"requested_model":     run.RequestedModel,
+		"requested_model":     requestedModel,
 		"selected_model":      selection.ConfiguredModel,
 		"confirmed_model":     selection.EffectiveModel,
 		"configured_model":    selection.ConfiguredModel,

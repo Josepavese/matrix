@@ -57,7 +57,8 @@ Optional emergency fuse:
 ```json
 {
   "emergency_kill_seconds": 0,
-  "activity_timeout_seconds": 0
+  "activity_timeout_seconds": 0,
+  "activity_notice_seconds": 0
 }
 ```
 
@@ -74,6 +75,14 @@ agent/tool activity is observed through the run notifier for the configured
 duration. This is intended for bounded judge/critic/supervisor calls that must
 fail closed when a provider accepts a prompt but emits no progress. It is not
 enabled by default.
+
+`activity_notice_seconds` is a separate opt-in observation interval. Silence
+emits a durable `run.attention_required` wakeup with
+`failure_code=activity_unobserved` and `cause=unknown`; the run stays active.
+It fires once until new agent/tool activity rearms it. This is not a quota,
+rate-limit or retry diagnosis. `matrix run wait --on-attention` can return this
+nonterminal outcome to a sleeping supervisor; its default still waits for the
+terminal outcome. Resume observation using the returned cursor.
 
 Timeout and recovery rules are tracked in [matrix_timeout_recovery_policy.md](matrix_timeout_recovery_policy.md).
 
@@ -110,11 +119,15 @@ Every response includes:
 `cleanup` appears when the caller requests an ephemeral run lifecycle, for example `session_policy=new_ephemeral_delete_after_run`. Sync and stream error responses also carry `cleanup` when Matrix already created an ephemeral session before the agent failure; callers should inspect `clean`, `strong_cleanup`, `cleanup_strength`, `weak_cleanup_reason`, `local_forgotten`, `remote_deleted`, `remote_closed`, `remote_canceled`, process fields, `fork_children_cleaned`, nested `fork_children`, `related_sessions`, `warnings`, and `failure_code` instead of inferring cleanup from HTTP status alone. Cleanup after `/v1/runs/{run_id}/actions` `cancel` uses a bounded context detached from the canceled run context, so remote cleanup and process reap are not run under an already-canceled context. Ephemeral run routing is explicitly bound to the prepared logical session. If a cancellation race still exposes a late-selected logical/remote session, the cleanup proof follows that selected remote target instead of reporting only the stale prepared id.
 
 Provider readiness failures are also projected into the run response and event
-stream. Matrix emits `provider.preflight.failed` with `code`, `agent_id`,
+stream. Setup failures emit `provider.preflight.failed` with `code`, `agent_id`,
 `protocol`, `phase`, `provider_error`, `failure_reason`, and safe adapter
 diagnostics when an adapter/provider failure prevents task execution. Typical
 codes are `provider_model_unavailable`, `provider_auth_mismatch`, and
-`agent_preflight_failed`. `failure_reason=provider_client_context_cancelled`
+`agent_preflight_failed`. Failures returned by `session/prompt` instead emit
+`provider.runtime.failed`: generic coded RPC errors use `provider_api_error`,
+other runtime errors use `provider_runtime_failed`. A method error after a tool
+has executed never claims preflight. Original RPC code/message/data stay bounded
+and redacted; reset times and quota categories are not inferred from prose. `failure_reason=provider_client_context_cancelled`
 means the cached provider client died or was cancelled before the requested ACP
 method completed; Matrix treats this as provider lifecycle evidence, not as a
 task-level model answer. If an ACP stdio provider exits while a call is pending,
@@ -186,7 +199,7 @@ proof nor parent process proof exists, Matrix fails closed with structured
 retained related-session evidence instead of returning ambiguous retained
 cleanup.
 
-For local stdio ACP agents, Matrix does not spawn a fresh workspace client only to clean up a session owned by a now-dead process. Provider clients are router-lifetime resources: the ACP process/client context is not tied to one `/v1/runs` request context, while each prompt/delete/cancel call still receives the per-turn context. Run cancel first emits `run.cancel.signal` after sending `session/cancel` for the run-bound remote session when available, then cancels only the selected run context. A cancellable failure removes the exact workspace client from new routing, but active sibling turns retain leases on that draining client. New requests receive a fresh client; the old client closes only after its final lease finishes. Only that physical close records a tombstone, so Matrix never reports `process_reaped=true` while a sibling is still using the process. Cancellation may still be reported as `agent_preflight_failed` for the cancelled run, but it must not poison concurrent siblings or the next judge/follow-up run. If process reap proves the old agent is gone, cleanup remains strong and may include typed warnings such as `remote_lifecycle_skipped_no_reusable_cached_agent_client` and `remote_cancel_session_not_found_after_process_reap`. If no remote session id exists and the workspace client is absent, Matrix reports `process_absent=true` rather than pretending that remote cancel/delete occurred. If a cleanup has explicit target remote proof but the workspace client is still owned by another local session, Matrix does not kill the shared provider process and does not mark the target as retained; it records the owner as `shared_agent_client_owner`. If keepalive observes and evicts a dead workspace client before cleanup runs, if remote lifecycle lookup observes a dead exact workspace client, if cleanup reaps a shared client through one child remote session, if a drained turn-failure client reaches its final close, or if a later request replaces that dead client, Matrix preserves a short-lived session-bound reap tombstone so later cleanup can still report `process_reaped=true` only for matching `remote_session_id` values. A generic workspace cleanup with no `remote_session_id` cannot consume a tombstone that belongs to an explicit remote session. Expected async cancellation is logged as `run_cancelled`, not as a generic `matrix async run bridge failed` error.
+For local stdio ACP agents, Matrix does not spawn a fresh workspace client only to clean up a session owned by a now-dead process. Provider clients are router-lifetime resources: the ACP process/client context is not tied to one `/v1/runs` request context, while each prompt/delete/cancel call still receives the per-turn context. Run cancel first emits `run.cancel.signal` after sending `session/cancel` for the run-bound remote session when available, then cancels only the selected run context. A cancellable failure removes the exact workspace client from new routing, but active sibling turns retain leases on that draining client. New requests receive a fresh client; the old client closes only after its final lease finishes. Only that physical close records a tombstone, so Matrix never reports `process_reaped=true` while a sibling is still using the process. A failure during `session/prompt` is a runtime failure, while cancellation remains the run terminal outcome, but it must not poison concurrent siblings or the next judge/follow-up run. If process reap proves the old agent is gone, cleanup remains strong and may include typed warnings such as `remote_lifecycle_skipped_no_reusable_cached_agent_client` and `remote_cancel_session_not_found_after_process_reap`. If no remote session id exists and the workspace client is absent, Matrix reports `process_absent=true` rather than pretending that remote cancel/delete occurred. If a cleanup has explicit target remote proof but the workspace client is still owned by another local session, Matrix does not kill the shared provider process and does not mark the target as retained; it records the owner as `shared_agent_client_owner`. If keepalive observes and evicts a dead workspace client before cleanup runs, if remote lifecycle lookup observes a dead exact workspace client, if cleanup reaps a shared client through one child remote session, if a drained turn-failure client reaches its final close, or if a later request replaces that dead client, Matrix preserves a short-lived session-bound reap tombstone so later cleanup can still report `process_reaped=true` only for matching `remote_session_id` values. A generic workspace cleanup with no `remote_session_id` cannot consume a tombstone that belongs to an explicit remote session. Expected async cancellation is logged as `run_cancelled`, not as a generic `matrix async run bridge failed` error.
 
 Fork cleanup is subtree-based. If the target session owns mirrored fork
 children, Matrix records child cleanup proofs under `fork_children` before
@@ -659,3 +672,21 @@ Operational notes:
 - after onboarding, provider selection remains channel-neutral and resolves through the Matrix agent catalog/session layer;
 - real provider latency depends on the external agent, so run surfaces must be treated as asynchronous operational surfaces even when the caller chooses `sync`;
 - no absolute run timeout is applied by default; emergency wall-clock termination is opt-in through `emergency_kill_seconds`, and idle-progress termination is opt-in through `activity_timeout_seconds`.
+
+
+## Observation completeness and continuity
+
+The stall projection separates observed pending requests from a diagnosis:
+`cause=unknown` on an active run; `pending_complete=false` and
+`window_truncated=true` when the retained history starts after sequence 1.
+Tool and permission IDs are correlated within their reported remote session.
+A completed tool retained in the window is not pending; duplicate upserts retain
+one observed request and its oldest timestamp. Unknown history is not proof
+that no other request exists or that the provider is currently blocked there.
+
+The logical session mirror persists the remote identity when the provider
+reports it, before the turn result returns. Cancellation preserves this known
+identity; it does not attest provider support for reopening it. Metadata updates
+are serialized with terminal transitions so late callbacks cannot resurrect a
+cancelled run. Matrix-owned stderr output is bounded per process; private log
+files written independently by the agent remain the agent's responsibility.

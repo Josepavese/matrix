@@ -53,6 +53,7 @@ func (s *Server) HandleRuns(w http.ResponseWriter, r *http.Request) {
 		agentID:          agentID,
 		emergencyTimeout: runactivity.DurationSeconds(req.EmergencyKillSeconds),
 		activityTimeout:  runactivity.DurationSeconds(req.ActivityTimeoutSeconds),
+		activityNotice:   runactivity.DurationSeconds(req.ActivityNoticeSeconds),
 	})
 }
 

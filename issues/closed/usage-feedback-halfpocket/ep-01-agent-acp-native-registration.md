@@ -33,3 +33,12 @@
 ## Follow-up
 
 Nessuno in questo task.
+
+
+## Decisione del manutentore — 2026-10-08
+
+Registrazione e registro vivo già corretti; completati avvio supervisionato tardivo ed endpoint esterni.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.

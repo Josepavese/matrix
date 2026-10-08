@@ -15,7 +15,7 @@ func TestEncryptDecryptBytes(t *testing.T) {
 	t.Setenv("MATRIX_VAULT_MASTER_KEY", base64.StdEncoding.EncodeToString(key))
 
 	plain := []byte(`"secret"`)
-	encrypted, err := EncryptBytes(plain)
+	encrypted, err := EncryptBytes("fixture.key", plain)
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestEncryptDecryptBytes(t *testing.T) {
 		t.Fatalf("expected encrypted value")
 	}
 
-	decrypted, err := DecryptBytes(encrypted)
+	decrypted, err := DecryptBytes("fixture.key", encrypted)
 	if err != nil {
 		t.Fatalf("decrypt: %v", err)
 	}
@@ -38,14 +38,14 @@ func TestDecryptEncryptedBytesWithoutKeyFails(t *testing.T) {
 	t.Setenv("MATRIX_HOME", home)
 	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
 	t.Setenv("MATRIX_VAULT_MASTER_KEY", base64.StdEncoding.EncodeToString(key))
-	encrypted, err := EncryptBytes([]byte(`"secret"`))
+	encrypted, err := EncryptBytes("fixture.key", []byte(`"secret"`))
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
 
 	t.Setenv("MATRIX_VAULT_MASTER_KEY", "")
 	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
-	if _, err := DecryptBytes(encrypted); err == nil {
+	if _, err := DecryptBytes("fixture.key", encrypted); err == nil {
 		t.Fatalf("expected decrypt failure without key")
 	}
 }
@@ -56,7 +56,7 @@ func TestEncryptBytesWithoutKeyFails(t *testing.T) {
 	t.Setenv("MATRIX_VAULT_MASTER_KEY", "")
 	t.Setenv("MATRIX_VAULT_MASTER_KEY_FILE", "")
 
-	if _, err := EncryptBytes([]byte(`"secret"`)); err == nil {
+	if _, err := EncryptBytes("fixture.key", []byte(`"secret"`)); err == nil {
 		t.Fatalf("expected encrypt failure without key")
 	}
 }

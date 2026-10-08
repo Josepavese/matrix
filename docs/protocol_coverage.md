@@ -1,6 +1,6 @@
 # ACP and A2A Protocol Coverage
 
-Last verified: 2026-09-21.
+Matrix implementation rechecked: 2026-10-08. Upstream snapshot: 2026-09-21.
 
 This document is the Matrix source of truth for protocol feature coverage. The
 runtime capability report is the live source of truth for a specific configured
@@ -12,8 +12,9 @@ apply to every adapter.
 
 - ACP v1 stable schema release `schema-v1.23.0`, protocol release `v1.9.1`
   (official repository, September 2026). ACP v2 remains a Draft upstream and is
-  not implemented; upstream guidance gates v2 behind version negotiation and
-  feature flags until stabilization.
+  supported by Matrix only through explicit version negotiation, including the
+  v2 authentication and asynchronous turn lifecycle. The draft snapshot is not
+  a claim of current upstream stability or blanket provider compatibility.
 - A2A specification `v1.0.1`, official repository commit
   `af112d9491c1fd4b2a568ac65755af4a62790490`.
 - Matrix A2A SDK: `github.com/a2aproject/a2a-go/v2 v2.5.0`.
@@ -25,6 +26,15 @@ Authoritative sources:
 - https://agentclientprotocol.com/protocol/v1/transports
 - https://a2a-protocol.org/latest/specification/
 - https://github.com/a2aproject/A2A
+
+## ACP v2 implementation evidence
+
+Matrix tests the negotiated v2 initialize/authenticate/logout surface and the
+asynchronous turn lifecycle against real stdio subprocess fixtures in
+`tests/integration/acp_v2_*_real_test.go`. These are protocol peers built for
+conformance tests, not evidence that a commercial agent supports v2. Terminal
+authentication requires the explicit operator capability opt-in. ACP v1 keeps
+its own lifecycle. Configure and inspect the actual provider before selecting v2.
 
 ## ACP v1 stable coverage
 

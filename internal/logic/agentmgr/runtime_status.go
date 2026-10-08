@@ -170,7 +170,7 @@ func buildRuntimeReport(input inspectInput, canDial func(string) bool) AgentRunt
 	report := AgentRuntimeReport{
 		AgentID:              input.AgentID,
 		Protocol:             string(endpoint.Kind),
-		Mode:                 runtimeMode(endpoint.Transport),
+		Mode:                 runtimeMode(endpoint),
 		Active:               input.Config.IsActive(),
 		Installed:            input.Installed,
 		Status:               "unknown",
@@ -229,14 +229,20 @@ func reportUnobservedOnDemand(report AgentRuntimeReport, endpoint middleware.Pro
 	return report
 }
 
-func runtimeMode(protocol string) string {
-	if protocol == "ws" || protocol == "http" {
+func runtimeMode(endpoint middleware.ProtocolEndpoint) string {
+	if endpoint.Kind == middleware.ProtocolKindACP && endpoint.Command == "" && endpoint.Address != "" {
+		return "external"
+	}
+	if endpoint.Transport == "ws" || endpoint.Transport == "http" {
 		return "supervised"
 	}
 	return "on_demand"
 }
 
 func isInstalledEndpoint(cfg AgentConfig, endpoint middleware.ProtocolEndpoint, proc middleware.Process) bool {
+	if isRemoteACPEndpoint(cfg, endpoint) {
+		return true
+	}
 	if endpoint.Kind == middleware.ProtocolKindA2A && (endpoint.Address != "" || endpoint.CardURL != "") {
 		return true
 	}

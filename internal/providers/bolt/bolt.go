@@ -95,6 +95,11 @@ func openProvider(path string, readOnly bool) (*Provider, error) {
 		}
 	}
 
+	if err := migrateKeyBoundValues(db, path); err != nil {
+		_ = db.Close()
+		return nil, &middleware.Error{Code: "ERR_VAULT_MIGRATION", Message: "Vault key-bound migration refused", Op: "bolt.NewProvider", Err: err}
+	}
+
 	return &Provider{
 		db:   db,
 		path: path,
@@ -138,7 +143,7 @@ func (p *Provider) Get(key string) ([]byte, error) {
 		return nil, nil
 	}
 
-	val, err = vaultsec.DecryptBytes(val)
+	val, err = vaultsec.DecryptBytes(key, val)
 	if err != nil {
 		return nil, &middleware.Error{
 			Code:    "ERR_VAULT_DECRYPT",
@@ -155,7 +160,7 @@ func (p *Provider) Set(key string, val []byte) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	encrypted, err := vaultsec.EncryptBytes(val)
+	encrypted, err := vaultsec.EncryptBytes(key, val)
 	if err != nil {
 		return &middleware.Error{
 			Code:    "ERR_VAULT_ENCRYPT",

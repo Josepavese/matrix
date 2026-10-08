@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -182,7 +183,7 @@ func parseRealACPProviderSpecs(t *testing.T, raw string) []realACPProviderSpec {
 func probeRealACPProvider(t *testing.T, spec realACPProviderSpec) {
 	t.Helper()
 	workspace := t.TempDir()
-	fileToken := "MATRIX_FILE_" + strings.ToUpper(spec.name)
+	fileToken := "MATRIX_FILE_" + strings.ToUpper(spec.name) + "_" + rand.Text()
 	terminalToken := "MATRIX_TERMINAL_" + strings.ToUpper(spec.name)
 	replyToken := "MATRIX_ACP_REPLY_" + strings.ToUpper(spec.name)
 	probeFile := filepath.Join(workspace, "acp_probe.txt")
@@ -197,7 +198,7 @@ func probeRealACPProvider(t *testing.T, spec realACPProviderSpec) {
 	if spec.name == "opencode" {
 		args = append(args, "--cwd", workspace)
 	}
-	transport, err := zedacp.NewStdioTransport(ctx, spec.bin, spec.env, args...)
+	transport, err := zedacp.NewStdioTransportWith(ctx, spec.bin, zedacp.StdioSpawnSpec{Dir: workspace, Env: spec.env}, args...)
 	if err != nil {
 		t.Fatalf("start provider %s: %v", spec.name, err)
 	}
@@ -244,12 +245,18 @@ func probeRealACPProvider(t *testing.T, spec realACPProviderSpec) {
 	probeConfigOptions(ctx, t, client, spec.name, session.SessionID, session.ConfigOptions)
 	probeSessionDiscovery(ctx, t, client, initResp.Capabilities, workspace, session.SessionID)
 
+	if model := strings.TrimSpace(os.Getenv("MATRIX_REAL_ACP_MODEL")); model != "" {
+		if _, err := client.SetSessionModel(ctx, zedacp.SetSessionModelRequest{SessionID: session.SessionID, ModelID: model}); err != nil {
+			t.Fatalf("select requested model %s: %v", model, err)
+		}
+		t.Logf("provider=%s requested_model=%s selection_acknowledged=true", spec.name, model)
+	}
+
 	observer := &acpProbeObserver{}
 	prompt := fmt.Sprintf(
-		"ACP compliance probe. Reply with %s. Also read %s and include %s. If terminal execution is available, run `printf %s` and include that output. Keep the final answer under 30 words.",
+		"ACP compliance probe. Reply with %s. Also read %s and include its exact full contents. If terminal execution is available, run `printf %s` and include that output. Keep the final answer under 30 words.",
 		replyToken,
 		probeFile,
-		fileToken,
 		terminalToken,
 	)
 	promptResp, err := client.Prompt(ctx, zedacp.PromptRequest{

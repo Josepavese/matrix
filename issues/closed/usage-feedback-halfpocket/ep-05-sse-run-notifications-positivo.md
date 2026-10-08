@@ -46,3 +46,12 @@ Adattatore minimo `Codexsend_message_to_thread` + SSE inline Python. NON bridge 
 ## Follow-up
 
 Nessuno in questo task.
+
+
+## Decisione del manutentore — 2026-10-08
+
+Socket/cursor/replay/ack/elicitation già implementati; estensione opt-in con wakeup attention_required.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.

@@ -17,9 +17,10 @@ import (
 // what an operator types do not edit the same function.
 
 var (
-	runWaitAfter   uint64
-	runWaitTimeout time.Duration
-	runWaitJSON    bool
+	runWaitAfter       uint64
+	runWaitTimeout     time.Duration
+	runWaitJSON        bool
+	runWaitOnAttention bool
 
 	runAckRunID          string
 	runAckSequence       uint64
@@ -29,8 +30,11 @@ var (
 
 var runWaitCmd = &cobra.Command{
 	Use:   "wait <run_id>",
-	Short: "Wait for a run's terminal outcome over the local notification socket",
+	Short: "Wait for a run outcome or requested intervention over the local socket",
 	Long: `Wait for one run to reach a terminal outcome.
+
+Use --on-attention to return also on an inactivity notice. This outcome is not
+terminal: inspect the run and decide whether intervention is needed.
 
 The command consumes the durable notification cursor: pass --after to resume
 from the cursor a previous invocation printed, and it prints the new cursor on
@@ -73,6 +77,13 @@ func runWait(cmd *cobra.Command, runID string) error {
 // runWaitAt waits on one socket path. The path is a parameter so the wait
 // contract can be exercised against the daemon's own handler without a running
 // daemon.
+func waitOutcome(kind string) (string, bool) {
+	if runWaitOnAttention && kind == "run.attention_required" {
+		return "attention_required", true
+	}
+	return wakeupOutcome(kind)
+}
+
 func runWaitAt(cmd *cobra.Command, socketPath, runID string) error {
 	client := newLocalNotificationClient(socketPath, localSurfaceAPIKey())
 
@@ -100,7 +111,7 @@ func runWaitAt(cmd *cobra.Command, socketPath, runID string) error {
 				}
 				continue
 			}
-			outcome, terminal := wakeupOutcome(wakeup.Kind)
+			outcome, terminal := waitOutcome(wakeup.Kind)
 			if !terminal {
 				continue
 			}
@@ -173,7 +184,7 @@ func elicitationSummaryOf(wakeup notificationWakeup) (elicitationSummary, bool) 
 }
 
 func printElicitation(cmd *cobra.Command, summary elicitationSummary) {
-	cmd.Printf("elicitation id=%s state=%s session=%s since=%s%s\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "elicitation id=%s state=%s session=%s since=%s%s\n",
 		summary.ID, summary.State, summary.SessionID, summary.Since, questionSuffix(summary))
 }
 
@@ -199,15 +210,15 @@ func printWakeupOutcome(cmd *cobra.Command, report wakeupReport) {
 		if err != nil {
 			exitf("Error: %v", err)
 		}
-		cmd.Println(string(encoded))
+		fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
 		return
 	}
 	if report.FailureCode != "" {
-		cmd.Printf("run_id=%s outcome=%s kind=%s sequence=%d cursor=%d failure_code=%s\n",
+		fmt.Fprintf(cmd.OutOrStdout(), "run_id=%s outcome=%s kind=%s sequence=%d cursor=%d failure_code=%s\n",
 			report.RunID, report.Outcome, report.Kind, report.Sequence, report.Cursor, report.FailureCode)
 		return
 	}
-	cmd.Printf("run_id=%s outcome=%s kind=%s sequence=%d cursor=%d\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "run_id=%s outcome=%s kind=%s sequence=%d cursor=%d\n",
 		report.RunID, report.Outcome, report.Kind, report.Sequence, report.Cursor)
 }
 
@@ -215,14 +226,14 @@ func printWakeupTimeout(cmd *cobra.Command, report wakeupReport) {
 	if runWaitJSON {
 		encoded, err := json.Marshal(report)
 		if err == nil {
-			cmd.Println(string(encoded))
+			fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
 		}
 		return
 	}
 	for _, summary := range report.Elicitations {
 		printElicitation(cmd, summary)
 	}
-	cmd.Printf("run_id=%s outcome=timeout cursor=%d\n", report.RunID, report.Cursor)
+	fmt.Fprintf(cmd.OutOrStdout(), "run_id=%s outcome=timeout cursor=%d\n", report.RunID, report.Cursor)
 }
 
 func runAck(cmd *cobra.Command) error {
@@ -246,14 +257,15 @@ func runAck(cmd *cobra.Command) error {
 		if encodeErr != nil {
 			return encodeErr
 		}
-		cmd.Println(string(encoded))
+		fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
 		return nil
 	}
-	cmd.Printf("status=acked run_id=%s sequence=%d replayed=%t\n", runAckRunID, runAckSequence, replayed)
+	fmt.Fprintf(cmd.OutOrStdout(), "status=acked run_id=%s sequence=%d replayed=%t\n", runAckRunID, runAckSequence, replayed)
 	return nil
 }
 
 func init() {
+	runWaitCmd.Flags().BoolVar(&runWaitOnAttention, "on-attention", false, "return on a nonterminal attention_required wakeup")
 	runWaitCmd.Flags().Uint64Var(&runWaitAfter, "after", 0, "notification cursor to resume from")
 	runWaitCmd.Flags().DurationVar(&runWaitTimeout, "timeout", 60*time.Second, "how long to wait for a terminal outcome")
 	runWaitCmd.Flags().BoolVar(&runWaitJSON, "json", false, "print one machine-readable line")

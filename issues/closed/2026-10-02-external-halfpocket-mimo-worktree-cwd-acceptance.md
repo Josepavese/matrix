@@ -95,3 +95,12 @@ registrando che il workaround `env -C` + `--cwd` è stato ritirato il 2 ottobre
 Riferimento interno Half Pocket (stessa prova, dettagli e verbali):
 `/home/jose/halfpocket/docs/cloud-transition/evidence/2026-10-02-mimo-wrapper-cwd-rimosso.md`
 e `.../2026-10-02-verifica-suite-completa.md`.
+
+
+## Decisione del manutentore — 2026-10-08
+
+Già corretto; accettazione reale preservata. Il workaround cwd è ritirato.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.

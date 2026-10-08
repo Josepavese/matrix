@@ -64,3 +64,11 @@ done
 The campaign stays opt-in and out of CI: it is a long serial tail, and the CI
 `quality-gate` job runs the light gate — coverage ratchet plus the plain and race test
 suites — on every push to main instead.
+
+
+## Stato delle segnalazioni aggiornato — 2026-10-08
+
+Questo documento conserva il suo snapshot storico. La verifica del codice
+corrente, le correzioni successive e i limiti accettati sono nel
+[registro completo del 2026-10-08](issue_resolution_2026-10-08.md).
+Una qualifica esterna o una revisione umana non è certificata da questa nota.

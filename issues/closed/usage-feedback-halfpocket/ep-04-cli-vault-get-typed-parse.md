@@ -40,3 +40,12 @@ emette `ERR_VAULT_PARSE object cannot unmarshal Go string` sul campo strutturato
 ## Follow-up
 
 Nessuno in questo task.
+
+
+## Decisione del manutentore — 2026-10-08
+
+Getter scalare su record strutturato: uso errato. Summary e limiti già implementati.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.

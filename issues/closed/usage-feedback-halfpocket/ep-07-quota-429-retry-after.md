@@ -30,3 +30,12 @@
 ## Follow-up
 
 Nessuno in questo task. Precondizione P1 prima di qualsiasi follow-up concreto.
+
+
+## Decisione del manutentore — 2026-10-08
+
+Diagnostica strutturata e avviso accolti. Reset UTC da prosa, 429 sempre quota, retry/fallback impliciti e capacity manager cliente rifiutati con motivi nel riepilogo.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.

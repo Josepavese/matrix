@@ -63,6 +63,7 @@ func (m *Manager) routeResolvedSession(ctx context.Context, req middleware.Conve
 		message = handoffPrompt + "\n\nUser request:\n" + req.Input
 	}
 	routeReq := buildRouteRequest(req, meta, sessionID, message)
+	routeReq.ThoughtNotifier = m.remoteBinding(sessionID, routeReq.ThoughtNotifier)
 	responseTxt, newAgentSessionID, toolCalls, metadata, routeErr := m.router.Route(ctx, routeReq)
 	m.applyPendingHandoff(&meta, channelID, log, routeErr)
 

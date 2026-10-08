@@ -34,3 +34,12 @@ Dopo run DeepSeek `98447c88…` e `cab3788c…`: `model_request=deepseek/deepsee
 ## Follow-up
 
 Nessuno in questo task.
+
+
+## Decisione del manutentore — 2026-10-08
+
+Attestazione provider e fallback opt-in già implementati. Nome fisico/fatturato non attestabile; valori segreti nascosti per default.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.

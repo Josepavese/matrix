@@ -80,3 +80,12 @@ Aggiunta utile alla vostra scheda operativa: con `execution_mode` sincrono
 predefinito la POST resta aperta per l'intera run, e un client con timeout breve
 (30 s) cancella il contesto uccidendo il turno in `phase=session/prompt`. Per
 orchestrazioni esterne: `execution_mode=async` + `matrix run wait`.
+
+
+## Decisione del manutentore — 2026-10-08
+
+Correzione cwd già presente e accettata il 2 ottobre; ulteriore prova reale MiMo su workspace temporaneo.
+
+Scheda gestita e archiviata. [Decisione completa, motivi ed evidenze](../../../docs/governance/issue_resolution_2026-10-08.md).
+Lo stato di pubblicazione e installazione è nel verbale della nuova release;
+le evidenze del reporter sopra restano lo snapshot originale.
