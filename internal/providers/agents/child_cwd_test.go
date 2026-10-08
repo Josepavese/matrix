@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Josepavese/matrix/internal/middleware"
 )
@@ -22,10 +23,12 @@ import (
 // beside it, inside the directory the process really runs in.
 const cwdProbeScript = `#!/bin/sh
 pwd -P > "${0%/*}/child-cwd.txt"
-printf '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{}}}\n'
-i=2
+i=1
 while IFS= read -r line; do
   case "$line" in
+    *'"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{}}}\n' "$i"
+      i=$((i+1)) ;;
     *'"session/new"'*)
       printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"probe-session-%s"}}\n' "$i" "$$"
       i=$((i+1)) ;;
@@ -102,7 +105,9 @@ func newCwdProbeRouter() *Router {
 func runCwdProbeTurn(t *testing.T, router *Router, workspace, message string) string {
 	t.Helper()
 
-	output, remoteSessionID, _, _, err := router.Route(context.Background(), middleware.RouteRequest{
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	output, remoteSessionID, _, _, err := router.Route(ctx, middleware.RouteRequest{
 		AgentID: "cwd-probe", WorkspacePath: workspace, Message: message,
 	})
 	if err != nil {

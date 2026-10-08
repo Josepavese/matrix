@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Josepavese/matrix/internal/logic/memstore"
 	"github.com/Josepavese/matrix/internal/logic/onboarding"
@@ -53,7 +54,9 @@ func TestRunWorkspaceReachesTheAgentChildCwd(t *testing.T) {
 	// The run request as the runtime API builds it: the workspace the run asked
 	// for and its input. Everything else — the session, the agent, and the
 	// directory the child is started in — is the chain this test follows.
-	if _, err := manager.RouteConversation(context.Background(), middleware.ConversationRequest{
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := manager.RouteConversation(ctx, middleware.ConversationRequest{
 		ChannelID:     "run-workspace-cwd",
 		WorkspaceID:   workspaceID,
 		WorkspacePath: runWorkspace,

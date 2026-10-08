@@ -119,3 +119,12 @@ il watcher cancellava il provider prima di pubblicare la prova terminale,
 permettendo al recorder concorrente di registrare `failed` al posto di `late`.
 La prova viene ora pubblicata prima della cancellazione, con regressione
 che verifica deterministicamente l'ordine e ripetizioni sotto race detector.
+
+### Interoperabilità del peer di collaudo cwd
+
+La prima CI dell'esatto merge SHA ha bloccato un test perché il suo peer shell
+emetteva `initialize` prima di ricevere la richiesta JSON-RPC. Su un avvio veloce
+la risposta arrivava prima della registrazione del correlatore e veniva persa.
+Il peer ora risponde soltanto dopo la richiesta; le route di collaudo hanno
+anche un timeout esplicito. Il controllo reale del cwd e dell'isolamento dei
+workspace resta invariato, con ripetizioni sotto race detector.
