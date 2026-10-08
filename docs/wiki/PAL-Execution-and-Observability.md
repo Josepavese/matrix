@@ -117,7 +117,11 @@ matrix workspace show <workspace-id>
 La misura è del filesystem del workspace effettivo, con identificatore di volume,
 byte disponibili all'utente e byte totali, CPU logiche e RAM nativa. Linux usa
 statfs/sysinfo, Windows le API volume/memoria, macOS statfs/sysctl/vm_stat.
-RAM libera esclude le cache recuperabili; macOS esclude anche pagine speculative.
+La semantica RAM è dichiarata da `memory_source`: Linux riporta memoria fisica
+libera escludendo cache recuperabili; macOS esclude anche pagine speculative.
+Windows riporta memoria fisica immediatamente disponibile, comprese le pagine
+standby, come definito da [MEMORYSTATUSEX.ullAvailPhys](https://learn.microsoft.com/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex).
+Queste osservazioni non sono una promessa di allocazione né una quota RAM.
 Zero è una misura valida; un dato non osservato è assente con la sua motivazione.
 L'osservatore non crea file e non pulisce il disco.
 
