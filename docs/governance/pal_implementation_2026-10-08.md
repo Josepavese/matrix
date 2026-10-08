@@ -3,8 +3,8 @@
 Mandato: tutti i quattro sviluppi precedentemente rinviati sono accolti, con
 PAL Linux/Windows/macOS. Nessun nuovo rifiuto di uno dei quattro punti.
 Base: `a2bae6867c369d087816c36f195b767763a197dd`, release locale/pubblica v0.1.52.
-Consegna prevista: v0.1.53. Release/installazione e CI native vanno registrate
-nel verbale della release quando osservate, non anticipate da questo ledger.
+Release pubblicata: v0.1.53. Verifiche della pubblicazione e stato osservato
+dell’installazione locale: [verbale release](releases/2026-10-08-v0.1.53.md).
 
 ## Implementazione
 
@@ -91,9 +91,11 @@ autenticazione e un collaudo di mount reale. Il preflight usa scratch privato
 anche per il report delle capacità di orchestrazione.
 
 Gate locali: deploy preflight, quality gate con tutte le soglie di copertura,
-lint e governance completati; scansione dei nuovi file da ripetere sullo stage.
-Release, checksum, installazione pubblica isolata e servizio locale sono i
-passaggi successivi della consegna, registrati nel verbale della release.
+lint, governance, scansione dello stage e diff check completati sul codice.
+Release v0.1.53 verificata con 88 controlli e firme di tutti i 12 archivi/SBOM,
+vincolate a tag, SHA sorgente e workflow. Installer pubblico isolato collaudato.
+Il servizio locale resta in attesa della conclusione dei task già attivi prima
+del backup coerente e del riavvio; lo stato è esplicito nel verbale della release.
 
 ## Difetti emersi dalla prima CI nativa
 

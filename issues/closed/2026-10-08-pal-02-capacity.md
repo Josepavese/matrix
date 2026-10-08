@@ -1,6 +1,6 @@
 # Sviluppo PAL — 02-capacity
 
-Stato: gestita; sviluppo, gate locali e CI nativa Linux/Windows/macOS completati. Consegna release/installazione in corso nel goal.
+Stato: gestita; sviluppo, gate locali e CI nativa Linux/Windows/macOS completati. Release v0.1.53 pubblicata e verificata; aggiornamento locale in attesa dei task già attivi.
 
 Autorizzazione: richiesta esplicita dell’utente del 2026-10-08 per tutti e quattro gli sviluppi e requisito PAL Linux/Windows/macOS.
 
@@ -15,3 +15,5 @@ Verifiche, documentazione, release e installazione locale. Archiviare in closed 
 ## Evidenze dello sviluppo
 
 Vedi [ledger PAL](../../docs/governance/pal_implementation_2026-10-08.md) e [guida operativa](../../docs/wiki/PAL-Execution-and-Observability.md). Le qualifiche fisiche dei driver opzionali sono distinte per piattaforma.
+
+Pubblicazione e stato dell’installazione: [verbale v0.1.53](../../docs/governance/releases/2026-10-08-v0.1.53.md).

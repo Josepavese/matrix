@@ -1,0 +1,108 @@
+{
+  "version": "0.1.53",
+  "code_sha": "9747f90dd7a1a84e137bc0292b493daa2e07c83f",
+  "tag_object": "ab324e97b231c179b06014db33ed90e8237aa28e",
+  "release_workflow": "https://github.com/Josepavese/matrix/actions/runs/37814006891",
+  "main_ci": "https://github.com/Josepavese/matrix/actions/runs/37799810415",
+  "pal_ci": "https://github.com/Josepavese/matrix/actions/runs/37799810284",
+  "native_os_passed": [
+    "linux",
+    "windows",
+    "macos"
+  ],
+  "public_release": "https://github.com/Josepavese/matrix/releases/tag/v0.1.53",
+  "public_assets": 15,
+  "release_verification": {
+    "checks_passed": 88,
+    "checks_failed": 0,
+    "result": "RELEASE_VERIFY_OK"
+  },
+  "host_archive_sha256": "6a1f92cc104eae15e91b805ce0bf1d77aeb5e37ba4085cf1051f27ae45a5a1e6",
+  "isolated_public_install_smokes": {
+    "version": 0,
+    "home": 0,
+    "vault_migrate": 0,
+    "bootstrap_doctor": 0,
+    "doctor": 0,
+    "readiness": 0
+  },
+  "historical_reports_preserved": 15,
+  "new_closed_reports": 4,
+  "physical_optional_drivers_proved": [
+    "linux"
+  ],
+  "physical_optional_drivers_unqualified": [
+    "windows",
+    "macos"
+  ],
+  "signed_provenance": {
+    "verified_subject_count": 12,
+    "source_digest": "9747f90dd7a1a84e137bc0292b493daa2e07c83f",
+    "source_ref": "refs/tags/v0.1.53",
+    "signer_workflow": "Josepavese/matrix/.github/workflows/release.yml",
+    "self_hosted_runners_rejected": true,
+    "subjects": [
+      {
+        "subject": "matrix_0.1.53_darwin_amd64.tar.gz",
+        "verified_attestations": 1,
+        "exit_code": 0
+      },
+      {
+        "subject": "matrix_0.1.53_darwin_amd64.tar.gz.sbom.json",
+        "verified_attestations": 1,
+        "exit_code": 0
+      },
+      {
+        "subject": "matrix_0.1.53_darwin_arm64.tar.gz",
+        "verified_attestations": 1,
+        "exit_code": 0
+      },
+      {
+        "subject": "matrix_0.1.53_darwin_arm64.tar.gz.sbom.json",
+        "verified_attestations": 1,
+        "exit_code": 0
+      },
+      {
+        "subject": "matrix_0.1.53_linux_amd64.tar.gz",
+        "verified_attestations": 1,
+        "exit_code": 0
+      },
+      {
+        "subject": "matrix_0.1.53_linux_amd64.tar.gz.sbom.json",
+        "verified_attestations": 1,
+        "exit_code": 0
+      },
+      {
+        "subject": "matrix_0.1.53_linux_arm64.tar.gz",
+        "verified_attestations": 1,
+        "exit_code": 0
+      },
+      {
+        "subject": "matrix_0.1.53_linux_arm64.tar.gz.sbom.json",
+        "verified_attestations": 1,
+        "exit_code": 0
+      },
+      {
+        "subject": "matrix_0.1.53_windows_amd64.zip",
+        "verified_attestations": 1,
+        "exit_code": 0
+      },
+      {
+        "subject": "matrix_0.1.53_windows_amd64.zip.sbom.json",
+        "verified_attestations": 1,
+        "exit_code": 0
+      },
+      {
+        "subject": "matrix_0.1.53_windows_arm64.zip",
+        "verified_attestations": 1,
+        "exit_code": 0
+      },
+      {
+        "subject": "matrix_0.1.53_windows_arm64.zip.sbom.json",
+        "verified_attestations": 1,
+        "exit_code": 0
+      }
+    ]
+  },
+  "local_installation_certified_at_publication_checkpoint": false
+}
