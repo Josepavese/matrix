@@ -1,61 +1,94 @@
 package integration
 
 import (
+	"github.com/Josepavese/matrix/internal/logic/filesystem"
+	"github.com/Josepavese/matrix/internal/logic/memstore"
+	"github.com/Josepavese/matrix/internal/logic/runtrace"
+	"github.com/Josepavese/matrix/internal/logic/semanticfs"
+	"github.com/Josepavese/matrix/internal/providers/fusefs"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
-
-	"github.com/Josepavese/matrix/internal/logic/filesystem"
-	"github.com/Josepavese/matrix/internal/providers/fusefs"
 )
 
 func TestFUSE_MountAndRead(t *testing.T) {
-	tempDir := t.TempDir()
-	mountPoint := filepath.Join(tempDir, "matrix-mnt")
-
-	provider := fusefs.NewProvider()
-	mgr := filesystem.NewManager(provider)
-
-	// Mount the FUSE synthetic filesystem
-	if err := mgr.MountVirtualFS(mountPoint); err != nil {
-		t.Fatalf("Failed to mount virtual FS: %v", err)
+	driver := os.Getenv("MATRIX_REAL_FUSE_DRIVER")
+	if driver == "" {
+		t.Skip("set MATRIX_REAL_FUSE_DRIVER for a native FUSE/WinFsp mount proof")
+	}
+	mountPoint := filepath.Join(t.TempDir(), "matrix-mnt")
+	view := fstest.MapFS{"runs/proof/status.json": &fstest.MapFile{Data: []byte(`{"status":"running"}`), Mode: 0400}}
+	provider := fusefs.NewProvider().WithView(view).WithDriverPath(driver)
+	manager := filesystem.NewManager(provider)
+	if err := manager.MountVirtualFS(mountPoint); err != nil {
+		t.Fatal(err)
 	}
 	defer func() {
-		if err := mgr.UnmountVirtualFS(); err != nil {
-			t.Fatalf("UnmountVirtualFS failed: %v", err)
+		if err := manager.UnmountVirtualFS(); err != nil {
+			t.Error(err)
 		}
 	}()
-
-	// The kernel registers the mount asynchronously: wait for the observable
-	// fact — the file is readable — instead of sleeping a fixed 200ms and hoping
-	// the mount won the race. Five seconds is 250x the 20ms poll interval.
-	filePath := filepath.Join(mountPoint, "matrix.txt")
-	var (
-		content []byte
-		err     error
-	)
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		content, err = os.ReadFile(filePath)
-		if err == nil {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
+	file := filepath.Join(mountPoint, "runs", "proof", "status.json")
+	content, err := os.ReadFile(file)
+	if err != nil || string(content) != `{"status":"running"}` {
+		t.Fatal("native semantic read failed", err)
 	}
+	if err := os.WriteFile(file, []byte("modified"), 0600); err == nil {
+		t.Fatal("read-only mount accepted a write")
+	}
+	if err := manager.UnmountVirtualFS(); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(mountPoint)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("native unmount was not observed", err)
+	}
+}
+
+func TestSmokeFUSELiveSemanticStatusChanges(t *testing.T) {
+	driver := os.Getenv("MATRIX_REAL_FUSE_DRIVER")
+	if driver == "" {
+		t.Skip("set MATRIX_REAL_FUSE_DRIVER for native live projection")
+	}
+	store := memstore.New()
+	runs := runtrace.NewStore(store)
+	run, _, err := runs.Start(runtrace.Run{ID: "mount-live-proof"})
 	if err != nil {
-		t.Fatalf("Failed to read virtual file after mount: %v", err)
+		t.Fatal(err)
 	}
-
-	expected := "Welcome to the Matrix Virtual Filesystem"
-	if !strings.Contains(string(content), expected) {
-		t.Errorf("Unexpected virtual file content. Got: %s", string(content))
+	view := semanticfs.New(semanticfs.Source{Storage: store})
+	name, _ := semanticfs.DirectoryName(run.ID)
+	leaf := "runs/" + name + "/status.json"
+	mount := t.TempDir()
+	provider := fusefs.NewProvider().WithView(view).WithDriverPath(driver)
+	if err := provider.Mount(mount); err != nil {
+		t.Fatal(err)
 	}
-
-	// Verify the file is read-only
-	err = os.WriteFile(filePath, []byte("write test"), 0644)
-	if err == nil {
-		t.Errorf("Expected write to fail on read-only FUSE mount, but it succeeded")
+	defer func() {
+		if err := provider.Unmount(); err != nil {
+			t.Error(err)
+		}
+	}()
+	if _, err := os.ReadFile(filepath.Join(mount, filepath.FromSlash(leaf))); err != nil {
+		t.Fatal(err)
 	}
+	if _, err := runs.Complete(run.ID, "PRIVATE_SUMMARY", "end_turn"); err != nil {
+		t.Fatal(err)
+	}
+	want, err := fs.ReadFile(view, leaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(filepath.Join(mount, filepath.FromSlash(leaf)))
+		if err == nil && string(data) == string(want) {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatal("mounted status did not refresh or size remained stale")
 }

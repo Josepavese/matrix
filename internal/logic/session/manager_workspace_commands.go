@@ -306,6 +306,7 @@ func (m *Manager) SwitchWorkspaceForChannel(_ context.Context, channelID, worksp
 
 func (m *Manager) toWorkspaceEntry(meta workspace.Meta, active bool) middleware.WorkspaceEntry {
 	return middleware.WorkspaceEntry{
+		Capacity:        m.workspaceCapacity(meta.RootPath),
 		ID:              meta.ID,
 		Name:            meta.Name,
 		Kind:            meta.Kind,

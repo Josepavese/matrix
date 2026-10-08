@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/admission"
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/logic/runactivity"
@@ -102,6 +103,17 @@ func (s *Server) dispatchByExecutionMode(w http.ResponseWriter, r *http.Request,
 
 // runHTTPStatus maps a routed turn's failure to the status the caller sees.
 func runHTTPStatus(ctx context.Context, err error, emergencyTimeout time.Duration) int {
+	var refusal *admission.Refusal
+	if errors.As(err, &refusal) {
+		switch refusal.Code {
+		case "capacity_configuration_invalid":
+			return http.StatusInternalServerError
+		case "capacity_observation_unavailable", "capacity_policy_unavailable":
+			return http.StatusServiceUnavailable
+		default:
+			return http.StatusTooManyRequests
+		}
+	}
 	switch {
 	case isSetupRequired(err):
 		return http.StatusConflict
@@ -223,6 +235,7 @@ func (s *Server) route(ctx context.Context, exec runExecution, prepared sessionS
 	req := exec.req
 	if richer, ok := s.router.(middleware.ConversationRequestRouter); ok {
 		output, err := richer.RouteConversation(ctx, middleware.ConversationRequest{
+			Capacity:              requestedCapacity(req),
 			ChannelID:             req.ChannelID,
 			AgentID:               exec.agentID,
 			LogicalSessionID:      strings.TrimSpace(prepared.LogicalSessionID),
@@ -238,6 +251,9 @@ func (s *Server) route(ctx context.Context, exec runExecution, prepared sessionS
 			NonInteractive:        true,
 		})
 		return routeResult{output: output}, err
+	}
+	if requestedCapacity(req) != (middleware.CapacityRequest{}) {
+		return routeResult{}, &admission.Refusal{Code: "capacity_policy_unavailable"}
 	}
 	output, err := s.router.Route(ctx, req.ChannelID, exec.agentID, sidecar.ProjectPrompt(req.Input.String(), req.SidecarCapsules), notifier)
 	return routeResult{output: output}, err

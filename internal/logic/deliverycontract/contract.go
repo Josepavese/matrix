@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/Josepavese/matrix/internal/middleware"
 	"io"
 	"io/fs"
 	"os"
@@ -80,8 +81,9 @@ type Artifact struct {
 // "formatted" or "tests passed" stay the caller's definitions: Matrix runs the
 // check and reports the exit code instead of learning what a commit is.
 type Validator struct {
-	Command        []string `json:"command"`
-	TimeoutSeconds int      `json:"timeout_seconds,omitempty"`
+	Sandbox        *middleware.ContainerSandbox `json:"sandbox,omitempty"`
+	Command        []string                     `json:"command"`
+	TimeoutSeconds int                          `json:"timeout_seconds,omitempty"`
 }
 
 // Check is one evaluated requirement, kept as its own record so a reader can see
@@ -146,6 +148,9 @@ func (c Contract) validateQuantity() error {
 // to stat, a digest that is one, a validator that is an argv array with a
 // non-negative timeout.
 func (c Contract) validateShape() error {
+	if err := validateValidatorSandbox(c.Validator); err != nil {
+		return err
+	}
 	for _, artifact := range c.Artifacts {
 		if strings.TrimSpace(artifact.Path) == "" {
 			return errors.New("delivery contract: an artifact is declared without a path")
@@ -185,6 +190,12 @@ func isHexDigest(value string) bool {
 // because "could not check" is a fact the caller needs and an error return would
 // push the caller into reporting either success or failure.
 func Evaluate(ctx context.Context, workspace string, contract Contract) Verdict {
+	return EvaluateWithValidator(ctx, workspace, contract, nil)
+}
+
+// EvaluateWithValidator requires a supplied execution boundary when isolation
+// was requested; absence of a runner never causes host execution as a fallback.
+func EvaluateWithValidator(ctx context.Context, workspace string, contract Contract, runner ValidatorRunner) Verdict {
 	if !contract.Declared() {
 		return Verdict{Status: StatusNotDeclared, Reason: "no delivery contract was declared for this run"}
 	}
@@ -199,7 +210,7 @@ func Evaluate(ctx context.Context, workspace string, contract Contract) Verdict 
 		verdict.add(checkArtifact(workspace, artifact))
 	}
 	if contract.Validator != nil {
-		verdict.add(checkValidator(ctx, workspace, *contract.Validator))
+		verdict.add(checkValidatorWithRunner(ctx, workspace, *contract.Validator, runner))
 	}
 	if len(verdict.Checks) == 0 {
 		return Verdict{Status: StatusNotDeclared, Reason: "no delivery contract was declared for this run"}

@@ -4,6 +4,7 @@ import "io"
 
 // LogSinkOptions configures the destination and rotation parameters for a log sink.
 type LogSinkOptions struct {
+	Collector  *CollectorOptions
 	Target     string
 	FilePath   string
 	MaxBytes   int64

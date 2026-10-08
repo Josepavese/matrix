@@ -9,10 +9,15 @@ import (
 	"sync"
 
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/internal/providers/otlplog"
 )
 
 // Factory creates log sinks backed by the local OS.
-type Factory struct{}
+type Factory struct {
+	mu         sync.Mutex
+	collector  *otlplog.Exporter
+	credential func() (string, error)
+}
 
 // NewFactory returns a new oslog Factory.
 func NewFactory() *Factory {
@@ -21,6 +26,29 @@ func NewFactory() *Factory {
 
 // Build creates a log sink based on the provided options.
 func (f *Factory) Build(options middleware.LogSinkOptions) (middleware.LogSink, error) {
+	primary, err := f.buildPrimary(options)
+	if err != nil {
+		return nil, err
+	}
+	if options.Collector == nil {
+		return primary, nil
+	}
+	collectorOptions := *options.Collector
+	if collectorOptions.Credential == nil {
+		collectorOptions.Credential = f.credential
+	}
+	exporter, err := otlplog.New(collectorOptions)
+	if err != nil {
+		_ = primary.Close()
+		return nil, err
+	}
+	f.mu.Lock()
+	f.collector = exporter
+	f.mu.Unlock()
+	return &collectorSink{primary: primary, exporter: exporter}, nil
+}
+
+func (f *Factory) buildPrimary(options middleware.LogSinkOptions) (middleware.LogSink, error) {
 	switch options.Target {
 	case "stderr":
 		return &stderrSink{}, nil

@@ -23,6 +23,7 @@ type ChannelResponse struct {
 // workspace-aware callers. It keeps channel identity as ingress metadata while
 // letting the runtime resolve work context from workspace hints.
 type ConversationRequest struct {
+	Capacity                 CapacityRequest
 	ChannelID                string
 	AgentID                  string
 	ModelID                  string
@@ -217,17 +218,6 @@ type WorkspaceActionRequest struct {
 }
 
 // WorkspaceEntry is the typed representation of a configured workspace.
-type WorkspaceEntry struct {
-	ID              string `json:"id,omitempty"`
-	Name            string `json:"name,omitempty"`
-	Kind            string `json:"kind,omitempty"`
-	RootPath        string `json:"root_path,omitempty"`
-	DefaultAgentID  string `json:"default_agent_id,omitempty"`
-	ReviewerAgentID string `json:"reviewer_agent_id,omitempty"`
-	DefaultMode     string `json:"default_mode,omitempty"`
-	PolicyProfile   string `json:"policy_profile,omitempty"`
-	Active          bool   `json:"active,omitempty"`
-}
 
 // WorkspaceActionResult is the typed, reusable result for workspace operations.
 type WorkspaceActionResult struct {

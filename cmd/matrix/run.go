@@ -25,6 +25,7 @@ import (
 	"github.com/Josepavese/matrix/internal/providers/agentprobe"
 	"github.com/Josepavese/matrix/internal/providers/agents"
 	"github.com/Josepavese/matrix/internal/providers/matrixapi"
+	"github.com/Josepavese/matrix/internal/providers/oscapacity"
 	"github.com/Josepavese/matrix/internal/providers/osfs"
 	"github.com/Josepavese/matrix/internal/providers/oslog"
 	"github.com/spf13/cobra"
@@ -44,7 +45,7 @@ var runCmd = &cobra.Command{
 		defer closeDaemon()
 
 		// Logging bootstrap
-		logRuntime, err := logging.BootstrapWithFactory(d.App.Config, oslog.NewFactory())
+		logRuntime, err := logging.BootstrapWithFactory(d.App.Config, oslog.NewFactory().WithCollectorCredential(func() (string, error) { return d.App.Config.Get("system.logging.collector.authorization") }))
 		if err != nil {
 			exitf("Logging init error: %v", err)
 		}
@@ -111,7 +112,8 @@ var runCmd = &cobra.Command{
 		// configured at this point.
 		wizard.SetAgentAuthController(agentRouter)
 		agentRouter.StartKeepalive(ctx)
-		sessionMgr := session.NewManager(d.App.Store, agentRouter, wizard, sysTools)
+		sessionMgr := session.NewManager(d.App.Store, agentRouter, wizard, sysTools).WithCapacity(oscapacity.New())
+		configureRuntimeCapacity(sessionMgr, d.App.Config.Get)
 		sessionMgr.SetEndpointResolver(d.Supervisor)
 		if agent := d.App.Config.GetWithDefault("default_agent", ""); agent != "" {
 			sessionMgr.SetDefaultAgent(agent)
@@ -159,6 +161,9 @@ var runCmd = &cobra.Command{
 			log.Info("matrix api key configured", "event", "matrix_apikey_set")
 		}
 		mux := http.NewServeMux()
+		registerCapacityRuntime(mux, sessionMgr, d.App.Store, matrixAPIKey)
+		registerTelemetryRuntime(mux, logRuntime.Telemetry, matrixAPIKey)
+		registerSemanticRuntime(mux, d.Registry, d.App.Store, matrixAPIKey)
 		matrixAPIServer.RegisterRoutes(mux)
 		if err := startLocalNotificationServer(ctx, activeMatrixHome, matrixAPIServer); err != nil {
 			return fmt.Errorf("start local notifications: %w", err)

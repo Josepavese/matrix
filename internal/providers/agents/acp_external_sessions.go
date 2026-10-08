@@ -59,6 +59,11 @@ func (c *acpConversationClient) AttachExistingRemoteSession(ctx context.Context,
 	if workspacePath == "" {
 		return middleware.RemoteSessionInfo{}, fmt.Errorf("workspace path is required for verified attach")
 	}
+	var workspaceErr error
+	workspacePath, workspaceErr = c.sandboxWorkspace(workspacePath)
+	if workspaceErr != nil {
+		return middleware.RemoteSessionInfo{}, workspaceErr
+	}
 	info, err := c.externalSessionInfo(ctx, remoteSessionID, workspacePath)
 	if err != nil {
 		return middleware.RemoteSessionInfo{}, err
@@ -95,7 +100,7 @@ func (c *acpConversationClient) externalSessionInfo(ctx context.Context, remoteS
 		if candidate.RemoteSessionID != remoteSessionID {
 			continue
 		}
-		if err := verifyListedSessionCwd(candidate.Cwd, workspacePath); err != nil {
+		if err := c.verifySandboxSessionCwd(candidate.Cwd, workspacePath); err != nil {
 			return middleware.RemoteSessionInfo{}, fmt.Errorf("workspace_mismatch: session %s reports %s, requested %s", remoteSessionID, candidate.Cwd, workspacePath)
 		}
 		candidate.VerificationLimit = info.VerificationLimit

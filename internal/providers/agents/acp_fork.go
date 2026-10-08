@@ -20,6 +20,11 @@ func (c *acpConversationClient) ForkRemoteSession(ctx context.Context, req middl
 	if cwd == "" {
 		cwd = c.cwd
 	}
+	var workspaceErr error
+	cwd, workspaceErr = c.sandboxWorkspace(cwd)
+	if workspaceErr != nil {
+		return middleware.RemoteSessionInfo{}, workspaceErr
+	}
 	additionalDirectories, err := c.additionalDirectories(req.AdditionalDirectories)
 	if err != nil {
 		return middleware.RemoteSessionInfo{}, err

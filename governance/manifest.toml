@@ -5,6 +5,8 @@ purpose = "Release gate for Matrix product, architecture, code, test, issue, and
 
 [documents]
 required = [
+  "docs/wiki/PAL-Execution-and-Observability.md",
+  "docs/governance/pal_implementation_2026-10-08.md",
   "docs/governance/README.md",
   "docs/governance/product_governance.md",
   "docs/governance/architecture_governance.md",
@@ -57,7 +59,8 @@ required = [
   "golangci-lint run",
   "go test -race -v ./...",
   "go build -o \"$build_dir/matrix\" ./cmd/matrix",
-  "goreleaser check"
+  "goreleaser check",
+  "\"$preflight_home/orchestration-capabilities.json\""
 ]
 
 [ci]

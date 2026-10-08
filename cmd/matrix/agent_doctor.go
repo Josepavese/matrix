@@ -93,7 +93,7 @@ var agentDoctorCmd = &cobra.Command{
 				endpoint = resolved.Endpoint
 			}
 
-			if cfg.Command != "" {
+			if cfg.Command != "" && !doctorContainerEndpoint(endpoint) {
 				if _, err := os.Stat(cfg.Command); err == nil {
 					item["command_in_path"] = true
 				} else if _, err := execLookPath(cfg.Command); err == nil {
@@ -110,7 +110,9 @@ var agentDoctorCmd = &cobra.Command{
 					item["a2a_authentication"], warnings = a2aAuth, append(warnings, a2aWarnings...)
 				}
 				processCwd, cwdErr := childidentity.DeclaredProcessCwd(endpoint)
-				if cwdErr != nil {
+				if doctorContainerEndpoint(endpoint) {
+					item["child"] = childidentity.Report{Status: "container_process_unobserved"}
+				} else if cwdErr != nil {
 					item["provider_status"] = "process_cwd_invalid"
 					item["process_cwd_error"] = cwdErr.Error()
 					warnings = append(warnings, cwdErr.Error())

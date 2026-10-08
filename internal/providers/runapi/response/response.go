@@ -1,6 +1,7 @@
 package response
 
 import (
+	"errors"
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
@@ -52,6 +53,10 @@ func (b Builder) NewErrorForError(runID, status string, runErr error, cleanup *m
 	if failure, ok := providerfailure.As(runErr); ok {
 		resp.Code = failure.Code
 		resp.Details = providerfailure.Details(failure)
+	}
+	var coded interface{ FailureCode() string }
+	if resp.Code == "" && errors.As(runErr, &coded) {
+		resp.Code = coded.FailureCode()
 	}
 	return resp
 }

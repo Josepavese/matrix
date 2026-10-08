@@ -23,21 +23,24 @@ const (
 
 // Config holds resolved logging configuration.
 type Config struct {
-	Level      slog.Level
-	Format     string
-	Sink       string
-	FilePath   string
-	MaxBytes   int64
-	MaxBackups int
-	StdErr     bool
-	ACPWire    bool
+	CollectorEndpoint  string
+	CollectorQueueSize int
+	Level              slog.Level
+	Format             string
+	Sink               string
+	FilePath           string
+	MaxBytes           int64
+	MaxBackups         int
+	StdErr             bool
+	ACPWire            bool
 }
 
 // Runtime holds the initialized logger, its config, and a close function.
 type Runtime struct {
-	Logger *slog.Logger
-	Config Config
-	Close  func() error
+	Telemetry func() middleware.TelemetryStats
+	Logger    *slog.Logger
+	Config    Config
+	Close     func() error
 }
 
 // Bootstrap initializes logging using the default factory.
@@ -66,9 +69,10 @@ func BootstrapWithFactory(cfgMgr *config.Manager, sinkFactory middleware.LogSink
 	slog.SetDefault(logger)
 
 	return &Runtime{
-		Logger: logger,
-		Config: cfg,
-		Close:  closeFn,
+		Telemetry: telemetryReporter(sinkFactory),
+		Logger:    logger,
+		Config:    cfg,
+		Close:     closeFn,
 	}, nil
 }
 
@@ -85,6 +89,9 @@ func loadConfig(cfgMgr *config.Manager) (Config, error) {
 	}
 	if cfg.Sink == "stderr" || cfg.Sink == "both" {
 		cfg.StdErr = true
+	}
+	if err := loadCollectorConfig(cfgMgr, &cfg); err != nil {
+		return Config{}, err
 	}
 	return cfg, nil
 }
@@ -139,6 +146,7 @@ func newHandler(cfg Config, sinkFactory middleware.LogSinkFactory) (slog.Handler
 	}
 
 	sink, err := sinkFactory.Build(middleware.LogSinkOptions{
+		Collector:  collectorOptions(cfg),
 		Target:     cfg.Sink,
 		FilePath:   cfg.FilePath,
 		MaxBytes:   cfg.MaxBytes,

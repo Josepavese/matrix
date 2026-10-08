@@ -16,6 +16,11 @@ import (
 type acpConversationFactory struct{}
 
 func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middleware.ProtocolEndpoint, deps middleware.ConversationFactoryDeps) (middleware.ConversationClient, error) {
+	var err error
+	endpoint, deps, err = prepareSandboxClient(endpoint, deps)
+	if err != nil {
+		return nil, err
+	}
 	transport, err := createTransport(ctx, transportSpec{
 		Protocol:     endpoint.Transport,
 		Address:      endpoint.Address,
@@ -24,6 +29,8 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 		Env:          endpoint.Env,
 		EnvIsolation: endpoint.EnvIsolation,
 		Cwd:          deps.Cwd,
+		Sandbox:      endpoint.Sandbox,
+		Identity:     deps.AgentID,
 	})
 	if err != nil {
 		return nil, err
@@ -72,6 +79,7 @@ func (f *acpConversationFactory) initializeConversation(ctx context.Context, end
 	// A terminal login has to reconnect with the same endpoint and dependencies
 	// this connection was built from, so the factory owns that rebuild.
 	conversation.reconnect = conversation.reconnectACPConnection
+	conversation.recordSandboxEvidence(transport)
 	if err := conversation.validateMCPServers(conversation.mcpServers); err != nil {
 		_ = transport.Close()
 		return nil, classifyProviderFailure("", endpoint, "initialize", err)
@@ -107,6 +115,7 @@ func acpClientCapabilitiesForDeps(deps middleware.ConversationFactoryDeps) *acpC
 }
 
 type acpConversationClient struct {
+	sandboxEvidence     *middleware.SandboxExecutionEvidence
 	client              ACPClient
 	handler             *defaultRequestHandler
 	deps                middleware.ConversationFactoryDeps
@@ -379,6 +388,9 @@ func (c *acpConversationClient) applySessionMode(ctx context.Context, session *m
 	if c.preferredMode != "" {
 		return c.applyPreferredSessionMode(ctx, session, sessionID)
 	}
+	if c.endpoint.Sandbox != nil {
+		return nil
+	}
 	if configID, value := pickAutoApproveConfigOption(session); configID != "" && value != "" {
 		if _, err := c.currentACPClient().SetConfigOption(ctx, acpSetConfigOptionRequest{
 			SessionID: sessionID,
@@ -468,6 +480,11 @@ type acpLoadRemoteSessionRequest struct {
 }
 
 func (c *acpConversationClient) resumeACPRemoteSession(req acpLoadRemoteSessionRequest) (bool, error) {
+	cwd, err := c.sandboxWorkspace(req.Cwd)
+	if err != nil {
+		return false, err
+	}
+	req.Cwd = cwd
 	additionalDirectories, err := c.additionalDirectories(req.AdditionalDirectories)
 	if err != nil {
 		return false, err
@@ -490,6 +507,11 @@ func (c *acpConversationClient) resumeACPRemoteSession(req acpLoadRemoteSessionR
 }
 
 func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionRequest) error {
+	cwd, err := c.sandboxWorkspace(req.Cwd)
+	if err != nil {
+		return err
+	}
+	req.Cwd = cwd
 	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: req.Notifier}
 	additionalDirectories, err := c.additionalDirectories(req.AdditionalDirectories)
 	if err != nil {
@@ -595,6 +617,9 @@ func (c *acpConversationClient) turnMCPServers(turnServers []middleware.McpServe
 }
 
 func (c *acpConversationClient) additionalDirectories(values []string) ([]string, error) {
+	if c.endpoint.Sandbox != nil && len(values) > 0 {
+		return nil, fmt.Errorf("sandbox additional directories require explicit mounts; none are configured")
+	}
 	if len(values) == 0 {
 		return nil, nil
 	}

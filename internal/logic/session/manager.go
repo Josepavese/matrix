@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/admission"
 	"github.com/Josepavese/matrix/internal/logic/onboarding"
 	"github.com/Josepavese/matrix/internal/logic/sessionqueue"
 	"github.com/Josepavese/matrix/internal/logic/system_tools"
@@ -59,6 +60,8 @@ type ChannelState struct {
 // Manager handles routing between physical channels (e.g. telegram_123456789)
 // and logical SessionIDs using the SSOT Vault.
 type Manager struct {
+	admission   *admission.Manager
+	capacity    middleware.Capacity
 	storage     middleware.Storage
 	router      middleware.AgentRouter
 	wizard      *onboarding.Wizard
