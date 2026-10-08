@@ -54,7 +54,6 @@ func TestFactoryBuildFileSinkRestrictsPermissions(t *testing.T) {
 	defer func() { _ = sink.Close() }()
 
 	assertPrivateLogPermissions(t, path)
-
 }
 
 func TestFactoryBuildBothSink(t *testing.T) {

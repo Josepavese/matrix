@@ -45,7 +45,6 @@ func TestBuildRequiresAUsablePathForFileSinks(t *testing.T) {
 	if _, err := factory.Build(middleware.LogSinkOptions{Target: "file", FilePath: filepath.Join(path, "nested.log")}); err == nil {
 		t.Fatal("unusable log path accepted")
 	}
-
 }
 
 func TestBuildAcceptsTheDocumentedTargets(t *testing.T) {
