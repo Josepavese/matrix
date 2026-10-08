@@ -3,8 +3,8 @@
 package oslog
 
 import (
-	"strings"
 	"testing"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -24,7 +24,15 @@ func assertPrivateLogPermissions(t *testing.T, path string) {
 		t.Fatal("log DACL inherits permissions", err)
 	}
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil || !strings.Contains(sd.String(), user.User.Sid.String()) {
-		t.Fatal("log grant is not the current account", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ace *windows.ACCESS_ALLOWED_ACE
+	if err := windows.GetAce(acl, 0, &ace); err != nil {
+		t.Fatal(err)
+	}
+	granted := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+	if !windows.EqualSid(granted, user.User.Sid) || ace.Mask != windows.ACCESS_MASK(windows.STANDARD_RIGHTS_REQUIRED|windows.SYNCHRONIZE|0x1ff) || ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
+		t.Fatal("log ACL does not grant only the exact current user")
 	}
 }
