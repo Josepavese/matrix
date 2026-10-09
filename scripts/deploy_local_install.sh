@@ -272,12 +272,13 @@ run_smoke() {
 
 echo
 echo "== Post-install smoke =="
+# Installation verifies the artifact only. Storage/schema initialization and
+# readiness belong to the runtime phase after restart, not binary replacement.
+run_smoke version
 run_smoke home
-run_smoke vault migrate
-run_smoke bootstrap doctor
-run_smoke doctor
-run_smoke readiness
-echo "Post-install smoke OK: home, vault migrate, bootstrap doctor, doctor, readiness"
+run_smoke run submit --help
+echo "Post-install artifact smoke OK: version, home, run submit --help"
+echo "After runtime startup, verify doctor/readiness and the authenticated API."
 
 if [[ "$path_ready" -eq 0 ]]; then
   echo "PATH was updated in your shell profile. Open a new shell if 'matrix' is not found in this one."

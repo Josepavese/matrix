@@ -29,3 +29,6 @@ La [release v0.1.53](../docs/governance/releases/2026-10-08-v0.1.53.md) è pubbl
 
 - [matrix home su stdout](closed/home-stdout-for-shell.md): corretto l'uso nelle
   sostituzioni della shell, con verifica della CLI compilata nativa.
+
+- [Collaudo locale senza apertura/migrazione del Vault](closed/local-installer-vault-smoke.md):
+  verifica artefatto separata dai controlli del runtime avviato.

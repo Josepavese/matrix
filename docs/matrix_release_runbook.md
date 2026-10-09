@@ -53,7 +53,11 @@ After artifacts are generated, install the host-matching archive into the local 
 scripts/deploy_local_install.sh
 ```
 
-This is the final local deploy step. It must run from the generated archive in `dist/`, not from `go run` or a source build.
+This installs and verifies the artifact from `dist/`, not from `go run` or a
+source build. Its post-copy smoke checks version, resolved home and CLI help;
+it does not open or migrate the Vault. Back up state, stop an idle service before
+replacement, then restart it and run doctor/readiness against that runtime.
+Schema/storage migration belongs to runtime initialization when required.
 
 For an isolated smoke install:
 

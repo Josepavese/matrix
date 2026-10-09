@@ -144,6 +144,8 @@ jobs:
     # reproducible instead of waiting for GitHub to be stale.
     - name: Test install.sh asset resolution
       run: bash tests/install_sh_asset_test.sh
+    - name: Test local deploy preserves existing Vault without opening storage
+      run: bash tests/deploy_local_artifact_only_test.sh
 
   quality-gate:
     runs-on: ubuntu-latest
