@@ -1,6 +1,6 @@
 # CLI Reference
 
-Every `matrix` command with examples.
+Common `matrix` commands with examples. Use `matrix <command> --help` for the installed version's full flag inventory.
 
 ## Global Commands
 
@@ -11,6 +11,25 @@ Start the Matrix daemon. This starts the HTTP API server, Telegram bot (if confi
 ```bash
 matrix run
 ```
+
+### `matrix run submit`, `wait` and `ack`
+
+```bash
+# Linux/macOS only:
+matrix run wait <run-id> --timeout 10m --after <cursor> --json
+matrix run ack --run-id <run-id> --sequence <sequence> --idempotency-key <stable-key> --json
+```
+
+`run submit` exists, but the v0.1.53 client omits required `channel_id` and is
+refused with HTTP 400; see the [open correction](../../issues/run-submit-missing-channel.md).
+Use HTTP for explicit project-bound async submission. Wait reads Unix outcome notifications. It shows
+input questions interactively but keeps waiting; JSON output accumulates them
+until return. Use the direct socket SSE listener for immediate input intervention.
+`--on-attention` also returns on a nonterminal inactivity notice.
+
+Persist the reported cursor and keep acknowledgement keys stable on retry.
+Windows uses HTTP run events/elicitations instead of wait/ack.
+See [Delegation and Notifications](Delegation-and-Notifications.md).
 
 ### `matrix home`
 
@@ -30,7 +49,7 @@ matrix doctor
 
 ### `matrix bootstrap doctor`
 
-Run the first-time setup wizard. Checks environment, detects agents, writes initial configuration.
+Report first-run readiness and setup guidance. This command does not authenticate model accounts.
 
 ```bash
 matrix bootstrap doctor
@@ -113,7 +132,7 @@ matrix agent set-endpoint gemini ws://localhost:3000 --kind acp --transport ws
 Set a custom binary path for an agent.
 
 ```bash
-matrix agent set-binary claude /usr/local/bin/claude
+matrix agent set-binary claude /usr/local/bin/claude-agent-acp
 ```
 
 ### `matrix agent args`
@@ -226,10 +245,10 @@ matrix workspace state my-project
 
 ### `matrix workspace switch <name>`
 
-Switch to a different workspace.
+Switch an explicit channel binding to a different workspace (`--channel` is required).
 
 ```bash
-matrix workspace switch my-project
+matrix workspace switch my-project --channel docs.http
 ```
 
 ### `matrix workspace snapshots <workspace-id>`
@@ -542,9 +561,9 @@ View orchestration capabilities.
 matrix orchestration capabilities
 ```
 
-### `matrix fuse`
+### `matrix capacity`, `sandbox`, `fs` and `fuse`
 
-Read-only semantic mount using an explicitly installed PAL driver.
+Native capacity observation, explicit execution-policy prerequisites and read-only semantic state. Mounting additionally needs an installed PAL driver.
 
 ```bash
 matrix fs list
@@ -553,6 +572,7 @@ matrix fs read runs/<encoded-id>/status.json
 matrix fuse mount /existing/empty/mountpoint --driver-path /path/to/rclone
 matrix capacity /existing/workspace
 matrix sandbox doctor <agent-id> --workspace /existing/workspace
+matrix sandbox command <agent-id> /guest/agent --arg=acp
 ```
 
 See [PAL execution and observability](PAL-Execution-and-Observability.md) for

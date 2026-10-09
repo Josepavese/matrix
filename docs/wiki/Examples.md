@@ -1,299 +1,109 @@
 # Examples
 
-Step-by-step walkthroughs of common Matrix workflows.
+These examples assume a running daemon, an existing workspace named
+`my-project`, an authenticated agent named `opencode`, and an HTTP key loaded as
+shown in [Getting Started](Getting-Started.md). Replace IDs with your setup.
 
-## Example 1: First Agent Conversation
+## Example 1: First agent conversation
 
-You just installed Matrix and want to send your first prompt.
+Run `matrix run` in a separate terminal, or use your existing service. In Bash:
 
 ```bash
-# Start the daemon
-matrix run
-
-# Send a prompt via HTTP
-curl -X POST http://127.0.0.1:9091/v1/runs \
+MATRIX_API_KEY="$(matrix config get matrix_api_key)"
+curl --fail-with-body -sS http://127.0.0.1:9091/v1/runs \
+  -H "X-Matrix-Key: $MATRIX_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
-    "input": "What is the structure of this project?"
-  }'
-```
-
-Matrix routes the prompt to your default agent (OpenCode) and returns the result. No workspace setup needed for a quick test.
-
----
-
-## Example 2: Multi-Agent Project Workflow
-
-You have a project and want to use different agents for different tasks.
-
-### Step 1: Create a workspace
-
-```bash
-matrix workspace add billing-api --path /home/user/billing-api
-```
-
-### Step 2: Start with OpenCode for implementation
-
-```bash
-curl -X POST http://127.0.0.1:9091/v1/runs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "channel_id": "docs.http",
-    "input": "Add input validation to the /payments endpoint",
-    "workspace_id": "billing-api"
-  }'
-```
-
-### Step 3: Snapshot before review
-
-```
-/snapshot before-review
-```
-
-### Step 4: Hand off to Claude for code review
-
-```
-/handoff claude
-```
-
-Claude receives a handoff packet with full context and continues from where OpenCode left off.
-
-### Step 5: Check the timeline
-
-```
-/timeline
-```
-
-Output:
-
-```
-[1] handoff created opencode -> claude - Review the billing API patch [2026-04-16 14:45]
-[2] snapshot created: before-review [2026-04-16 14:44]
-[3] entered implementation mode [2026-04-16 14:30]
-[4] created session for opencode [2026-04-16 14:00]
-```
-
-### Step 6: Continue work the next day
-
-```
-/resume billing-api
-```
-
-Matrix restores the workspace state, picks up the last session, and you are back where you left off.
-
----
-
-## Example 3: Telegram Bot Setup
-
-Set up Matrix as a Telegram bot so you can talk to your agents from your phone.
-
-### Step 1: Create a Telegram bot
-
-1. Open Telegram and message [@BotFather](https://t.me/BotFather)
-2. Send `/newbot` and follow the prompts
-3. Save the bot token (looks like `123456789:ABCdefGHIjklMNOpqrSTUvwxYZ`)
-
-### Step 2: Get your Telegram user ID
-
-1. Message [@userinfobot](https://t.me/userinfobot)
-2. Save your numeric user ID
-
-### Step 3: Configure Matrix
-
-```bash
-matrix channel set telegram token "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
-matrix channel set telegram enabled true
-matrix channel set telegram admins "123456789"
-matrix channel show telegram
-```
-
-### Step 4: Restart
-
-```bash
-matrix run
-```
-
-### Step 5: Use it
-
-Open Telegram, find your bot, and send:
-
-```
-What files are in the billing-api project?
-```
-
-The bot responds with the agent's answer. Try:
-
-```
-/review
-/handoff gemini
-/timeline
-```
-
----
-
-## Example 4: Scripted Agent Workflow
-
-Use the HTTP API to build a scripted CI/CD workflow that uses agents.
-
-```bash
-#!/bin/bash
-MATRIX="http://127.0.0.1:9091"
-KEY="your-api-key"
-
-# Run tests via OpenCode
-RUN_ID=$(curl -s -X POST "$MATRIX/v1/runs" \
-  -H "Content-Type: application/json" \
-  -H "X-Matrix-Key: $KEY" \
-  -d '{
-    "channel_id": "docs.http",
-    "input": "Run the test suite and report any failures",
-    "workspace_id": "billing-api",
-    "execution_mode": "sync"
-  }' | jq -r '.run_id')
-
-echo "Run: $RUN_ID"
-
-# Check the trace
-curl -s "$MATRIX/v1/runs/$RUN_ID/trace" \
-  -H "X-Matrix-Key: $KEY" | jq '.'
-```
-
----
-
-## Example 5: Workspace Memory and Snapshots
-
-Track work over time using workspace memory and snapshots.
-
-```bash
-# Create a workspace for a long-running project
-matrix workspace add migration-tool --path /home/user/migration-tool
-
-# Day 1: Implementation
-curl -X POST http://127.0.0.1:9091/v1/runs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "channel_id": "docs.http",
-    "input": "Implement the database migration helper",
-    "workspace_id": "migration-tool"
-  }'
-
-# Snapshot at a good stopping point
-# In Telegram: /snapshot day1-implementation-done
-
-# Day 2: Review and iterate
-# In Telegram: /resume migration-tool
-# In Telegram: /review
-
-# Check what happened
-# In Telegram: /memory
-# In Telegram: /timeline
-# In Telegram: /snapshots
-```
-
-The workspace remembers turn-by-turn summaries across sessions. When you resume on Day 2, the context is there.
-
----
-
-## Example 6: Using the Meta-Agent
-
-Delegate system tasks to the meta-agent.
-
-```
-/action install the latest version of opencode
-```
-
-```
-/action change the default agent to claude
-```
-
-```
-/action check if all agents are healthy
-```
-
-The meta-agent (Gemini by default) has system tool access and can perform administrative tasks on your behalf.
-
----
-
-## Example 7: Streaming a Long-Running Task
-
-For tasks that take time (code generation, analysis), use stream mode to see progress.
-
-```bash
-curl -N -X POST http://127.0.0.1:9091/v1/runs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "channel_id": "docs.http",
-    "input": "Refactor the authentication module to use JWT tokens",
-    "execution_mode": "stream",
-    "workspace_id": "billing-api"
-  }'
-```
-
-The `-N` flag tells curl to stream the response. You will see partial results as the agent works.
-
----
-
-## Example 8: Supervisor Sidecar Context
-
-Use sidecar capsules when a supervisor wants to attach evidence or constraints without making them ordinary chat history.
-
-```bash
-curl -X POST http://127.0.0.1:9091/v1/runs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "channel_id": "supervisor.noema",
     "agent_id": "opencode",
-    "execution_mode": "sync",
-    "input": {
-      "text": "Add optional timeout support to the config parser."
-    },
-    "sidecar_capsules": [
-      {
-        "provider": "noema",
-        "id": "caps_timeout",
-        "schema": "sidecar.intent.v0",
-        "version": "0.1",
-        "visibility": "llm_visible",
-        "format": "noema_xml",
-        "content": "<noema id=\"caps_timeout\">success: existing tests pass; avoid: do not make timeout mandatory</noema>"
-      }
-    ]
+    "workspace_id": "my-project",
+    "input": "Explain the project architecture and cite the files you inspected.",
+    "execution_mode": "sync"
   }'
 ```
 
-The agent receives the model-visible guidance. The trace records `sidecar.capsule.delivered`, and normal chat views can hide the capsule internals.
+Keep the `run_id`; inspect the result and trace before deciding the next task.
 
----
+## Example 2: Implementation and specialist review
 
-## Example 9: Live Sidecar Suggestion
+In a configured Telegram conversation:
 
-Attach supervisor context to an already active async run:
+```text
+/use my-project
+Add validation to the payments endpoint and report the changes and test results.
+/snapshot before-review
+/handoff claude
+Review the payments changes. Check duplicate-charge handling and cite findings.
+/timeline
+/decisions
+```
+
+`claude` must be installed, enabled and authenticated. Handoff passes a brief,
+not the complete source conversation. Snapshot records Matrix state, not source
+files. Keep source changes in Git or your project's backup workflow.
+
+When moving this work to HTTP, explicitly attach that channel to the intended
+logical session; see [Sessions and Recovery](Sessions-and-Recovery.md).
+
+## Example 3: Scripted delegation
+
+Submit explicit async work and wait for its result or an intervention event.
+The complete HTTP request, Unix socket listener, cursor and acknowledgement
+examples live in [Delegation and Notifications](Delegation-and-Notifications.md).
+
+A Bash caller with `jq` installed can extract the acceptance ID:
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs/run-abc123/actions \
+RUN_ID=$(curl --fail-with-body -sS http://127.0.0.1:9091/v1/runs \
+  -H "X-Matrix-Key: $MATRIX_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "action": "attach_context",
-    "reason": "supervisor_suggestion",
-    "sidecar_capsules": [
-      {
-        "provider": "noema",
-        "id": "sug_loop_guard",
-        "schema": "noema.sidecar.suggestion.v0",
-        "visibility": "llm_visible",
-        "content": "<noema-suggestion>Stop retrying the same failing validation without changing inputs.</noema-suggestion>"
-      }
-    ]
-  }'
+  -H "Idempotency-Key: docs-review-001" \
+  -d '{"channel_id":"docs.review","agent_id":"opencode","workspace_id":"my-project","input":"Review error handling and report findings.","execution_mode":"async"}' | jq -er '.run_id')
+
+# Linux/macOS: observe terminal outcome; this is not immediate input-request dispatch.
+matrix run wait "$RUN_ID" --timeout 10m --json
+
+# All platforms: inspect the recorded trace.
+curl --fail-with-body -sS -H "X-Matrix-Key: $MATRIX_API_KEY" \
+  "http://127.0.0.1:9091/v1/runs/$RUN_ID/trace"
 ```
 
-Matrix returns a `delivery_id`. Run events show `run.context.attached` and, when delivered, `sidecar.capsule.delivered`.
+The key identifies one task. Choose another for new work. Windows uses the HTTP
+run event API instead of the Unix wait command. Do not retry an interrupted task
+blindly: its outcome may be unknown, and project files may already have changed.
 
----
+## Example 4: Inspect project state without another model call
+
+```bash
+matrix workspace show my-project
+matrix workspace timeline my-project
+matrix workspace memory my-project
+matrix workspace snapshots my-project
+matrix capacity /absolute/path/to/project
+matrix fs list
+matrix fs path runs <run-id>
+```
+
+`matrix fs path` returns the full `status.json` path. Encoded IDs in semantic
+paths are not raw run IDs. Use `matrix fs read <returned-path>` to inspect the
+selected state; these views exclude arbitrary task content by default.
+Work memory, in contrast, may contain private mirrored turns.
+
+## Example 5: Supervisor context
+
+Attach `sidecar_capsules` separately from the human task body, with declared
+visibility, format and correlation IDs. Use the request examples in
+[Sidecar Capsules](Sidecar-Capsules.md) and inspect `sidecar.capsule.delivered`
+in the trace. Delivery alone does not prove successful use by the model.
+
+For optional native permission settings, prepared Docker isolation, semantic
+mounts and collector configuration, see the
+[PAL guide](PAL-Execution-and-Observability.md). Driver prerequisites and real
+qualification differ across operating systems.
 
 ## Next
 
-- [Handoff](Handoff.md) -- the key feature behind multi-agent workflows
-- [Workspaces](Workspaces.md) -- how workspace memory and snapshots work
-- [API Reference](API-Reference.md) -- build your own integrations
+- [Channels](Channels.md): Telegram setup and common API semantics.
+- [Handoff](Handoff.md): HTTP handoff plus the next destination prompt.
+- [Sessions and Recovery](Sessions-and-Recovery.md): external session import.
+- [FAQ](FAQ.md): provider credits, encryption and troubleshooting.

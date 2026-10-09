@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="800" viewBox="0 0 720 800" role="img" aria-labelledby="title desc">
+<title id="title">Where Matrix fits</title><desc id="desc">People and supervisory software access a local Matrix daemon through Telegram, CLI and HTTP. Matrix resolves routing, runs, sessions and workspace state. Protocol adapters connect it to external coding agents with their own models, tools and accounts.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#00D1B2"/></marker></defs>
+<style>text{font-family:DejaVu Sans,Arial,sans-serif;fill:#F5F7FB}.heading{font-size:32px;font-weight:700}.label{font-size:24px;font-weight:700}.body{font-size:22px}.muted{fill:#C2CEE1;font-size:21px}.tag{fill:#00D1B2;font-size:19px;font-weight:700;letter-spacing:1px}.box{fill:#151F33;stroke:#384C6A;stroke-width:2}.flow{fill:none;stroke:#00D1B2;stroke-width:3;marker-end:url(#arrow)}</style>
+<rect width="720" height="800" rx="20" fill="#0B1020"/>
+<text x="360" y="52" class="heading" text-anchor="middle">One place to reach your agents</text>
+<text x="360" y="88" class="muted" text-anchor="middle">People · scripts · supervisory agents</text>
+<rect x="40" y="114" width="200" height="72" rx="16" class="box"/>
+<text x="140" y="159" class="label" text-anchor="middle">Telegram</text>
+<rect x="260" y="114" width="200" height="72" rx="16" class="box"/>
+<text x="360" y="159" class="label" text-anchor="middle">CLI</text>
+<rect x="480" y="114" width="200" height="72" rx="16" class="box"/>
+<text x="580" y="159" class="label" text-anchor="middle">HTTP / API</text>
+<path d="M360 192V255" class="flow"/>
+<text x="386" y="231" class="muted" text-anchor="start">requests</text>
+<rect x="40" y="270" width="640" height="224" rx="16" class="box" style="stroke:#00D1B2"/>
+<text x="360" y="316" class="tag" text-anchor="middle">MATRIX · LOCAL DAEMON</text>
+<text x="360" y="359" class="heading" text-anchor="middle">Route work. Track the outcome.</text>
+<text x="360" y="401" class="body" text-anchor="middle">Runs · logical sessions · workspace bindings</text>
+<text x="360" y="439" class="muted" text-anchor="middle">Vault · timeline · briefs · events</text>
+<text x="360" y="474" class="muted" text-anchor="middle">Optional execution and observation policies</text>
+<path d="M360 502V558" class="flow"/>
+<text x="386" y="540" class="muted" text-anchor="start">ACP / A2A</text>
+<rect x="40" y="573" width="640" height="125" rx="16" class="box"/>
+<text x="360" y="615" class="tag" text-anchor="middle">EXTERNAL CODING AGENTS</text>
+<text x="360" y="654" class="body" text-anchor="middle">OpenCode · Codex · Claude · Gemini</text>
+<text x="360" y="682" class="muted" text-anchor="middle">MiMo Code · Kimi · compatible peers</text>
+<text x="360" y="743" class="body" text-anchor="middle">Agents use their own models, tools and accounts.</text>
+<text x="360" y="777" class="muted" text-anchor="middle">Results and events return through Matrix.</text>
+</svg>

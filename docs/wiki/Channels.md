@@ -111,22 +111,22 @@ The HTTP API is the primary programmatic interface. Matrix listens on `127.0.0.1
 
 ### Authentication
 
-Optional API key via the `X-Matrix-Key` header:
+HTTP authentication is required by default. Matrix generates the HTTP key on startup when absent. Retrieve it locally:
 
 ```bash
-matrix config set matrix_api_key my-secret-key
+MATRIX_API_KEY="$(matrix config get matrix_api_key)"
 ```
 
 Then include it in requests:
 
 ```bash
-curl -H "X-Matrix-Key: my-secret-key" http://127.0.0.1:9091/_matrix/runtime
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/_matrix/runtime
 ```
 
 ### Run a prompt
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -145,7 +145,7 @@ Modes:
 Programmatic callers can keep the human task body separate from machine-trackable context:
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "supervisor.noema",
@@ -170,13 +170,13 @@ Matrix projects the capsule into ACP/A2A and records `sidecar.capsule.delivered`
 ### Check run status
 
 ```bash
-curl http://127.0.0.1:9091/v1/runs/{run_id}/trace
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/v1/runs/{run_id}/trace
 ```
 
 ### Session management
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -185,7 +185,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 ```
 
 Actions: `new`, `list`, `status`, `switch`, `cancel`, `delete`, `cleanup`,
-`name`, `capabilities`, `fork`, `fork_status`, `reconcile`
+`name`, `import`, `capabilities`, `fork`, `fork_status`, `reconcile`
 
 `capabilities`, `fork`, `fork_status`, and `reconcile` use the same
 channel-neutral contract as Telegram and future ingress adapters. `fork` is
@@ -209,7 +209,7 @@ Text channels expose the same surface through `/session`:
 ### Workspace management
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/workspace-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -266,14 +266,23 @@ Full documentation: [CLI Reference](CLI-Reference.md)
 
 ## Channel Neutrality
 
-All channels expose the same semantics:
+HTTP and chat share the core action contracts; CLI exposes selected commands:
 
 - Same session lifecycle (create, list, switch, cancel, delete)
 - Same workspace operations (list, status, switch, bind, snapshot)
 - Same intents (continue, resume, review, explain, triage, handoff)
 - Same agent routing
 
-The channel is just an access surface. The work stays the same.
+Stored state is shared; each channel has its own explicit binding. Attach a
+channel to an existing logical session instead of expecting automatic continuation.
+The CLI is not a one-to-one mirror of every HTTP action.
+
+### Supervisor access
+
+Async HTTP runs and run event cursors work on Linux/macOS/Windows. Linux/macOS
+also have a private Unix outcome socket with CLI wait/ack; Windows does not.
+See [Delegation and Notifications](Delegation-and-Notifications.md) and
+[Sessions and Recovery](Sessions-and-Recovery.md).
 
 ## Next
 

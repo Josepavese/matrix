@@ -2,6 +2,10 @@
 
 Complete HTTP API reference for Matrix. The API server listens on `127.0.0.1:9091` by default.
 
+Use [Delegation and Notifications](Delegation-and-Notifications.md) for the
+complete async task flow, and [Sessions and Recovery](Sessions-and-Recovery.md)
+for exact external provider IDs and interrupted-run handling.
+
 ## Authentication
 
 On first daemon startup Matrix generates distinct HTTP and JSON-RPC keys in
@@ -14,9 +18,9 @@ curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/_matrix/runtime
 ```
 
 You can replace the generated key with `matrix config set matrix_api_key
-your-key`, then restart the daemon. The examples below omit the authentication
-header for readability; add `-H "X-Matrix-Key: $MATRIX_API_KEY"` to each
-request. `MATRIX_LOCAL_UNAUTHENTICATED=1` is an explicit development override
+your-key`, then restart the daemon. The examples below include the authentication
+header; load `MATRIX_API_KEY` locally before running them.
+`MATRIX_LOCAL_UNAUTHENTICATED=1` is an explicit development override
 and still permits only loopback binds without a key.
 
 ## Local Browser CORS
@@ -41,12 +45,33 @@ Bearer ...` when `matrix_api_key` is configured.
 Runtime health report.
 
 ```bash
-curl http://127.0.0.1:9091/_matrix/runtime
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/_matrix/runtime
 ```
 
 Returns a JSON health snapshot of the Matrix daemon.
 
 ---
+
+## PAL state and observability
+
+These read-only endpoints require the same runtime authentication:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /_matrix/capacity?workspace_id=<id>` | Native capacity for the selected workspace |
+| `GET/HEAD /_matrix/fs/<path>` | Selected semantic agent/run/workspace state; no summaries |
+| `GET /_matrix/telemetry` | Optional collector delivery/filter/drop statistics |
+
+`POST /v1/runs` accepts optional `capacity` with `min_disk_free_bytes` and
+`reserve_disk_bytes`. Runtime configuration can also enforce concurrency and
+a minimum free-disk margin. Reservations are bookkeeping across this runtime's
+routes, not filesystem quotas or provider credit limits. Missing observations
+and admission refusals are explicit, with run trace/outcome evidence.
+
+Sandbox execution is configured on the agent using the declared `MATRIX_SANDBOX`
+contract. Container validator settings use `delivery_contract.validator.sandbox`.
+See [PAL Execution and Observability](PAL-Execution-and-Observability.md) for
+schema, prerequisites, privacy limits and platform qualification.
 
 ## Runs
 
@@ -57,7 +82,7 @@ Execute a prompt on an agent. This is the primary endpoint for sending work to a
 **Request:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -107,7 +132,7 @@ For Codex ACP, clients can select reasoning effort per run without changing the
 stored agent definition:
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "halfdesk.pm",
@@ -169,7 +194,7 @@ immediate judge/follow-up run starts with a fresh client instead of inheriting
 For isolated evaluations, use:
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "eval.random-channel",
@@ -208,7 +233,7 @@ Cleanup proof includes:
 Use `sidecar_capsules` when an upstream system or supervisory agent needs to attach machine-trackable context without making that context normal chat history.
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "supervisor.noema",
@@ -294,7 +319,7 @@ Get the full trace for a run, including routing decisions, prompt, completion, a
 Coding-agent traces include protocol-neutral tool events such as `tool.call.requested` and `tool.result.received` when the provider reports ACP tool metadata or when Matrix executes ACP client-side `fs/*` / `terminal/*` requests.
 
 ```bash
-curl http://127.0.0.1:9091/v1/runs/run-abc123/trace
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/v1/runs/run-abc123/trace
 ```
 
 ---
@@ -550,7 +575,7 @@ provider supplies final-phase metadata. Message events expose `message_id`,
 Use the returned `next_cursor` as the next `after` value when polling.
 
 ```bash
-curl http://127.0.0.1:9091/v1/runs/run-abc123/events
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/v1/runs/run-abc123/events
 ```
 
 ---
@@ -560,7 +585,7 @@ curl http://127.0.0.1:9091/v1/runs/run-abc123/events
 Perform an operational action on a run.
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs/run-abc123/actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs/run-abc123/actions \
   -H "Content-Type: application/json" \
   -d '{
     "action": "cancel"
@@ -577,7 +602,7 @@ Actions:
 Live context example:
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs/run-abc123/actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs/run-abc123/actions \
   -H "Content-Type: application/json" \
   -d '{
     "action": "attach_context",
@@ -617,7 +642,7 @@ context for providers without a negotiated live-interrupt extension.
 Register a webhook to receive run events.
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/event-sinks \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/event-sinks \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://example.com/webhook",
@@ -645,7 +670,7 @@ behaviour untouched.
 List pending requests.
 
 ```bash
-curl http://127.0.0.1:9091/v1/elicitations
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/v1/elicitations
 ```
 
 ```json
@@ -683,7 +708,7 @@ consented to the interaction at that URL; Matrix never opens or prefetches it,
 so the consent step belongs to the API caller.
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/elicitations   -H "Content-Type: application/json"   -d '{
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/elicitations   -H "Content-Type: application/json"   -d '{
     "elicit_id": "session:sess_abc",
     "action": "accept",
     "values": {"strategy": "balanced"}
@@ -732,7 +757,7 @@ Failures return typed `error.code` values including `invalid_request`,
 **List sessions:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -743,7 +768,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 **Create a new session:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -756,7 +781,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 For ephemeral sessions without persistent workspace metadata:
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "eval.random-channel",
@@ -771,7 +796,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 **Switch to a session:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -783,7 +808,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 **Cancel a session:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -795,7 +820,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 **Delete a session:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -867,7 +892,7 @@ provider acknowledgement that the remote turn already stopped.
 **Cleanup a session:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -881,7 +906,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 **Name a session:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -893,7 +918,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 **Provider capabilities:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -912,7 +937,7 @@ absence.
 **Fork a session:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -946,7 +971,7 @@ artifact turn runs in the background, and the response includes
 with `action=fork_status` until `fork.job.status` is `completed` or `failed`.
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -962,7 +987,7 @@ curl -X POST http://127.0.0.1:9091/v1/session-actions \
 ```
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -991,7 +1016,7 @@ server failure.
 **Reconcile cached provider clients:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/session-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/session-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -1032,7 +1057,7 @@ Manage existing workspace context. Supported actions are `list`, `status`,
 **List workspaces:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/workspace-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -1043,7 +1068,7 @@ curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
 **Get workspace status:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/workspace-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -1054,7 +1079,7 @@ curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
 **Create a snapshot:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/workspace-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -1066,7 +1091,7 @@ curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
 **Switch workspace:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/workspace-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -1078,7 +1103,7 @@ curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
 **Bind session to workspace:**
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/workspace-actions \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -1094,7 +1119,7 @@ curl -X POST http://127.0.0.1:9091/v1/workspace-actions \
 Get the current workspace state.
 
 ```bash
-curl "http://127.0.0.1:9091/v1/workspace-state?workspace_id=my-project"
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" "http://127.0.0.1:9091/v1/workspace-state?workspace_id=my-project"
 ```
 
 ---
@@ -1104,7 +1129,7 @@ curl "http://127.0.0.1:9091/v1/workspace-state?workspace_id=my-project"
 Get the workspace event timeline.
 
 ```bash
-curl "http://127.0.0.1:9091/v1/workspace-timeline?workspace_id=my-project"
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" "http://127.0.0.1:9091/v1/workspace-timeline?workspace_id=my-project"
 ```
 
 ---
@@ -1114,7 +1139,7 @@ curl "http://127.0.0.1:9091/v1/workspace-timeline?workspace_id=my-project"
 Get workspace memory (turn summaries).
 
 ```bash
-curl "http://127.0.0.1:9091/v1/workspace-memory?workspace_id=my-project"
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" "http://127.0.0.1:9091/v1/workspace-memory?workspace_id=my-project"
 ```
 
 ---
@@ -1124,7 +1149,7 @@ curl "http://127.0.0.1:9091/v1/workspace-memory?workspace_id=my-project"
 List workspace snapshots.
 
 ```bash
-curl "http://127.0.0.1:9091/v1/workspace-snapshots?workspace_id=my-project"
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" "http://127.0.0.1:9091/v1/workspace-snapshots?workspace_id=my-project"
 ```
 
 ---
@@ -1134,7 +1159,7 @@ curl "http://127.0.0.1:9091/v1/workspace-snapshots?workspace_id=my-project"
 Get the orchestration decision trace.
 
 ```bash
-curl "http://127.0.0.1:9091/v1/workspace-decisions?workspace_id=my-project"
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" "http://127.0.0.1:9091/v1/workspace-decisions?workspace_id=my-project"
 ```
 
 ---
@@ -1146,7 +1171,7 @@ curl "http://127.0.0.1:9091/v1/workspace-decisions?workspace_id=my-project"
 Trigger a high-level intent.
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/intents \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/intents \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -1176,7 +1201,7 @@ Available intents:
 Get a machine-readable description of Matrix's capabilities. Useful for supervisory AI systems.
 
 ```bash
-curl http://127.0.0.1:9091/v1/orchestration-capabilities
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/v1/orchestration-capabilities
 ```
 
 ---
@@ -1186,7 +1211,7 @@ curl http://127.0.0.1:9091/v1/orchestration-capabilities
 Switch work mode.
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/modes \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/modes \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",

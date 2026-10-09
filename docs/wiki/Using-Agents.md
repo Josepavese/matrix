@@ -34,6 +34,10 @@ matrix agent info opencode
 
 ## Discovering New Agents
 
+The [README agent grid](../../README.md#agents-on-acp) follows Zed's ACP
+ecosystem directory. Some agents require an adapter; the grid is not a list of
+Matrix end-to-end certifications. Inspect capabilities and your local setup.
+
 Search the ACP Registry and A2A catalogs:
 
 ```bash
@@ -98,7 +102,7 @@ matrix uninstall <agent-id>
 If the agent binary is in a non-standard location:
 
 ```bash
-matrix agent set-binary claude /usr/local/bin/claude
+matrix agent set-binary claude /usr/local/bin/claude-agent-acp
 ```
 
 ### Set environment variables
@@ -134,7 +138,7 @@ These launch arguments are global for the stored agent endpoint. For Codex
 reasoning effort, HTTP clients can instead set a per-run override:
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "halfdesk.pm",
@@ -197,7 +201,7 @@ matrix agent disable claude
 Specify which agent should handle a particular prompt:
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
@@ -208,13 +212,13 @@ curl -X POST http://127.0.0.1:9091/v1/runs \
 
 ### Handoff
 
-Transfer work from one agent to another mid-session:
+Prepare another specialist session within the workspace:
 
 ```
 /handoff gemini
 ```
 
-Matrix creates a handoff packet with full context and routes the next turn to Gemini.
+Matrix prepares a metadata-based brief for the next Gemini turn. It does not import the source provider transcript; supply the task and evidence explicitly.
 
 Read more: [Handoff](Handoff.md)
 
@@ -244,7 +248,7 @@ matrix config set action_agent claude
 
 ## Pre-configured Agents
 
-Matrix ships with these agents pre-configured:
+The release seed definitions include the following agents. Enabled does not mean installed or authenticated:
 
 | Agent | ID | Command | Notes |
 |-------|----|---------|-------|
@@ -253,17 +257,31 @@ Matrix ships with these agents pre-configured:
 | Claude Code | `claude` | `claude-agent-acp` | Available but inactive by default |
 | Kimi | `kimi` | `kimi acp` | Available but inactive by default |
 
-You can modify these, add new ones, or remove them entirely.
+Codex uses Matrix's dedicated ACP installer and `codex-acp-env-v1` launch
+contract. MiMo Code can be registered as a compatible ACP agent and supports
+`mimocode-permission-v1`. They are not additional entries in the shipped seed
+JSON. Discover/install entries using `matrix agent search` and `matrix install`;
+inspect the registered command with `matrix agent show <id>`.
+
+For OpenCode use the configured ACP command; some Gemini installations use a
+different ACP flag. Diagnose the actual installed version and adapter before
+changing arguments. Matrix does not infer compatibility from the agent name.
+
+See [PAL Execution and Observability](PAL-Execution-and-Observability.md) for
+OpenCode/MiMo native permissions and optional Docker isolation.
 
 ## Agent Configuration File
 
-Agent definitions are stored in `configs/agents.json` (and optionally `configs/agents.local.json` for local overrides):
+`configs/agents.json` and `configs/agents.local.json` are bootstrap seed files.
+Existing runtime definitions and overrides are Vault-backed; use CLI
+configuration/installation commands rather than editing seed files as a live
+configuration update. A seed definition looks like:
 
 ```json
 {
   "claude": {
-    "command": "claude",
-    "args": ["acp"],
+    "command": "claude-agent-acp",
+    "args": [],
     "kind": "acp",
     "transport": "stdio",
     "env_isolation": true,
@@ -398,6 +416,14 @@ Matrix maintains a keepalive pool with 30-second health checks. If an agent repe
 1. The agent binary is up to date
 2. Sufficient system resources
 3. The vault is not corrupted: `matrix vault doctor`
+
+## Sessions and outcomes
+
+Registered agent availability is not proof of a restored conversation or a
+successful run. Use [Sessions and Recovery](Sessions-and-Recovery.md) for exact
+external IDs and typed failures, and [Delegation and Notifications](Delegation-and-Notifications.md)
+for async work and input requests. Model traces and usage events do not establish
+remaining account money or subscription credits.
 
 ## Next
 

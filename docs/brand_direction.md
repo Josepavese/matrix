@@ -2,82 +2,45 @@
 
 ## Positioning
 
-Matrix is not an agent builder.
+Matrix is a local communication hub for existing coding agents: people, scripts
+and supervisory software share run, session and workspace contracts through
+ACP/A2A adapters.
 
-Matrix is the **communication crossroads for real coding agents**.
+Tagline: **Your agents. One surface. Local-first.**
 
-Core claim:
+## Writing
 
-> Every channel. Every agent. One communication matrix.
+- Start with a concrete task and explain which component executes it.
+- Distinguish agent, model, run, logical session and provider session.
+- Describe handoff as an operational brief, not a full transcript transfer.
+- Separate implemented behavior, negotiated capabilities and planned work.
+- Explain local control without implying cloud inference or telemetry stays local.
+- State platform prerequisites and physical qualification separately.
+- Avoid blanket competitor comparisons and universal compatibility promises.
 
-## Tone Of Voice
+## Visuals
 
-- direct
-- sharp
-- operator-first
-- technical, but not academic
-- confident without hype inflation
+The README uses two editable technical SVGs under `docs/assets/readme/`:
 
-Writing rules:
+- `architecture.svg`: channels → local Matrix daemon → external agents; model,
+  tool and account ownership stays with the agent/provider.
+- `delegation.svg`: submit → work → relevant event → inspect/intervene, with
+  Unix notification and cross-platform HTTP availability made explicit.
 
-- short sentences
-- strong verbs
-- no vague platform language
-- no "AI OS" fluff
-- emphasize control, continuity, and visibility
+The wrapping agent grid uses locally embedded registry icons and SVG name cards
+under `docs/assets/readme/agents/`. Preserve the provenance in `SOURCES.md` and
+distinguish ecosystem compatibility from tested Matrix integrations.
 
-## Messaging Pillars
+Use clear arrows, a limited number of nodes, large labels and descriptive alt
+text. Each diagram also needs a nearby prose explanation. No generated logos,
+ambiguous provider/protocol mappings or screenshots of private transcripts.
 
-### 1. One communication matrix
+Palette: ink `#0B1020`, teal `#00D1B2`, blue `#3B82F6`, cloud `#F5F7FB`.
+Use vectors for technical diagrams; keep text editable and check rendering at
+desktop and mobile widths after changes.
 
-Human-to-agent, human-to-multi-agent, and agent-to-agent flows meet in one neutral junction.
+## Wiki
 
-### 2. One surface
-
-Codex, Claude, Gemini, OpenCode, ACP, A2A, Telegram, HTTP.
-One operating model.
-
-### 3. Session continuity
-
-Matrix preserves work continuity across channels, workspaces, and specialists.
-
-### 4. Local control
-
-State, memory, decisions, snapshots, and orchestration traces stay local-first.
-
-### 5. Operator visibility
-
-Timeline, memory, snapshots, and decision trace make orchestration inspectable.
-
-## Recommended Visual Language
-
-### Primary colors
-
-- `#0B1020` ink
-- `#00D1B2` matrix teal
-- `#3B82F6` control blue
-- `#F5F7FB` cloud
-
-### Accent colors
-
-- `#FF7A59` handoff orange
-- `#A3E635` signal green
-
-### Style
-
-- dark canvases with bright, precise accents
-- diagrammatic, not decorative
-- high contrast
-- grid-based layouts
-- product motion should feel operational, not playful
-
-## README Strategy
-
-The README should do four things fast:
-
-1. make the category clear
-2. show Matrix as the central junction for communication flows
-3. make the wedge obvious
-4. give a quick path to run it
-
-The README should stay light on text and push deeper explanation into the docs folder.
+The versioned Wiki under `docs/wiki/` is linked from the README. Keep onboarding,
+delegation/recovery, reference contracts and optional PAL features connected.
+Roadmaps remain design direction rather than evidence of shipped behavior.

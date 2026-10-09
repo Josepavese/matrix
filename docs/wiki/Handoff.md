@@ -1,138 +1,98 @@
 # Handoff
 
-Handoff is how you transfer work from one agent to another without losing context. It is the feature that makes multi-agent workflows practical.
+Handoff passes an operational brief from one specialist to another within a
+workspace. It preserves useful routing context and source identity.
 
-## The Problem
+## How it works
 
-You are working on a feature with OpenCode. The implementation is done, but you want a code review. You could:
+1. Matrix resolves the workspace and source session for the caller's channel.
+2. It creates or reuses a destination session for the selected agent/workspace.
+3. It stores a pending handoff packet and records the transition.
+4. On the next destination turn, Matrix adds the handoff brief to the prompt.
 
-1. Copy-paste the context into Claude manually
-2. Start a fresh session and re-explain everything
-3. **Use handoff** -- one command, full context transfer
+The packet contains source logical/remote IDs, source and target agent IDs,
+workspace, mode, creation time and a deterministic summary. The summary uses
+session metadata/status/title and an optional operator note. It does **not**
+copy the full transcript, every tool result or hidden provider reasoning.
+Provide the next specialist with the actual goal, evidence and file references.
 
-Handoff is option 3.
+## From Telegram
 
-## How It Works
+Use configured agent IDs and an existing workspace:
 
-When you trigger a handoff:
-
-1. Matrix captures the current work context (active session, workspace, recent turns, current mode)
-2. It creates a **handoff packet** -- a structured summary of what happened so far
-3. The packet is stored in the workspace timeline
-4. The next agent receives the packet as context on its first turn
-5. The workspace timeline records the handoff event
-
-The receiving agent gets everything it needs to continue where the previous agent left off.
-
-## Using Handoff
-
-### From Telegram
-
-```
+```text
+/use billing-api
 /handoff claude
+Review the changes in src/payments. Check duplicate-charge handling and report findings; do not edit files.
 ```
 
-Matrix hands off the current workspace session to Claude. You will see a confirmation:
+The handoff command prepares the destination. The following prompt supplies the
+work. A request to avoid edits is not an enforced OS or provider permission policy.
 
-```
-Handoff: opencode -> claude
-Context: Review the billing API patch
-Workspace: billing-api
-```
+## From HTTP API
 
-### From HTTP API
+Assume `billing-api` exists and `claude` is configured and authenticated.
+Retrieve `MATRIX_API_KEY` as in [Getting Started](Getting-Started.md).
+Use the same `channel_id` for the source work, handoff and next task:
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/intents \
+curl --fail-with-body -sS http://127.0.0.1:9091/v1/intents \
+  -H "X-Matrix-Key: $MATRIX_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "docs.http",
     "intent": "handoff",
     "target": "claude",
-    "workspace_id": "billing-api"
+    "workspace_id": "billing-api",
+    "note": "Review src/payments for duplicate-charge handling."
+  }'
+
+curl --fail-with-body -sS http://127.0.0.1:9091/v1/runs \
+  -H "X-Matrix-Key: $MATRIX_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "channel_id": "docs.http",
+    "agent_id": "claude",
+    "workspace_id": "billing-api",
+    "input": "Review the payments patch and report findings with file references."
   }'
 ```
 
-### From CLI
+There is no `matrix workspace switch --handoff` flag. Use the intent API or chat
+command; CLI workspace switching alone changes a channel binding.
 
-```bash
-matrix workspace switch billing-api --handoff claude
-```
+## Tracking handoffs
 
-## When to Use Handoff
-
-| Scenario | Command |
-|----------|---------|
-| Implementation done, need review | `/handoff claude` |
-| Stuck on a hard bug, try a different model | `/handoff gemini` |
-| One agent finished frontend, another handles backend | `/handoff opencode` |
-| Running agent hit its limit, escalate | `/handoff claude` |
-
-## What the Receiving Agent Sees
-
-The handoff packet includes:
-
-- **Source agent** -- which agent was working before
-- **Workspace** -- project context
-- **Mode** -- what mode was active (implementation, review, etc.)
-- **Summary** -- a summary of recent work
-- **Transfer context** -- deterministic context for the receiving agent
-
-The receiving agent does not need to guess. It gets a clear brief.
-
-## Tracking Handoffs
-
-Every handoff is recorded in the workspace timeline:
-
-```
+```text
 /timeline
-```
-
-Output:
-
-```
-[1] handoff created opencode -> claude - Review the billing patch [2026-04-15 12:45 UTC]
-[2] entered review mode [2026-04-15 12:44 UTC]
-[3] resumed session for opencode [2026-04-15 12:30 UTC]
-```
-
-You can also inspect handoff decisions:
-
-```
 /decisions
 ```
 
-## Handoff vs Agent Switch
+Or inspect locally:
 
-Handoff is not the same as simply switching agents:
-
-| | Agent Switch | Handoff |
-|---|---|---|
-| Context | Lost | Preserved |
-| Timeline | Not recorded | Recorded |
-| Receiving agent | Starts fresh | Gets a brief |
-| Use case | Start something new | Continue existing work |
-
-Use `/handoff` when you want continuity. Use `/new` or a direct agent switch when you want a fresh start.
-
-## The Operator Loop
-
-Handoff is a key part of the Matrix operator loop:
-
-```
-implement -> review -> handoff -> snapshot -> resume
+```bash
+matrix workspace timeline billing-api
+matrix workspace decisions billing-api
 ```
 
-1. Implement with one agent
-2. Review the work
-3. Hand off to another agent for the next phase
-4. Snapshot the state
-5. Resume later
+A prepared handoff is not proof that the destination completed its task.
+Inspect the destination run and its result.
 
-Read more: [Core Concepts](Core-Concepts.md#the-operator-loop)
+## Handoff vs agent switch
+
+A direct agent selection chooses a target. Handoff additionally records and
+schedules a brief from the source session. Provider session restoration,
+conversation import and native fork remain separate operations.
+
+## The operator loop
+
+Implement, inspect the result, prepare a specialist brief, request review and
+continue later. Metadata snapshots help inspect the transition; they do not
+restore repository files.
 
 ## Next
 
-- [Using Agents](Using-Agents.md) -- configure and manage your agents
-- [Workspaces](Workspaces.md) -- understand workspace timeline and memory
-- [Examples](Examples.md) -- step-by-step handoff walkthroughs
+- [Using Agents](Using-Agents.md)
+- [Sessions and Recovery](Sessions-and-Recovery.md)
+- [Sidecar Capsules](Sidecar-Capsules.md)
+- [Examples](Examples.md)

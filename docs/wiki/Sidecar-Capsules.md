@@ -10,6 +10,10 @@ Frontend or supervisor -> Matrix -> coding agent
 
 The upstream system sends the task body and one or more sidecar capsules. Matrix routes both through the selected protocol and records delivery in the run trace.
 
+A delivery event proves protocol projection, not that the model used the capsule
+or met the task's success criteria. Live attachment and fork support remain
+provider-dependent; inspect capabilities and the resulting trace.
+
 ## Why It Exists
 
 Some systems need to send meaning-oriented context:
@@ -26,7 +30,7 @@ Putting that directly into chat loses traceability. Sending it only as protocol 
 ## HTTP Example
 
 ```bash
-curl -X POST http://127.0.0.1:9091/v1/runs \
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs \
   -H "Content-Type: application/json" \
   -d '{
     "channel_id": "supervisor.noema",
@@ -132,3 +136,9 @@ session-scoped, not prompt-request-scoped, so Matrix does not send concurrent
 `session/prompt` calls to prove live attach. Normal prompts are serialized per
 remote session; live `attach_context` returns `unsupported` while an ACP prompt
 is active unless a provider-specific live-interrupt extension is negotiated.
+
+## Related guides
+
+- [Delegation and Notifications](Delegation-and-Notifications.md)
+- [Sessions and Recovery](Sessions-and-Recovery.md)
+- [PAL Execution and Observability](PAL-Execution-and-Observability.md)

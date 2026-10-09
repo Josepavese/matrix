@@ -1,138 +1,106 @@
 # Core Concepts
 
-Matrix has four main concepts. Once you understand them, everything else follows naturally.
+Matrix separates the execution tool from the work and the place where you access it.
 
-## Agents
+## Agents and models
 
-An **agent** is an external AI coding tool that Matrix connects to. Matrix does not build agents. It talks to the ones you already have.
+An **agent** is an external harness with tools, credentials and a protocol
+adapter. A **model** is the backend it calls. OpenCode and MiMo Code can use
+several model providers; Codex uses its ACP adapter. Changing an agent and
+changing a model are different operations.
 
-Supported agents out of the box:
+Matrix registers an agent command or endpoint, negotiates capabilities and
+routes work. Installed, enabled, registered and ready are different states.
+Use `matrix agent list` and `matrix agent doctor <agent-id>` to inspect them.
+[Using Agents](Using-Agents.md) describes the seed agents and installation paths.
 
-| Agent | Command | Protocol | Status |
-|-------|---------|----------|--------|
-| OpenCode | `opencode acp` | ACP (stdio) | Active by default |
-| Gemini CLI | `gemini --acp` | ACP (stdio) | Active |
-| Claude Code | `claude-agent-acp` | ACP (stdio) | Available |
-| Kimi | `kimi acp` | ACP (stdio) | Available |
+## Runs
 
-You can also discover and install agents from the ACP Registry or A2A catalogs.
+A **run** is one submitted task execution, identified by `run_id`. HTTP supports
+`sync`, `async` and `stream`. A run has persisted status, events and a trace.
+It can complete, fail, be cancelled or have an unknown outcome after interruption.
+An accepted submission is not evidence of a successful task.
 
-Key ideas:
-
-- **You bring your own agents.** Matrix connects to them. It does not replace them.
-- **Agents speak protocols.** Matrix handles ACP and A2A so you do not have to think about it.
-- **You pick the default.** During setup, you choose which agent handles new conversations.
-- **Capabilities decide behavior.** Matrix uses provider-advertised features such as ACP `session/fork`, `session/list`, and `session/close`; it does not fake unsupported wire operations.
-
-Read more: [Using Agents](Using-Agents.md)
+A supervisor can submit several tasks through Matrix, but owns its scheduling,
+review and retry decisions. See [Delegation and Notifications](Delegation-and-Notifications.md).
 
 ## Sessions
 
-A **session** is one conversation between you and an agent. When you send a prompt, Matrix either creates a new session or continues an existing one.
+A **logical session** is Matrix's local conversation record. A **remote session**
+is the provider's conversation, identified separately by `remote_session_id`.
+They are related records, not interchangeable IDs.
 
-You can:
-
-- **Create** a new session with `/new` or `POST /v1/session-actions`
-- **List** active sessions with `/session list` or `matrix session attach`
-- **Switch** between sessions
-- **Cancel** a running session with `/stop`
-- **Delete** a session
-- **Name** a session for easy reference
-
-Sessions persist in the local vault. If you stop and restart Matrix, your sessions are still there.
+Session actions include discovery, new, switch, import, cancel, cleanup and
+capability-gated resume/load/fork. `matrix session attach <channel-id> <session-id>`
+attaches a channel to an existing logical session; it does not list sessions.
+Provider state must still exist and the provider must support restoration.
+[Sessions and Recovery](Sessions-and-Recovery.md) explains external import and failures.
 
 ## Workspaces
 
-A **workspace** is a project. It binds sessions to real work context -- a repository, a project folder, or a named task.
+A **workspace** names a project root and stores Matrix work state for it:
 
-Without workspaces, sessions are just conversations. With workspaces, sessions become work:
+- Timeline: recorded lifecycle and routing events.
+- Memory: locally mirrored turns; content may be private.
+- Snapshots: session/agent/mode and references at a point in time.
+- Decisions: routing and intent records.
 
-- **Timeline** -- see what happened, when, and why
-- **Memory** -- turn-by-turn summaries that persist across sessions
-- **Snapshots** -- named checkpoints you can return to
-- **Decisions** -- a trace of why Matrix chose a particular agent or routing
-
-You can:
-
-- **Create** a workspace: `matrix workspace add project-name --path /path/to/project`
-- **Switch** between workspaces: `/use project-name` in chat
-- **Inspect** workspace state: `/status` or `/now`
-- **Create snapshots**: `/snapshot before-refactor`
-
-Read more: [Workspaces](Workspaces.md)
+Create one with `matrix workspace add project-name --path /absolute/project/root`.
+Select it in chat with `/use project-name` or name it in an HTTP request.
+Snapshots do not copy project files or provide source-code rollback. Work memory
+is not a shared provider-native transcript automatically loaded by every agent.
+See [Workspaces](Workspaces.md).
 
 ## Channels
 
-A **channel** is how you talk to Matrix. All channels share the same sessions and workspaces.
+A **channel** identifies a caller or conversation: Telegram chat, HTTP caller,
+or another integration. Channel bindings select the current workspace/session.
+The underlying records are shared, but moving from Telegram to HTTP does not
+attach the new channel automatically. Bind or switch explicitly.
 
-| Channel | Status | Best For |
-|---------|--------|----------|
-| HTTP API | Active | Scripts, integrations, programmatic access |
-| Telegram | Active | Chat-based access from your phone or desktop |
-| CLI | Active | Quick commands, inspection, configuration |
+HTTP and chat use common action contracts. The CLI exposes selected operations;
+not every HTTP action has a dedicated CLI command. See [Channels](Channels.md).
 
-Start a conversation on Telegram, continue it via the HTTP API, inspect the results from the CLI. Same session. Same workspace. Same state.
+## Handoff and sidecar capsules
 
-Read more: [Channels](Channels.md)
+A **handoff** prepares a destination session and a brief with source identity,
+workspace, mode and an operator note. The destination gets that brief on its next
+turn. It does not import the source agent's entire private conversation.
+[Handoff](Handoff.md) gives a complete example.
 
-## Sidecar Capsules
+A **sidecar capsule** attaches structured supervisory context to a task. Matrix
+projects it into the selected protocol and records delivery. Delivery is not
+proof the model used the context or that the task succeeded.
+[Sidecar Capsules](Sidecar-Capsules.md) describes visibility and live attachment.
+ACP has no `session/side` method; native fork is a separate, capability-gated operation.
 
-A **sidecar capsule** is optional context sent alongside a task by an upstream system or supervisory agent. It is not normal chat text.
+## How they fit together
 
-Matrix keeps the task body separate from the sidecar, projects the capsule into ACP or A2A, and records a trace event proving delivery. Supervisors can also attach sidecar context to an active async run through run actions. Frontends should hide raw capsule internals from normal chat timelines while keeping trace/debug access.
+![Channels enter Matrix, which resolves runs, sessions and workspace state before reaching external ACP/A2A agents.](../assets/readme/architecture.svg)
 
-Use sidecar capsules when an upstream system needs to attach intent, evidence, constraints, success criteria, or read-only inspection hints without becoming tied to one backend protocol.
+## The operator loop
 
-ACP note: ACP has no official `side` or `session/side` primitive. Matrix
-sidecar is a Matrix abstraction. When branch work is needed on ACP, Matrix uses
-capability-gated `session/fork`.
+Select a workspace, submit a task, inspect its result, hand off a brief when a
+specialist changes, and continue the appropriate provider session later.
+Use `/snapshot before-review` to record Matrix state, and Git or your project
+backup process to preserve source files.
 
-Read more: [Sidecar Capsules](Sidecar-Capsules.md)
+## Execution and observation
 
-## How They Fit Together
-
-```
-You
- |
- +-- Channel (Telegram, HTTP, CLI)
-      |
-      +-- Session (one conversation with one agent)
-           |
-           +-- Agent (Claude, Gemini, OpenCode, ...)
-                |
-                +-- Workspace (project context, timeline, memory)
-```
-
-1. You send a message through a **channel**
-2. Matrix resolves it to a **session** (or creates one)
-3. The session is routed to the right **agent**
-4. Everything is bound to a **workspace** for continuity
-
-## The Operator Loop
-
-Matrix is built for a repeating work pattern:
-
-1. **Implement** -- send a prompt, let the agent code
-2. **Review** -- `/review` to switch into review mode
-3. **Hand off** -- `/handoff gemini` to pass the work to another agent
-4. **Snapshot** -- `/snapshot before-deploy` to save state
-5. **Resume** -- `/continue` or `/resume` to pick up where you left off
-
-This loop works the same whether you are on Telegram, HTTP, or CLI.
+PAL means **platform abstraction layer**. Its native home, capacity observers
+and execution contracts cover Linux, Windows and macOS. Optional container/mount
+features need installed drivers and separate real-environment qualification.
+Capacity measures host resources, not provider token or money balances.
+[PAL Execution and Observability](PAL-Execution-and-Observability.md) gives details.
 
 ## Glossary
 
 | Term | Meaning |
-|------|---------|
-| ACP | Agent Client Protocol -- the primary protocol Matrix uses to talk to agents |
-| A2A | Agent-to-Agent protocol -- an alternative protocol for agent communication |
-| PAL Home | The directory where Matrix stores all its data |
-| Vault | The local encrypted database (BoltDB) that stores all Matrix state |
-| Run | One execution cycle: a prompt goes in, an agent processes it, a result comes back |
-| Sidecar Capsule | Machine-trackable context attached to a run and projected into ACP/A2A without becoming normal chat |
-| ACP Fork | Provider-created branch session through ACP `session/fork`; Matrix never simulates it by replaying prompts |
-| Additional Directories | Unstable ACP field for declaring extra workspace roots beyond `cwd` when the provider advertises support |
-| Handoff | Transferring active work from one agent to another with context preservation |
-| Intent | A high-level operation like `continue`, `review`, `explain`, `triage`, or `handoff` |
-| Mode | The current work mode: implementation, review, explanation, triage |
-| Meta-agent | The agent designated to handle system administration tasks via `/action` |
+|---|---|
+| Vault | Local database storing Matrix configuration and runtime state; encryption requires a master key |
+| Intent | Operation such as continue, review, explain, triage or handoff |
+| Mode | Work mode associated with the session |
+| Meta-agent | Configured agent handling `/action` administration requests |
+| ACP fork | Provider-created branch, used only when advertised |
+| Additional directories | Provider-gated extra roots beyond the session workspace |
+| Trace | Inspectable run record under the caller's content/redaction policy |

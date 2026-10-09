@@ -1,53 +1,69 @@
-# Esecuzione, capacità e osservabilità PAL
+# PAL Execution and Observability
 
-Le quattro superfici sono opzionali e usano gli stessi contratti su Linux,
-Windows e macOS. Una richiesta esplicita non viene degradata quando manca un
-driver, un'immagine o un'osservazione. Le configurazioni precedenti continuano
-a funzionare quando questi contratti non sono richiesti.
+These optional surfaces use shared contracts on Linux, Windows and macOS.
+An explicit request is refused when its driver, image or observation is missing;
+Matrix does not silently remove the requested boundary.
+
+## Platform support and evidence
+
+| Surface | Linux | macOS | Windows |
+|---|---|---|---|
+| Native home, capacity, semantic CLI/HTTP, collector contracts | Native tests | Native tests | Native tests |
+| Provider permission contracts | Shared contract | Shared contract | Shared contract |
+| Optional Docker Linux container | Local engine + cached image | Local Linux-container engine, such as Docker Desktop | Local Linux-container engine, such as Docker Desktop |
+| Optional semantic mount | rclone + FUSE | rclone + macFUSE/FUSE-T | rclone + WinFsp |
+| Private Unix run notifications / CLI wait/ack | Available | Available | Use HTTP events/elicitations |
+
+Real container and FUSE qualification is recorded for Linux. Native tests on
+macOS/Windows do not certify their Docker or mount drivers. Qualify those
+installed drivers in your intended environment. See
+[implementation evidence](../governance/pal_implementation_2026-10-08.md) and
+[v0.1.53 release evidence](../governance/releases/2026-10-08-v0.1.53.md).
 
 ## Sandbox
 
-`MATRIX_SANDBOX` è una dichiarazione JSON nell'ambiente dell'agente, configurabile
-con `matrix agent env set <id> MATRIX_SANDBOX '<json>'`. Campo sconosciuto,
-chiave duplicata, profilo o contratto sconosciuto producono un rifiuto.
+`MATRIX_SANDBOX` is a JSON declaration in the agent environment. Configure it
+with `matrix agent env set <id> MATRIX_SANDBOX '<json>'` in Bash, or pass the same
+JSON as one quoted argument in your platform shell. Unknown fields, duplicate
+keys, unsupported profiles and unknown contracts are refused.
 
-La policy nativa e il confine OS si possono richiedere separatamente o insieme.
-La policy nativa configura i tool del provider: il suo stato è
-`configured_not_attested`. Le impostazioni del progetto, degli agenti e quelle
-gestite dal provider possono influire sulla policy finale. Il confine OS usa
-un motore Docker locale con container Linux; Windows/macOS richiedono un motore
-come Docker Desktop già configurato. Matrix non installa il motore e non
-scarica né costruisce immagini durante l'avvio.
+Provider-native permissions and the OS boundary can be requested independently
+or together. Native policy reports `configured_not_attested`: provider-managed,
+project or agent settings can affect the final tool policy. Docker uses a local
+engine and Linux containers; Matrix does not install the engine, pull images
+or build them at launch.
 
-### Permessi nativi
+### Native permissions
 
 ```json
 {"native_contract":"opencode-permission-v1","native_profile":"read-only"}
 ```
 
-Per MiMo usare `mimocode-permission-v1`. Sono contratti dichiarati dall'operatore,
-indipendenti dal nome assegnato all'agente. Traducono il profilo in
-`OPENCODE_PERMISSION` / `MIMOCODE_PERMISSION`, conservando ordine e regole
-preesistenti e aggiungendo solo divieti:
+For MiMo use `mimocode-permission-v1`. The operator declares a versioned contract;
+it is independent of the agent's assigned ID. These adapters apply
+`OPENCODE_PERMISSION` / `MIMOCODE_PERMISSION`, preserving existing ordered rules
+and adding denials:
 
-| Profilo | Divieti aggiunti |
+| Profile | Added denials |
 |---|---|
 | `workspace` | `external_directory`, `task`, `actor` |
-| `read-only` | precedenti più `edit`, `write`, `patch`, `multiedit`, `bash` |
+| `read-only` | The above plus `edit`, `write`, `patch`, `multiedit`, `bash` |
 
-Un bypass dei permessi in argv/env viene rifiutato. Matrix disabilita i propri
-tool ACP su host, l'autenticazione tramite terminale e la scelta automatica
-della modalità più permissiva. MCP, directory aggiuntive e tool di estensione
-del caller richiederebbero un confine separato e vengono rifiutati.
+Permission bypasses in governed argv/env are refused. Matrix disables its own
+host ACP tools, terminal authentication and automatic selection of the most
+permissive mode. Caller MCP, extra directories and extension tools would need
+another boundary and are refused under this policy.
 
-I contratti v1 seguono lo [schema OpenCode v1](https://dev.opencode.ai/docs/permissions/)
-e i [sorgenti MiMo](https://github.com/XiaomiMiMo/MiMo-Code/blob/main/packages/cli/src/config/permission.ts).
-Lo [schema OpenCode v2](https://opencode.ai/v2/docs/permissions) è differente e
-non è coperto dal contratto v1.
+The v1 adapters follow the [OpenCode v1 permission schema](https://dev.opencode.ai/docs/permissions/)
+and [MiMo source](https://github.com/XiaomiMiMo/MiMo-Code/blob/main/packages/cli/src/config/permission.ts).
+The [OpenCode v2 schema](https://opencode.ai/v2/docs/permissions) differs and is
+not covered by the v1 contract. Codex's `codex-acp-env-v1` launch policy is a
+separate provider contract; see [Using Agents](Using-Agents.md).
 
-### Isolamento del processo
+### Process isolation
 
-Esempio di dichiarazione; directory, UID/GID e immagine vanno scelti sul proprio host:
+Example declaration: choose paths, UID/GID and a prepared image for your host.
+The image must already contain the agent and required tools.
 
 ```json
 {
@@ -67,81 +83,84 @@ Esempio di dichiarazione; directory, UID/GID e immagine vanno scelti sul proprio
 }
 ```
 
-`workspace_access`: `read-only` oppure `workspace-write`; `network`: `none` oppure
-`bridge`. UID e GID sono numerici e diversi da zero. RAM, CPU e PID richiedono
-limiti espliciti. Il workspace dichiarato è montato in `/workspace`, lo stato in
-`/home/matrix`, la root è in sola lettura, `/tmp` è limitato a 64 MiB senza exec,
-le capability sono rimosse e `no-new-privileges` è richiesto. I bind non includono
-mount annidati. Non sono ammessi root/home dell'utente, stato sovrapposto al
-workspace, immagini con volumi persistenti impliciti o daemon remoti.
-Il driver verifica supporto ai limiti nel motore e impostazioni effettive del container prima dell'attach;
-il log driver Docker è `none` per evitare copie dei transcript sul disco del motore.
+`workspace_access` is `read-only` or `workspace-write`; network is `none` or
+`bridge`. UID/GID are numeric and nonzero. RAM, CPU and PID limits are explicit.
+Matrix resolves the cached image to its digest and verifies engine support and
+effective container settings before attaching.
 
-Il comando deve esistere nell'immagine Linux, anche quando Matrix gira su Windows:
+The declared workspace mounts at `/workspace`, persistent state at
+`/home/matrix`. The root is read-only; `/tmp` is a 64 MiB no-exec mount.
+Capabilities are dropped and `no-new-privileges` is required. Binds exclude
+nested mounts. Host root/home, state overlapping the workspace, implicit image
+volumes and remote engines are refused. Docker's log driver is `none` to avoid
+another transcript copy in engine storage.
+
+The guest command must exist **inside the Linux image**, also on Windows hosts:
 
 ```bash
 matrix sandbox command opencode /usr/local/bin/opencode --arg=acp --arg=--pure
 matrix sandbox doctor opencode --workspace /existing/host/workspace
 ```
 
-Gli argomenti sono quelli dell'immagine, senza traduzione implicita di percorsi host. ACP riceve il workspace guest `/workspace`. Il risultato del task include `sandbox_execution` con digest dell'immagine e `engine_configuration_verified`, distinto dall'attestazione dei tool nativi.
+Arguments are guest arguments; host paths are not implicitly translated. ACP
+receives `/workspace`. A task's `sandbox_execution` reports the image digest and
+`engine_configuration_verified`, distinct from native tool-policy attestation.
 
-Lo stato è separato per identità, comando e workspace fisico, stabile attraverso
-riavvii e cambi di profilo. Non viene cancellato alla chiusura. Le credenziali
-necessarie vanno configurate esplicitamente nell'ambiente del provider o nella
-sua directory di stato; la home host non viene montata. La chiusura/cancellazione
-rimuove soltanto il container con nome casuale creato da quel driver.
-Una policy cambiata non può riutilizzare un client precedente: prima serve
-terminare le sue lease e reap del client, preservando gli altri task attivi.
+Persistent provider state is scoped by identity, command and physical workspace
+and remains across restart/profile changes. Supply credentials explicitly via
+the provider environment or its state directory; Matrix does not mount the host
+home. Cleanup removes only the random container created by this driver and
+preserves provider state. Changing policy cannot reuse a client with an old
+boundary: release its leases and reap it while preserving unrelated tasks.
 
-Doctor/prerequisiti non dichiarano un handshake avvenuto: un container richiede
-un workspace esplicito. Il runtime globale riporta `sandbox_requires_workspace_probe`
-e il router applica il confine quando il task viene eseguito.
+Doctor checks prerequisites, not a completed container handshake. A workspace
+is required to probe actual isolation; global runtime readiness can report
+`sandbox_requires_workspace_probe` until the task boundary is exercised.
 
-### Validatori
+### Validators
 
-`delivery_contract.validator.sandbox` accetta lo stesso oggetto `container`.
-Il comando è un argv dell'immagine. Il verdetto usa il codice di uscita del
-container realmente terminato, senza conservare stdout/stderr. Il runner usa
-gli stessi limiti, bind, cancellazione e rimozione degli agenti. L'assenza del
-runner o un errore del motore rende il verdetto `unverifiable`, senza esecuzione
-alternativa sull'host. Senza richiesta di sandbox resta il contratto precedente.
+`delivery_contract.validator.sandbox` accepts the same `container` object.
+Its command is an argv in the prepared image. The verdict uses the actual exit
+code without retaining stdout/stderr. The runner shares limits, mounts,
+cancellation and scoped cleanup. Missing drivers or engine failure yield
+`unverifiable`, without executing the validator on the host as a fallback.
 
-## Capacità
+## Capacity
 
 ```bash
 matrix capacity /existing/workspace
 matrix workspace show <workspace-id>
 ```
 
-La misura è del filesystem del workspace effettivo, con identificatore di volume,
-byte disponibili all'utente e byte totali, CPU logiche e RAM nativa. Linux usa
-statfs/sysinfo, Windows le API volume/memoria, macOS statfs/sysctl/vm_stat.
-La semantica RAM è dichiarata da `memory_source`: Linux riporta memoria fisica
-libera escludendo cache recuperabili; macOS esclude anche pagine speculative.
-Windows riporta memoria fisica immediatamente disponibile, comprese le pagine
-standby, come definito da [MEMORYSTATUSEX.ullAvailPhys](https://learn.microsoft.com/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex).
-Queste osservazioni non sono una promessa di allocazione né una quota RAM.
-Zero è una misura valida; un dato non osservato è assente con la sua motivazione.
-L'osservatore non crea file e non pulisce il disco.
+Observations describe the actual workspace filesystem: volume identity, bytes
+available to the user and total bytes, logical CPUs and native RAM readings.
+Linux uses statfs/sysinfo, Windows volume/memory APIs, macOS statfs/sysctl/vm_stat.
+`memory_source` declares semantics: Linux physical free excludes reclaimable
+cache; macOS also excludes speculative pages. Windows reports immediately
+available physical memory, including standby pages, as defined by
+[MEMORYSTATUSEX.ullAvailPhys](https://learn.microsoft.com/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex).
+These observations promise neither allocation nor a RAM quota. Zero is a valid
+observation; unavailable data is absent with its reason. Observation creates no
+files and does not clean the disk.
 
-Configurazioni globali: `capacity.max_concurrent` e
-`capacity.min_disk_free_bytes` (zero disabilita il relativo limite).
-`POST /v1/runs` può aggiungere:
+Global configuration: `capacity.max_concurrent` and
+`capacity.min_disk_free_bytes` (zero disables the respective limit).
+`POST /v1/runs` may add:
 
 ```json
 {"capacity":{"min_disk_free_bytes":1073741824,"reserve_disk_bytes":268435456}}
 ```
 
-Le lease coprono le route attive di questo runtime, su tutti i canali. Le
-prenotazioni sono contabili per volume, non preallocazioni o quote del filesystem.
-Si rilasciano anche in errore/cancellazione; non coprono altri runtime, processi
-esterni o il credito di un provider. I limiti fisici di CPU/RAM/PID del processo
-sono quelli del container. `GET /_matrix/capacity?workspace_id=<id>` richiede
-l'autenticazione runtime; osservazioni mancanti e limiti esauriti hanno codici
-distinti, registrati anche nel trace e nella notifica terminale.
+Leases cover active routes across this runtime's channels. Volume reservations
+are bookkeeping, not preallocation or filesystem quotas. They release on errors
+and cancellation and do not cover other runtimes/processes or provider credits.
+The container provides actual process CPU/RAM/PID limits when configured.
 
-## Filesystem semantico
+Authenticated `GET /_matrix/capacity?workspace_id=<id>` exposes observations.
+Missing observations and exhausted limits have distinct codes recorded in the
+trace and terminal notification. See [API Reference](API-Reference.md#pal-state-and-observability).
+
+## Semantic filesystem
 
 ```bash
 matrix fs list
@@ -150,43 +169,48 @@ matrix fs read runs/<encoded-id>/status.json
 matrix fuse mount /existing/empty/mountpoint --driver-path /path/to/rclone
 ```
 
-Espone `agents`, `runs`, `workspaces`: stato dichiarativo degli agenti, stato dei
-run, metadati e capacità dei workspace. Gli ID sono reversibili e distinti anche
-su filesystem senza distinzione di maiuscole, evitando nomi riservati Windows.
-Limiti: 125 byte UTF-8 per ID, 4096 entità per directory, 64 KiB per sommario.
-Gli errori di limite sono espliciti e non troncano dati.
+This is selected **Matrix state**, not a mount of project files or a semantic
+search index. It exposes `agents`, `runs`, `workspaces`: declared agent state,
+run status, workspace metadata and capacity. `matrix fs path` returns the full
+`status.json` path; do not append that filename again.
 
-Config, credenziali, input, errori grezzi e metadati arbitrari del client sono
-esclusi. `summary.txt` è terminale e disponibile soltanto con
-`--include-summaries`; può contenere testo privato. `GET/HEAD /_matrix/fs/`
-richiede autenticazione ed esclude sempre i sommari.
-Getter e risposte HTTP restituiscono snapshot della singola lettura;
-non promettono una transazione comune tra più file.
+IDs are reversibly encoded, distinct on case-insensitive filesystems and avoid
+Windows reserved names. Limits: 125 UTF-8 bytes per ID, 4096 entries per directory,
+64 KiB per summary. Limit failures are explicit rather than silent truncation.
+Configuration, credentials, task input, raw errors and arbitrary caller metadata
+are excluded. Terminal `summary.txt` requires `--include-summaries` and can
+contain private text. Authenticated `GET/HEAD /_matrix/fs/` always excludes
+summaries. Each read is a snapshot; separate files are not one atomic transaction.
 
-Il mount usa [rclone HTTP](https://rclone.org/http/) e il driver nativo:
-Linux FUSE, macFUSE/FUSE-T su macOS, WinFsp su Windows. La proiezione HTTP privata
-ha una chiave casuale propria, non la chiave admin Matrix. Permessi owner-only,
-mount sola lettura, niente cache su disco. Per le viste vive non usa HEAD o cache
-di directory: la dimensione prima della lettura può essere sconosciuta/zero.
-La prova di mount richiede un driver realmente installato; un test di API o una
-compilazione non certificano il mount. Dati esistenti nel mountpoint non vengono
-nascosti e la directory non viene rimossa allo smontaggio.
+The mount uses [rclone HTTP](https://rclone.org/http/) plus a native driver:
+Linux FUSE, macFUSE/FUSE-T or Windows WinFsp. Its private local HTTP projection
+uses its own random key, not the Matrix admin key. Owner-only settings,
+read-only mount and no disk cache are enforced. Live views avoid HEAD/directory
+cache; size before reading can be unknown/zero. Readiness needs an actual
+installed-driver mount, not just compilation. Existing mountpoint data is not
+hidden and unmount does not remove the directory.
 
 ## Collector
 
-L'esportatore opzionale usa [OTLP/HTTP JSON logs](https://opentelemetry.io/docs/specs/otlp/).
-Configurare `system.logging.format=json`,
-`system.logging.collector.endpoint` e, se necessaria,
-`system.logging.collector.authorization` nel vault. `queue_size` è opzionale,
-tra 16 e 4096. Il log locale configurato resta la destinazione primaria.
+The optional exporter uses [OTLP/HTTP JSON logs](https://opentelemetry.io/docs/specs/otlp/).
+Configure these Vault keys:
 
-Esporta soltanto nomi di evento, etichette selezionate e contatori/durate ammessi;
-non esporta prompt, transcript, messaggi grezzi o attributi arbitrari. HTTPS
-obbligatorio, salvo loopback esplicito; redirect, credenziali in URL e query
-sono rifiutati. Coda, batch, timeout e shutdown sono limitati; una rete lenta
-non blocca il produttore. Rifiuti parziali OTLP sono conteggiati come tali.
+```bash
+matrix config set system.logging.format json
+matrix config set system.logging.collector.endpoint https://collector.example.org/v1/logs
+```
 
-`GET /_matrix/telemetry` autenticato mostra acknowledgment, drop, filtri privacy,
-batch falliti, coda e ultimo codice di errore, senza credenziali. Questo exporter
-invia log operativi: non aggiunge span, metriche OTLP o integrazioni di billing.
-Quando disabilitato non apre connessioni né crea il worker di export.
+If needed, set `system.logging.collector.authorization` privately.
+`system.logging.collector.queue_size` is optional (16–4096).
+The configured local log sink stays primary.
+
+Only selected event names, labels and allowed counters/durations are exported.
+Prompts, transcripts, raw messages and arbitrary attributes are excluded.
+HTTPS is required except explicit loopback; URL credentials, query/fragment
+and redirects are refused. Queue, batch, timeout and shutdown are bounded;
+a slow network does not block the producer. Partial OTLP rejection is counted.
+
+Authenticated `GET /_matrix/telemetry` shows acknowledgements, drops, privacy
+filters, failed batches, queue and last error code without credentials.
+This exports operational logs, not OTLP spans/metrics or billing integration.
+Disabled export opens no connections and starts no worker.

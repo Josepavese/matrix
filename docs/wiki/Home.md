@@ -1,46 +1,69 @@
 # Matrix Wiki
 
-Welcome to the Matrix wiki. This is the developer guide for **Matrix** -- the local-first communication hub for AI coding agents.
+Matrix is a local communication hub between people or supervisory software and
+existing coding agents. It routes tasks through ACP/A2A and maintains inspectable
+runs, session identities and workspace state.
 
-## What Matrix Does
+This is the versioned Wiki: its Markdown sources live in `docs/wiki/`, are
+reviewed with the code, and can be read at the revision you installed. Guidance
+below covers the v0.1.53 features and recent session/notification corrections.
 
-You use multiple AI coding agents: Claude, Gemini, OpenCode, Codex. Each one has its own CLI, its own sessions, its own way of working. There is no shared context. No way to hand off work from one to another. No single place to see what is happening.
+## Start here
 
-Matrix fixes that. It runs locally, connects to your agents, and gives you one communication surface for all of them -- via Telegram, HTTP API, or CLI.
+1. [Getting Started](Getting-Started.md): install, configure an agent and send a task.
+2. [Core Concepts](Core-Concepts.md): distinguish the agent, its model, a run and a session.
+3. [Examples](Examples.md): a project review, delegation and state inspection.
 
-**One command. Any agent. One workspace.**
+## Guides
 
-## Pages
+| Page | Purpose |
+|---|---|
+| [Using Agents](Using-Agents.md) | Discovery, installation, launch policy, model selection and readiness |
+| [Delegation and Notifications](Delegation-and-Notifications.md) | Submit async work, wait for outcomes or input, retain delivery cursors |
+| [Sessions and Recovery](Sessions-and-Recovery.md) | Import external conversations, resume exact IDs, handle restart interruptions |
+| [Handoff](Handoff.md) | Pass a bounded operational brief to another specialist |
+| [Sidecar Capsules](Sidecar-Capsules.md) | Attach structured supervisory context and inspect delivery |
+| [Workspaces](Workspaces.md) | Roots, bindings, memory, timeline and metadata snapshots |
+| [Channels](Channels.md) | Telegram, authenticated HTTP and CLI access |
+| [PAL Execution and Observability](PAL-Execution-and-Observability.md) | Linux/macOS/Windows sandbox, host capacity, semantic state and OTLP logs |
+| [API Reference](API-Reference.md) | HTTP requests, actions, events and response guarantees |
+| [CLI Reference](CLI-Reference.md) | Commands, flags and platform-specific availability |
+| [FAQ](FAQ.md) | Limits, provider credits, storage and troubleshooting |
+| [Governance](Governance.md) | Product boundaries, release gates and qualification evidence |
 
-| Page | What You Will Learn |
-|------|-------------------|
-| [Getting Started](Getting-Started.md) | Install, configure, and run your first agent conversation in under 5 minutes |
-| [Core Concepts](Core-Concepts.md) | Understand workspaces, sessions, agents, and channels without the jargon |
-| [Using Agents](Using-Agents.md) | Search, install, configure, and switch between coding agents |
-| [Handoff](Handoff.md) | Transfer work from one agent to another with full context |
-| [Sidecar Capsules](Sidecar-Capsules.md) | Attach machine-trackable context to runs without polluting chat |
-| [Zed ACP Compliance](../matrix_zed_acp_compliance.md) | Current ACP support, unstable fields, and why Matrix has no ACP `side` primitive |
-| [Live Context Interrupt Policy](../matrix_live_context_interrupt_policy.md) | Understand cancel vs live attach, provider limits, and tested fallback behavior |
-| [Workspaces](Workspaces.md) | Organize work by project, track timelines, create snapshots, and build memory |
-| [Channels](Channels.md) | Set up Telegram, use the HTTP API, or drive Matrix from the CLI |
-| [API Reference](API-Reference.md) | Complete HTTP API documentation with request/response examples |
-| [CLI Reference](CLI-Reference.md) | Every `matrix` command explained with examples |
-| [Governance](Governance.md) | Understand the release gates and product invariants maintainers enforce |
-| [Examples](Examples.md) | Step-by-step walkthroughs of common workflows |
-| [FAQ](FAQ.md) | Common questions and troubleshooting |
+## Recent changes to understand
 
-## Quick Links
+- External session import verifies the provider's exact remote ID. Resume
+  failures do not silently open replacement conversations.
+- Async runs have durable outcome notifications on the Unix local socket;
+  input requests carry a bounded question. Consumer cursors and acknowledgements
+  have explicit, different delivery guarantees.
+- A daemon restart marks previously active runs `outcome_unknown`; it does not
+  replay their prompts.
+- Model traces distinguish the requested selector, effective selection and
+  provider confirmation. They do not prove account balance or physical model identity.
+- Optional execution policies, runtime capacity admission, read-only semantic
+  views and OTLP log export are documented together in the PAL guide.
+- Vault encrypted values bind to their storage keys (`ENCV2`); backup/migration
+  procedures retain the canonical PAL-owned state.
 
-- [Install Matrix](Getting-Started.md#installation)
-- [Run your first prompt](Getting-Started.md#your-first-prompt)
-- [Set up Telegram](Channels.md#telegram)
-- [Hand off work between agents](Handoff.md)
-- [Attach sidecar context](Sidecar-Capsules.md)
-- [Review Zed ACP compliance](../matrix_zed_acp_compliance.md)
-- [Check live context interrupt policy](../matrix_live_context_interrupt_policy.md)
-- [Review governance](Governance.md)
-- [Browse the API](API-Reference.md)
+## Technical evidence and design
+
+- [Protocol coverage](../protocol_coverage.md) and
+  [ACP compliance](../matrix_zed_acp_compliance.md).
+- [Run trace contract](../matrix_agent_communication_run_trace.md) and
+  [live context interrupt policy](../matrix_live_context_interrupt_policy.md).
+- [Timeout/recovery policy](../matrix_timeout_recovery_policy.md).
+- [v0.1.53 release evidence](../governance/releases/2026-10-08-v0.1.53.md) and
+  [PAL implementation evidence](../governance/pal_implementation_2026-10-08.md).
+- [README](../../README.md), [installation details](../matrix_installation.md) and
+  [release runbook](../matrix_release_runbook.md).
+
+Roadmaps and specifications may include planned work. Use runtime capabilities,
+code and release evidence to establish what your installation supports.
 
 ## Contributing
 
-Found a gap in this wiki? Open an issue or a pull request. Every page is a Markdown file under `docs/wiki/`.
+Update these Markdown sources with the behavior they describe. Examples should
+name an existing workspace and configured agent, authenticate HTTP requests,
+and label provider-dependent or platform-specific features.

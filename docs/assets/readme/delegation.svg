@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="830" viewBox="0 0 720 830" role="img" aria-labelledby="title desc">
+<title id="title">Delegate and return when needed</title><desc id="desc">A supervisor submits explicit asynchronous work. Matrix persists the run while the coding agent executes it. The supervisor consumes completion, failure, interruption or input-request events, inspects state and persists its own cursor. Unix local notifications are available on Linux and macOS; HTTP run events are available on all three supported operating systems.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#00D1B2"/></marker></defs>
+<style>text{font-family:DejaVu Sans,Arial,sans-serif;fill:#F5F7FB}.heading{font-size:32px;font-weight:700}.label{font-size:24px;font-weight:700}.body{font-size:22px}.muted{fill:#C2CEE1;font-size:21px}.tag{fill:#00D1B2;font-size:19px;font-weight:700;letter-spacing:1px}.box{fill:#151F33;stroke:#384C6A;stroke-width:2}.flow{fill:none;stroke:#00D1B2;stroke-width:3;marker-end:url(#arrow)}</style>
+<rect width="720" height="830" rx="20" fill="#0B1020"/>
+<text x="360" y="53" class="heading" text-anchor="middle">Delegate. Wait. Intervene.</text>
+<text x="360" y="89" class="muted" text-anchor="middle">Keep the task ID; consume the events you need.</text>
+<rect x="40" y="116" width="640" height="115" rx="16" class="box" style="stroke:#3B82F6"/>
+<text x="68" y="151" class="tag" text-anchor="start">01  SUPERVISOR SUBMITS</text>
+<text x="68" y="187" class="label" text-anchor="start">Task + agent + workspace → async run</text>
+<text x="68" y="216" class="muted" text-anchor="start">Retain run_id and a submission idempotency key.</text>
+<path d="M360 239V275" class="flow"/>
+<rect x="40" y="289" width="640" height="112" rx="16" class="box"/>
+<text x="68" y="324" class="tag" text-anchor="start">02  AGENT WORKS</text>
+<text x="68" y="360" class="label" text-anchor="start">Matrix persists status and events.</text>
+<text x="68" y="386" class="muted" text-anchor="start">The supervisor can wait without reading every token.</text>
+<path d="M360 409V445" class="flow"/>
+<rect x="40" y="459" width="640" height="131" rx="16" class="box" style="stroke:#00D1B2"/>
+<text x="68" y="494" class="tag" text-anchor="start">03  A RELEVANT EVENT ARRIVES</text>
+<text x="68" y="530" class="body" text-anchor="start">Completed · failed · cancelled · unknown</text>
+<text x="68" y="565" class="body" text-anchor="start">Input requested · attention required</text>
+<path d="M360 598V634" class="flow"/>
+<rect x="40" y="648" width="640" height="111" rx="16" class="box"/>
+<text x="68" y="683" class="tag" text-anchor="start">04  SUPERVISOR HANDLES THE EVENT</text>
+<text x="68" y="718" class="label" text-anchor="start">Inspect the result, answer or recover.</text>
+<text x="68" y="745" class="muted" text-anchor="start">Persist the cursor; deduplicate delivery.</text>
+<text x="360" y="794" class="muted" text-anchor="middle">Unix notifications: Linux/macOS</text>
+<text x="360" y="821" class="muted" text-anchor="middle">HTTP run events: Linux/macOS/Windows</text>
+</svg>

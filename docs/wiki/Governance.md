@@ -29,3 +29,13 @@ Primary docs:
 - [Deploy governance](../governance/deploy_governance.md)
 - [Architecture guardrails](../governance/architecture_guardrails.md)
 - [ZERO-LEGACY policy](../governance/zero_legacy_governance.md)
+
+## Qualification and documentation
+
+The README/Wiki describe implemented contracts. Roadmaps remain design direction.
+Platform compilation or contract tests do not certify an installed OS driver:
+record native tests and real container/mount qualification separately.
+
+- [v0.1.53 release and local runtime evidence](../governance/releases/2026-10-08-v0.1.53.md)
+- [PAL implementation evidence](../governance/pal_implementation_2026-10-08.md)
+- [PAL guide](PAL-Execution-and-Observability.md)

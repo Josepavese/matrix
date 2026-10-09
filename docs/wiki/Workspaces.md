@@ -2,17 +2,14 @@
 
 Workspaces are what make Matrix more than a message router. They bind conversations to real project context so work persists across sessions, agents, and channels.
 
-## Why Workspaces Matter
+## Why workspaces matter
 
-Without workspaces:
-- Sessions are just conversations floating in space
-- Switching agents means losing context
-- There is no record of what happened, when, or why
+A workspace associates a named root with session bindings, a timeline, mirrored
+work memory and routing decisions. Use an explicit project root so a caller's
+shell directory cannot be confused with the task's execution location.
 
-With workspaces:
-- Sessions are attached to real projects
-- Work context survives agent switches and handoffs
-- You get a timeline, memory, snapshots, and decision trace
+Different channels share stored workspace records but have explicit bindings.
+Changing specialists can pass a brief; it does not merge their private histories.
 
 ## Creating a Workspace
 
@@ -71,7 +68,7 @@ Updated: 2026-04-16 10:30 UTC
 Or via HTTP:
 
 ```bash
-curl http://127.0.0.1:9091/v1/workspace-state?workspace_id=my-project
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/v1/workspace-state?workspace_id=my-project
 ```
 
 ## Timeline
@@ -94,7 +91,7 @@ Output:
 Via HTTP:
 
 ```bash
-curl http://127.0.0.1:9091/v1/workspace-timeline?workspace_id=my-project
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/v1/workspace-timeline?workspace_id=my-project
 ```
 
 ### What gets recorded
@@ -112,7 +109,7 @@ curl http://127.0.0.1:9091/v1/workspace-timeline?workspace_id=my-project
 
 ## Memory
 
-Workspace memory stores turn-by-turn summaries so context persists across sessions:
+Workspace memory stores locally mirrored work turns, which may contain private content:
 
 ```
 /memory
@@ -121,14 +118,14 @@ Workspace memory stores turn-by-turn summaries so context persists across sessio
 Via HTTP:
 
 ```bash
-curl http://127.0.0.1:9091/v1/workspace-memory?workspace_id=my-project
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/v1/workspace-memory?workspace_id=my-project
 ```
 
-This is how Matrix remembers what happened in previous sessions without requiring the raw conversation transcript.
+This is inspectable local work history. It is not a guarantee that every provider receives this history automatically. Share relevant evidence explicitly through a task, handoff note or capsule.
 
 ## Snapshots
 
-Snapshots are named checkpoints of workspace state:
+Snapshots are named checkpoints of Matrix work metadata and turn/event references. They do not copy project files, capture a complete provider transcript or provide repository rollback:
 
 ### Create a snapshot
 
@@ -145,7 +142,7 @@ Snapshots are named checkpoints of workspace state:
 Via HTTP:
 
 ```bash
-curl http://127.0.0.1:9091/v1/workspace-snapshots?workspace_id=my-project
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/v1/workspace-snapshots?workspace_id=my-project
 ```
 
 Snapshots capture:
@@ -155,7 +152,7 @@ Snapshots capture:
 - Work status
 - Any notes you attach
 
-Use snapshots before risky operations so you can inspect the state later.
+Use snapshots to inspect the work state later. Use Git or your backup process to preserve and restore project files.
 
 ## Decisions
 
@@ -168,7 +165,7 @@ The decision trace shows why Matrix made routing and orchestration choices:
 Via HTTP:
 
 ```bash
-curl http://127.0.0.1:9091/v1/workspace-decisions?workspace_id=my-project
+curl -H "X-Matrix-Key: $MATRIX_API_KEY" http://127.0.0.1:9091/v1/workspace-decisions?workspace_id=my-project
 ```
 
 Quick check on the latest decision:
@@ -219,6 +216,14 @@ When a message arrives, Matrix resolves the workspace in this order:
 | `matrix workspace decisions <id>` | Show decision trace |
 | `matrix workspace memory <id>` | Show workspace memory |
 | `matrix workspace retention` | Manage retention policies |
+
+## Capacity and read-only state
+
+`matrix workspace show <id>` includes native capacity observations for the actual
+root. Runtime admission can limit concurrent routes and reserve a bookkeeping
+amount per volume; it does not impose a filesystem quota. Semantic views expose
+selected workspace metadata and capacity without exposing project files.
+See [PAL Execution and Observability](PAL-Execution-and-Observability.md).
 
 ## Next
 
