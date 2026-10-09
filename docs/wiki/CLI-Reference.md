@@ -15,14 +15,21 @@ matrix run
 ### `matrix run submit`, `wait` and `ack`
 
 ```bash
+matrix run submit --agent opencode --workspace my-project --channel cli.review --prompt "Review error handling." --json
 # Linux/macOS only:
 matrix run wait <run-id> --timeout 10m --after <cursor> --json
 matrix run ack --run-id <run-id> --sequence <sequence> --idempotency-key <stable-key> --json
 ```
 
-`run submit` exists, but the v0.1.53 client omits required `channel_id` and is
-refused with HTTP 400; see the [open correction](../../issues/run-submit-missing-channel.md).
-Use HTTP for explicit project-bound async submission. Wait reads Unix outcome notifications. It shows
+From v0.1.54, submit sends an explicit asynchronous request and accepts HTTP 202.
+The default channel is `cli.run.submit`; `--channel` separates caller bindings and
+scopes idempotency keys. `--workspace` names a registered workspace. If omitted,
+the runtime resolves its existing channel/session binding; the invoking shell's
+directory is never inferred as a project. `--model` optionally requests a provider-supported model selector. Blank explicit
+channels are refused. A new channel does not force a fresh
+provider conversation: workspace affinity may reuse an existing session. Use
+session actions to select/create a conversation explicitly when needed.
+See the [closed correction](../../issues/closed/run-submit-missing-channel.md). Wait reads Unix outcome notifications. It shows
 input questions interactively but keeps waiting; JSON output accumulates them
 until return. Use the direct socket SSE listener for immediate input intervention.
 `--on-attention` also returns on a nonterminal inactivity notice.

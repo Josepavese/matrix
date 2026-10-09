@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/providers/runapi"
 )
 
@@ -30,14 +31,21 @@ import (
 // the rest of the surface is built from, and the caller waits with
 // `matrix run wait <run_id>`, which consumes the durable notification cursor.
 
-const DefaultTimeout = 30 * time.Second
+const (
+	DefaultTimeout   = 30 * time.Second
+	DefaultChannelID = "cli.run.submit"
+)
 
 // Request is the body Matrix accepts. `input` is sent as the compact
 // string form the payload contract defines; the agent is named only when the
 // caller chose one, so the runtime's configured default still decides.
 type Request struct {
-	AgentID string `json:"agent_id,omitempty"`
-	Input   string `json:"input"`
+	ChannelID     string `json:"channel_id"`
+	AgentID       string `json:"agent_id,omitempty"`
+	ModelID       string `json:"model_id,omitempty"`
+	WorkspaceID   string `json:"workspace_id,omitempty"`
+	ExecutionMode string `json:"execution_mode"`
+	Input         string `json:"input"`
 }
 
 // Input is everything one submission needs, so the request is built and
@@ -46,6 +54,9 @@ type Input struct {
 	Address        string
 	APIKey         string
 	AgentID        string
+	ModelID        string
+	ChannelID      string
+	WorkspaceID    string
 	Prompt         string
 	IdempotencyKey string
 	Timeout        time.Duration
@@ -100,7 +111,15 @@ func buildRequest(ctx context.Context, input Input) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, err := json.Marshal(Request{AgentID: input.AgentID, Input: input.Prompt})
+	channelID := strings.TrimSpace(input.ChannelID)
+	if channelID == "" {
+		channelID = DefaultChannelID
+	}
+	body, err := json.Marshal(Request{
+		ChannelID: channelID, AgentID: input.AgentID, ModelID: strings.TrimSpace(input.ModelID),
+		WorkspaceID:   strings.TrimSpace(input.WorkspaceID),
+		ExecutionMode: runtrace.ExecutionModeAsync, Input: input.Prompt,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +145,7 @@ func readResponse(response *http.Response) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("submit refused: %w", err)
 	}
-	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusOK {
+	if response.StatusCode != http.StatusAccepted && response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusOK {
 		return Result{}, fmt.Errorf("submit refused: HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	var decoded struct {

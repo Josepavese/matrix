@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           go build -o "$RUNNER_TEMP/matrix-pal${{ matrix.suffix }}" ./cmd/matrix
-          MATRIX_PAL_BINARY="$RUNNER_TEMP/matrix-pal${{ matrix.suffix }}" go test ./tests/integration -run '^TestSmokePALNativeCapacityCLI$' -count=1 -v
+          MATRIX_PAL_BINARY="$RUNNER_TEMP/matrix-pal${{ matrix.suffix }}" go test ./tests/integration -run '^TestSmokePAL(NativeCapacityCLI|RunSubmitCLI)$' -count=1 -v
       - name: Native physical mount prerequisites
         shell: bash
         run: |

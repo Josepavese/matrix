@@ -29,10 +29,23 @@ Retain the returned `run_id`. Reuse the same submission key only for retries of
 this exact task under this channel. A different payload with the same key is
 refused; a replay returns the existing run. Use a new key for genuinely new work.
 
-Use HTTP for submission in v0.1.53: the exposed `matrix run submit` client
-omits the API's required `channel_id` and gets HTTP 400. It also lacks explicit
-async/workspace selection. The [open CLI correction](../../issues/run-submit-missing-channel.md)
-records the reproduced mismatch; the examples here do not depend on that command.
+From v0.1.54, the CLI can submit the same asynchronous work:
+
+```bash
+matrix run submit --agent opencode --workspace my-project \
+  --channel supervisor.review --prompt "Review error handling and report findings." \
+  --idempotency-key supervisor-project-review-001 --json
+```
+
+The default channel is `cli.run.submit`. Choose a separate `--channel` for
+caller bindings and idempotency scopes, and name the existing workspace explicitly. No project
+is inferred from the invoking shell's directory. Without `--workspace`, the
+runtime uses its established channel/session binding. A different channel does
+not force a new provider conversation; workspace affinity may reuse a session.
+Select/create sessions explicitly for conversation isolation. Acceptance does not mean
+completion; keep the returned `run_id` and consume its outcomes.
+The v0.1.53 payload defect is recorded in the
+[closed correction](../../issues/closed/run-submit-missing-channel.md).
 
 ## Linux and macOS: private outcome channel
 

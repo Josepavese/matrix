@@ -37,8 +37,8 @@ No runtime implementation change or new binary release is claimed.
 The installed v0.1.53 `matrix run submit` was tested with a non-existent probe
 agent and a non-private prompt. It returned HTTP 400 before provider dispatch:
 `channel_id` is missing from its client payload. The source also omits async
-selection and does not accept the async 202 response. The issue remains open in
-[run-submit-missing-channel.md](../../issues/run-submit-missing-channel.md).
+selection and does not accept the async 202 response. At the time of the documentation audit the issue was open; its later correction is recorded in
+[run-submit-missing-channel.md](../../issues/closed/run-submit-missing-channel.md).
 The documentation's runnable delegation flow uses explicit HTTP instead.
 
 ## Publication

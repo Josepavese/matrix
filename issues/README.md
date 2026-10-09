@@ -21,8 +21,11 @@ La [release v0.1.53](../docs/governance/releases/2026-10-08-v0.1.53.md) è pubbl
 - [Filesystem semantico](closed/2026-10-08-pal-03-semantic-filesystem.md).
 - [Telemetria e collector](closed/2026-10-08-pal-04-telemetry.md).
 
-## Segnalazioni aperte dopo la revisione
+## Correttive successive alla revisione
 
-- [CLI run submit: channel obbligatorio assente](run-submit-missing-channel.md):
-  riprodotto durante la verifica della documentazione del 2026-10-09. Gli esempi
-  aggiornati usano l'API HTTP esplicita; la correttiva runtime resta aperta.
+- [CLI run submit: channel e invio asincrono](closed/run-submit-missing-channel.md):
+  corretto per v0.1.54 con selezione esplicita di channel/workspace e test contro
+  l'handler reale, inclusa la CLI compilata sulle tre piattaforme PAL.
+
+- [matrix home su stdout](closed/home-stdout-for-shell.md): corretto l'uso nelle
+  sostituzioni della shell, con verifica della CLI compilata nativa.

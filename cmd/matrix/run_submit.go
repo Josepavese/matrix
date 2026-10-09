@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -13,6 +12,9 @@ import (
 
 var (
 	runSubmitAgent          string
+	runSubmitModel          string
+	runSubmitChannel        string
+	runSubmitWorkspace      string
 	runSubmitPrompt         string
 	runSubmitPromptFile     string
 	runSubmitIdempotencyKey string
@@ -25,10 +27,13 @@ var runSubmitCmd = &cobra.Command{
 	Short: "Submit a run and report the run_id to wait on",
 	Long: `Submit a run to this Matrix runtime.
 
-The run is accepted, not awaited: the command reports the run_id and the state
-it was accepted in. Wait for its outcome with ` + "`matrix run wait <run_id>`" + `,
-which consumes the durable notification cursor so an outcome delivered once is
-not delivered twice.
+The run is submitted asynchronously: the command reports its run_id and accepted
+state. On Linux/macOS, wait with ` + "`matrix run wait <run_id>`" + ` and persist
+the returned cursor for reconnects. On Windows, consume the HTTP run events.
+
+The default channel is cli.run.submit. Use --channel to separate callers and idempotency scopes, and
+--workspace to name a registered project. No workspace is inferred from the
+invoking shell's directory.
 
 Passing --idempotency-key makes a repeated submission of the same key return the
 run it already created instead of starting a second one.`,
@@ -40,31 +45,6 @@ run it already created instead of starting a second one.`,
 	},
 }
 
-// submitPromptText resolves the prompt from the flag or the file, refusing an
-// empty prompt: a run with no input is accepted by the wire contract and then
-// does nothing, which reads as a broken agent rather than a malformed command.
-func submitPromptText(prompt, promptFile string) (string, error) {
-	inline := strings.TrimSpace(prompt)
-	file := strings.TrimSpace(promptFile)
-	switch {
-	case inline != "" && file != "":
-		return "", fmt.Errorf("pass either --prompt or --prompt-file, not both")
-	case file != "":
-		raw, err := os.ReadFile(file)
-		if err != nil {
-			return "", fmt.Errorf("read prompt file: %w", err)
-		}
-		if strings.TrimSpace(string(raw)) == "" {
-			return "", fmt.Errorf("prompt file %s is empty", file)
-		}
-		return string(raw), nil
-	case inline != "":
-		return inline, nil
-	default:
-		return "", fmt.Errorf("a prompt is required: pass --prompt or --prompt-file")
-	}
-}
-
 func submitAddress(configValue string) string {
 	if configured := strings.TrimSpace(configValue); configured != "" {
 		return configured
@@ -73,7 +53,10 @@ func submitAddress(configValue string) string {
 }
 
 func runRunSubmit(cmd *cobra.Command) error {
-	prompt, err := submitPromptText(runSubmitPrompt, runSubmitPromptFile)
+	if strings.TrimSpace(runSubmitChannel) == "" {
+		return fmt.Errorf("--channel must not be blank")
+	}
+	prompt, err := runclient.PromptText(runSubmitPrompt, runSubmitPromptFile)
 	if err != nil {
 		return err
 	}
@@ -85,6 +68,9 @@ func runRunSubmit(cmd *cobra.Command) error {
 		Address:        submitAddress(address),
 		APIKey:         apiKey,
 		AgentID:        strings.TrimSpace(runSubmitAgent),
+		ModelID:        strings.TrimSpace(runSubmitModel),
+		ChannelID:      strings.TrimSpace(runSubmitChannel),
+		WorkspaceID:    strings.TrimSpace(runSubmitWorkspace),
 		Prompt:         prompt,
 		IdempotencyKey: runSubmitIdempotencyKey,
 		Timeout:        runSubmitTimeout,
@@ -101,12 +87,16 @@ func runRunSubmit(cmd *cobra.Command) error {
 		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "run_id=%s status=%s replayed=%t\n", result.RunID, result.Status, result.Replayed)
-	fmt.Fprintf(cmd.OutOrStdout(), "wait with: matrix run wait %s\n", result.RunID)
+	fmt.Fprintf(cmd.OutOrStdout(), "events: /v1/runs/%s/events\n", result.RunID)
+	fmt.Fprintf(cmd.OutOrStdout(), "Linux/macOS wait: matrix run wait %s\n", result.RunID)
 	return nil
 }
 
 func init() {
+	runSubmitCmd.Flags().StringVar(&runSubmitModel, "model", "", "Optional model selector; requires support from the selected agent")
 	runSubmitCmd.Flags().StringVar(&runSubmitAgent, "agent", "", "Agent to run with (defaults to the runtime's configured agent)")
+	runSubmitCmd.Flags().StringVar(&runSubmitChannel, "channel", runclient.DefaultChannelID, "Caller channel; also scopes session bindings and idempotency keys")
+	runSubmitCmd.Flags().StringVar(&runSubmitWorkspace, "workspace", "", "Registered workspace ID; omitted leaves resolution to the runtime's channel/session binding")
 	runSubmitCmd.Flags().StringVar(&runSubmitPrompt, "prompt", "", "Prompt text to submit")
 	runSubmitCmd.Flags().StringVar(&runSubmitPromptFile, "prompt-file", "", "Read the prompt from a file")
 	runSubmitCmd.Flags().StringVar(&runSubmitIdempotencyKey, "idempotency-key", "", "Key that makes a repeated submission return the run it already created")

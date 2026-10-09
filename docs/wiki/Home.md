@@ -6,7 +6,7 @@ runs, session identities and workspace state.
 
 This is the versioned Wiki: its Markdown sources live in `docs/wiki/`, are
 reviewed with the code, and can be read at the revision you installed. Guidance
-below covers the v0.1.53 features and recent session/notification corrections.
+below covers the v0.1.53 PAL features, v0.1.54 CLI correction and recent session/notification changes.
 
 ## Start here
 
@@ -32,6 +32,10 @@ below covers the v0.1.53 features and recent session/notification corrections.
 | [Governance](Governance.md) | Product boundaries, release gates and qualification evidence |
 
 ## Recent changes to understand
+
+- From v0.1.54, `matrix run submit` supplies a stable channel, submits async work,
+  accepts HTTP 202 and supports explicit channel/workspace flags. See
+  [Delegation and Notifications](Delegation-and-Notifications.md).
 
 - External session import verifies the provider's exact remote ID. Resume
   failures do not silently open replacement conversations.

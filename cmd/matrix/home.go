@@ -56,7 +56,7 @@ var homeCmd = &cobra.Command{
 	Use:   "home",
 	Short: "Print the resolved Matrix PAL home",
 	Run: func(cmd *cobra.Command, _ []string) {
-		cmd.Println(activeMatrixHome)
+		fmt.Fprintln(cmd.OutOrStdout(), activeMatrixHome)
 	},
 }
 

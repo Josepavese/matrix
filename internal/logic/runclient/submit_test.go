@@ -53,7 +53,7 @@ func runtimeAddress(t *testing.T, server *httptest.Server) string {
 // Matrix HTTP API already publishes, with the credential and the idempotency key
 // the caller chose, and the run_id it answered is what the caller waits on.
 func TestSubmitRunPostsTheExistingRunContract(t *testing.T) {
-	server, seen := serveRuntime(t, http.StatusCreated, nil,
+	server, seen := serveRuntime(t, http.StatusAccepted, nil,
 		`{"run_id":"run-submitted","status":"running","trace_url":"/v1/runs/run-submitted/trace"}`)
 
 	result, err := Submit(context.Background(), Input{
@@ -85,7 +85,7 @@ func TestSubmitRunPostsTheExistingRunContract(t *testing.T) {
 	if seen.idemKey != "submit-1" {
 		t.Fatalf("the idempotency key was not sent: %q", seen.idemKey)
 	}
-	if seen.body["input"] != "quanto fa 2+2" || seen.body["agent_id"] != "mimo" {
+	if seen.body["input"] != "quanto fa 2+2" || seen.body["agent_id"] != "mimo" || seen.body["channel_id"] != DefaultChannelID || seen.body["execution_mode"] != "async" {
 		t.Fatalf("body = %+v", seen.body)
 	}
 }
