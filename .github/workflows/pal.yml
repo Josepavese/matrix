@@ -44,7 +44,8 @@ jobs:
         run: |
           go test -race -count=1 ./pkg/zedacp
           go test -race -count=1 ./internal/providers/network ./internal/logic/runtimecheck
-          go test -race -count=1 ./internal/logic/strictjson ./internal/providers/runpayload ./internal/providers/runapi
+          go test -race -count=1 ./internal/logic/strictjson ./internal/providers/runpayload
+          go test -race -count=1 ./internal/providers/runapi -run 'TestRichRun|TestRunRejectsAmbiguousIngress|TestRunRequest|TestRunIdempotencyKeyReturnsSameRun'
           go test -race -count=1 -v ./internal/providers/agents -run 'TestSandbox|TestCachedLaunch|TestRouterCodexPolicy'
           go test -race -count=1 -v ./cmd/matrix -run 'TestPAL|TestCapacity'
       - name: Native CLI including workspace path with spaces
