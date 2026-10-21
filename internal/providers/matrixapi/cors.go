@@ -1,6 +1,7 @@
 package matrixapi
 
 import (
+	"github.com/Josepavese/matrix/internal/middleware"
 	"net"
 	"net/http"
 	"net/url"
@@ -9,7 +10,7 @@ import (
 
 const (
 	corsAllowMethods = "GET, POST, OPTIONS"
-	corsAllowHeaders = "Content-Type, X-Matrix-Key, Authorization"
+	corsAllowHeaders = "Content-Type, " + middleware.MatrixAPIKeyHeader + ", Authorization"
 )
 
 // LocalCORSHandler allows browser clients served from local loopback origins to

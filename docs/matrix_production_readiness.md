@@ -77,6 +77,13 @@ Runtime diagnostics are resilient to a stale or incompatible local daemon. If
 and `matrix readiness` fall back to local probes, keep the command usable, and
 surface an explicit warning instead of failing the operator command.
 
+Authenticated probes read `matrix_api_key` from the same SSOT configuration as
+runtime startup and send it through the governed network capability. A correct
+key retrieves the authoritative report without an authentication-fallback
+warning; wrong credentials and unavailable header support remain visible.
+Credential-bearing requests cannot redirect to another origin. The probe never
+disables runtime authentication or silently retries without the configured key.
+
 ### 4. Decision trace
 
 Matrix now explains orchestration behavior through:

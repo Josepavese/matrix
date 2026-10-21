@@ -184,7 +184,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # adapters already exchanged, not new coupling.
 # 2026-10-01: the registration remedy moves here as the one place both the
 # runtime status and the run refusal read from. Measured 1185.
-"internal/middleware" = 1288
+"internal/middleware" = 1292
 # 2026-04-27: workspace timeline event recording split validation/persistence/state update.
 # 2026-10-01: closing ten externally-reported issues across five clusters -
 # outcome semantics, structured ACP error propagation, workspace and session

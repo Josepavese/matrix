@@ -122,7 +122,7 @@ func (p *Provider) FetchJSON(ctx context.Context, url string, target interface{}
 	return p.FetchJSONWithHeaders(ctx, url, nil, target)
 }
 
-// FetchJSONWithHeaders fetches a JSON discovery document with governed request
+// FetchJSONWithHeaders fetches a JSON resource with governed request
 // headers. It is intentionally an optional provider capability so the generic
 // Network interface does not acquire protocol-specific authentication policy.
 func (p *Provider) FetchJSONWithHeaders(ctx context.Context, url string, headers map[string]string, target interface{}) error {
@@ -136,16 +136,18 @@ func (p *Provider) FetchJSONWithHeaders(ctx context.Context, url string, headers
 		}
 	}
 
-	resp, err := p.httpClient.Do(req)
+	client := *p.httpClient
+	if len(headers) > 0 {
+		client.CheckRedirect = refuseGovernedHeaderRedirect
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-
 	return json.NewDecoder(resp.Body).Decode(target)
 }
 

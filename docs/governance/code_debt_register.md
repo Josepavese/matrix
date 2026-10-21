@@ -18,6 +18,11 @@ Current allowed baseline:
 
 Latest budget realignment:
 
+- 2026-10-21 readiness correction: expose the existing governed-header network
+  capability through the neutral contract and name the Matrix HTTP credential
+  header once. Middleware baseline 1292 LOC; duplicated CLI setup was reduced.
+  File/function/branch ceilings remain unchanged.
+
 - 2026-10-21 protocol alignment: stable ACP notice/compaction presentation,
   connection-owned observers, request validation, foreground completion and
   v2 entity metadata patches add required product logic. Measured package

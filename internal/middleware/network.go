@@ -5,6 +5,15 @@ import (
 	"net"
 )
 
+// MatrixAPIKeyHeader is the credential header for the Matrix HTTP contract.
+const MatrixAPIKeyHeader = "X-Matrix-Key"
+
+// JSONHeaderFetcher is the optional network capability for governed headers.
+// Redirects must not forward these headers to another origin.
+type JSONHeaderFetcher interface {
+	FetchJSONWithHeaders(ctx context.Context, url string, headers map[string]string, target interface{}) error
+}
+
 // Network defines the network abstraction layer
 type Network interface {
 	// Listen opens a primary listener for the daemon

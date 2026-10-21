@@ -14,10 +14,6 @@ type a2aCardProvider struct {
 	headers map[string]string
 }
 
-type headerJSONFetcher interface {
-	FetchJSONWithHeaders(ctx context.Context, url string, headers map[string]string, target interface{}) error
-}
-
 func (p *a2aCardProvider) Search(context.Context, string) ([]Record, error) {
 	return nil, ErrSearchUnsupported
 }
@@ -29,7 +25,7 @@ func (p *a2aCardProvider) Get(ctx context.Context, ref string) (*Record, error) 
 	}
 	var card a2asdk.AgentCard
 	if len(p.headers) > 0 {
-		fetcher, ok := p.net.(headerJSONFetcher)
+		fetcher, ok := p.net.(middleware.JSONHeaderFetcher)
 		if !ok {
 			return nil, fmt.Errorf("A2A card discovery backend does not support governed request headers")
 		}

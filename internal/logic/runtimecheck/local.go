@@ -9,6 +9,7 @@ import (
 
 // LocalInput holds parameters for building a local runtime report.
 type LocalInput struct {
+	RuntimeAPIKey  string
 	VaultPath      string
 	JSONRPCAddr    string
 	MatrixHTTPAddr string
@@ -25,7 +26,7 @@ func BuildLocalReport(input LocalInput) (map[string]any, error) {
 	ctx := context.Background()
 	warnings := []string{}
 	if CanDial(input.Net, input.MatrixHTTPAddr) {
-		if report, err := FetchRuntimeReport(ctx, input.Net, "http://"+input.MatrixHTTPAddr+"/_matrix/runtime"); err == nil {
+		if report, err := FetchRuntimeReport(ctx, input.Net, "http://"+input.MatrixHTTPAddr+"/_matrix/runtime", input.RuntimeAPIKey); err == nil {
 			if err := ValidateRuntimeReport(report); err == nil {
 				return report, nil
 			} else {

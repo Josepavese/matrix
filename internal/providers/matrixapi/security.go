@@ -1,6 +1,7 @@
 package matrixapi
 
 import (
+	"github.com/Josepavese/matrix/internal/middleware"
 	"mime"
 	"net/http"
 	"strings"
@@ -18,7 +19,7 @@ func requireAPIKey(w http.ResponseWriter, r *http.Request, apiKey string) bool {
 }
 
 func requestAPIKey(r *http.Request) string {
-	if key := strings.TrimSpace(r.Header.Get("X-Matrix-Key")); key != "" {
+	if key := strings.TrimSpace(r.Header.Get(middleware.MatrixAPIKeyHeader)); key != "" {
 		return key
 	}
 	auth := strings.TrimSpace(r.Header.Get("Authorization"))

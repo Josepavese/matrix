@@ -58,57 +58,41 @@ func buildRuntimeDoctorReport() (map[string]any, error) {
 	fsProv := osfs.NewFSProvider()
 	proc := execprovider.NewProvider()
 	jsonrpcAddr, matrixHTTPAddr, a2aHTTPAddr := discoverRuntimeAddrs()
-
-	provider, err := runtimevault.OpenReadOnly(DefaultVaultPath)
-	if err != nil {
-		return runtimecheck.BuildLocalReport(runtimecheck.LocalInput{
-			VaultPath:      DefaultVaultPath,
-			JSONRPCAddr:    jsonrpcAddr,
-			MatrixHTTPAddr: matrixHTTPAddr,
-			A2AHTTPAddr:    a2aHTTPAddr,
-			Net:            netProv,
-			FS:             fsProv,
-		})
-	}
-	defer func() { _ = provider.Close() }()
-
-	cfgMgr := config.NewManager(vault.NewVault(provider))
-	jsonrpcAddr = cfgMgr.GetWithDefault("jsonrpc_addr", jsonrpcAddr)
-	matrixHTTPAddr = cfgMgr.GetWithDefault("matrix_http_addr", matrixHTTPAddr)
-	a2aHTTPAddr = matrixHTTPAddr
-
-	cfgRdr := config.NewFirstRunConfigReader(osfs.NewConfigProvider())
-	registry, err := agentmgr.NewRegistry(cfgRdr, provider)
-	if err != nil {
-		return runtimecheck.BuildLocalReport(runtimecheck.LocalInput{
-			VaultPath:      DefaultVaultPath,
-			JSONRPCAddr:    jsonrpcAddr,
-			MatrixHTTPAddr: matrixHTTPAddr,
-			A2AHTTPAddr:    a2aHTTPAddr,
-			Net:            netProv,
-			FS:             fsProv,
-		})
-	}
-
-	return runtimecheck.BuildLocalReport(runtimecheck.LocalInput{
+	input := runtimecheck.LocalInput{
 		VaultPath:      DefaultVaultPath,
 		JSONRPCAddr:    jsonrpcAddr,
 		MatrixHTTPAddr: matrixHTTPAddr,
 		A2AHTTPAddr:    a2aHTTPAddr,
 		Net:            netProv,
 		FS:             fsProv,
-		BuildInput: &runtimecheck.BuildInput{
-			Store:          provider,
-			Registry:       registry,
-			Process:        proc,
-			ConfigManager:  cfgMgr,
-			ConfigReader:   cfgRdr,
-			Net:            netProv,
-			JSONRPCAddr:    jsonrpcAddr,
-			MatrixHTTPAddr: matrixHTTPAddr,
-			A2AHTTPAddr:    a2aHTTPAddr,
-		},
-	})
+	}
+	provider, err := runtimevault.OpenReadOnly(DefaultVaultPath)
+	if err != nil {
+		return runtimecheck.BuildLocalReport(input)
+	}
+	defer func() { _ = provider.Close() }()
+	cfgMgr := config.NewManager(vault.NewVault(provider))
+	input.RuntimeAPIKey = cfgMgr.GetWithDefault("matrix_api_key", "")
+	input.JSONRPCAddr = cfgMgr.GetWithDefault("jsonrpc_addr", jsonrpcAddr)
+	input.MatrixHTTPAddr = cfgMgr.GetWithDefault("matrix_http_addr", matrixHTTPAddr)
+	input.A2AHTTPAddr = input.MatrixHTTPAddr
+	cfgRdr := config.NewFirstRunConfigReader(osfs.NewConfigProvider())
+	registry, err := agentmgr.NewRegistry(cfgRdr, provider)
+	if err != nil {
+		return runtimecheck.BuildLocalReport(input)
+	}
+	input.BuildInput = &runtimecheck.BuildInput{
+		Store:          provider,
+		Registry:       registry,
+		Process:        proc,
+		ConfigManager:  cfgMgr,
+		ConfigReader:   cfgRdr,
+		Net:            netProv,
+		JSONRPCAddr:    input.JSONRPCAddr,
+		MatrixHTTPAddr: input.MatrixHTTPAddr,
+		A2AHTTPAddr:    input.A2AHTTPAddr,
+	}
+	return runtimecheck.BuildLocalReport(input)
 }
 
 func discoverRuntimeAddrs() (string, string, string) {
