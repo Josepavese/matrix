@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Josepavese/matrix/internal/middleware"
 	runresponse "github.com/Josepavese/matrix/internal/providers/runapi/response"
@@ -215,5 +216,49 @@ func TestRichRunCapabilityRefusalHasTerminalCodeAndCleanup(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("durable refusal code absent")
+	}
+}
+
+type waitingInputRouter struct {
+	runTestRouter
+	probeStarted chan struct{}
+}
+
+func (r *waitingInputRouter) HandleSessionActionTyped(ctx context.Context, req middleware.SessionActionRequest) (middleware.SessionActionResult, error) {
+	if req.Action == "capabilities" {
+		if r.probeStarted != nil {
+			close(r.probeStarted)
+		}
+		<-ctx.Done()
+		return middleware.SessionActionResult{}, ctx.Err()
+	}
+	return r.runTestRouter.HandleSessionActionTyped(ctx, req)
+}
+
+func TestRichRunCancellationDuringAdmissionCleansAndKeepsDeadlineCause(t *testing.T) {
+	router := &waitingInputRouter{probeStarted: make(chan struct{})}
+	server := NewServer(router)
+	body := strings.TrimSuffix(imageInputBody(t, color.RGBA{R: 255, A: 255}), "}") + `,"session_policy":"new_ephemeral_delete_after_run","cleanup_policy":"delete_remote_or_forget_local"}`
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := newJSONRequest(http.MethodPost, RunPathV1, strings.NewReader(body)).WithContext(ctx)
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() { server.HandleRuns(w, req); close(done) }()
+	<-router.probeStarted
+	cancel()
+	<-done
+	var result map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["status"] != "cancelled" || lastSessionAction(router.sessionActions, "cleanup") == nil || router.lastConversation.ChannelID != "" {
+		t.Fatal("admission cancellation escaped lifecycle", result)
+	}
+	expired, release := context.WithDeadline(context.Background(), time.Unix(0, 0))
+	defer release()
+	router.probeStarted = nil
+	if err := server.admitRunImage(expired, "agent"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("deadline cause hidden", err)
 	}
 }

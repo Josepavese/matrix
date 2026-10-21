@@ -53,6 +53,9 @@ func (s *Server) admitRunContent(ctx context.Context, req runRequest, agentID st
 func (s *Server) admitRunImage(ctx context.Context, agentID string) error {
 	result, err := s.router.HandleSessionActionTyped(ctx, middleware.SessionActionRequest{Action: "capabilities", AgentID: agentID})
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return &inputRefusal{inputCapabilityUnavailable, http.StatusServiceUnavailable, "agent content capability probe failed"}
 	}
 	if result.Capabilities == nil {

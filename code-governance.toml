@@ -323,7 +323,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # parameter and branch budgets; this is a package ceiling.
 # 2026-10-22: typed run ingress, capability admission and content manifest;
 # measured package growth only, no file/function/branch ceiling is relaxed.
-"internal/providers/runapi" = 2779
+"internal/providers/runapi" = 2782
 # 2026-09-21: the Telegram channel gained the elicitation frontend — prompt
 # rendering, inline-keyboard building, callback routing, answer coercion and
 # session-to-chat correlation — split across focused files (elicitation.go,
