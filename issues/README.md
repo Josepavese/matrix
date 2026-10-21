@@ -19,10 +19,13 @@ restano nel registro dell'8 ottobre e nel successivo ledger PAL.
 
 - [Consegna ACP sotto carico e durata del collegamento](closed/2026-10-21-acp-delivery-barrier.md):
   difetti Matrix riprodotti e corretti; regressioni native Linux/macOS/Windows.
-- [Finale OpenCode/VICKY non consegnato](2026-10-21-external-vicky-opencode-final-not-delivered.md):
-  accolta. Input sintetico originale consegnato localmente; resta aperta la
-  qualificazione sulla VPS e l'attribuzione del singolo episodio, privo di wire
-  trace. Le correzioni locali non vengono presentate come prova sulla VPS.
+- [Finale OpenCode/VICKY non consegnato](closed/2026-10-21-external-vicky-opencode-final-not-delivered.md):
+  gestita nel perimetro Matrix e archiviata; prova locale positiva sulla v0.1.56.
+  Adozione e collaudo VPS affidati dall'utente al team VICKY. La causa storica
+  senza wire trace resta non attribuita; nessuna prova locale certifica la VPS.
+
+- [Allineamento ACP/A2A](closed/2026-10-21-protocol-alignment.md): contratti correnti,
+  verifiche di interoperabilità e rilascio nel verbale dedicato.
 
 ## Nuovo sviluppo PAL autorizzato
 

@@ -48,6 +48,7 @@ func (c *acpConversationClient) Close() error {
 }
 
 func (c *acpConversationClient) closeUnderlyingClient() error {
+	c.releasePresentation()
 	client := c.currentACPClient()
 	if client == nil {
 		return nil

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -141,7 +140,7 @@ func TestARESTMessageTurnSurvivesTheProtocolMetadataMatrixProjects(t *testing.T)
 	responses := make(chan outcome, 1)
 	go func() {
 		body := `{"message":{"role":"user","messageId":"m-rest","parts":[{"text":"count the files"}]}}`
-		resp, err := http.Post(server.URL+"/a2a/rest/message:send", "application/json", strings.NewReader(body))
+		resp, err := postCurrentA2A(server.URL+"/a2a/rest/message:send", "application/json", strings.NewReader(body))
 		if err != nil {
 			responses <- outcome{err: err}
 			return

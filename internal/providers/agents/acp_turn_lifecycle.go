@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -28,11 +29,19 @@ func (c *acpConversationClient) finishTurn(ctx context.Context, observation turn
 		if !observation.observer.AwaitTerminal(waitCtx, budget) && waitCtx.Err() == nil {
 			slog.Warn("ACP v2 turn ended without a terminal state update",
 				"event", "acp_v2_turn_budget_exhausted", "budget", budget)
+			return fmt.Errorf("ACP v2 foreground completion was not received within %s", budget)
 		}
 	} else {
 		observation.observer.WaitIdle(waitCtx, acpV1QuietWindow())
 	}
-	return errors.Join(context.Cause(connection), context.Cause(ctx))
+	if drainer, ok := c.currentACPClient().(interface {
+		DrainSessionUpdates(context.Context, string) error
+	}); ok {
+		if err := drainer.DrainSessionUpdates(ctx, observation.sessionID); err != nil {
+			return err
+		}
+	}
+	return errors.Join(context.Cause(connection), context.Cause(ctx), observation.observer.foregroundError())
 }
 
 func (c *acpConversationClient) promptACP(ctx context.Context, remoteSessionID string, turn middleware.ConversationTurn, obs acpSessionObserver) (*acpPromptResponse, error) {
@@ -108,26 +117,31 @@ func (c *acpConversationClient) awaitsTerminalState() bool {
 // must not be applied twice. A version 1 turn keeps the arrangement it always
 // had, where the prompt call owns the observer and its quiet wait ends the turn.
 type turnObservation struct {
-	observer *simpleObserver
-	prompt   acpSessionObserver
-	stop     func()
-	terminal bool
+	sessionID string
+	observer  *simpleObserver
+	prompt    acpSessionObserver
+	stop      func()
+	terminal  bool
 }
 
 // observeTurn builds the turn's observation, falling back to the version 1
 // arrangement when the client cannot keep an observer registered outside a call.
 func (c *acpConversationClient) observeTurn(remoteSessionID string, turn middleware.ConversationTurn) turnObservation {
 	observation := turnObservation{
-		observer: &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier},
-		stop:     func() {},
+		sessionID: remoteSessionID,
+		observer:  &simpleObserver{version: c.negotiatedProtocolVersion(), updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier},
+		stop:      func() {},
 	}
+	stopPresentation := c.bindPresentation(remoteSessionID, turn.ThoughtNotifier)
+	observation.stop = stopPresentation
 	watcher, ok := c.currentACPClient().(acpSessionWatcher)
 	if !ok || !c.awaitsTerminalState() {
 		observation.prompt = observation.observer
 		return observation
 	}
 	observation.terminal = true
-	observation.stop = watcher.WatchSession(remoteSessionID, observation.observer)
+	stop := watcher.WatchSession(remoteSessionID, observation.observer)
+	observation.stop = func() { stop(); stopPresentation() }
 	return observation
 }
 

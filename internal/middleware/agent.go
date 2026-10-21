@@ -56,6 +56,12 @@ const (
 	ThoughtTypeToolResult
 	// ThoughtTypePermission indicates an agent permission request or decision.
 	ThoughtTypePermission
+	// ThoughtTypeNotice is live information, never answer or turn evidence.
+	ThoughtTypeNotice
+	// ThoughtTypeCompaction reports a retained context compaction entity.
+	ThoughtTypeCompaction
+	// ThoughtTypeSessionState reports foreground activity independently of output.
+	ThoughtTypeSessionState
 )
 
 // ThoughtUpdate represents a real-time intermediate update during agent execution.

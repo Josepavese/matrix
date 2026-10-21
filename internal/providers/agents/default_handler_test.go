@@ -51,7 +51,7 @@ func startTerminalForTest(t *testing.T, handler *defaultRequestHandler, params j
 
 func waitTerminalForTest(t *testing.T, handler *defaultRequestHandler, terminalID string) map[string]interface{} {
 	t.Helper()
-	params, _ := json.Marshal(map[string]interface{}{"terminalId": terminalID})
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session", "terminalId": terminalID})
 	result, err := handler.HandleRequest(context.Background(), "terminal/wait_for_exit", params)
 	if err != nil {
 		t.Fatalf("terminal/wait_for_exit: %v", err)
@@ -65,7 +65,7 @@ func waitTerminalForTest(t *testing.T, handler *defaultRequestHandler, terminalI
 
 func outputTerminalForTest(t *testing.T, handler *defaultRequestHandler, terminalID string) map[string]interface{} {
 	t.Helper()
-	params, _ := json.Marshal(map[string]interface{}{"terminalId": terminalID})
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session", "terminalId": terminalID})
 	result, err := handler.HandleRequest(context.Background(), "terminal/output", params)
 	if err != nil {
 		t.Fatalf("terminal/output: %v", err)
@@ -81,7 +81,7 @@ func TestHandleTerminalCreate_Echo(t *testing.T) {
 	handler := newTrustedRequestHandler().
 		WithProcess(exec.NewProvider())
 
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
 		"command": "echo",
 		"args":    []string{"hello", "world"},
 	})
@@ -119,7 +119,7 @@ func TestHandleTerminalCreate_MissingCommand(t *testing.T) {
 	handler := newTrustedRequestHandler().
 		WithProcess(exec.NewProvider())
 
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
 		"args": []string{"foo"},
 	})
 
@@ -132,7 +132,7 @@ func TestHandleTerminalCreate_MissingCommand(t *testing.T) {
 func TestHandleTerminalCreate_NoProcess(t *testing.T) {
 	handler := newTrustedRequestHandler()
 
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
 		"command": "echo",
 		"args":    []string{"test"},
 	})
@@ -147,7 +147,7 @@ func TestHandleTerminalCreate_NonzeroExit(t *testing.T) {
 	handler := newTrustedRequestHandler().
 		WithProcess(exec.NewProvider())
 
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
 		"command": "sh",
 		"args":    []string{"-c", "echo err >&2; exit 42"},
 	})
@@ -178,7 +178,7 @@ func TestHandleTerminalCreate_CwdPropagation(t *testing.T) {
 		WithFS(osfs.NewFSProvider(), tmpDir)
 
 	// Command: cat a file using a relative path — should resolve against tmpDir
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
 		"command": "cat",
 		"args":    []string{markerFile},
 	})
@@ -214,10 +214,10 @@ func TestHandleTerminalCreate_CwdFromRequest(t *testing.T) {
 		WithProcess(exec.NewProvider()).
 		WithFS(osfs.NewFSProvider(), outerDir)
 
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
 		"command": "cat",
 		"args":    []string{"inner.txt"},
-		"cwd":     "sub",
+		"cwd":     innerDir,
 	})
 
 	terminalID := startTerminalForTest(t, handler, params)
@@ -246,8 +246,8 @@ func TestHandleFSRead_Success(t *testing.T) {
 	handler := newTrustedRequestHandler().
 		WithFS(osfs.NewFSProvider(), tmpDir)
 
-	params, _ := json.Marshal(map[string]interface{}{
-		"path": "test.txt",
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
+		"path": filepath.Join(tmpDir, "test.txt"),
 	})
 
 	result, err := handler.HandleRequest(context.Background(), "fs/read_text_file", params)
@@ -275,7 +275,7 @@ func TestHandleFSRead_LineAndLimit(t *testing.T) {
 	handler := newTrustedRequestHandler().
 		WithFS(osfs.NewFSProvider(), tmpDir)
 
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
 		"path":  filepath.Join(tmpDir, "test.txt"),
 		"line":  2,
 		"limit": 2,
@@ -300,8 +300,8 @@ func TestHandleFSWrite_Success(t *testing.T) {
 	handler := newTrustedRequestHandler().
 		WithFS(osfs.NewFSProvider(), tmpDir)
 
-	params, _ := json.Marshal(map[string]interface{}{
-		"path":    "sub/dir/output.txt",
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
+		"path":    filepath.Join(tmpDir, "sub", "dir", "output.txt"),
 		"content": "written by agent",
 	})
 
@@ -335,8 +335,8 @@ func TestHandleFSWrite_EmitsStructuralToolEvents(t *testing.T) {
 		WithFS(osfs.NewFSProvider(), tmpDir).
 		WithNotifier(notifier)
 
-	params, _ := json.Marshal(map[string]interface{}{
-		"path":    "sub/dir/output.txt",
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
+		"path":    filepath.Join(tmpDir, "sub", "dir", "output.txt"),
 		"content": "sensitive file content must not enter metadata",
 	})
 	if _, err := handler.HandleRequest(context.Background(), "fs/write_text_file", params); err != nil {
@@ -377,7 +377,7 @@ func TestHandleTerminalCreate_EmitsStructuralToolEvents(t *testing.T) {
 		WithFS(osfs.NewFSProvider(), tmpDir).
 		WithNotifier(notifier)
 
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
 		"command": "sh",
 		"args":    []string{"-c", "exit 42"},
 	})
@@ -404,7 +404,7 @@ func TestHandleFSRead_PathTraversal(t *testing.T) {
 	handler := newTrustedRequestHandler().
 		WithFS(osfs.NewFSProvider(), tmpDir)
 
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
 		"path": "../../../etc/passwd",
 	})
 
@@ -424,13 +424,17 @@ func TestToolMethodsRequireTrustMode(t *testing.T) {
 		method string
 		params map[string]interface{}
 	}{
-		{"fs/read_text_file", map[string]interface{}{"path": "test.txt"}},
-		{"fs/write_text_file", map[string]interface{}{"path": "test.txt", "content": "blocked"}},
+		{"fs/read_text_file", map[string]interface{}{"path": filepath.Join(tmpDir, "test.txt")}},
+		{"fs/write_text_file", map[string]interface{}{"path": filepath.Join(tmpDir, "test.txt"), "content": "blocked"}},
 		{"terminal/create", map[string]interface{}{"command": "echo", "args": []string{"blocked"}}},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.method, func(t *testing.T) {
+			tc.params["sessionId"] = "test-session"
+			if path, ok := tc.params["path"].(string); ok {
+				tc.params["path"] = filepath.Join(tmpDir, path)
+			}
 			params, _ := json.Marshal(tc.params)
 			_, err := handler.HandleRequest(context.Background(), tc.method, params)
 			if err == nil || !strings.Contains(err.Error(), "agent.trust_mode is false") {
@@ -445,7 +449,7 @@ func TestDefaultRequestHandlerDeniesToolsByDefault(t *testing.T) {
 	handler := newConfigurableRequestHandler(nil).
 		WithFS(osfs.NewFSProvider(), tmpDir)
 
-	params, _ := json.Marshal(map[string]interface{}{"path": "test.txt"})
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session", "path": filepath.Join(tmpDir, "test.txt")})
 	_, err := handler.HandleRequest(context.Background(), "fs/read_text_file", params)
 	if err == nil || !strings.Contains(err.Error(), "agent.trust_mode is false") {
 		t.Fatalf("expected default trust denial, got %v", err)
@@ -457,7 +461,7 @@ func TestTerminalLifecycleMethodsRequireTrustMode(t *testing.T) {
 	handler := newConfigurableRequestHandler(func() bool { return trusted }).
 		WithProcess(exec.NewProvider())
 
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
 		"command": "sh",
 		"args":    []string{"-c", "sleep 1"},
 	})
@@ -466,7 +470,7 @@ func TestTerminalLifecycleMethodsRequireTrustMode(t *testing.T) {
 
 	for _, method := range []string{"terminal/output", "terminal/wait_for_exit", "terminal/kill", "terminal/release"} {
 		t.Run(method, func(t *testing.T) {
-			params, _ := json.Marshal(map[string]interface{}{"terminalId": terminalID})
+			params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session", "terminalId": terminalID})
 			_, err := handler.HandleRequest(context.Background(), method, params)
 			if err == nil || !strings.Contains(err.Error(), "agent.trust_mode is false") {
 				t.Fatalf("expected trust-mode denial, got %v", err)
@@ -506,10 +510,11 @@ func TestResolvePathRejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestHandleFSRead_NoFS(t *testing.T) {
+	tmpDir := t.TempDir()
 	handler := newTrustedRequestHandler()
 
-	params, _ := json.Marshal(map[string]interface{}{
-		"path": "test.txt",
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
+		"path": filepath.Join(tmpDir, "test.txt"),
 	})
 
 	_, err := handler.HandleRequest(context.Background(), "fs/read_text_file", params)
@@ -560,10 +565,11 @@ func TestPermissionRequest_TrustMode(t *testing.T) {
 	trusted := true
 	handler := newConfigurableRequestHandler(func() bool { return trusted })
 
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
+		"toolCall": map[string]interface{}{"toolCallId": "tool-1"},
 		"options": []map[string]interface{}{
-			{"optionId": "opt1", "kind": "allow_once"},
-			{"optionId": "reject1", "kind": "reject_once"},
+			{"optionId": "opt1", "name": "Allow", "kind": "allow_once"},
+			{"optionId": "reject1", "name": "Reject", "kind": "reject_once"},
 		},
 	})
 
@@ -604,9 +610,10 @@ func TestPermissionRequest_TrustMode(t *testing.T) {
 
 func TestPermissionRequest_DenyFallsBackToCancelled(t *testing.T) {
 	handler := newConfigurableRequestHandler(func() bool { return false })
-	params, _ := json.Marshal(map[string]interface{}{
+	params, _ := json.Marshal(map[string]interface{}{"sessionId": "test-session",
+		"toolCall": map[string]interface{}{"toolCallId": "tool-1"},
 		"options": []map[string]interface{}{
-			{"optionId": "opt1", "kind": "allow_once"},
+			{"optionId": "opt1", "name": "Allow", "kind": "allow_once"},
 		},
 	})
 

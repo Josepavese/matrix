@@ -171,7 +171,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # values with a small margin, and the ceiling stays shared. File, function,
 # parameter and branch budgets are NOT raised here - those are quality
 # constraints and are met by splitting.
-"internal/logic/session" = 5887
+"internal/logic/session" = 5951
 # 2026-07-19: stable ACP v1.19/A2A v1.0.1 protocol-neutral request and
 # capability surfaces; retired credential models were deleted.
 # 2026-09-24: provider-neutral remote session identity carries verification
@@ -184,7 +184,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # adapters already exchanged, not new coupling.
 # 2026-10-01: the registration remedy moves here as the one place both the
 # runtime status and the run refusal read from. Measured 1185.
-"internal/middleware" = 1269
+"internal/middleware" = 1288
 # 2026-04-27: workspace timeline event recording split validation/persistence/state update.
 # 2026-10-01: closing ten externally-reported issues across five clusters -
 # outcome semantics, structured ACP error propagation, workspace and session
@@ -267,7 +267,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # values with a small margin, and the ceiling stays shared. File, function,
 # parameter and branch budgets are NOT raised here - those are quality
 # constraints and are met by splitting.
-"internal/providers/agents" = 5312
+"internal/providers/agents" = 5724
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
@@ -326,7 +326,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # rendering, inline-keyboard building, callback routing, answer coercion and
 # session-to-chat correlation — split across focused files (elicitation.go,
 # _flow, _render, _values, bot_elicitation) rather than one oversized file.
-"internal/providers/telegram" = 960
+"internal/providers/telegram" = 961
 # 2026-07-22: stable ACP messageId is retained on session updates. 2026-07-19:
 # stable ACP schema v1.19.0 only; retired auth credentials and response aliases
 # were deleted and draft-only methods are explicit opt-ins.
@@ -344,7 +344,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-10-21: bounded byte-accounted text coalescing adds the queue owner,
 # correlation barriers and lossless raw-content merge. Measured production LOC;
 # file/function/branch limits remain unchanged.
-"pkg/zedacp" = 2112
+"pkg/zedacp" = 2489
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390

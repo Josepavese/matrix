@@ -32,9 +32,7 @@ func toolUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
 	}
 	addOptionalToolMetadata(meta, notif)
 	addToolContentProjection(meta, update.ToolContents)
-	for k, v := range update.Meta {
-		meta[k] = v
-	}
+	mergeACPExtensionMetadata(meta, update.Meta)
 	return meta
 }
 
@@ -108,9 +106,7 @@ func structuralUpdateMetadata(notif acpSessionNotification) map[string]interface
 	if strings.TrimSpace(update.UpdatedAt) != "" {
 		meta["updated_at"] = update.UpdatedAt
 	}
-	for k, v := range update.Meta {
-		meta[k] = v
-	}
+	mergeACPExtensionMetadata(meta, update.Meta)
 	return meta
 }
 
@@ -157,9 +153,7 @@ func terminalUpdateMetadata(notif acpSessionNotification) map[string]interface{}
 	if update.Data != "" {
 		meta["terminal_output_chunk_bytes"] = len(update.Data)
 	}
-	for k, v := range update.Meta {
-		meta[k] = v
-	}
+	mergeACPExtensionMetadata(meta, update.Meta)
 	return meta
 }
 

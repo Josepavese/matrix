@@ -63,6 +63,7 @@ func (f *acpConversationFactory) initializeConversation(ctx context.Context, end
 		_ = transport.Close()
 		return nil, classifyProviderFailure("", endpoint, "initialize", err)
 	}
+	handler.protocolVersion.Store(int32(client.AuthenticatedProtocolVersion()))
 	conversation := &acpConversationClient{
 		client:              client,
 		handler:             handler,
@@ -79,6 +80,7 @@ func (f *acpConversationFactory) initializeConversation(ctx context.Context, end
 	// A terminal login has to reconnect with the same endpoint and dependencies
 	// this connection was built from, so the factory owns that rebuild.
 	conversation.reconnect = conversation.reconnectACPConnection
+	conversation.installPresentation(client)
 	conversation.recordSandboxEvidence(transport)
 	if err := conversation.validateMCPServers(conversation.mcpServers); err != nil {
 		_ = transport.Close()
@@ -126,6 +128,8 @@ type acpConversationClient struct {
 	authMethods         []acpAuthMethod
 	mcpServers          []acpMcpServerConfig
 	preferredMode       string
+	presentation        *acpPresentation
+	presentationStop    func()
 	// reconnect rebuilds the connection after a terminal authentication method
 	// ran the configured agent program; nil means this client cannot reconnect.
 	reconnect      func(context.Context) error
@@ -180,16 +184,20 @@ func (c *acpConversationClient) executeTurnOnce(ctx context.Context, turn middle
 		Output: obs.GetContent(), ContentBlocks: obs.ContentBlocks(),
 		RemoteSessionID: remoteSessionID, Metadata: obs.Metadata(),
 	}
+	result.Metadata = c.withPresentationMetadata(remoteSessionID, result.Metadata)
+	observedReason, _ := obs.terminalState()
+	stopReason := observedReason
+	if resp != nil {
+		stopReason = resolveTurnStopReason(resp.StopReason, observedReason)
+		result.ToolCalls = fromZedACPToolCalls(resp.ToolCalls)
+	}
+	reportTurnStopReason(turn, stopReason)
+	result.Metadata = metadataWithStopReason(result.Metadata, stopReason)
+	result.StopReason = stopReason
 	if err != nil {
 		return result, classifyProviderFailure(turn.AgentID, c.endpoint, "session/prompt", fmt.Errorf("ACP prompt failed: %w", err))
 	}
 
-	observedReason, _ := obs.terminalState()
-	stopReason := resolveTurnStopReason(resp.StopReason, observedReason)
-	reportTurnStopReason(turn, stopReason)
-	result.ToolCalls = fromZedACPToolCalls(resp.ToolCalls)
-	result.Metadata = metadataWithStopReason(result.Metadata, stopReason)
-	result.StopReason = stopReason
 	return result, nil
 }
 
@@ -499,7 +507,7 @@ func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionReq
 		return err
 	}
 	req.Cwd = cwd
-	obs := &simpleObserver{updates: make(chan struct{}, 1), notifier: req.Notifier}
+	obs := &simpleObserver{version: c.negotiatedProtocolVersion(), updates: make(chan struct{}, 1), notifier: req.Notifier}
 	additionalDirectories, err := c.additionalDirectories(req.AdditionalDirectories)
 	if err != nil {
 		return err

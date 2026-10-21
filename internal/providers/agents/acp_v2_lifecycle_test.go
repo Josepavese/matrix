@@ -153,6 +153,7 @@ func TestExecuteTurnWaitsForTheV2TerminalState(t *testing.T) {
 	silence := v1QuietWindowForTest(t)
 	fake := newStreamingACPClient(zedacp.ProtocolVersionV2)
 	fake.streaming = func(emit func(acpSessionUpdate)) {
+		emit(acpSessionUpdate{SessionUpdate: "state_update", State: "running"})
 		emit(chunkUpdate("msg-1", "part one"))
 		time.Sleep(silence)
 		emit(chunkUpdate("msg-1", " and part two"))
@@ -184,14 +185,15 @@ func TestExecuteTurnEndsAtTheV2TurnBudgetAndSaysSo(t *testing.T) {
 	t.Setenv(acpV2TurnEnv, "60ms")
 	fake := newStreamingACPClient(zedacp.ProtocolVersionV2)
 	fake.streaming = func(emit func(acpSessionUpdate)) {
+		emit(acpSessionUpdate{SessionUpdate: "state_update", State: "running"})
 		emit(chunkUpdate("msg-1", "partial"))
 	}
 
 	started := time.Now()
 	result, err := fake.turnClient().ExecuteTurn(context.Background(), turnForLifecycleTest())
 	elapsed := time.Since(started)
-	if err != nil {
-		t.Fatalf("a silent peer must bound the turn, not fail it: %v", err)
+	if err == nil {
+		t.Fatal("missing terminal update must fail instead of completing partial output")
 	}
 	if elapsed < 60*time.Millisecond {
 		t.Fatalf("the turn must wait for the budget before giving up, returned after %s", elapsed)
@@ -217,6 +219,7 @@ func TestExecuteTurnKeepsTheV1QuietWait(t *testing.T) {
 	silence := v1QuietWindowForTest(t)
 	fake := newStreamingACPClient(zedacp.ProtocolVersionV1)
 	fake.streaming = func(emit func(acpSessionUpdate)) {
+		emit(acpSessionUpdate{SessionUpdate: "state_update", State: "running"})
 		emit(chunkUpdate("msg-1", "part one"))
 		time.Sleep(silence)
 		emit(chunkUpdate("msg-1", " and part two"))
@@ -243,6 +246,7 @@ func TestExecuteTurnKeepsTheV1QuietWait(t *testing.T) {
 func TestExecuteTurnAppliesTheV2MessageUpsert(t *testing.T) {
 	fake := newStreamingACPClient(zedacp.ProtocolVersionV2)
 	fake.streaming = func(emit func(acpSessionUpdate)) {
+		emit(acpSessionUpdate{SessionUpdate: "state_update", State: "running"})
 		emit(chunkUpdate("msg-1", "streamed"))
 		emit(acpSessionUpdate{
 			SessionUpdate: "agent_message",
@@ -360,6 +364,7 @@ func TestPermissionRequestUnderstandsTheV2Fields(t *testing.T) {
 	notifier := &observerTestNotifier{}
 	handler := newConfigurableRequestHandler(func() bool { return true })
 	handler.WithNotifier(notifier)
+	handler.protocolVersion.Store(zedacp.ProtocolVersionV2)
 
 	params := json.RawMessage(`{
 		"sessionId": "session-1",
@@ -407,7 +412,7 @@ func TestPermissionRequestKeepsTheV1ToolCallTitle(t *testing.T) {
 	params := json.RawMessage(`{
 		"sessionId": "session-1",
 		"toolCall": {"toolCallId": "call-1", "title": "Write the file", "kind": "edit"},
-		"options": [{"optionId": "reject-once", "kind": "reject_once"}]}`)
+		"options": [{"optionId": "reject-once", "name":"Reject", "kind": "reject_once"}]}`)
 	if _, err := handler.HandleRequest(context.Background(), "session/request_permission", params); err != nil {
 		t.Fatalf("permission request: %v", err)
 	}
@@ -425,6 +430,7 @@ func TestExecuteTurnRejectsV2ConnectionFailureAfterAcknowledgement(t *testing.T)
 	defer cancel(nil)
 	fake.ctx = connection
 	fake.streaming = func(emit func(acpSessionUpdate)) {
+		emit(acpSessionUpdate{SessionUpdate: "state_update", State: "running"})
 		emit(chunkUpdate("msg-1", "partial"))
 		cancel(zedacp.ErrNotificationOverflow)
 	}

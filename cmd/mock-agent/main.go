@@ -86,7 +86,7 @@ func handlePrompt(req jsonRPCRequest, scanner *bufio.Scanner) (json.RawMessage, 
 	}
 	switch {
 	case promptHasText(params.Prompt, "__TERMINAL_TEST__"):
-		writeTerminalRequest()
+		writeTerminalRequest(params.SessionID)
 		writeTerminalNotification(scanner, params.SessionID)
 	case promptHasText(params.Prompt, "__ELICITATION_TEST__"):
 		handleElicitation(scanner, params.SessionID)
@@ -139,8 +139,8 @@ func promptHasText(prompt []promptPart, text string) bool {
 	return false
 }
 
-func writeTerminalRequest() {
-	callClient(nil, 100, "terminal/create", map[string]interface{}{"command": "echo", "args": []string{"from-mock-agent"}})
+func writeTerminalRequest(sessionID string) {
+	callClient(nil, 100, "terminal/create", map[string]interface{}{"sessionId": sessionID, "command": "echo", "args": []string{"from-mock-agent"}})
 }
 
 func writeTerminalNotification(scanner *bufio.Scanner, sessionID string) {
@@ -155,15 +155,15 @@ func writeTerminalNotification(scanner *bufio.Scanner, sessionID string) {
 		writeMessageNotification(sessionID, "terminal result: "+string(createResult))
 		return
 	}
-	waitResult, ok := callClient(scanner, 101, "terminal/wait_for_exit", map[string]interface{}{"terminalId": create.TerminalID})
+	waitResult, ok := callClient(scanner, 101, "terminal/wait_for_exit", map[string]interface{}{"sessionId": sessionID, "terminalId": create.TerminalID})
 	if !ok {
 		return
 	}
-	outputResult, ok := callClient(scanner, 102, "terminal/output", map[string]interface{}{"terminalId": create.TerminalID})
+	outputResult, ok := callClient(scanner, 102, "terminal/output", map[string]interface{}{"sessionId": sessionID, "terminalId": create.TerminalID})
 	if !ok {
 		return
 	}
-	_, _ = callClient(scanner, 103, "terminal/release", map[string]interface{}{"terminalId": create.TerminalID})
+	_, _ = callClient(scanner, 103, "terminal/release", map[string]interface{}{"sessionId": sessionID, "terminalId": create.TerminalID})
 	writeMessageNotification(sessionID, "terminal result: "+string(waitResult)+" output: "+string(outputResult))
 }
 

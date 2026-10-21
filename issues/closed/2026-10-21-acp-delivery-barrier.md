@@ -3,7 +3,7 @@
 ## Decisione
 
 **Accepted — implementato.** Emerso dalla presa in carico di
-[OpenCode/VICKY](../2026-10-21-external-vicky-opencode-final-not-delivered.md).
+[OpenCode/VICKY](2026-10-21-external-vicky-opencode-final-not-delivered.md).
 La causa storica di quell'episodio resta distinta da questi difetti Matrix
 riproducibili; la relativa qualificazione esterna rimane aperta.
 

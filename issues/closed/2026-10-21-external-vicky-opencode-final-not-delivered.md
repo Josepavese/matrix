@@ -149,7 +149,7 @@ proseguire sui componenti indipendenti senza aggirare questo esito.
 ## Presa in carico maintainer — 21 ottobre 2026
 
 **Accepted; qualificazione nativa ancora aperta.** Individuati e corretti
-[difetti generici di consegna Matrix](closed/2026-10-21-acp-delivery-barrier.md):
+[difetti generici di consegna Matrix](2026-10-21-acp-delivery-barrier.md):
 scadenza del drain con finale ancora in coda, overflow silenzioso, aggiornamenti
 accodati assegnabili al turno successivo e guasto del collegamento dopo ack v2.
 Regressione negativa sulla baseline f00f326 e positiva sulla correzione.
@@ -167,3 +167,19 @@ problema ricorre, aggiornamenti ACP correlati al termine del prompt. Nessun
 workflow VICKY o deploy sulla sua VPS eseguito dal maintainer senza il mandato
 specifico previsto da `improvements/issues/README.md`. La correttezza semantica
 Knowledge resta responsabilità del consumer.
+
+
+## Disposizione Matrix — 21 ottobre 2026
+
+Gestita nel perimetro Matrix e archiviata. I difetti generici di consegna sono
+corretti e la v0.1.56 installata ha completato il collaudo sintetico originale
+sulla stessa sessione remota, con finale JSON di 14 campi e lettura dal Vault.
+Il primo collaudo v0.1.55 aveva fallito esplicitamente per saturazione; entrambe
+le misure sono conservate nei verbali, senza cancellare il risultato negativo.
+
+L'utente ha affidato adozione e test della VPS al team esterno VICKY. Nessuna
+operazione è stata eseguita sulla VPS. La causa esatta dell'episodio storico,
+senza wire trace/versione agente, rimane non attribuita; l'archiviazione indica
+il completamento delle correttive Matrix, non la qualifica esterna del flusso.
+
+Evidenza: [verbale v0.1.56](../../docs/governance/releases/2026-10-21-v0.1.56.md).

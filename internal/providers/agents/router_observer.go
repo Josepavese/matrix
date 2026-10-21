@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"strings"
 	"sync"
@@ -15,6 +16,8 @@ import (
 // so the UI (e.g. Telegram) can show a live "thinking" indicator.
 type simpleObserver struct {
 	mu               sync.Mutex
+	version          int
+	entityMetadata   map[string]map[string]interface{}
 	content          string
 	finalContent     string
 	hasExplicitFinal bool
@@ -34,20 +37,19 @@ type simpleObserver struct {
 	// is what ends a turn that the prompt response only acknowledged.
 	terminal   bool
 	stopReason string
+	foreground bool
+	turnError  json.RawMessage
 }
 
 func (o *simpleObserver) OnUpdate(notif acpSessionNotification) {
+	notif = o.resolveEntityMetadata(notif)
 	log := slog.With("component", "acp_observer", "session", notif.SessionID, "update_type", notif.Update.SessionUpdate)
 	text := updateContentText(notif.Update)
 	log.Info("session update received", "event", "session_update", "update_type", notif.Update.SessionUpdate, "text_len", len(text))
-	if reason, terminal := notif.Update.TurnTerminal(); terminal {
-		o.mu.Lock()
-		o.stopReason, o.terminal = reason, true
-		o.mu.Unlock()
-		o.signalUpdate()
-	}
+	o.observeForegroundState(notif.Update)
 	o.handleStreamUpdate(log, notif)
 	o.mergeUpdateMetadata(notif.Update)
+	o.applySessionInfoPatch(notif.Update)
 }
 
 // AwaitTerminal waits for the version 2 terminal state update, the budget, or
@@ -94,6 +96,10 @@ func (o *simpleObserver) recordCompletion(outcome, reason string, budget time.Du
 func (o *simpleObserver) handleStreamUpdate(log *slog.Logger, notif acpSessionNotification) {
 	text := updateContentText(notif.Update)
 	switch notif.Update.SessionUpdate {
+	case "state_update":
+		meta := streamUpdateMetadata(notif)
+		meta["state"], meta["stop_reason"] = notif.Update.State, notif.Update.StopReason
+		o.forwardThought(middleware.ThoughtTypeSessionState, notif.Update.State, "Agent status", meta)
 	case "agent_message_chunk":
 		o.appendMessageChunk(text, notif.Update.Contents, streamUpdateMetadata(notif), notif.Update.MessageID)
 	case "agent_message":
@@ -257,9 +263,10 @@ func (o *simpleObserver) Metadata() middleware.ConversationMetadata {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	meta := middleware.ConversationMetadata{
-		Title:     o.metadata.Title,
-		UpdatedAt: o.metadata.UpdatedAt,
-		Status:    o.metadata.Status,
+		Title:        o.metadata.Title,
+		SessionPatch: cloneSessionInfoPatch(o.metadata.SessionPatch),
+		UpdatedAt:    o.metadata.UpdatedAt,
+		Status:       o.metadata.Status,
 	}
 	if len(o.metadata.Meta) > 0 {
 		meta.Meta = make(map[string]interface{}, len(o.metadata.Meta))

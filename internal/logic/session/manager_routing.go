@@ -213,6 +213,7 @@ func applyAgentSessionMetadata(meta *SessionMeta, metadata middleware.Conversati
 	changed = setStringIfNew(&meta.RemoteStatus, metadata.Status) || changed
 	changed = mergeRemoteMeta(meta, metadata.Meta) || changed
 	changed = applyRemoteUpdatedAt(meta, metadata.UpdatedAt, fallbackUpdatedAt) || changed
+	changed = applySessionMetadataPatch(meta, metadata.SessionPatch) || changed
 	return changed
 }
 

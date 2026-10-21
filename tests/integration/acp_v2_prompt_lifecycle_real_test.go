@@ -134,6 +134,13 @@ func TestACPv2TurnReturnsTheWholeAnswerWhenTheTerminalStateArrivesLate(t *testin
 	if !strings.Contains(output, mockLateText) {
 		t.Fatalf("content that arrived after the quiet window must still be returned, output=%q", output)
 	}
+	items, ok := metadata.Meta["context_compactions"].([]middleware.ContextCompaction)
+	if !ok || len(items) != 1 || items[0].Status != "completed" || items[0].Summary[0].Text != "retained context" {
+		t.Fatalf("stdio compaction delivery lost: %#v", metadata.Meta["context_compactions"])
+	}
+	if strings.Contains(output, "retained context") || strings.Contains(output, "live presentation only") {
+		t.Fatal("presentation leaked into answer")
+	}
 	if got := metadata.Meta["acp_turn_completion"]; got != "idle" {
 		t.Fatalf("the result must record the terminal state, got %#v", metadata.Meta)
 	}
@@ -158,7 +165,6 @@ func TestACPv2TurnWithoutATerminalStateEndsWithinItsBudget(t *testing.T) {
 		wantsContent string
 	}{
 		{name: "silent peer", mode: mockPromptModeSilent},
-		{name: "legacy peer that never reports idle", mode: mockPromptModeLegacy, wantsContent: mockAcceptedText},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			workspace := t.TempDir()
@@ -174,8 +180,8 @@ func TestACPv2TurnWithoutATerminalStateEndsWithinItsBudget(t *testing.T) {
 				Message:          "hello from the v2 lifecycle test",
 			})
 			elapsed := time.Since(started)
-			if err != nil {
-				t.Fatalf("a peer that never finishes must bound the turn, not fail it: %v", err)
+			if err == nil {
+				t.Fatal("missing foreground completion must fail")
 			}
 			if elapsed < budget {
 				t.Fatalf("the turn must wait for its budget, returned after %s", elapsed)

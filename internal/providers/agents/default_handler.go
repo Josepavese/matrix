@@ -32,13 +32,14 @@ var _ interface {
 // When trustMode is false, it denies permission requests (deny-by-default).
 // It also handles fs/ and terminal/ ACP methods.
 type defaultRequestHandler struct {
-	trustMode  func() bool        // returns true if auto-approve is enabled; defaults to false if nil
-	fs         middleware.FS      // filesystem operations for fs/* methods
-	proc       middleware.Process // process execution for terminal/* methods
-	cwd        string             // working directory for path validation
-	notifier   middleware.ThoughtNotifier
-	notifierMu sync.Mutex
-	extension  ExtensionRequestHandler
+	trustMode       func() bool // returns true if auto-approve is enabled; defaults to false if nil
+	protocolVersion atomic.Int32
+	fs              middleware.FS      // filesystem operations for fs/* methods
+	proc            middleware.Process // process execution for terminal/* methods
+	cwd             string             // working directory for path validation
+	notifier        middleware.ThoughtNotifier
+	notifierMu      sync.Mutex
+	extension       ExtensionRequestHandler
 	// elicitation is the neutral frontend port; nil means unsupported.
 	elicitation middleware.ElicitationFrontend
 	// turnCtxs holds the in-flight turn context per remote session, so an
@@ -171,7 +172,14 @@ func (h *defaultRequestHandler) requireToolTrust(method string) error {
 func (h *defaultRequestHandler) HandleRequest(ctx context.Context, method string, params json.RawMessage) (interface{}, error) {
 	log := slog.With("component", "acp_request_handler", "method", method)
 	log.Info("handling agent request", "event", "agent_request", "method", method, "params_len", len(params))
+	if err := h.validateClientRequest(method, params); err != nil {
+		return nil, err
+	}
 
+	return h.handleValidatedRequest(ctx, log, method, params)
+}
+
+func (h *defaultRequestHandler) handleValidatedRequest(ctx context.Context, log *slog.Logger, method string, params json.RawMessage) (interface{}, error) {
 	switch method {
 	case "session/request_permission":
 		return h.handlePermissionRequest(ctx, log, params)

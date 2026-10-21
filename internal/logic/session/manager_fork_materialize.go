@@ -58,6 +58,7 @@ func (m *Manager) persistMaterializedForkParent(meta SessionMeta, remote middlew
 	meta.RemoteUpdatedAt = now
 	meta.RemoteTitle = firstNonEmpty(metadata.Title, remote.Title, meta.RemoteTitle)
 	meta.RemoteStatus = firstNonEmpty(metadata.Status, remote.Status, meta.RemoteStatus)
+	applySessionMetadataPatch(&meta, metadata.SessionPatch)
 	if err := m.indexSessionWorkspace(meta); err != nil {
 		return SessionMeta{}, nil, err
 	}

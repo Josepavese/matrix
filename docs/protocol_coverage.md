@@ -1,6 +1,6 @@
 # ACP and A2A Protocol Coverage
 
-Matrix implementation rechecked: 2026-10-08. Upstream snapshot: 2026-09-21.
+Matrix implementation rechecked: 2026-10-21. Upstream snapshot: 2026-10-21.
 
 This document is the Matrix source of truth for protocol feature coverage. The
 runtime capability report is the live source of truth for a specific configured
@@ -10,14 +10,17 @@ apply to every adapter.
 
 ## Upstream snapshot
 
-- ACP v1 stable schema release `schema-v1.23.0`, protocol release `v1.9.1`
-  (official repository, September 2026). ACP v2 remains a Draft upstream and is
-  supported by Matrix only through explicit version negotiation, including the
-  v2 authentication and asynchronous turn lifecycle. The draft snapshot is not
-  a claim of current upstream stability or blanket provider compatibility.
-- A2A specification `v1.0.1`, official repository commit
-  `af112d9491c1fd4b2a568ac65755af4a62790490`.
-- Matrix A2A SDK: `github.com/a2aproject/a2a-go/v2 v2.5.0`.
+- ACP stable wire protocol `1`, JSON schema `schema-v1.26.0` (2026-10-16),
+  source commit `e2d83349bc9e28a4059ea3acefa1c91c966f74e2`. Rust crate `v1.12.0`
+  is a separate artifact version, not the wire protocol version.
+- ACP v2 remains draft: `schema-v2.0.0-alpha.9`, source commit
+  `e2d83349bc9e28a4059ea3acefa1c91c966f74e2`. Matrix supports its negotiated
+  client surfaces; subprocess fixtures prove interoperability, not commercial
+  provider support or editor-complete history rendering.
+- A2A specification `v1.0.1`, release commit
+  `3303592588e388e62e0f69f701af531d2f4e3991` (2026-05-28).
+- Matrix A2A SDK: `github.com/a2aproject/a2a-go/v2 v2.7.0` (2026-10-21).
+  Minimum Go version is 1.26; repository qualification uses Go 1.27.1.
 
 Authoritative sources:
 
@@ -25,7 +28,10 @@ Authoritative sources:
 - https://agentclientprotocol.com/protocol/v1/initialization
 - https://agentclientprotocol.com/protocol/v1/transports
 - https://a2a-protocol.org/latest/specification/
-- https://github.com/a2aproject/A2A
+- https://github.com/a2aproject/A2A/releases/tag/v1.0.1
+- https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.26.0
+- https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v2.0.0-alpha.9
+- https://github.com/a2aproject/a2a-go/releases/tag/v2.7.0
 
 ## ACP v2 implementation evidence
 
@@ -162,10 +168,43 @@ Elicitation interop evidence (2026-09-21):
   invoking its tool, so it skips with evidence rather than failing).
 
 ACP draft/unstable provider selection, model selection, NES/document,
-MCP-over-ACP, Streamable HTTP, and the unstable v1 session-notice capability
+MCP-over-ACP, and Streamable HTTP
 are not advertised as stable Matrix capabilities. Adding one requires a
 separately named non-default experimental surface or promotion in the upstream
 stable schema.
+
+## ACP current presentation and lifecycle contracts
+
+- V1 advertises `clientCapabilities.session.notices` and `.compaction` only
+  when the connection-wide observer is wired; v2 includes them in its baseline
+  and never emits the retired v1 `session`, filesystem or terminal capability
+  fields during v2 initialize.
+- Notices are live `agent.notice` events, never stored as session history or
+  counted as answer/work evidence. Compaction updates and summary chunks retain
+  first-seen position, replacement/append semantics, omitted values and explicit
+  clears. Detached snapshots are exposed as neutral `context_compactions` in
+  turn metadata and remote session information. They survive between turns on
+  one connection and rebuild only from explicit peer replay after reconnect.
+- V1 compaction `_meta` replaces the object; v2 patches top-level keys, with
+  null key removal and whole-object null clearing. Message/tool/terminal
+  entity metadata is materialized within the observed turn; Matrix does not
+  maintain a private transcript. Nested objects replace without recursive merge.
+- V2 session-info patches propagate explicit title/timestamp clearing and
+  top-level metadata removal through the neutral contract into Matrix session
+  mirrors. Omission preserves state; this is independent of aggregate turn data.
+- V2 insertion acknowledgements require `messageId`. An idle/replay snapshot
+  cannot complete work that never entered running/requires_action. Missing idle
+  completion fails at the turn budget, retaining partial diagnostic output;
+  post-insertion `error` stop reason fails rather than completing partial text.
+  Received updates are drained before resume/close or final turn materialization.
+- Actionable fs/terminal/permission values are validated before side effects.
+  Missing/null file content cannot truncate a file; invalid args/env/ranges or
+  paths are rejected. Permission decisions select only actual offered options.
+  Malformed optional display metadata is absent. Provider `_meta` cannot replace
+  Matrix's protocol identity or evidence classification.
+- Native unit/race tests and real stdio mock peers cover these contracts. A real
+  OpenCode/DeepSeek probe qualifies current v1 delivery; no installed commercial
+  v2 agent support is inferred from synthetic v2 peers.
 
 ## A2A v1.0.1 coverage
 
@@ -212,9 +251,8 @@ accepted, tested, and recorded here rather than left implicit:
   §3.1.4 (A2A v1.0.1) says "the artifacts field should be included with its actual
   content (which may be an empty array if the task has no artifacts)". Matrix omits
   the field for an artifact-less task. The omission is the SDK wire type's, not the
-  store's: both bindings marshal with `encoding/json` (`a2asrv/jsonrpc.go:361`,
-  `a2asrv/rest.go:206`) and `a2a.Task.Artifacts` carries
-  `json:"artifacts,omitempty"` (`a2a/core.go:347` in `a2a-go/v2 v2.5.0`), so an empty
+  store's: both bindings marshal with `encoding/json` (SDK JSON-RPC and REST handlers) and `a2a.Task.Artifacts` carries
+  `json:"artifacts,omitempty"` (in `a2a-go/v2 v2.7.0`), so an empty
   slice is dropped whether or not it is nil. Only a transport-level body rewrite or a
   fork of the SDK's core type could emit `[]`, and the sentence is a lowercase
   "should". The MUST in the same paragraph - omit the field when `includeArtifacts` is
@@ -222,18 +260,22 @@ accepted, tested, and recorded here rather than left implicit:
   `TestListTasksOmitsTheArtifactsFieldForATaskWithoutArtifacts`
   (`internal/providers/a2a/methods_test.go`), which fails if the SDK's shape changes.
 
-The corresponding error-code differences are not deviations: a message or a
-subscription addressed to a task in a terminal state answers
-`UnsupportedOperationError` (-32004 on JSON-RPC, `FAILED_PRECONDITION`/400 on
-HTTP+JSON) on both bindings, corrected in Matrix by an SDK call interceptor because
-the SDK itself chooses `-32602` (`a2asrv/agentexec.go:228`) and `-32001`
-(`internal/taskexec/local_manager.go:134` via `a2asrv/handler.go:373`). The same guard
-answers `UnsupportedOperationError` for a message addressed to a task whose turn is
-still running, which the SDK's internal `ErrExecutionInProgress`
-(`internal/taskexec/local_manager.go:197`) would otherwise surface as `-32603`/HTTP 500;
-resubscription to a running task and a message to a task awaiting input are exempt. The
-SDK's own codes remain pinned by `TestProtocolSDKTerminalTaskCodesWithoutTheCorrection`
-so an upstream fix is noticed.
+Terminal-task message/subscription errors now come directly from SDK 2.7.0:
+`UnsupportedOperationError` (-32004 on JSON-RPC). The old correction interceptor
+was removed; `TestProtocolSDKTerminalTaskCodesMatchCurrentSpecification` pins
+native behavior. Matrix retains only its own one-running-turn policy; running
+subscriptions and input-required task continuation remain valid.
+
+Both served bindings now require the negotiated `A2A-Version: 1.0`; unsupported
+versions are rejected, not silently interpreted as 1.0. JSON-RPC uses current
+PascalCase method names. The retired 0.3 method translator is removed.
+The SDK handles `application/a2a+json` negotiation, trailing JSON rejection,
+UTC timestamps, canonical ProtoJSON security scopes, timestamp filters and
+stream failure propagation. SDK 2.7's exact-only input matcher cannot match
+Matrix's advertised MIME families: the adapter validates against the same card,
+accepting `image/*` and `audio/*` while rejecting unadvertised media types.
+Optional SDK JWS helpers do not make Matrix a card-signing or signature-trust
+service; no cryptographic verification or signed-card capability is advertised.
 
 ## Runtime verification
 

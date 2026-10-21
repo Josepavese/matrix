@@ -324,7 +324,11 @@ func TestA2AConversationClient_CoversPushCRUDAndExtendedCard(t *testing.T) {
 
 func TestA2AConversationClient_UsesNonStreamingWithoutAdvertisedCapability(t *testing.T) {
 	caps := &a2asdk.AgentCapabilities{Streaming: false}
-	handler := a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(echoA2AExecutor{}, a2asrv.WithCapabilityChecks(caps)))
+	enforcer, err := a2asrv.NewAgentCardEnforcer(&a2asdk.AgentCard{Capabilities: *caps})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(echoA2AExecutor{}, a2asrv.WithCallInterceptors(enforcer)))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler.ServeHTTP(w, r)
 	}))

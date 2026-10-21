@@ -16,6 +16,7 @@ import (
 
 func newJSONRequest(method, target string, body io.Reader) *http.Request {
 	req := httptest.NewRequest(method, target, body)
+	req.Header.Set("A2A-Version", "1.0")
 	if method == http.MethodPost {
 		req.Header.Set("Content-Type", "application/json")
 	}

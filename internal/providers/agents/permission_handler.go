@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"encoding/json"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 	"log/slog"
 	"strings"
 )
@@ -50,13 +51,7 @@ func (r permissionRequest) permissionSubjectType() string {
 func (h *defaultRequestHandler) handlePermissionRequest(_ context.Context, log *slog.Logger, params json.RawMessage) (interface{}, error) {
 	var req permissionRequest
 	if err := json.Unmarshal(params, &req); err != nil {
-		log.Warn("failed to parse permission request", "error", err)
-		if h.isTrustMode() {
-			h.notifyPermission(permissionAudit{params: params, decision: "approved", optionID: "allow-once", auto: true})
-			return h.approveResponse("allow-once"), nil
-		}
-		h.notifyPermission(permissionAudit{params: params, decision: "denied"})
-		return h.denyResponse(nil), nil
+		return nil, zedacp.NewInvalidParamsError("permission")
 	}
 	audit := permissionAudit{
 		params:      params,
@@ -74,12 +69,17 @@ func (h *defaultRequestHandler) handlePermissionRequest(_ context.Context, log *
 		return h.denyResponse(req.Options), nil
 	}
 
-	optionID := "allow-once"
+	optionID := ""
 	for _, opt := range req.Options {
 		if opt.Kind == "allow_once" || opt.Kind == "allow_always" {
 			optionID = opt.OptionID
 			break
 		}
+	}
+	if optionID == "" {
+		audit.decision = "denied"
+		h.notifyPermission(audit)
+		return h.denyResponse(req.Options), nil
 	}
 	log.Info("auto-approving permission",
 		"event", "permission_approved", "optionID", optionID, "options_count", len(req.Options),

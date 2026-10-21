@@ -49,6 +49,12 @@ func (n *Notifier) OnThought(update middleware.ThoughtUpdate) {
 		n.appendToolResult(update)
 	case middleware.ThoughtTypePermission:
 		n.appendPermission(update)
+	case middleware.ThoughtTypeNotice:
+		n.appendStructuredProgress("agent.notice", update, "observed")
+	case middleware.ThoughtTypeCompaction:
+		n.appendStructuredProgress("agent.context.compaction", update, "observed")
+	case middleware.ThoughtTypeSessionState:
+		n.appendStructuredProgress("agent.session.state", update, "observed")
 	default:
 		n.appendAgentProgress(update)
 	}

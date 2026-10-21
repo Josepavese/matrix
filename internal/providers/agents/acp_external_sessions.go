@@ -43,6 +43,7 @@ func (c *acpConversationClient) remoteSessionInfo(session acpSessionInfo) middle
 		ProtocolKind:          middleware.ProtocolKindACP,
 		CanResume:             c.sessionCapabilities.Load || c.sessionCapabilities.Resume,
 		CanDelete:             c.sessionCapabilities.Delete,
+		ContextCompactions:    c.currentPresentation().snapshot(session.SessionID),
 	}
 }
 

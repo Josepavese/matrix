@@ -66,6 +66,12 @@ func (o *simpleObserver) applyMessageUpsert(notif acpSessionNotification, text s
 	contribution := o.contributionLocked(notif.Update.MessageID)
 	switch {
 	case !notif.Update.ContentSet:
+		contribution.final = phase == "final_answer"
+		if contribution.final {
+			contribution.finalText, contribution.finalBlocks = contribution.text, contribution.blocks
+		} else {
+			contribution.finalText, contribution.finalBlocks = "", nil
+		}
 	case notif.Update.ContentCleared:
 		*contribution = acpMessageContribution{}
 	default:
@@ -188,8 +194,6 @@ func streamUpdateMetadata(notif acpSessionNotification) map[string]interface{} {
 	} else {
 		meta["message_classification"] = "unclassified"
 	}
-	for k, v := range notif.Update.Meta {
-		meta[k] = v
-	}
+	mergeACPExtensionMetadata(meta, notif.Update.Meta)
 	return meta
 }

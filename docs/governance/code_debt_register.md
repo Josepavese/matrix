@@ -18,6 +18,15 @@ Current allowed baseline:
 
 Latest budget realignment:
 
+- 2026-10-21 protocol alignment: stable ACP notice/compaction presentation,
+  connection-owned observers, request validation, foreground completion and
+  v2 entity metadata patches add required product logic. Measured package
+  baselines: session 5951, middleware 1288, agents 5724, Telegram 961,
+  ACP SDK 2489 LOC, including explicit neutral session-info patches.
+  Leaf helpers keep all file/function/branch ceilings unchanged and zero
+  quality warnings. A2A retires its 0.3 method translator and duplicate terminal
+  guard; the current SDK owns those protocol checks.
+
 - 2026-10-21: the SDK gains byte-accounted notification coalescing with explicit
   ownership, cancellation boundaries and raw-content preservation. Measured
   `pkg/zedacp` baseline is 2112 LOC; the existing file/function/branch limits

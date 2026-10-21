@@ -73,10 +73,11 @@ type ConversationResult struct {
 // ConversationMetadata carries protocol-neutral session/task metadata emitted by
 // providers during or after a turn and suitable for mirroring into the vault.
 type ConversationMetadata struct {
-	Title     string
-	UpdatedAt string
-	Status    string
-	Meta      map[string]interface{}
+	SessionPatch *SessionMetadataPatch
+	Title        string
+	UpdatedAt    string
+	Status       string
+	Meta         map[string]interface{}
 }
 
 // ConversationClient executes protocol-specific turns behind a neutral contract.
@@ -89,19 +90,20 @@ type ConversationClient interface {
 // RemoteSessionID is the opaque identifier Matrix must persist and reuse.
 // DisplayID is the human-facing stable token shown in channels for switch/delete flows.
 type RemoteSessionInfo struct {
-	RemoteSessionID       string       `json:"remote_session_id,omitempty"`
-	DisplayID             string       `json:"display_id,omitempty"`
-	Title                 string       `json:"title,omitempty"`
-	Status                string       `json:"status,omitempty"`
-	UpdatedAt             string       `json:"updated_at,omitempty"`
-	Cwd                   string       `json:"cwd,omitempty"`
-	AdditionalDirectories []string     `json:"additional_directories,omitempty"`
-	VerificationMethod    string       `json:"verification_method,omitempty"`
-	VerificationLimit     string       `json:"verification_limit,omitempty"`
-	ListWarning           string       `json:"list_warning,omitempty"`
-	ProtocolKind          ProtocolKind `json:"protocol_kind,omitempty"`
-	CanResume             bool         `json:"can_resume,omitempty"`
-	CanDelete             bool         `json:"can_delete,omitempty"`
+	RemoteSessionID       string              `json:"remote_session_id,omitempty"`
+	DisplayID             string              `json:"display_id,omitempty"`
+	Title                 string              `json:"title,omitempty"`
+	Status                string              `json:"status,omitempty"`
+	UpdatedAt             string              `json:"updated_at,omitempty"`
+	Cwd                   string              `json:"cwd,omitempty"`
+	AdditionalDirectories []string            `json:"additional_directories,omitempty"`
+	VerificationMethod    string              `json:"verification_method,omitempty"`
+	VerificationLimit     string              `json:"verification_limit,omitempty"`
+	ListWarning           string              `json:"list_warning,omitempty"`
+	ProtocolKind          ProtocolKind        `json:"protocol_kind,omitempty"`
+	CanResume             bool                `json:"can_resume,omitempty"`
+	CanDelete             bool                `json:"can_delete,omitempty"`
+	ContextCompactions    []ContextCompaction `json:"context_compactions,omitempty"`
 }
 
 // CapabilityDescriptor is the protocol-neutral SSOT for a provider capability.

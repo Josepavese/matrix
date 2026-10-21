@@ -26,10 +26,8 @@ import (
 //     FAILED_PRECONDITION / 400 Bad Request on the HTTP+JSON binding, and §5.1
 //     requires both advertised bindings to refuse the operation the same way.
 //
-// With internal/providers/a2a/task_state_guard.go's interceptor removed, this test is
-// the one that fails: message/send answers -32602 from a2asrv/agentexec.go:228 and
-// tasks/resubscribe answers -32001 from a2asrv/handler.go:373, exactly as
-// TestProtocolSDKTerminalTaskCodesWithoutTheCorrection records.
+// Both bindings now rely on the SDK's native terminal-state refusal. The raw
+// SDK test below protects the removal of the old duplicate guard.
 func TestTerminalTaskOperationsAnswerUnsupportedOperation(t *testing.T) {
 	server := newA2ATestServer(t, NewServer(&stubSessionRouter{}, "http://127.0.0.1:0", "opencode"))
 
@@ -157,23 +155,9 @@ func TestMessageToARunningTaskAnswersUnsupportedOperationNotAnInternalError(t *t
 	drainStream(t, subscription)
 }
 
-// TestProtocolSDKTerminalTaskCodesWithoutTheCorrection pins the protocol SDK's own
-// choice of error codes for the two terminal-state operations, wrapped in nothing
-// but the authentication interceptor Matrix also uses. It is the record of where
-// the decision is made and the tripwire for an SDK upgrade:
-//
-//   - a2asrv/agentexec.go:228 (a2a-go v2.5.0) refuses a message to a terminal task
-//     with a2a.ErrInvalidParams, which the JSON-RPC binding reports as -32602;
-//   - internal/taskexec/local_manager.go:134 has no execution left to resubscribe
-//     to, and a2asrv/handler.go:373 wraps that in a2a.ErrTaskNotFound, reported as
-//     -32001.
-//
-// This test asserts what the SDK does, not what the specification requires. If it
-// ever fails, the SDK has changed one of those codes: the guard in
-// task_state_guard.go may then be removable, and the deviation recorded in
-// issues/closed/2026-09-23-a2a-surface-not-functional.md and
-// docs/protocol_coverage.md is outdated and must be updated.
-func TestProtocolSDKTerminalTaskCodesWithoutTheCorrection(t *testing.T) {
+// TestProtocolSDKTerminalTaskCodesMatchCurrentSpecification pins the SDK
+// behaviour Matrix now relies on without a duplicate compatibility guard.
+func TestProtocolSDKTerminalTaskCodesMatchCurrentSpecification(t *testing.T) {
 	server := newRawProtocolSDKServer(t)
 
 	done := callRPC(t, server.URL, "SendMessage", sendMessageParams("m-raw-terminal", "done")).requireTask(t, "SendMessage")
@@ -182,11 +166,11 @@ func TestProtocolSDKTerminalTaskCodesWithoutTheCorrection(t *testing.T) {
 	}
 
 	followUp := fmt.Sprintf(`{"message":{"role":"user","messageId":"m-raw-follow-up","taskId":%q,"parts":[{"text":"more"}]}}`, done.ID)
-	callRPC(t, server.URL, "SendMessage", followUp).requireError(t, "SendMessage", codeInvalidParams)
+	callRPC(t, server.URL, "SendMessage", followUp).requireError(t, "SendMessage", codeUnsupportedOp)
 
 	subscription := openStream(t, server.URL, "SubscribeToTask", fmt.Sprintf(`{"id":%q}`, done.ID))
-	if frame := nextFrame(t, subscription, "the SDK's subscription answer"); frame.Error == nil || frame.Error.Code != codeTaskNotFound {
-		t.Fatalf("the SDK answered SubscribeToTask on a terminal task with %+v, want its recorded error %d", frame, codeTaskNotFound)
+	if frame := nextFrame(t, subscription, "the SDK's subscription answer"); frame.Error == nil || frame.Error.Code != codeUnsupportedOp {
+		t.Fatalf("the SDK answered SubscribeToTask on a terminal task with %+v, want %d", frame, codeUnsupportedOp)
 	}
 	drainStream(t, subscription)
 }
@@ -197,13 +181,17 @@ func TestProtocolSDKTerminalTaskCodesWithoutTheCorrection(t *testing.T) {
 func newRawProtocolSDKServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	capabilities := a2asdk.AgentCapabilities{Streaming: true}
+	enforcer, err := a2asrv.NewAgentCardEnforcer(&a2asdk.AgentCard{Capabilities: capabilities})
+	if err != nil {
+		t.Fatal(err)
+	}
 	handler := a2asrv.NewHandler(
 		&executor{router: &stubSessionRouter{}, defaultAgent: "opencode"},
-		a2asrv.WithCapabilityChecks(&capabilities),
+		a2asrv.WithCallInterceptors(enforcer),
 		a2asrv.WithCallInterceptors(&matrixAuthenticatedUserInterceptor{userName: "matrix-local"}),
 	)
 	mux := http.NewServeMux()
-	mux.Handle("/a2a", withSpecJSONRPCMethodNames(a2asrv.NewJSONRPCHandler(handler)))
+	mux.Handle("/a2a", a2asrv.NewJSONRPCHandler(handler))
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return server

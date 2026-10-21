@@ -30,7 +30,7 @@ func (s *Server) WithExtendedAgentCard(card *a2asdk.AgentCard) *Server {
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	handler := s.newRequestHandler()
-	mux.Handle("/a2a", s.authMiddleware(withSpecJSONRPCMethodNames(a2asrv.NewJSONRPCHandler(handler)), true))
+	mux.Handle("/a2a", s.authMiddleware(a2asrv.NewJSONRPCHandler(handler), true))
 	mux.Handle("/a2a/rest/", http.StripPrefix("/a2a/rest", s.authMiddleware(a2asrv.NewRESTHandler(handler), false)))
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(s.agentCard()))
 }
@@ -39,18 +39,23 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 // so a correction made in a call interceptor reaches the JSON-RPC binding and the
 // HTTP+JSON binding alike.
 func (s *Server) newRequestHandler() a2asrv.RequestHandler {
-	capabilities := s.capabilities()
+	card := s.agentCard()
+	enforcer, err := a2asrv.NewAgentCardEnforcer(&a2asdk.AgentCard{Capabilities: card.Capabilities})
+	if err != nil {
+		panic("invalid Matrix A2A card: " + err.Error())
+	}
 	// The store is created here rather than left to the SDK so the task-state guard
 	// can read the task it is about to refuse; this is the same in-memory store with
 	// the same authenticator the SDK would have built (a2asrv/handler.go).
 	tasks := taskstore.NewInMemory(&taskstore.InMemoryStoreConfig{Authenticator: a2asrv.NewTaskStoreAuthenticator()})
 	options := []a2asrv.RequestHandlerOption{
-		a2asrv.WithCapabilityChecks(&capabilities),
 		a2asrv.WithTaskStore(tasks),
 		// Order matters: the authenticated user is attached first, because the
 		// store's authenticator reads it when the guard looks the task up.
 		a2asrv.WithCallInterceptors(
 			&matrixAuthenticatedUserInterceptor{userName: s.taskOwner()},
+			enforcer,
+			&inputModeGuard{modes: card.DefaultInputModes},
 			&taskStateGuard{tasks: tasks},
 		),
 	}

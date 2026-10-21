@@ -1227,9 +1227,16 @@ curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/modes \
 
 A2A protocol endpoint. Other A2A-compatible agents can call this to interact with Matrix.
 The endpoint accepts `application/json` and the A2A-preferred
-`application/a2a+json` JSON-RPC media type. Matrix currently advertises
-`text/plain` input/output in its Agent Card and rejects non-text inbound parts
-instead of silently dropping them.
+`application/a2a+json` media type. Send `A2A-Version: 1.0` and current
+PascalCase JSON-RPC methods (for example `SendMessage`). A2A 0.3 aliases and
+unsupported protocol versions are rejected. The HTTP+JSON binding is available
+under `/a2a/rest/`.
+
+Matrix advertises text, JSON data, binary files, image and audio input, and text
+output. MIME family matching follows the published card; unsupported media
+types and malformed trailing JSON are rejected. See
+[protocol coverage](../protocol_coverage.md) for the current upstream pins and
+optional capabilities.
 
 The A2A agent card is available at the standard well-known path. If Matrix is
 configured with an A2A API key, the card advertises both `X-Matrix-Key` and

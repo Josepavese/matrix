@@ -98,6 +98,8 @@ func (t *thoughtMessenger) OnThought(update middleware.ThoughtUpdate) {
 	switch update.Type {
 	case middleware.ThoughtTypeThinking:
 		t.thoughts = update.Content // keep only latest thought
+	case middleware.ThoughtTypeNotice, middleware.ThoughtTypeCompaction, middleware.ThoughtTypeSessionState:
+		t.thoughts = strings.TrimSpace(update.Title + "\n" + update.Content)
 	case middleware.ThoughtTypeToolCall:
 		if update.Content != "" {
 			t.tools += "🔧 " + escapeHTML(truncateThought(update.Content, 80)) + "\n"

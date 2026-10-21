@@ -1,6 +1,6 @@
 # Matrix Zed ACP Compliance Notes
 
-Last reviewed: 2026-07-19 against stable ACP v1 schema `schema-v1.19.0`.
+Last reviewed: 2026-10-21 against stable ACP v1 schema `schema-v1.26.0`.
 
 Matrix follows the Zed Agent Client Protocol documented at
 https://agentclientprotocol.com/protocol/overview. The exhaustive current
@@ -103,3 +103,7 @@ go run ./scripts/governance_check --manifest governance/manifest.toml
 go test ./pkg/zedacp ./internal/providers/agents
 MATRIX_SMOKE_TEST=1 go test ./tests/integration -run TestSmoke_RealACPProviderLifecycleCompliance -v -count=1 -timeout 20m
 ```
+
+Current notice/compaction, v2 patch/lifecycle and request-validation evidence is
+recorded in [the protocol coverage ledger](protocol_coverage.md). Schema release
+versions are distinct from the stable wire protocol version, which remains 1.

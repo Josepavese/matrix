@@ -24,8 +24,6 @@ const (
 	codeTaskNotCancelable = -32002
 	codePushNotSupported  = -32003
 	codeUnsupportedOp     = -32004
-	// codeInvalidParams is the JSON-RPC standard code for invalid method parameters.
-	codeInvalidParams = -32602
 )
 
 // taskStates are the wire values of a2a.TaskState, spelled out so a response body is
@@ -108,7 +106,7 @@ func sendMessageParams(messageID, text string) string {
 
 func postRPC(url, method, params string) (rpcEnvelope, error) {
 	body := fmt.Sprintf(`{"jsonrpc":"2.0","id":"matrix-test","method":%q,"params":%s}`, method, params)
-	resp, err := http.Post(url+"/a2a", "application/json", strings.NewReader(body))
+	resp, err := postCurrentA2A(url+"/a2a", "application/json", strings.NewReader(body))
 	if err != nil {
 		return rpcEnvelope{}, fmt.Errorf("%s: %w", method, err)
 	}
@@ -211,7 +209,7 @@ func (f streamFrame) result(t *testing.T) streamResult {
 func openStream(t *testing.T, url, method, params string) <-chan streamFrame {
 	t.Helper()
 	body := fmt.Sprintf(`{"jsonrpc":"2.0","id":"matrix-stream","method":%q,"params":%s}`, method, params)
-	resp, err := http.Post(url+"/a2a", "application/json", strings.NewReader(body))
+	resp, err := postCurrentA2A(url+"/a2a", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("%s: %v", method, err)
 	}

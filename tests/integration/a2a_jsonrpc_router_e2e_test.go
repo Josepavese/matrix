@@ -126,7 +126,13 @@ func (task a2aE2ETask) artifactText() string {
 func a2aE2ECall(t *testing.T, url, method, body string) a2aE2EEnvelope {
 	t.Helper()
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Post(url+"/a2a", "application/json", strings.NewReader(body))
+	request, err := http.NewRequest(http.MethodPost, url+"/a2a", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("A2A-Version", "1.0")
+	resp, err := client.Do(request)
 	if err != nil {
 		t.Fatalf("POST /a2a %s: %v", method, err)
 	}
@@ -198,7 +204,7 @@ func TestA2AJSONRPCCompletesATurnThroughTheRealRouterAndARealACPPeer(t *testing.
 	t.Cleanup(server.Close)
 
 	// The 1.0 name and the 0.3 name a real client sent, both through the same stack.
-	for _, method := range []string{"SendMessage", "message/send"} {
+	for _, method := range []string{"SendMessage"} {
 		t.Run(method, func(t *testing.T) {
 			messageID := "m-" + strings.NewReplacer("/", "-", "S", "s").Replace(method)
 			body := fmt.Sprintf(

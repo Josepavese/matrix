@@ -494,3 +494,31 @@ func TestNotifierCorrelatesACPToolWithPermissionContext(t *testing.T) {
 		t.Fatalf("expected frontend projection without protocol meta: requested=%#v completed=%#v", requested.ProtocolMeta, completed.ProtocolMeta)
 	}
 }
+
+func TestPresentationUpdatesAreNotTurnWorkEvidence(t *testing.T) {
+	store := runtrace.NewStore(memstore.New())
+	run, _, err := store.Start(runtrace.Run{AgentID: "opencode", Protocol: "acp", ChannelID: "http.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := New(store, run.ID, "opencode", "acp")
+	for _, kind := range []middleware.ThoughtUpdateType{middleware.ThoughtTypeNotice, middleware.ThoughtTypeCompaction, middleware.ThoughtTypeSessionState} {
+		n.OnThought(middleware.ThoughtUpdate{Type: kind, Content: "status only"})
+	}
+	events, err := store.LoadEvents(run.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]bool{}
+	for _, event := range events {
+		kinds[event.Kind] = true
+		if event.Kind == "agent.message.delta" || event.Kind == "agent.message.final" || event.Kind == "run.completed" {
+			t.Fatalf("presentation became turn evidence: %s", event.Kind)
+		}
+	}
+	for _, kind := range []string{"agent.notice", "agent.context.compaction", "agent.session.state"} {
+		if !kinds[kind] {
+			t.Fatalf("missing neutral event %s", kind)
+		}
+	}
+}

@@ -17,11 +17,12 @@ type Client struct {
 	requestHandler RequestHandler
 	terminalErr    error
 
-	mu        sync.RWMutex
-	nextID    int64
-	pending   map[int64]chan *jsonRPCResponse
-	observers map[string]map[uint64]SessionObserver
-	nextObsID uint64
+	mu              sync.RWMutex
+	nextID          int64
+	pending         map[int64]chan *jsonRPCResponse
+	observers       map[string]map[uint64]SessionObserver
+	globalObservers map[uint64]SessionObserver
+	nextObsID       uint64
 
 	// protocolVersion is the version the agent agreed to in initialize. It is
 	// written once there and read by Authenticate and Logout, so it is guarded by
@@ -364,6 +365,9 @@ func (c *Client) ResumeSession(ctx context.Context, req ResumeSessionRequest) (*
 	if err := decodeOptionalResult(resp.Result, &res); err != nil {
 		return nil, fmt.Errorf("failed to decode session/resume response: %w", err)
 	}
+	if err := c.drainSessionNotifications(ctx, req.SessionID); err != nil {
+		return nil, err
+	}
 	return &res, nil
 }
 
@@ -405,6 +409,9 @@ func (c *Client) Prompt(ctx context.Context, req PromptRequest, observer Session
 	var res PromptResponse
 	if err := json.Unmarshal(resp.Result, &res); err != nil {
 		return nil, fmt.Errorf("failed to decode prompt response: %w", err)
+	}
+	if c.AuthenticatedProtocolVersion() >= ProtocolVersionV2 && res.MessageID == "" {
+		return nil, fmt.Errorf("ACP v2 prompt acknowledgement requires messageId")
 	}
 	if err := c.waitObserverIdle(ctx, req.SessionID, observer); err != nil {
 		return nil, err
@@ -454,7 +461,10 @@ func (c *Client) CancelRequest(ctx context.Context, req CancelRequestNotificatio
 
 func (c *Client) CloseSession(ctx context.Context, sessionID string) error {
 	_, err := c.doCall(ctx, "session/close", map[string]interface{}{"sessionId": sessionID})
-	return err
+	if err != nil {
+		return err
+	}
+	return c.drainSessionNotifications(ctx, sessionID)
 }
 
 func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {

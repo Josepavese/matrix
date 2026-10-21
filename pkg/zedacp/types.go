@@ -125,6 +125,8 @@ type ElicitationModeCapability struct {
 
 type ClientSessionCapabilities struct {
 	ConfigOptions *SessionConfigOptionsCapabilities `json:"configOptions,omitempty"`
+	Notices       *NoticeCapabilities               `json:"notices,omitempty"`
+	Compaction    *CompactionCapabilities           `json:"compaction,omitempty"`
 	Meta          map[string]interface{}            `json:"_meta,omitempty"`
 }
 
@@ -680,8 +682,22 @@ type SessionUpdate struct {
 	// ContentSet and ContentCleared describe how a message upsert's content
 	// field arrived. An omitted content leaves the stored message unchanged, an
 	// explicit null clears it, and an array replaces it.
-	ContentSet     bool `json:"-"`
-	ContentCleared bool `json:"-"`
+	ContentSet       bool            `json:"-"`
+	ContentCleared   bool            `json:"-"`
+	Severity         string          `json:"severity,omitempty"`
+	Description      string          `json:"description,omitempty"`
+	CompactionID     string          `json:"compactionId,omitempty"`
+	Summary          []Content       `json:"summary,omitempty"`
+	Error            json.RawMessage `json:"error,omitempty"`
+	TitleSet         bool            `json:"-"`
+	TitleCleared     bool            `json:"-"`
+	UpdatedAtSet     bool            `json:"-"`
+	UpdatedAtCleared bool            `json:"-"`
+	SummarySet       bool            `json:"-"`
+	SummaryCleared   bool            `json:"-"`
+	ErrorSet         bool            `json:"-"`
+	MetaSet          bool            `json:"-"`
+	MetaCleared      bool            `json:"-"`
 }
 
 // TurnTerminal reports the version 2 terminal signal: an idle state_update ends
@@ -709,11 +725,8 @@ func (u SessionUpdate) PlanEntries() []PlanEntry {
 type wireUpdate SessionUpdate
 
 func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
-	var wire struct {
-		*wireUpdate
-		Content json.RawMessage `json:"content,omitempty"`
-	}
-	wire.wireUpdate = (*wireUpdate)(u)
+	*u = SessionUpdate{}
+	wire := sessionUpdateWire{wireUpdate: (*wireUpdate)(u)}
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
@@ -721,15 +734,15 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 	u.ContentSet = len(wire.Content) > 0
 	u.ContentCleared = u.ContentSet && string(wire.Content) == "null"
 	u.Content, u.Contents, u.ToolContents = decodeUpdateContent(wire.Content)
-	return nil
+	return u.applyUpdateOptions(wire)
 }
 
 func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 	content := encodeUpdateContent(u.Content, u.Contents, u.ToolContents, u.RawContent)
 	if content == nil {
-		return json.Marshal(wireUpdate(u))
+		return u.marshalUpdatePatch(wireUpdate(u))
 	}
-	return json.Marshal(struct {
+	return u.marshalUpdatePatch(struct {
 		wireUpdate
 		Content interface{} `json:"content"`
 	}{wireUpdate(u), content})

@@ -32,14 +32,14 @@ func fetchCard(t *testing.T, url string) a2asdk.AgentCard {
 
 // TestMessageSendAnswersUnderTheNameTheSpecificationDefines drives message/send with
 // both the name the v1.0 JSON-RPC binding defines (SendMessage, §5.3 and §9.4.1) and
-// the slash-separated name of the 0.3 generation, which the ingress also accepts, and
+// the current v1 method name. Retired 0.3 aliases are rejected, and
 // asserts the response body: the terminal state, the artifact carrying the routed
 // answer, and the request message in the history.
 func TestMessageSendAnswersUnderTheNameTheSpecificationDefines(t *testing.T) {
 	router := &stubSessionRouter{}
 	server := newA2ATestServer(t, NewServer(router, "http://127.0.0.1:0", "opencode"))
 
-	for _, method := range []string{"SendMessage", "message/send"} {
+	for _, method := range []string{"SendMessage"} {
 		t.Run(method, func(t *testing.T) {
 			envelope := callRPC(t, server.URL, method, sendMessageParams("m-send", "count the files"))
 			task := envelope.requireTask(t, method)
@@ -207,7 +207,7 @@ func (r *silentTurnRouter) Route(_ context.Context, _ string, _ string, _ string
 //
 // The decision is the SDK wire type's, not the store's: both bindings marshal the
 // response with encoding/json (a2asrv/jsonrpc.go:361 and a2asrv/rest.go:206), and
-// a2a.Task.Artifacts carries `json:"artifacts,omitempty"` in a2a-go v2.5.0
+// a2a.Task.Artifacts carries `json:"artifacts,omitempty"` in a2a-go v2.7.0
 // (a2a/core.go:347), where omitempty means "empty slice", nil or not. Nothing
 // Matrix can put in the response - the store's result, an interceptor's payload -
 // can make the key appear without replacing the transport or the SDK's type, and
@@ -607,6 +607,7 @@ func restRequest(t *testing.T, method, url, body string) restAnswer {
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	req.Header.Set("A2A-Version", "1.0")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, url, err)
@@ -629,10 +630,10 @@ func restRequest(t *testing.T, method, url, body string) restAnswer {
 func TestNoAdvertisedMethodNameAnswersMethodNotFound(t *testing.T) {
 	server := newA2ATestServer(t, NewServer(&stubSessionRouter{}, "http://127.0.0.1:0", "opencode"))
 
-	for name := range specJSONRPCMethodNames {
+	for _, name := range []string{"SendMessage", "SendStreamingMessage", "GetTask", "ListTasks", "CancelTask", "SubscribeToTask", "CreateTaskPushNotificationConfig", "GetTaskPushNotificationConfig", "ListTaskPushNotificationConfigs", "DeleteTaskPushNotificationConfig", "GetExtendedAgentCard"} {
 		t.Run(name, func(t *testing.T) {
 			body := fmt.Sprintf(`{"jsonrpc":"2.0","id":"table-check","method":%q,"params":{}}`, name)
-			resp, err := http.Post(server.URL+"/a2a", "application/json", strings.NewReader(body))
+			resp, err := postCurrentA2A(server.URL+"/a2a", "application/json", strings.NewReader(body))
 			if err != nil {
 				t.Fatalf("post %s: %v", name, err)
 			}

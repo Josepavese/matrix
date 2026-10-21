@@ -127,6 +127,7 @@ func (p *acpV2Peer) streamLifecycleTurn(sessionID string) {
 // reports the terminal state after the configured delay so a caller can prove a
 // turn waits for the terminal signal instead of for a quiet moment.
 func (p *acpV2Peer) streamRichTurn(sessionID string) {
+	streamPresentationUpdates(sessionID)
 	writeSessionUpdate(sessionID, map[string]interface{}{
 		"sessionUpdate": "user_message",
 		"messageId":     userMessageID,

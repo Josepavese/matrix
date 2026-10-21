@@ -1,6 +1,6 @@
 # Matrix Zed ACP Protocol Tracking
 
-Last checked: 2026-07-19.
+Last checked: 2026-10-21.
 
 The combined ACP/A2A feature matrix now lives in
 [`protocol_coverage.md`](protocol_coverage.md). This file records ACP-specific
@@ -8,10 +8,10 @@ drift decisions.
 
 ## Source snapshot
 
-- Stable ACP v1 schema: `schema-v1.19.0`.
-- Protocol release: `v1.4.0`.
+- Stable ACP v1 schema: `schema-v1.26.0`.
+- Protocol release: `v1.12.0`.
 - Verified official repository commit:
-  `b06dc4b4e1c2dd9ab388847111bfee0a016782bd`.
+  `e2d83349bc9e28a4059ea3acefa1c91c966f74e2`.
 - Overview: https://agentclientprotocol.com/protocol/overview
 - Initialization: https://agentclientprotocol.com/protocol/v1/initialization
 - Transports: https://agentclientprotocol.com/protocol/v1/transports
@@ -60,3 +60,7 @@ Compare the official stable `schema.json` and `meta.json` method sets with:
 Any upstream replacement is a one-way migration: remove the superseded wire
 shape, runtime fallback, test fixture, and active documentation in the same
 change.
+
+Current notice/compaction, v2 patch/lifecycle and request-validation evidence is
+recorded in [the protocol coverage ledger](protocol_coverage.md). Schema release
+versions are distinct from the stable wire protocol version, which remains 1.

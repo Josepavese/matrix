@@ -150,13 +150,18 @@ func (c *Client) sessionObserverSnapshot(sessionID string, targets map[uint64]Se
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	registered := c.observers[sessionID]
-	observers := make(map[uint64]SessionObserver, len(registered))
+	observers := make(map[uint64]SessionObserver, len(registered)+len(c.globalObservers))
+	copyObserverTargets(observers, registered, targets)
+	copyObserverTargets(observers, c.globalObservers, targets)
+	return observers
+}
+
+func copyObserverTargets(out, registered, targets map[uint64]SessionObserver) {
 	for id, observer := range registered {
 		if observer != nil && (targets == nil || targets[id] != nil) {
-			observers[id] = observer
+			out[id] = observer
 		}
 	}
-	return observers
 }
 
 // waitObserverIdle drains both queues a session update travels through: the
