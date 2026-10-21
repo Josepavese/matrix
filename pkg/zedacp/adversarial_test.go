@@ -485,7 +485,7 @@ func TestObserverPanicDoesNotBreakDelivery(t *testing.T) {
 	defer client.Close()
 
 	panicking := &panickingObserver{}
-	recorder := &countingObserver{}
+	recorder := &recordingObserver{}
 	client.registerObserver("session-1", panicking)
 	client.registerObserver("session-1", recorder)
 
@@ -493,19 +493,9 @@ func TestObserverPanicDoesNotBreakDelivery(t *testing.T) {
 		transport.push(t, `{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"x"}}}}`)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		recorder.mu.Lock()
-		count := recorder.updates
-		recorder.mu.Unlock()
-		if count >= 3 {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	recorder.mu.Lock()
-	defer recorder.mu.Unlock()
-	t.Fatalf("a panicking observer stopped delivery, got %d updates", recorder.updates)
+	// Compatible chunks can share a callback. The safety contract is that all
+	// text reaches the healthy frontend despite the other frontend's panic.
+	waitForObserverText(t, "xxx", recorder)
 }
 
 type panickingObserver struct{}
