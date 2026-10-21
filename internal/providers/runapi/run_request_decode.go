@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/jsontype"
+	"github.com/Josepavese/matrix/internal/providers/runpayload"
 )
 
 // runRequestMaxBytes bounds the body of a run submission. The body is decoded
@@ -31,10 +32,13 @@ const runRequestMaxBytes = 1 << 20
 // broken body it does not have. The schema answer names the field and the type
 // the contract expects; neither answer echoes the body or a value from it.
 func writeRunRequestDecodeError(w http.ResponseWriter, err error) {
+	var inputErr *runpayload.ValidationError
 	var tooLarge *http.MaxBytesError
 	var syntaxErr *json.SyntaxError
 	var typeErr *json.UnmarshalTypeError
 	switch {
+	case errors.As(err, &inputErr):
+		http.Error(w, "Bad Request: "+inputErr.Error(), http.StatusBadRequest)
 	case errors.As(err, &tooLarge):
 		// Nothing can be said about the shape of a document that was never read
 		// to the end, so this is its own answer: the limit, and no claim about

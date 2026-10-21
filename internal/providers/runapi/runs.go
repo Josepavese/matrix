@@ -34,7 +34,7 @@ func (s *Server) startRun(req runRequest, agentID, runID string) (runtrace.Run, 
 		ChannelID:         req.ChannelID,
 		ExecutionMode:     normalizeRunExecutionMode(req.ExecutionMode),
 		InputRef:          "matrix://pending/input",
-		InputDigest:       runtrace.DigestString(req.Input.String()),
+		InputDigest:       req.Input.Digest(),
 		Context:           req.Context,
 		ClientMeta:        req.ClientMeta,
 		TracePolicy:       req.TracePolicy,
@@ -48,6 +48,7 @@ func (s *Server) startRun(req runRequest, agentID, runID string) (runtrace.Run, 
 	}
 	s.appendRouteEvents(run, req.AgentID, agentID, req.agentLaunchArgs)
 	s.appendSidecarEvents(run, req.SidecarCapsules)
+	s.appendInputEvidence(run, req.Input)
 	return run, nil
 }
 
@@ -103,6 +104,10 @@ func (s *Server) dispatchByExecutionMode(w http.ResponseWriter, r *http.Request,
 
 // runHTTPStatus maps a routed turn's failure to the status the caller sees.
 func runHTTPStatus(ctx context.Context, err error, emergencyTimeout time.Duration) int {
+	var inputErr *inputRefusal
+	if errors.As(err, &inputErr) {
+		return inputErr.status
+	}
 	var refusal *admission.Refusal
 	if errors.As(err, &refusal) {
 		switch refusal.Code {
@@ -233,6 +238,9 @@ type routeResult struct {
 
 func (s *Server) route(ctx context.Context, exec runExecution, prepared sessionSnapshot, notifier middleware.ThoughtNotifier) (routeResult, error) {
 	req := exec.req
+	if err := s.admitRunContent(ctx, req, exec.agentID); err != nil {
+		return routeResult{}, err
+	}
 	if richer, ok := s.router.(middleware.ConversationRequestRouter); ok {
 		output, err := richer.RouteConversation(ctx, middleware.ConversationRequest{
 			Capacity:              requestedCapacity(req),
@@ -242,6 +250,7 @@ func (s *Server) route(ctx context.Context, exec runExecution, prepared sessionS
 			WorkspaceID:           req.WorkspaceID,
 			WorkspacePath:         req.WorkspacePath,
 			Input:                 req.Input.String(),
+			ContentBlocks:         req.Input.Content,
 			ModelID:               req.ModelID,
 			FallbackModelID:       req.FallbackModelID,
 			SidecarCapsules:       req.SidecarCapsules,

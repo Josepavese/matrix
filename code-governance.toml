@@ -30,10 +30,10 @@ ratio_min_prod_loc = 80
 # These decode bytes arriving from outside the process, so they must carry a fuzz
 # target: a green example-based suite never finds the malformed case nobody
 # imagined.
-fuzz_required_packages = ["pkg/zedacp", "pkg/zedacpstdio", "internal/providers/agents", "internal/providers/telegram", "internal/providers/runapi"]
+fuzz_required_packages = ["internal/logic/strictjson", "internal/providers/runpayload", "pkg/zedacp", "pkg/zedacpstdio", "internal/providers/agents", "internal/providers/telegram", "internal/providers/runapi"]
 # These define a wire contract with a peer, so an in-process test is not enough:
 # they must carry an end-to-end test against a real or mock peer.
-interop_required_packages = ["internal/providers/agents"]
+interop_required_packages = ["internal/providers/runapi", "internal/providers/agents"]
 
 # 2026-09-22: down to the two exemptions that describe a real limitation of the
 # environment rather than a choice. The CLI and the mock agent were removed from
@@ -321,7 +321,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # and the decoder entry point purely to satisfy the number, which is a worse
 # debt than a raised ceiling. Splitting is the remedy for file, function,
 # parameter and branch budgets; this is a package ceiling.
-"internal/providers/runapi" = 2691
+# 2026-10-22: typed run ingress, capability admission and content manifest;
+# measured package growth only, no file/function/branch ceiling is relaxed.
+"internal/providers/runapi" = 2779
 # 2026-09-21: the Telegram channel gained the elicitation frontend — prompt
 # rendering, inline-keyboard building, callback routing, answer coercion and
 # session-to-chat correlation — split across focused files (elicitation.go,

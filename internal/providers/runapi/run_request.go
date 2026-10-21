@@ -1,7 +1,6 @@
 package runapi
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,6 +8,7 @@ import (
 	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/runconfig"
 	"github.com/Josepavese/matrix/internal/logic/sidecar"
+	"github.com/Josepavese/matrix/internal/logic/strictjson"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -18,11 +18,11 @@ func decodeRunRequest(w http.ResponseWriter, r *http.Request) (runRequest, bool)
 	// its own case by writeRunRequestDecodeError, not as one of the json failures.
 	r.Body = http.MaxBytesReader(w, r.Body, runRequestMaxBytes)
 	var req runRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := strictjson.Decode(r.Body, &req); err != nil {
 		writeRunRequestDecodeError(w, err)
 		return runRequest{}, false
 	}
-	if strings.TrimSpace(req.ChannelID) == "" || strings.TrimSpace(req.Input.String()) == "" {
+	if strings.TrimSpace(req.ChannelID) == "" || req.Input.Empty() {
 		http.Error(w, "Bad Request: channel_id and input are required", http.StatusBadRequest)
 		return runRequest{}, false
 	}

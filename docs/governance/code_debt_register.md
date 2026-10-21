@@ -229,3 +229,12 @@ Reduction strategy:
 - Causal tests cover cancellation, terminal reconciliation, cross-session tool
   IDs, bounded stderr, concurrent late enable and native Unix notification
   delivery. These ceilings are measured limits, not spare growth allowance.
+
+## 2026-10-22 — typed run ingress
+
+The run API grows from 2691 to 2779 measured production LOC to add governed
+content admission and a byte-free manifest. Parsing/image policy stays in the
+payload owner and strict JSON validation in a pure shared logic package. Only
+the measured package ceiling changes; file/function/branch limits are unchanged.
+All quality warnings remain zero. Native PAL includes these contracts on all
+three supported operating systems.

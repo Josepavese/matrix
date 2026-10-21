@@ -10,6 +10,16 @@ state gestite e conservate in [closed/](closed/).
 Questo file è un indice, non una segnalazione aperta. Qualifiche esterne e limiti
 accettati sono espliciti nel riepilogo; l'archiviazione non li certifica risolti.
 
+## Revisione del 22 ottobre 2026
+
+- [Input multimodale dei run e validazione rigorosa](2026-10-22-external-vicky-rich-run-input.md):
+  **accolta e aperta**. Riprodotti scarto silenzioso delle immagini, identità del
+  payload normalizzato per immagini diverse, accettazione di campi sconosciuti,
+  duplicati e documenti JSON aggiuntivi. Priorità alla correttiva d'ingresso;
+  evolutiva generica tramite i contratti rich esistenti, senza bypass del run.
+  Implementazione e prove native Matrix→OpenCode→DeepSeek completate;
+  pubblicazione e installazione in corso nel goal corrente.
+
 ## Revisione del 21 ottobre 2026
 
 Verificati `issues/`, `improvements/issues/`, gli audit/debiti in

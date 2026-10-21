@@ -35,7 +35,7 @@ func (s *Server) HandleRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	evidence, identityErr := s.applyRunWorkspaceIdentity(&req)
 	agentID := firstNonEmpty(req.AgentID, s.defaultAgent)
-	if !s.prepareRunAgentConfig(w, &req, agentID) {
+	if !s.prepareRunAgentConfig(w, &req, agentID) || !s.prepareRunInput(w, req) {
 		return
 	}
 	run, ok := s.acceptNewRun(w, r, req, agentID)

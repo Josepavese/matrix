@@ -98,7 +98,7 @@ curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs \
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `channel_id` | string | Yes | Stable caller/channel id, for example `docs.http` |
-| `input` | string or object | Yes | The task body to send to the agent. Structured form is `{ "text": "..." }` |
+| `input` | string or object | Yes | The task body to send to the agent. Structured form is `{ "text": "...", "content": [...] }`; text-only compact input remains supported |
 | `execution_mode` | string | No | Execution mode: `sync` (default), `async`, `stream` |
 | `agent_id` | string | No | Target agent (defaults to the configured default agent) |
 | `model_id` | string | No | Request this ACP session model. Matrix uses the provider's ACP model setting (`session/set_config_option` on v1 or `session/set_model` on v2) before the prompt and fails if rejected. The trace records `requested_model`; `model_verification=unverified` means the provider did not attest its effective model |
@@ -114,6 +114,70 @@ curl -H "X-Matrix-Key: $MATRIX_API_KEY" -X POST http://127.0.0.1:9091/v1/runs \
 | `trace_policy` | object | No | Export policy for `/trace`; supports `content_mode`, `redaction_profile`, and `include_protocol_meta` |
 | `emergency_kill_seconds` | number | No | Explicit wall-clock emergency fuse. Omitted means no hard run timeout |
 | `activity_timeout_seconds` | number | No | Explicit idle-progress watchdog. Omitted means no activity timeout; when set, no agent/tool activity for this duration cancels the run with `activity_timeout` |
+
+#### Typed inline input
+
+A run accepts text and typed content through the same governed session path:
+
+```json
+{
+  "channel_id": "document-review",
+  "agent_id": "selected-agent",
+  "model_id": "selected-model",
+  "input": {
+    "text": "Describe the attached image",
+    "content": [
+      {"type": "image", "mimeType": "image/png", "data": "<canonical-base64>",
+       "_meta": {"source_sha256": "<source-digest>", "page": 1, "revision": "r1"}}
+    ]
+  }
+}
+```
+
+`input.content` is an ordered array of neutral Matrix content blocks. Supported
+blocks are nonempty `text` and inline `image` with PNG or JPEG bytes matching the
+MIME. An image-only turn is allowed. `uri`, resource/file references, extra block
+fields and other content types are refused; Matrix does not fetch images or read
+paths. Image input requires explicit `model_id`, a rich router and an agent that
+advertises image support. Missing capability evidence is a refusal, never a
+text-only fallback. Live capability checks run inside the governed execution,
+under its deadlines and cleanup, before a model prompt. Idempotent replays do
+not probe or start clients. Sync requests report capability refusals directly;
+async/stream callers must read the failed terminal outcome. Provider/model
+errors remain failures of the governed run.
+
+The payload owner (`internal/providers/runpayload/validation.go`) defines the
+limits: 16 content blocks, 512 KiB decoded image bytes per image and in total,
+8192 pixels per dimension and 4,194,304 pixels per image. The existing total run
+HTTP body limit remains 1 MiB, including base64 expansion and all other fields.
+Malformed/truncated images, mismatched MIME and noncanonical base64 are rejected
+before dispatch. Bounds apply on Linux, macOS and Windows without native drivers.
+
+The entire request is strict JSON: unknown/noncanonical field names, duplicate
+keys (including in arrays/maps) and additional documents are rejected. This also
+applies inside `input`; arbitrary keys remain valid only in declared metadata
+maps. The body is never echoed in validation errors.
+
+`InputDigest` and keyed request identity include all typed content, ordering,
+bytes and metadata. Caller source SHA/page/revision may be carried in block
+`_meta` or the existing `context` references; they remain caller assertions, not
+Matrix verification of source provenance. A changed image or source binding
+conflicts on a reused idempotency key. Text-only compact/structured spellings
+normalize to one identity.
+
+`input.content.accepted` records the input digest and per-block type, MIME,
+decoded byte count and SHA256. It does not copy image data or `_meta` into
+notifications or the content manifest. Bytes are held only by the in-flight run
+and its protocol prompt; there is no persistent Matrix blob upload store and no
+automatic prompt replay after restart. Provider session retention follows the
+selected session/cleanup policy. Explicit raw protocol logging remains sensitive.
+
+Transport admission and model identity confirmation do **not** prove vision.
+The manifest reports `model_content_verification=unverified`; a real visual task
+must independently establish interpretation by the selected model. ACP's agent
+image capability is not a per-model capability declaration. Channel/session,
+model pin, trace, outcome, deadlines, cancellation and cleanup retain the normal
+run contract. Qualify any external consumer separately against the release.
 
 `Idempotency-Key` is an optional request header (maximum 128 bytes). Its scope
 is `channel_id`. A retry with the same key and normalized request returns the
