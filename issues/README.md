@@ -12,13 +12,13 @@ accettati sono espliciti nel riepilogo; l'archiviazione non li certifica risolti
 
 ## Revisione del 22 ottobre 2026
 
-- [Input multimodale dei run e validazione rigorosa](2026-10-22-external-vicky-rich-run-input.md):
-  **accolta e aperta**. Riprodotti scarto silenzioso delle immagini, identità del
+- [Input multimodale dei run e validazione rigorosa](closed/2026-10-22-external-vicky-rich-run-input.md):
+  **implementata e chiusa in v0.1.59**. Riprodotti scarto silenzioso delle immagini, identità del
   payload normalizzato per immagini diverse, accettazione di campi sconosciuti,
   duplicati e documenti JSON aggiuntivi. Priorità alla correttiva d'ingresso;
   evolutiva generica tramite i contratti rich esistenti, senza bypass del run.
-  Implementazione e prove native Matrix→OpenCode→DeepSeek completate;
-  pubblicazione e installazione in corso nel goal corrente.
+  Prove native e sull’artefatto installato Matrix→OpenCode→DeepSeek positive;
+  release verificata, installazione locale e readiness strict completate.
 
 ## Revisione del 21 ottobre 2026
 

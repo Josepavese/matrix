@@ -207,3 +207,25 @@ Il test reale richiede esplicitamente URL runtime, credenziale, agente e modello
 lo skip ordinario di CI non è presentato come qualifica reale. Nessun workflow
 VICKY/VPS eseguito o modificato. La qualifica del verticale resta al team esterno.
 Riferimento operativo generico: `docs/wiki/API-Reference.md`, Typed inline input.
+
+
+## Chiusura maintainer — 22 ottobre 2026
+
+**Implementata, rilasciata e installata localmente in v0.1.59.**
+La decisione di apertura sopra resta la cronologia della valutazione iniziale.
+
+CI e PAL sui contratti modificati sono verdi sulla sorgente esatta
+`2f10dd98c217ad14344172514213b572661ba69b`; release e 88 controlli pubblici
+passati. Upgrade isolato conserva i byte di Vault/configurazione; servizio
+locale aggiornato con sette configurazioni invariate e binari installato/in
+esecuzione identici all'artefatto verificato.
+
+Anche dall'artefatto ufficiale installato le due immagini sintetiche sono
+riconosciute correttamente, con modello confermato, nessun fallback e cleanup
+forte. Sette negativi HTTP reali sono rifiutati prima del prompt, senza eco
+input. Readiness strict: `ready`, zero warning/blocker e probe autenticato.
+
+Dettagli, hash, run e limiti Windows esterni al delta sono nel
+[ledger v0.1.59](../../docs/governance/releases/2026-10-22-v0.1.59.md).
+La qualifica del pacchetto Hub/VPS resta al team esterno, senza attribuirle le
+prove locali. Nessun requisito specifico del verticale entra nel prodotto.
