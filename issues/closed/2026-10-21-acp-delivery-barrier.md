@@ -44,3 +44,19 @@ provider/progetto, recupero da cronologia privata o fallback di modello.
   di 1.27.2: il gate usa il toolchain dichiarato dal repo.
 - Stato CI, tag pubblico e installazione:
   [verbale v0.1.55](../../docs/governance/releases/2026-10-21-v0.1.55.md).
+
+## Follow-up sul runtime installato
+
+Il primo collaudo completo v0.1.55, run
+`run-dd8a0538-323f-4f72-988d-e543b08642c0`, ha prodotto l'errore esplicito
+`provider_runtime_failed` / `acp notification delivery overflow`, dopo 190
+aggiornamenti osservati. Non è una prova positiva e non identifica la causa
+storica VICKY. La protezione rende visibile la saturazione precedentemente
+silenziosa, ma occorre anche gestire il flusso reale di token.
+
+La correzione successiva accorpa solo chunk testuali adiacenti con identità e
+metadati identici. Limiti indipendenti su byte e aggiornamenti distinti; RPC
+sempre leggibile, testo e whitespace conservati, nessuna fusione fra reasoning,
+risposta, fasi o turni. Prova a 2.048 chunk e prova OpenCode reale con callback
+rallentato di 300 ms: finale di 14 campi consegnato in 108,38 s.
+Consegna e collaudo installato nel [verbale v0.1.56](../../docs/governance/releases/2026-10-21-v0.1.56.md).

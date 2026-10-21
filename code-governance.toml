@@ -341,7 +341,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # values with a small margin, and the ceiling stays shared. File, function,
 # parameter and branch budgets are NOT raised here - those are quality
 # constraints and are met by splitting.
-"pkg/zedacp" = 2000
+# 2026-10-21: bounded byte-accounted text coalescing adds the queue owner,
+# correlation barriers and lossless raw-content merge. Measured production LOC;
+# file/function/branch limits remain unchanged.
+"pkg/zedacp" = 2112
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390

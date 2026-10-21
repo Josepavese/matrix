@@ -41,7 +41,15 @@ func TestRealACPFinalDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	capture := &modelReceiptCapture{}
+	delay := time.Duration(0)
+	if raw := os.Getenv("MATRIX_TEST_ACP_DELIVERY_NOTIFIER_DELAY"); raw != "" {
+		var err error
+		delay, err = time.ParseDuration(raw)
+		if err != nil || delay <= 0 {
+			t.Fatal("invalid notifier delay")
+		}
+	}
+	capture := &deliveryReceiptCapture{modelReceiptCapture: &modelReceiptCapture{}, delay: delay}
 	result, err := client.ExecuteTurn(ctx, middleware.ConversationTurn{
 		AgentID: "delivery-probe", ModelID: model, LogicalSessionID: "delivery-probe", WorkspacePath: workspace, Message: prompt,
 		ThoughtNotifier: capture,
@@ -66,3 +74,10 @@ func TestRealACPFinalDelivery(t *testing.T) {
 	t.Logf("remote_session=%s stop_reason=%s final_bytes=%d final_sha256=%s fields=%d model_receipt=%v",
 		result.RemoteSessionID, result.StopReason, len(result.Output), hex.EncodeToString(sum[:]), len(proposal.Fields), capture.receipts[0])
 }
+
+type deliveryReceiptCapture struct {
+	*modelReceiptCapture
+	delay time.Duration
+}
+
+func (c *deliveryReceiptCapture) OnThought(middleware.ThoughtUpdate) { time.Sleep(c.delay) }

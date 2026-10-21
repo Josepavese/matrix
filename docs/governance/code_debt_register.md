@@ -18,6 +18,11 @@ Current allowed baseline:
 
 Latest budget realignment:
 
+- 2026-10-21: the SDK gains byte-accounted notification coalescing with explicit
+  ownership, cancellation boundaries and raw-content preservation. Measured
+  `pkg/zedacp` baseline is 2112 LOC; the existing file/function/branch limits
+  and zero-warning requirement remain unchanged. Compatible text deltas may
+  share one callback; exact text, order, message identity and metadata survive.
 - 2026-08-04: provider launch policy gained a generic adapter registry, a
   Codex `codex-acp-env-v1` mapping, fail-closed doctor/trace evidence, and exact
   ACP mode enforcement across new/resume/load. `cmd/matrix` and

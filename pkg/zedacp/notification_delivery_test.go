@@ -71,7 +71,7 @@ func TestPromptWaitsForSlowDeliveryBeforeUnregister(t *testing.T) {
 func TestPromptRejectsNotificationOverflow(t *testing.T) {
 	client, _, _, done := heldPrompt(t)
 	for i := 0; i < notificationQueueBuffer+1; i++ {
-		client.handleNotification(sessionUpdateResponse(t, "s", "chunk"))
+		client.enqueueSessionUpdate(SessionNotification{SessionID: "s", Update: SessionUpdate{SessionUpdate: "tool_call_update"}}, 1)
 	}
 	select {
 	case err := <-done:

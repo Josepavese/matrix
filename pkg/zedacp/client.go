@@ -128,7 +128,7 @@ func (c *Client) handleNotification(notif *jsonRPCResponse) {
 			if update.SessionID != "" {
 				// Hand off and return: observers may do network I/O, and the
 				// read loop must stay free to correlate JSON-RPC responses.
-				c.enqueueSessionUpdate(update)
+				c.enqueueSessionUpdate(update, len(notif.Params))
 			}
 		}
 	}

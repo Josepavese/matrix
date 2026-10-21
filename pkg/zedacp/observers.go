@@ -12,8 +12,8 @@ import (
 const responseObserverDrainIdle = 250 * time.Millisecond
 
 // notificationQueueBuffer bounds the per-session notification backlog. A slow
-// consumer fails the connection rather than silently losing turn evidence or
-// stalling JSON-RPC response correlation on the read loop.
+// compatible text chunks coalesce; distinct updates remain ordered. Overflow
+// fails explicitly without stalling JSON-RPC correlation on the read loop.
 const notificationQueueBuffer = 256
 
 // ErrNotificationOverflow means the peer's stream could not be delivered in
@@ -23,34 +23,14 @@ var ErrNotificationOverflow = errors.New("acp notification delivery overflow")
 // notificationDrainPoll is how often a drain waits for the queue to empty.
 const notificationDrainPoll = time.Millisecond
 
-// sessionNotifications is the ordered delivery queue for one session. Updates
-// are handed to observers on its own worker so a channel frontend that performs
-// network I/O — the Telegram notifier does exactly that — cannot block JSON-RPC
-// response correlation on the read loop.
-type sessionNotifications struct {
-	queue   chan observedNotification
-	pending atomic.Int64
-}
-
-// Observer registrations belong to a turn. A queued update must never migrate
-// to the next turn's observer when cancellation removes its original owner.
-type observedNotification struct {
-	update    SessionNotification
-	observers map[uint64]SessionObserver
-}
-
 // enqueueSessionUpdate hands an update to the session's worker without waiting.
-func (c *Client) enqueueSessionUpdate(update SessionNotification) {
+func (c *Client) enqueueSessionUpdate(update SessionNotification, size int) {
 	targets := c.sessionObserverSnapshot(update.SessionID, nil)
 	if len(targets) == 0 {
 		return
 	}
 	queue := c.sessionNotificationQueue(update.SessionID)
-	queue.pending.Add(1)
-	select {
-	case queue.queue <- observedNotification{update: update, observers: targets}:
-	default:
-		queue.pending.Add(-1)
+	if !queue.enqueue(observedNotification{update: update, observers: targets, bytes: size}) {
 		c.fail(ErrNotificationOverflow)
 	}
 }
@@ -65,7 +45,7 @@ func (c *Client) sessionNotificationQueue(sessionID string) *sessionNotification
 	if existing, ok := c.notifyQueues[sessionID]; ok {
 		return existing
 	}
-	queue := &sessionNotifications{queue: make(chan observedNotification, notificationQueueBuffer)}
+	queue := &sessionNotifications{ready: make(chan struct{}, 1)}
 	c.notifyQueues[sessionID] = queue
 	// A client built without NewClient has no context: fall back to one that
 	// never cancels rather than panicking on a nil dereference.
@@ -84,9 +64,11 @@ func (c *Client) dispatchSessionUpdates(ctx context.Context, _ string, queue *se
 		select {
 		case <-ctx.Done():
 			return
-		case update := <-queue.queue:
-			c.deliverSessionUpdate(update)
-			queue.pending.Add(-1)
+		case <-queue.ready:
+			if update, ok := queue.take(); ok {
+				c.deliverSessionUpdate(update)
+				queue.delivered(update)
+			}
 		}
 	}
 }

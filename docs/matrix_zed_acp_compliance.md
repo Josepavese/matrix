@@ -54,6 +54,13 @@ turn. For ACP v2, connection failure also interrupts the wait after prompt
 acknowledgement. Matrix does not recover answers from a harness's private
 database/API or substitute reasoning for final output.
 
+Adjacent compatible text chunks may share one observer callback. Their exact
+text and whitespace are concatenated in receive order; message IDs, phases,
+metadata, content annotations and observer registrations are merge barriers.
+Opaque content extensions survive in `RawContent`. Distinct updates remain
+limited to 256 queued entries and retained input bytes, including a callback in
+flight, to the transport's 32 MiB frame budget. Control/tool updates never merge.
+
 ## Capability rules
 
 - Text and `resource_link` are baseline prompt types.
