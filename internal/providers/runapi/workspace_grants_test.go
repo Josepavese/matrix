@@ -26,8 +26,8 @@ func testGit(t *testing.T, args ...string) {
 }
 
 func TestWorkspaceGrantAPIAndRunPreflight(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "repo")
-	linked := filepath.Join(t.TempDir(), "linked")
+	root := filepath.Join(canonicalRunTestDir(t), "repo")
+	linked := filepath.Join(canonicalRunTestDir(t), "linked")
 	testGit(t, "init", "-q", root)
 	testGit(t, "-C", root, "-c", "user.name=Matrix", "-c", "user.email=matrix@example.invalid", "commit", "-q", "--allow-empty", "-m", "seed")
 	testGit(t, "-C", root, "worktree", "add", "-q", "-b", "linked", linked)
@@ -60,7 +60,7 @@ func TestWorkspaceGrantAPIAndRunPreflight(t *testing.T) {
 		t.Fatalf("granted run failed to reach provider: %d %s", w.Code, w.Body.String())
 	}
 	router.lastConversation = middleware.ConversationRequest{}
-	foreign := filepath.Join(t.TempDir(), "foreign")
+	foreign := filepath.Join(canonicalRunTestDir(t), "foreign")
 	testGit(t, "init", "-q", foreign)
 	err := server.requireWorkspaceGrant(context.Background(), runRequest{WorkspacePath: foreign, WorkspacePolicy: "require_grant"})
 	failure, ok := providerfailure.As(err)
@@ -95,4 +95,15 @@ func TestWorkspaceGrantAPIAndRunPreflight(t *testing.T) {
 	if err := server.requireWorkspaceGrant(context.Background(), runRequest{WorkspacePath: linked, WorkspacePolicy: "require_grant"}); err == nil {
 		t.Fatal("revoked worktree grant still accepted")
 	}
+}
+
+// Approval fixtures use the real native directory; the host temp parent may be
+// an alias (/var on macOS, or a short Windows name). Symlink rejection is unchanged.
+func canonicalRunTestDir(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
 }

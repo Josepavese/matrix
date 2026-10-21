@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -429,9 +430,11 @@ func TestHandleRuns_RejectsReasoningEffortForNonCodexAgent(t *testing.T) {
 }
 
 func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.T) {
+	workspacePath := filepath.Join(t.TempDir(), "eval-ws")
+	libraryPath := filepath.Join(t.TempDir(), "eval-lib")
 	router := &runTestRouter{
 		reconcile: &middleware.AgentClientReconcileResult{
-			Reaped: []middleware.AgentClientRef{{AgentID: "opencode", WorkspacePath: "/tmp/eval-ws"}},
+			Reaped: []middleware.AgentClientRef{{AgentID: "opencode", WorkspacePath: workspacePath}},
 		},
 	}
 	server := NewServer(router).WithTraceStorage(memstore.New())
@@ -442,8 +445,8 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 		"channel_id":             "noema-eval-channel-random",
 		"agent_id":               "opencode",
 		"input":                  "run eval",
-		"workspace_path":         "/tmp/eval-ws",
-		"additional_directories": []string{"/tmp/eval-lib", "/tmp/eval-lib"},
+		"workspace_path":         workspacePath,
+		"additional_directories": []string{libraryPath, libraryPath},
 		"session_policy":         middleware.SessionPolicyNewEphemeralDeleteAfterRun,
 		"cleanup_policy":         middleware.SessionCleanupPolicyDeleteRemoteOrForgetLocal,
 	})
@@ -454,10 +457,10 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
-	if router.lastConversation.WorkspacePath != "/tmp/eval-ws" {
+	if router.lastConversation.WorkspacePath != workspacePath {
 		t.Fatalf("expected workspace path routed, got %q", router.lastConversation.WorkspacePath)
 	}
-	if got := router.lastConversation.AdditionalDirectories; len(got) != 1 || got[0] != "/tmp/eval-lib" {
+	if got := router.lastConversation.AdditionalDirectories; len(got) != 1 || got[0] != libraryPath {
 		t.Fatalf("expected normalized additional directories routed, got %#v", got)
 	}
 	if len(router.sessionActions) < 3 {
@@ -475,7 +478,7 @@ func TestHandleRuns_NewEphemeralDeleteAfterRunCreatesCleansAndTraces(t *testing.
 	if newAction == nil || !newAction.Ephemeral {
 		t.Fatalf("expected ephemeral new action, got %+v", router.sessionActions)
 	}
-	if got := newAction.AdditionalDirectories; len(got) != 1 || got[0] != "/tmp/eval-lib" {
+	if got := newAction.AdditionalDirectories; len(got) != 1 || got[0] != libraryPath {
 		t.Fatalf("expected additional directories on prepared session action, got %#v", got)
 	}
 	cleanupAction := lastSessionAction(router.sessionActions, "cleanup")
@@ -624,6 +627,7 @@ func TestHandleRuns_EphemeralCleanupFailsRetainedRunScopedChild(t *testing.T) {
 }
 
 func TestHandleRuns_ProjectsStructuralToolEventsFromRouteNotifier(t *testing.T) {
+	toolPath := filepath.Join(t.TempDir(), "matrix_contract.go")
 	router := &runTestRouter{
 		routeThoughts: []middleware.ThoughtUpdate{
 			{
@@ -636,7 +640,7 @@ func TestHandleRuns_ProjectsStructuralToolEventsFromRouteNotifier(t *testing.T) 
 					"tool_kind":          "edit",
 					"status":             "pending",
 					"raw_input": map[string]interface{}{
-						"path": "/tmp/noema_matrix_contract.go",
+						"path": toolPath,
 					},
 				},
 			},
@@ -649,7 +653,7 @@ func TestHandleRuns_ProjectsStructuralToolEventsFromRouteNotifier(t *testing.T) 
 					"tool_kind":          "edit",
 					"status":             "completed",
 					"raw_input": map[string]interface{}{
-						"path": "/tmp/noema_matrix_contract.go",
+						"path": toolPath,
 					},
 				},
 			},
@@ -691,7 +695,7 @@ func TestHandleRuns_ProjectsStructuralToolEventsFromRouteNotifier(t *testing.T) 
 	if requested == nil || completed == nil {
 		t.Fatalf("expected tool events in public run trace: %#v", trace.Events)
 	}
-	if requested.ToolKind != "edit" || completed.Outputs["path"] != "/tmp/noema_matrix_contract.go" {
+	if requested.ToolKind != "edit" || completed.Outputs["path"] != toolPath {
 		t.Fatalf("unexpected structural projection: requested=%#v completed=%#v", requested, completed)
 	}
 }

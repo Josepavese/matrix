@@ -76,7 +76,7 @@ func waitForTerminalRun(t *testing.T, server *Server, runID string) runtrace.Tra
 // that names only workspace_id used to be refused with matrix_workspace_not_granted
 // because the grant was evaluated on the empty path the caller left out.
 func TestWorkspaceGrantAcceptsBothEntrypointsOnTheSameGrant(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "repo")
+	root := filepath.Join(canonicalRunTestDir(t), "repo")
 	testGit(t, "init", "-q", root)
 	testGit(t, "-C", root, "-c", "user.name=Matrix", "-c", "user.email=matrix@example.invalid", "commit", "-q", "--allow-empty", "-m", "seed")
 	router := &runTestRouter{}
@@ -115,8 +115,8 @@ func TestWorkspaceGrantAcceptsBothEntrypointsOnTheSameGrant(t *testing.T) {
 // The grant is evaluated on the canonical path of the workspace the id names, so
 // an unregistered directory stays refused through both entrypoints.
 func TestWorkspaceGrantRefusesAPathOutsideTheGrant(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "repo")
-	foreign := filepath.Join(t.TempDir(), "foreign")
+	root := filepath.Join(canonicalRunTestDir(t), "repo")
+	foreign := filepath.Join(canonicalRunTestDir(t), "foreign")
 	testGit(t, "init", "-q", root)
 	testGit(t, "init", "-q", foreign)
 	router := &runTestRouter{}
