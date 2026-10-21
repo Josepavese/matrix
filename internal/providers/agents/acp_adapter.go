@@ -173,37 +173,24 @@ func (c *acpConversationClient) executeTurnOnce(ctx context.Context, turn middle
 		log.Warn("ACP session lost, recreating", "agent_session", remoteSessionID)
 		return c.retryTurnWithFreshSession(ctx, turn)
 	}
+	if err == nil {
+		err = c.finishTurn(ctx, turnObs)
+	}
+	result := middleware.ConversationResult{
+		Output: obs.GetContent(), ContentBlocks: obs.ContentBlocks(),
+		RemoteSessionID: remoteSessionID, Metadata: obs.Metadata(),
+	}
 	if err != nil {
-		return middleware.ConversationResult{
-			Output:          obs.GetContent(),
-			ContentBlocks:   obs.ContentBlocks(),
-			RemoteSessionID: remoteSessionID,
-			Metadata:        obs.Metadata(),
-		}, classifyProviderFailure(turn.AgentID, c.endpoint, "session/prompt", fmt.Errorf("ACP prompt failed: %w", err))
+		return result, classifyProviderFailure(turn.AgentID, c.endpoint, "session/prompt", fmt.Errorf("ACP prompt failed: %w", err))
 	}
 
-	if turnObs.terminal {
-		// The prompt response acknowledges insertion; the turn ends on the idle
-		// state update, which may still be coming. Wait for it, and record the
-		// timeout in the result when it never arrives rather than returning a
-		// partial answer that looks complete.
-		if budget := acpV2TurnBudget(); !obs.AwaitTerminal(ctx, budget) {
-			log.Warn("ACP v2 turn ended without a terminal state update",
-				"event", "acp_v2_turn_budget_exhausted", "agent_session", remoteSessionID, "budget", budget)
-		}
-	} else {
-		obs.WaitIdle(ctx, acpV1QuietWindow())
-	}
-	stopReason := resolveTurnStopReason(resp.StopReason, turnObs.stopReason)
+	observedReason, _ := obs.terminalState()
+	stopReason := resolveTurnStopReason(resp.StopReason, observedReason)
 	reportTurnStopReason(turn, stopReason)
-	return middleware.ConversationResult{
-		Output:          obs.GetContent(),
-		ContentBlocks:   obs.ContentBlocks(),
-		RemoteSessionID: remoteSessionID,
-		ToolCalls:       fromZedACPToolCalls(resp.ToolCalls),
-		Metadata:        metadataWithStopReason(obs.Metadata(), stopReason),
-		StopReason:      stopReason,
-	}, nil
+	result.ToolCalls = fromZedACPToolCalls(resp.ToolCalls)
+	result.Metadata = metadataWithStopReason(result.Metadata, stopReason)
+	result.StopReason = stopReason
+	return result, nil
 }
 
 // reportTurnStopReason tells the run's notifier what the peer said ended the

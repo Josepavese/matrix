@@ -40,9 +40,19 @@ The ACP package and adapter cover every stable v1 method in both directions:
 `session/set_mode` remains a separate stable ACP operation and is used when a
 session exposes modes instead.
 
-`session/update` remains authoritative for streamed output. Matrix keeps the
-observer registered through a short post-response idle drain because a provider
-may emit the final update immediately after the prompt response.
+`session/update` remains authoritative for streamed output. Before returning
+from prompt/load, Matrix delivers the updates already received, bounded by the
+caller context and connection lifetime. A short idle observation also accepts
+updates arriving immediately after the response; it never truncates a queued
+final just because an observer took more than 250 ms.
+
+The per-session delivery queue is bounded. Overflow fails the connection with
+`acp notification delivery overflow`; partial output cannot turn that failure
+into success. Existing calls sharing that connection fail, and new calls are
+refused. Canceled observer registrations cannot pass queued updates to the next
+turn. For ACP v2, connection failure also interrupts the wait after prompt
+acknowledgement. Matrix does not recover answers from a harness's private
+database/API or substitute reasoning for final output.
 
 ## Capability rules
 

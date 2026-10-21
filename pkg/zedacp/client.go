@@ -34,11 +34,11 @@ type Client struct {
 	notifyQueues map[string]*sessionNotifications
 
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 }
 
 func NewClient(ctx context.Context, transport Transport) *Client {
-	cctx, cancel := context.WithCancel(ctx)
+	cctx, cancel := context.WithCancelCause(ctx)
 	client := &Client{
 		transport: transport,
 		pending:   make(map[int64]chan *jsonRPCResponse),
@@ -55,7 +55,7 @@ func (c *Client) Context() context.Context {
 }
 
 func (c *Client) Close() error {
-	c.cancel()
+	c.cancel(nil)
 	return c.transport.Close()
 }
 
@@ -135,6 +135,9 @@ func (c *Client) handleNotification(notif *jsonRPCResponse) {
 }
 
 func (c *Client) doCall(ctx context.Context, method string, params interface{}) (*jsonRPCResponse, error) {
+	if err := c.deliveryError(ctx); err != nil {
+		return nil, err
+	}
 	id := atomic.AddInt64(&c.nextID, 1)
 	paramsBytes, err := json.Marshal(params)
 	if err != nil {
@@ -163,15 +166,9 @@ func (c *Client) doCall(ctx context.Context, method string, params interface{}) 
 
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, context.Cause(ctx)
 	case <-c.ctx.Done():
-		c.mu.RLock()
-		terminalErr := c.terminalErr
-		c.mu.RUnlock()
-		if terminalErr != nil {
-			return nil, terminalErr
-		}
-		return nil, fmt.Errorf("client context cancelled")
+		return nil, c.deliveryError(ctx)
 	case resp := <-ch:
 		if resp.Error != nil {
 			return nil, rpcErrorFromWire(resp.Error)
@@ -352,7 +349,9 @@ func (c *Client) LoadSession(ctx context.Context, req LoadSessionRequest, observ
 	if err := decodeOptionalResult(resp.Result, &res); err != nil {
 		return nil, fmt.Errorf("failed to decode session/load response: %w", err)
 	}
-	c.waitObserverIdle(ctx, req.SessionID, observer)
+	if err := c.waitObserverIdle(ctx, req.SessionID, observer); err != nil {
+		return nil, err
+	}
 	return &res, nil
 }
 
@@ -407,7 +406,9 @@ func (c *Client) Prompt(ctx context.Context, req PromptRequest, observer Session
 	if err := json.Unmarshal(resp.Result, &res); err != nil {
 		return nil, fmt.Errorf("failed to decode prompt response: %w", err)
 	}
-	c.waitObserverIdle(ctx, req.SessionID, observer)
+	if err := c.waitObserverIdle(ctx, req.SessionID, observer); err != nil {
+		return nil, err
+	}
 	return &res, nil
 }
 

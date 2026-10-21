@@ -42,6 +42,7 @@ jobs:
       - name: Native ACP boundary and authenticated runtime API
         shell: bash
         run: |
+          go test -race -count=1 ./pkg/zedacp
           go test -race -count=1 -v ./internal/providers/agents -run 'TestSandbox|TestCachedLaunch|TestRouterCodexPolicy'
           go test -race -count=1 -v ./cmd/matrix -run 'TestPAL|TestCapacity'
       - name: Native CLI including workspace path with spaces

@@ -2,6 +2,8 @@ package agents
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -11,6 +13,27 @@ import (
 	"github.com/Josepavese/matrix/internal/providers/sidecarprojection"
 	"github.com/Josepavese/matrix/pkg/zedacp"
 )
+
+// finishTurn joins the connection lifetime to the post-response observation.
+// An accepted v2 prompt can still lose its stream before the idle update; that
+// is a provider failure, even when some partial output was already received.
+func (c *acpConversationClient) finishTurn(ctx context.Context, observation turnObservation) error {
+	connection := c.currentACPClient().Context()
+	waitCtx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(connection, cancel)
+	defer stop()
+	defer cancel()
+	if observation.terminal {
+		budget := acpV2TurnBudget()
+		if !observation.observer.AwaitTerminal(waitCtx, budget) && waitCtx.Err() == nil {
+			slog.Warn("ACP v2 turn ended without a terminal state update",
+				"event", "acp_v2_turn_budget_exhausted", "budget", budget)
+		}
+	} else {
+		observation.observer.WaitIdle(waitCtx, acpV1QuietWindow())
+	}
+	return errors.Join(context.Cause(connection), context.Cause(ctx))
+}
 
 func (c *acpConversationClient) promptACP(ctx context.Context, remoteSessionID string, turn middleware.ConversationTurn, obs acpSessionObserver) (*acpPromptResponse, error) {
 	promptText := sidecar.ProjectPrompt(turn.Message, turn.SidecarCapsules)
@@ -38,15 +61,7 @@ const acpV2TurnEnv = "MATRIX_ACP_V2_TURN_BUDGET"
 // unset, unparsable or non-positive override rather than failing a turn over
 // configuration.
 func acpV2TurnBudget() time.Duration {
-	raw := strings.TrimSpace(os.Getenv(acpV2TurnEnv))
-	if raw == "" {
-		return defaultACPV2TurnBudget
-	}
-	parsed, err := time.ParseDuration(raw)
-	if err != nil || parsed <= 0 {
-		return defaultACPV2TurnBudget
-	}
-	return parsed
+	return acpObservationDuration(acpV2TurnEnv, defaultACPV2TurnBudget)
 }
 
 // defaultACPV1QuietWindow is how long a version 1 turn waits for the observer to
@@ -66,15 +81,7 @@ const acpV1QuietEnv = "MATRIX_ACP_V1_QUIET_WINDOW"
 // for an unset, unparsable or non-positive override rather than failing a turn
 // over configuration.
 func acpV1QuietWindow() time.Duration {
-	raw := strings.TrimSpace(os.Getenv(acpV1QuietEnv))
-	if raw == "" {
-		return defaultACPV1QuietWindow
-	}
-	parsed, err := time.ParseDuration(raw)
-	if err != nil || parsed <= 0 {
-		return defaultACPV1QuietWindow
-	}
-	return parsed
+	return acpObservationDuration(acpV1QuietEnv, defaultACPV1QuietWindow)
 }
 
 // acpSessionWatcher is the part of the protocol client that keeps an observer
@@ -105,11 +112,6 @@ type turnObservation struct {
 	prompt   acpSessionObserver
 	stop     func()
 	terminal bool
-	// stopReason is the reason the peer reported on its terminal state update.
-	// Reading it is safe for every generation and it stays empty when the peer
-	// reported none, which is what lets the turn's result say "nothing was
-	// reported" instead of manufacturing an ending.
-	stopReason string
 }
 
 // observeTurn builds the turn's observation, falling back to the version 1
@@ -119,8 +121,6 @@ func (c *acpConversationClient) observeTurn(remoteSessionID string, turn middlew
 		observer: &simpleObserver{updates: make(chan struct{}, 1), notifier: turn.ThoughtNotifier},
 		stop:     func() {},
 	}
-	reason, _ := observation.observer.terminalState()
-	observation.stopReason = reason
 	watcher, ok := c.currentACPClient().(acpSessionWatcher)
 	if !ok || !c.awaitsTerminalState() {
 		observation.prompt = observation.observer
@@ -129,4 +129,12 @@ func (c *acpConversationClient) observeTurn(remoteSessionID string, turn middlew
 	observation.terminal = true
 	observation.stop = watcher.WatchSession(remoteSessionID, observation.observer)
 	return observation
+}
+
+func acpObservationDuration(name string, fallback time.Duration) time.Duration {
+	parsed, err := time.ParseDuration(strings.TrimSpace(os.Getenv(name)))
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }

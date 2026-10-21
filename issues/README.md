@@ -10,6 +10,20 @@ state gestite e conservate in [closed/](closed/).
 Questo file è un indice, non una segnalazione aperta. Qualifiche esterne e limiti
 accettati sono espliciti nel riepilogo; l'archiviazione non li certifica risolti.
 
+## Revisione del 21 ottobre 2026
+
+Verificati `issues/`, `improvements/issues/`, gli audit/debiti in
+`docs/governance/`, le analisi `.agent/local/project-analysis/` e le issue GitHub
+(nessuna aperta). Nessun nuovo TODO/FIXME applicativo. Le decisioni storiche
+restano nel registro dell'8 ottobre e nel successivo ledger PAL.
+
+- [Consegna ACP sotto carico e durata del collegamento](closed/2026-10-21-acp-delivery-barrier.md):
+  difetti Matrix riprodotti e corretti; regressioni native Linux/macOS/Windows.
+- [Finale OpenCode/VICKY non consegnato](2026-10-21-external-vicky-opencode-final-not-delivered.md):
+  accolta. Input sintetico originale consegnato localmente; resta aperta la
+  qualificazione sulla VPS e l'attribuzione del singolo episodio, privo di wire
+  trace. Le correzioni locali non vengono presentate come prova sulla VPS.
+
 ## Nuovo sviluppo PAL autorizzato
 
 Le quattro evolutive sono implementate e archiviate dopo gate locali e CI nativa Linux/Windows/macOS. La consegna release/installazione è tracciata nel [ledger PAL](../docs/governance/pal_implementation_2026-10-08.md):

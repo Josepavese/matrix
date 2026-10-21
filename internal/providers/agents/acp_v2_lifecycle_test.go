@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -164,6 +165,9 @@ func TestExecuteTurnWaitsForTheV2TerminalState(t *testing.T) {
 	}
 	if result.Output != "part one and part two" {
 		t.Fatalf("the turn must return the complete answer, got %q", result.Output)
+	}
+	if result.StopReason != "end_turn" {
+		t.Fatalf("terminal stop reason lost: %q", result.StopReason)
 	}
 	if got := result.Metadata.Meta["acp_turn_completion"]; got != "idle" {
 		t.Fatalf("the result must say the peer ended the turn, got %#v", result.Metadata.Meta)
@@ -413,3 +417,22 @@ func TestPermissionRequestKeepsTheV1ToolCallTitle(t *testing.T) {
 }
 
 func ptrTo[T any](value T) *T { return &value }
+
+func TestExecuteTurnRejectsV2ConnectionFailureAfterAcknowledgement(t *testing.T) {
+	t.Setenv(acpV2TurnEnv, "200ms")
+	fake := newStreamingACPClient(zedacp.ProtocolVersionV2)
+	connection, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	fake.ctx = connection
+	fake.streaming = func(emit func(acpSessionUpdate)) {
+		emit(chunkUpdate("msg-1", "partial"))
+		cancel(zedacp.ErrNotificationOverflow)
+	}
+	result, err := fake.turnClient().ExecuteTurn(context.Background(), turnForLifecycleTest())
+	if !errors.Is(err, zedacp.ErrNotificationOverflow) {
+		t.Fatalf("lost stream failure after prompt acknowledgement: %v", err)
+	}
+	if result.Output != "partial" {
+		t.Fatalf("partial diagnostic output lost: %q", result.Output)
+	}
+}

@@ -7,16 +7,14 @@ import (
 
 func (c *Client) readLoop() {
 	log := slog.With("component", "zedacp_client")
-	defer c.cancel()
+	defer c.cancel(nil)
 	for {
 		msgBytes, err := c.transport.Receive(c.ctx)
 		if err != nil {
 			if reporter, ok := c.transport.(interface{ Failure(error) error }); ok {
 				err = reporter.Failure(err)
 			}
-			c.mu.Lock()
-			c.terminalErr = err
-			c.mu.Unlock()
+			c.fail(err)
 			log.Info("acp transport closed", "event", "transport_closed", "error", err)
 			return
 		}

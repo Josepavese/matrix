@@ -158,6 +158,8 @@ func TestTurnEvidenceIgnoresMatrixBookkeeping(t *testing.T) {
 		{Kind: "routing.decision"},
 		{Kind: "agent.prompt.sent"},
 		{Kind: "model.selection"},
+		{Kind: "agent.thought.delta"},
+		{Kind: KindTurnStopReason, Metadata: map[string]interface{}{StopReasonMetadataKey: "end_turn"}},
 		{Kind: "session.cleanup"},
 		{Kind: "session.policy.applied"},
 	}
