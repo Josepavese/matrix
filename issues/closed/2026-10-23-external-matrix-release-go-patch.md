@@ -102,9 +102,12 @@ e matrix-source-provenance.json nella directory del goal gia' indicata.
 
 ## Disposizione Matrix — 25 ottobre 2026
 
-**Decision:** accepted and closed. La release successiva e' compilata con
-**go1.27.3**, l'asset ufficiale e' nuovo e immutabile, e digest e build info
-reali sono pubblicati sotto.
+**Decision:** accepted in part and closed with declared limits. La release
+successiva e' compilata con **go1.27.3**, l'asset ufficiale e' nuovo e immutabile,
+e digest e build info reali sono pubblicati sotto. L'accettazione non impegna
+Matrix a costruire ogni parte della richiesta: sotto e' indicato cosa e' stato
+costruito, cosa e' stato risposto con un limite e cosa non e' stato costruito per
+scelta.
 
 **Reason:** il pin della toolchain nella pipeline release era corretto ma
 superato: la `v0.1.59` pubblicata il 21 ottobre e' stata costruita con
@@ -148,3 +151,23 @@ hash identici prima/dopo, nessuna migrazione di schema o Vault,
 Non e' stato eseguito alcun intervento sul consumer, sulla VPS VICKY o sul
 pacchetto Hub: il percorso di qualifica consumer resta distinto e usa l'asset
 ufficiale qui pubblicato.
+
+### Cosa e' stato costruito, limitato o non costruito
+
+- **Costruito (generico e verificabile):** pin unico della toolchain in
+  `go.mod`; i nove `setup-go` che leggono `go-version-file`; il pin del linter
+  compatibile con l'export data della toolchain; release nuova e immutabile con
+  checksums, SBOM e provenienza; asset Linux amd64 qualificato e installato
+  localmente.
+- **Risposto con un limite:** la «qualifica degli artefatti delle piattaforme
+  pubblicate» vale per build e provenienza — le sei piattaforme sono
+  cross-compilate dai gate e attestate dalla release — **non** come qualifica
+  runtime nativa Windows/macOS. I job CI `windows-codex-policy` e
+  `windows-validation-host` restano saltati e non vengono spacciati per prove.
+- **Non costruito, per scelta:** nessuna ricompilazione o sostituzione
+  dell'asset ufficiale in risposta a una qualifica consumer; nessun percorso
+  dedicato a Half Pocket o al suo pacchetto Hub. La build privata del tag
+  invariato resta del consumer e non diventa una release Matrix.
+
+La chiusura certifica il difetto di provenienza del publisher, non il rilascio
+aziendale del consumer.

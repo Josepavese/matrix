@@ -113,11 +113,14 @@ proposta non revisionata; revisione umana e pubblicazione restano passaggi separ
 
 ## Disposizione Matrix — 25 ottobre 2026
 
-**Decision:** accepted and closed on the Matrix side. Due capacita' generiche,
-entrambe per endpoint del ruolo e non globali: un **modo di sessione ACP
-obbligatorio** che non annuncia strumenti, e una **diagnosi strutturata** del
-diniego con esito terminale distinto dall'incerto. Pubblicate nella release
-immutabile v0.1.60.
+**Decision:** accepted in part and closed with declared limits. Due capacita'
+generiche, entrambe per endpoint del ruolo e non globali: un **modo di sessione
+ACP obbligatorio** applicato e verificato dal provider, e una **diagnosi
+strutturata** del diniego con esito terminale distinto dall'incerto. Pubblicate
+nella release immutabile v0.1.60. L'accettazione non impegna Matrix a garantire
+cio' che non puo' osservare, ne' a costruire ogni parte della richiesta: sotto
+e' indicato cosa e' stato costruito, cosa e' stato risposto con un limite e cosa
+resta al consumer.
 
 **Reason:** il turno di valutazione non richiede filesystem ne' comandi; il
 difetto non era la policy di diniego, era che (a) mancava un modo deterministico
@@ -194,11 +197,29 @@ il codice stabile e' sull'evento `run.failed`, sulla notifica locale e in
 e la ripresa governata con ammissione di una proposta non revisionata resta il
 passo consumer. La qualifica Matrix non sostituisce la revisione umana.
 
-**Mappatura dei criteri di accettazione:** percorso senza strumenti dichiarato e
-qualificato (run 1) → fatto; capacita' esplicita per ruolo senza strumenti
-annunciati → fatto (contratto per endpoint, non globale); diniego come risposta
-negativa al provider e non errore inventato → fatto; diagnosi strutturata con
-operazione/categoria o stato ignoto esplicito, run e sessione → fatto;
-distinzione terminale/incerto per non duplicare inferenze → fatto
-(`failed` + codice, `explain` terminale); nessun ampliamento di permessi, nessun
-modello alternativo, nessun bypass → invariato.
+### Cosa e' stato costruito, limitato o non costruito
+
+- **Costruito (generico e verificabile):** contratto `MATRIX_ACP_SESSION_MODE`
+  per endpoint, con applicazione su `session/new` e ripresa, verifica della
+  dichiarazione del provider e fail-closed prima del prompt; diagnostica
+  strutturata dei permessi (`operation`, `operation_state`, `tool_call_id`,
+  `session_id`, `denial_reason`, `provider_response`); codice
+  `provider_tool_permission_denied`; regola di esito terminale sulla sola
+  condizione strutturata diniego-senza-risposta; `explain` EN/IT; documentazione
+  pubblica e qualifica reale sul binario installato (run
+  `run-0f41a069-…` e `run-5e774d34-…` sopra).
+- **Risposto con un limite:** la «capacita' che non annuncia strumenti al
+  modello» e' il modo di sessione del provider applicato e confermato, **non**
+  una garanzia di Matrix sul corpo della richiesta: Matrix non ispeziona il
+  payload del provider e non lo dichiara. Il `run_id`/`remote_session_id` del
+  turno e la ripresa governata restano il contratto pubblico Hub/VICKY; la
+  qualifica Matrix non sostituisce la revisione umana ne' l'adozione consumer.
+- **Non costruito, per scelta:** nessun codice o nome dedicato a VICKY, nessun
+  alias del codice consumer `tool_permission_denied`, nessun branch dedicato al
+  provider o al canale, nessuna euristica sul testo libero per dedurre
+  l'operazione, nessuna riscrittura degli stati storici gia' memorizzati, nessun
+  ampliamento dei permessi o bypass del diniego. Un rifiuto legittimo resta una
+  risposta negativa al provider: la regola terminale non lo trasforma in errore.
+
+I limiti tecnici sopra restano la specifica di cio' che e' stato costruito; questa
+ripartizione e' la decisione di cosa non e' stato costruito.
