@@ -110,3 +110,95 @@ la policy degli strumenti e l'esito JSON. Se si esercita intenzionalmente un
 diniego, verificarne stato e diagnosi senza spacciarlo per analisi completata.
 Poi verificare dal consumer VICKY la ripresa governata e l'ammissione di una
 proposta non revisionata; revisione umana e pubblicazione restano passaggi separati.
+
+## Disposizione Matrix — 25 ottobre 2026
+
+**Decision:** accepted and closed on the Matrix side. Due capacita' generiche,
+entrambe per endpoint del ruolo e non globali: un **modo di sessione ACP
+obbligatorio** che non annuncia strumenti, e una **diagnosi strutturata** del
+diniego con esito terminale distinto dall'incerto. Pubblicate nella release
+immutabile v0.1.60.
+
+**Reason:** il turno di valutazione non richiede filesystem ne' comandi; il
+difetto non era la policy di diniego, era che (a) mancava un modo deterministico
+per dichiarare al ruolo "nessuno strumento nativo" senza suggerimenti nel prompt,
+e (b) un turno terminato dopo un diniego senza risposta veniva riportato
+`completed`, con l'evento `permission_denied` privo di operazione e nessun codice
+che distinguesse il terminale fallito dall'effetto incerto. Un diniego corretto
+resta una risposta negativa al provider: Matrix non ha concesso nulla e non lo
+dichiara come analisi completata.
+
+**Scope:** contratto `MATRIX_ACP_SESSION_MODE` per endpoint (ACP-only, un solo
+modo, validato al lancio, rifiutato se duplicato o in conflitto con il contratto
+Codex); applicazione e verifica da parte dell'adapter ACP su `session/new` e su
+ogni ripresa, con conferma dichiarata dal provider e fail-closed prima del
+prompt; eventi `permission.requested`/`permission.resolved` con `operation`,
+`operation_state` (`known`/`unknown`, sempre presente), `tool_call_id`,
+`session_id`, `denial_reason` e `provider_response`; nuovo codice di fallimento
+provider `provider_tool_permission_denied`; regola di esito terminale in
+runtrace; `explain` EN/IT. Documentazione pubblica:
+[docs/matrix_agent_session_mode.md](../../docs/matrix_agent_session_mode.md).
+
+**Evidence:** qualifica reale sul binario **v0.1.60 installato**, `MATRIX_HOME`
+isolata, OpenCode 1.18.31 e `deepseek/deepseek-flash` confermato dal provider
+senza fallback, entrambi i run attraverso l'API pubblica autenticata
+(evidenze in `/tmp/matrix-v0.1.60-qualification/`, sintesi
+`20-qualification-summary.json`):
+
+- **Inferenza senza strumenti**, run
+  `run-0f41a069-a3df-4483-a0a0-9bb047967214`: `completed`, `end_turn`, output
+  JSON con `summary`/`steps`/`risks`, **zero** eventi `permission.requested` e
+  `permission.resolved`. Il contratto di lancio registra
+  `configured=json-planning`, `enforcement=required`; la sessione registra la
+  conferma del provider `effective_mode=json-planning`,
+  `evidence_source=session/set_config_option`, `verification=provider_confirmed`.
+  Sessione logica `5b4f4e77-bc29-4c2c-b336-f4ee71071a7b`, remota
+  `ses_e8b2283d8ffeioiJVMcSHeXq0B`.
+- **Diniego intenzionale** (`agent.trust_mode=false`), run
+  `run-5e774d34-389d-48bc-a47d-7942cadce009`: `failed`,
+  `failure_code=provider_tool_permission_denied`, `stop_reason=cancelled`,
+  nessun `run.completed`. L'evento porta
+  `operation=pwd`, `operation_state=known`, `session_id` e
+  `tool_call_id=call_00_a3569vp5pNPqsrt3vB502875`; la risoluzione riporta
+  `decision=denied`, `provider_response=selected`,
+  `denial_reason=trust_mode_off`. `explain`: il turno e' terminale,
+  `uncertain=false`, `prompt_receipt=unverified`.
+- **Contrasto con v0.1.59**: lo stesso diniego sull'installazione precedente
+  (run `run-daa3bde9-a832-48ae-b49c-9f5569d115df`) produceva
+  `permission.resolved` con il solo `{"decision":"denied"}` e un run
+  `completed`. Quel difetto e' il caso chiuso da questa release.
+
+Regressioni: validazione del contratto di modo, applicazione/verifica su
+entrambe le superfici ACP, fail-closed, diagnostica permessi v1/v2, operazione
+nota/ignota con stato esplicito, motivi di diniego, classificazione provider,
+regola di esito terminale, explain EN/IT e test opt-in reale OpenCode. Gate:
+`scripts/release_gate.sh` = `RELEASE_GATE_OK` sul commit
+`9fdf7e5`, CI esatta
+[40232619150](https://github.com/Josepavese/matrix/actions/runs/40232619150)
+verde, release
+[v0.1.60](https://github.com/Josepavese/matrix/releases/tag/v0.1.60) verificata
+(88 controlli, 0 falliti) e installata con `readiness --strict` = `ready`.
+Verbale: [2026-10-25-v0.1.60](../../docs/governance/releases/2026-10-25-v0.1.60.md).
+
+**Limits (non osservato = non superato):** il contratto non inventa un
+`provider_command_incomplete` ne' un errore ACP strutturato dove il provider non
+lo espone: la classificazione provider legge il testo con veto di
+autenticazione. La regola di terminale richiede il `denied` strutturato e non
+deduce un diniego dal testo; un `agent.message.*` o un output non vuoto conta
+come consegna. I record gia' memorizzati come completati ricevono spiegazione e
+codice corretti, ma lo stato memorizzato non viene riscritto. Il corpo HTTP
+sincrono di errore mantiene la forma generica (HTTP 500, nessun campo `code`):
+il codice stabile e' sull'evento `run.failed`, sulla notifica locale e in
+`explain`. Nessun intervento su VPS VICKY, Hub o consumer: `run_id` e
+`remote_session_id` del turno devono essere esposti dal contratto pubblico Hub,
+e la ripresa governata con ammissione di una proposta non revisionata resta il
+passo consumer. La qualifica Matrix non sostituisce la revisione umana.
+
+**Mappatura dei criteri di accettazione:** percorso senza strumenti dichiarato e
+qualificato (run 1) → fatto; capacita' esplicita per ruolo senza strumenti
+annunciati → fatto (contratto per endpoint, non globale); diniego come risposta
+negativa al provider e non errore inventato → fatto; diagnosi strutturata con
+operazione/categoria o stato ignoto esplicito, run e sessione → fatto;
+distinzione terminale/incerto per non duplicare inferenze → fatto
+(`failed` + codice, `explain` terminale); nessun ampliamento di permessi, nessun
+modello alternativo, nessun bypass → invariato.

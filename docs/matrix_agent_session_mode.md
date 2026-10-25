@@ -3,7 +3,7 @@
 This document records the neutral contract a consumer uses when one role must run
 inference **without native tools announced to the model**, how Matrix enforces and
 verifies it, and what remains the provider's own guarantee. It is the Matrix side
-of `issues/2026-10-25-external-vicky-json-planning-tool-permission-denied.md`: a
+of `issues/closed/2026-10-25-external-vicky-json-planning-tool-permission-denied.md`: a
 planning turn that must produce JSON from typed data was interrupted by a denied
 native tool call, and a suggestion in the prompt cannot deterministically prevent
 one.

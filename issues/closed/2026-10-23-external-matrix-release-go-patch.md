@@ -99,3 +99,52 @@ pubblicata. La richiesta upstream resta utile alla pipeline Matrix e agli
 altri consumer; non impone di attendere un nuovo tag per qualificare questa
 build invariata. Prove in matrix-current-go-proof.json,matrix-tests-proof.json
 e matrix-source-provenance.json nella directory del goal gia' indicata.
+
+## Disposizione Matrix — 25 ottobre 2026
+
+**Decision:** accepted and closed. La release successiva e' compilata con
+**go1.27.3**, l'asset ufficiale e' nuovo e immutabile, e digest e build info
+reali sono pubblicati sotto.
+
+**Reason:** il pin della toolchain nella pipeline release era corretto ma
+superato: la `v0.1.59` pubblicata il 21 ottobre e' stata costruita con
+`go1.27.1`, mentre il 23 ottobre la patch stabile corrente era `go1.27.3`. Un
+asset che dichiara una versione Matrix corrente ma porta una stdlib di patch
+precedente e' un difetto della provenienza del publisher, non una preferenza del
+consumer: la build locale del tag invariato, correttamente qualificata da Half
+Pocket come input privato, non poteva sostituire l'asset ufficiale. Il numero
+stampato da solo non basta ed era esattamente questo il punto.
+
+**Scope:** `go.mod` (direttiva `toolchain`) come unica origine del pin; i nove
+`actions/setup-go` di `.github/workflows/ci.yml`, `release.yml` e `pal.yml` ora
+leggono `go-version-file: go.mod` invece di versioni scritte a mano; il pin di
+golangci-lint sale a `v2.14.0` perche' la versione precedente non leggeva
+l'export data di `go1.27.3`; nessuna modifica di comportamento del runtime.
+
+**Evidence:** sorgente/tag `v0.1.60` =
+[`9fdf7e5ed839f968b8a1b825ae9c7beb40bab6d2`](https://github.com/Josepavese/matrix/commit/9fdf7e5ed839f968b8a1b825ae9c7beb40bab6d2),
+release immutabile
+[v0.1.60](https://github.com/Josepavese/matrix/releases/tag/v0.1.60). L'asset
+`matrix_0.1.60_linux_amd64.tar.gz` ha SHA256
+`763599a4a24f2999b4708ae1a7eeb03cda19352c160320aa3bf1be1d549cf920`;
+`go version -m` sul suo binario riporta **go1.27.3**, e il binario installato
+dalla release ha SHA256
+`d4b2f74ae425bf86efa422af73e255a2d0bc9c29be4f0ea8d4a96ad2863e9b18`, identico a
+quello dell'archivio verificato. `scripts/verify_release.sh v0.1.60`: 88
+controlli superati, 0 falliti, 15 asset, quindi checksums, SBOM SPDX e
+provenienza per tutte e sei le piattaforme. CI esatta
+[40232619150](https://github.com/Josepavese/matrix/actions/runs/40232619150),
+PAL nativo
+[40232619106](https://github.com/Josepavese/matrix/actions/runs/40232619106) e
+Release
+[40232987921](https://github.com/Josepavese/matrix/actions/runs/40232987921)
+verdi. La `v0.1.59` non e' stata toccata: non e' stata sostituita alcuna
+immagine di una release gia' pubblicata. Installazione locale dalla release
+verificata completata dopo zero route attive, cinque file di configurazione con
+hash identici prima/dopo, nessuna migrazione di schema o Vault,
+`readiness --strict --expect-runtime-up` = `ready` senza warning. Verbale:
+[2026-10-25-v0.1.60](../../docs/governance/releases/2026-10-25-v0.1.60.md).
+
+Non e' stato eseguito alcun intervento sul consumer, sulla VPS VICKY o sul
+pacchetto Hub: il percorso di qualifica consumer resta distinto e usa l'asset
+ufficiale qui pubblicato.

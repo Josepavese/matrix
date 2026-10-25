@@ -10,6 +10,20 @@ state gestite e conservate in [closed/](closed/).
 Questo file è un indice, non una segnalazione aperta. Qualifiche esterne e limiti
 accettati sono espliciti nel riepilogo; l'archiviazione non li certifica risolti.
 
+## Revisione del 25 ottobre 2026
+
+- [Release Matrix compilata con una patch Go superata](closed/2026-10-23-external-matrix-release-go-patch.md):
+  **implementata e chiusa in v0.1.60**. Il pin della toolchain è tornato a una
+  sola origine in `go.mod` (go1.27.3) e i nove passi `setup-go` leggono
+  `go-version-file`; asset nuovo e immutabile con build info `go1.27.3`, digest,
+  checksums, SBOM e provenienza verificati. La v0.1.59 non è stata sostituita.
+- [Turno di valutazione JSON VICKY interrotto da permission_denied](closed/2026-10-25-external-vicky-json-planning-tool-permission-denied.md):
+  **implementata e chiusa in v0.1.60**. Modo di sessione ACP obbligatorio per
+  endpoint come percorso deterministico senza strumenti nativi, confermato dal
+  provider; diniego diagnostico con operazione/stato/sessione e run terminale
+  `provider_tool_permission_denied` invece di un falso `completed`. Qualifica
+  reale installata positiva; adozione Hub/VICKY resta un passo consumer distinto.
+
 ## Revisione del 22 ottobre 2026
 
 - [Input multimodale dei run e validazione rigorosa](closed/2026-10-22-external-vicky-rich-run-input.md):
