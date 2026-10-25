@@ -90,7 +90,12 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # semantic CLI/API, optional OTLP, declared native+container policy and scoped
 # probes. Exact per-package baselines are recorded in the PAL implementation
 # ledger; hard file/function/branch/warning limits are unchanged.
-"internal/logic/agentlaunch" = 890
+# 2026-10-25: the neutral required ACP session mode contract
+# (MATRIX_ACP_SESSION_MODE): declaration validation, refusal of duplicate
+# declarations and of a conflict with the Codex launch policy, and the launch
+# metadata that says the mode is a requirement pending provider confirmation.
+# Measured 996; no file/function/branch ceiling is relaxed.
+"internal/logic/agentlaunch" = 1006
 # 2026-06-18: public-release hardening adds runtime endpoint auth coverage
 # and PAL/vault initialization checks. 2026-06-23 adds SSOT agent launch
 # argument override commands for trusted local provider policy. 2026-08-04
@@ -151,7 +156,11 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # the projection and its serialization.
 # 2026-10-01: release audit, writes stopped. Measured 1676; tightened from 1680
 # so the ceiling states the tree rather than the write burst.
-"internal/logic/runtrace" = 1754
+# 2026-10-25: a tool permission denied with no delivered answer is a terminal
+# failed run, so the completion verdict carries the denial failure code and the
+# shared structural rule explain reads. Measured 1794; file/function/branch
+# ceilings unchanged.
+"internal/logic/runtrace" = 1804
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
 # process reap; forced run-owned child cleanup can remediate parent-owner
 # retention without weakening inline parent-restore safety. Later same-day
@@ -267,7 +276,12 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # values with a small margin, and the ceiling stays shared. File, function,
 # parameter and branch budgets are NOT raised here - those are quality
 # constraints and are met by splitting.
-"internal/providers/agents" = 5724
+# 2026-10-25: required ACP session mode enforcement (config-option and v1 mode
+# surfaces with provider confirmation, fail-closed before the prompt, split
+# into acp_session_mode.go under the file budget) and structured
+# permission-denial diagnostics with the provider failure code. Measured 6061;
+# file/function/branch ceilings are met by splitting and are not relaxed.
+"internal/providers/agents" = 6071
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
@@ -323,7 +337,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # parameter and branch budgets; this is a package ceiling.
 # 2026-10-22: typed run ingress, capability admission and content manifest;
 # measured package growth only, no file/function/branch ceiling is relaxed.
-"internal/providers/runapi" = 2782
+# 2026-10-25: explain states the denied-permission terminal failure with a
+# stable code and explains records stored before that rule, with explainRun
+# split into cohesive helpers under the branch budget. Measured 2808.
+"internal/providers/runapi" = 2818
 # 2026-09-21: the Telegram channel gained the elicitation frontend — prompt
 # rendering, inline-keyboard building, callback routing, answer coercion and
 # session-to-chat correlation — split across focused files (elicitation.go,

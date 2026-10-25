@@ -719,8 +719,8 @@ type sessionModeACPClient struct {
 	watchers           []acpSessionObserver
 }
 
-func (c *sessionModeACPClient) NewSession(ctx context.Context, req acpNewSessionRequest) (*acpNewSessionResponse, error) {
-	c.pagedListACPClient.newReq = &req
+func (c *sessionModeACPClient) NewSession(_ context.Context, req acpNewSessionRequest) (*acpNewSessionResponse, error) {
+	c.newReq = &req
 	if c.newSessionResponse != nil {
 		return c.newSessionResponse, nil
 	}
@@ -738,7 +738,7 @@ func (c *sessionModeACPClient) SetConfigOption(ctx context.Context, req acpSetCo
 	return c.pagedListACPClient.SetConfigOption(ctx, req)
 }
 
-func (c *sessionModeACPClient) SetMode(ctx context.Context, sessionID, modeID string) error {
+func (c *sessionModeACPClient) SetMode(_ context.Context, _ string, modeID string) error {
 	c.setModeID = modeID
 	if c.setModeErr != nil {
 		return c.setModeErr
