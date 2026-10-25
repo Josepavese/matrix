@@ -40,11 +40,12 @@ type TurnStopReasonReporter interface {
 }
 
 // terminalOutcome is the verdict written for a terminal transition: the status
-// the run actually reached and why.
+// the run actually reached, why, and the stable code a consumer reads.
 type terminalOutcome struct {
-	Status     string
-	StopReason string
-	Error      string
+	Status      string
+	StopReason  string
+	Error       string
+	FailureCode string
 }
 
 // NormalizeStopReason records what a peer reported without inventing anything.
@@ -73,6 +74,13 @@ func IsReportedStopReason(reason string) bool {
 // completionFailureCode is the failure code written when a run reaches its
 // terminal transition carrying no evidence of a turn at all.
 const completionFailureCode = "run_no_turn_evidence"
+
+// FailureCodeProviderToolPermissionDenied is the stable failure code written when
+// a provider turn ended after a tool permission was denied without delivering an
+// answer. It is exported because the provider failure classification, the run
+// record and the HTTP explanation must all name the same code; providerfailure
+// aliases it rather than spelling it a second time.
+const FailureCodeProviderToolPermissionDenied = "provider_tool_permission_denied"
 
 // turnEvidence reports whether a run produced any structured trace of a turn:
 // output content, or an event the protocol recorded as part of the turn itself.
@@ -112,18 +120,72 @@ func isTurnEvidence(event Event) bool {
 	return false
 }
 
+// answerDelivered reports whether the peer delivered an answer a consumer can
+// use: non-empty output or any agent.message.* event. Tool activity is not an
+// answer: a turn that ran a tool and then stopped without a message delivered no
+// consumer-usable result, which is exactly how a denied-permission non-delivery
+// reached "completed" before this rule.
+func answerDelivered(output string, events []Event) bool {
+	if strings.TrimSpace(output) != "" {
+		return true
+	}
+	for _, event := range events {
+		if strings.HasPrefix(strings.TrimSpace(event.Kind), "agent.message.") {
+			return true
+		}
+	}
+	return false
+}
+
+// deniedPermissionResolution reports whether the trace contains a permission
+// resolution that denied the request. Only the structured decision field counts:
+// event text is never read, so the verdict cannot become a text heuristic.
+func deniedPermissionResolution(events []Event) bool {
+	for _, event := range events {
+		if event.Kind != KindPermissionResolved {
+			continue
+		}
+		if decision, ok := event.Outputs["decision"].(string); ok && strings.EqualFold(strings.TrimSpace(decision), "denied") {
+			return true
+		}
+	}
+	return false
+}
+
+// DeniedPermissionWithoutAnswer reports whether a trace shows a denied tool
+// permission and no answer was delivered. It is the structural rule the terminal
+// completion verdict and the HTTP explanation both read: two callers, one
+// definition, so a run cannot be a failure in the trace and a success in explain.
+func DeniedPermissionWithoutAnswer(output string, events []Event) bool {
+	return deniedPermissionResolution(events) && !answerDelivered(output, events)
+}
+
 // materializeCompletion is the single place that decides what a successful
 // provider turn actually means for the run record. A peer that produced a
 // message, a tool call or a final answer completed the run; a peer that
 // produced nothing at all did not, and the run is failed with a code that says
 // so instead of being reported as a success.
+//
+// A denied tool permission is checked before the generic evidence rule: the
+// failed tool result a denial causes is tool evidence, but it is not an answer.
+// A turn that stops after that denial without a message delivered nothing a
+// consumer can reconcile as success, and the failure code says exactly that.
 func materializeCompletion(output, stopReason string, events []Event) terminalOutcome {
 	stopReason = NormalizeStopReason(firstNonEmptyReason(stopReason, observedStopReason(events)))
+	if DeniedPermissionWithoutAnswer(output, events) {
+		return terminalOutcome{
+			Status:      StatusFailed,
+			StopReason:  stopReason,
+			Error:       "provider turn ended after a tool permission was denied without delivering an answer",
+			FailureCode: FailureCodeProviderToolPermissionDenied,
+		}
+	}
 	if !turnEvidence(output, events) {
 		return terminalOutcome{
-			Status:     StatusFailed,
-			StopReason: stopReason,
-			Error:      "provider turn ended with no output, no tool call and no message; the run produced nothing a consumer can use",
+			Status:      StatusFailed,
+			StopReason:  stopReason,
+			Error:       "provider turn ended with no output, no tool call and no message; the run produced nothing a consumer can use",
+			FailureCode: completionFailureCode,
 		}
 	}
 	return terminalOutcome{Status: StatusCompleted, StopReason: stopReason}

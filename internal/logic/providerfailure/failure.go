@@ -24,6 +24,16 @@ const (
 	WorkspaceRejected                = "provider_workspace_rejected"
 	WorkspaceNotGranted              = "matrix_workspace_not_granted"
 	AdditionalDirectoriesUnsupported = "additional_directories_unsupported"
+	// ProviderToolPermissionDenied reports a provider abort that is evidenced
+	// as a denied tool permission: the peer stopped the turn because Matrix (or
+	// the peer's own policy) refused a tool, not because the request was
+	// malformed or the model was unavailable. It is a runtime failure, so
+	// HTTPStatus reports 502 Bad Gateway through the default provider-failure
+	// path, and it is deliberately distinct from AuthMismatch: an
+	// authentication refusal stays a dependency failure the caller can fix.
+	// The value is single-sourced in runtrace, which also writes it onto the run
+	// record when a denial ends a turn without delivering an answer.
+	ProviderToolPermissionDenied = runtrace.FailureCodeProviderToolPermissionDenied
 )
 
 type Failure struct {

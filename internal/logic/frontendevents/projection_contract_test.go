@@ -160,8 +160,13 @@ func TestNormalizePermissionCarriesTheDecision(t *testing.T) {
 	if unresolved.ResolutionOutputs["decision"] != "unknown" {
 		t.Fatalf("an unresolved permission must report an unknown decision, got %v", unresolved.ResolutionOutputs)
 	}
-	if unresolved.RequestInputs != nil {
-		t.Fatalf("a request without a path or command must carry no inputs, got %v", unresolved.RequestInputs)
+	// A request without a path or command still declares the operation state,
+	// so the consumer never sees a silently absent operation.
+	if unresolved.RequestInputs == nil || unresolved.RequestInputs["operation_state"] != PermissionOperationUnknown {
+		t.Fatalf("a request without a path or command must state an unknown operation, got %v", unresolved.RequestInputs)
+	}
+	if _, ok := unresolved.RequestInputs["operation"]; ok {
+		t.Fatalf("a request without an operation must not fabricate one, got %v", unresolved.RequestInputs)
 	}
 
 	granted := NormalizePermission("run-1", "Allow?", map[string]interface{}{"decision": "allow", "option_id": "yes"})

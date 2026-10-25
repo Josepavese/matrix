@@ -7,7 +7,7 @@ import (
 
 func ToolOperation(content string, metadata map[string]interface{}) string {
 	for _, key := range []string{"operation", "command_name", "command", "cmd"} {
-		if op := operationFromCommand(StringValue(metadata, key)); op != "" {
+		if op := OperationFromCommand(StringValue(metadata, key)); op != "" {
 			return op
 		}
 	}
@@ -23,12 +23,20 @@ func ToolOperation(content string, metadata map[string]interface{}) string {
 	return ""
 }
 
+// OperationFromStructured derives an operation identity from structured field
+// values, such as an ACP permission subject or a tool call's raw input. Only
+// declared operation/command keys are read, including inside nested structured
+// values; free-form prose is never searched, so a sentence cannot invent one.
+func OperationFromStructured(values map[string]interface{}) string {
+	return operationFromMap(values)
+}
+
 func operationFromMap(values map[string]interface{}) string {
 	if values == nil {
 		return ""
 	}
 	for _, key := range []string{"operation", "command_name", "command", "cmd"} {
-		if op := operationFromCommand(stringFromAny(values[key])); op != "" {
+		if op := OperationFromCommand(stringFromAny(values[key])); op != "" {
 			return op
 		}
 	}
@@ -64,7 +72,11 @@ func operationFromSlice(values []interface{}) string {
 	return ""
 }
 
-func operationFromCommand(command string) string {
+// OperationFromCommand derives the operation identity a declared command names:
+// the executable, with the directory prefixes Matrix knows how to drop. A value
+// that is a path or contains a separator is rejected rather than reported as an
+// operation.
+func OperationFromCommand(command string) string {
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return ""

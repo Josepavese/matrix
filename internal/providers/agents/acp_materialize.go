@@ -23,6 +23,11 @@ func (c *acpConversationClient) MaterializeRemoteSession(ctx context.Context, re
 	return info, metadata, err
 }
 
+// materializeRemoteSessionOnce creates the session, applies the launch mode
+// contract, and returns the provider evidence that the required mode was
+// applied and confirmed (empty when the launch declares no mode). Applying a
+// required mode fails closed here, so a returned session is always one whose
+// contract the provider confirmed.
 func (c *acpConversationClient) materializeRemoteSessionOnce(ctx context.Context, req middleware.SessionMaterializeRequest) (middleware.RemoteSessionInfo, middleware.ConversationMetadata, error) {
 	resp, err := c.createACPRemoteSession(ctx, req)
 	if err != nil {
@@ -38,7 +43,7 @@ func (c *acpConversationClient) materializeRemoteSessionOnce(ctx context.Context
 		CanResume:       c.sessionCapabilities.Load || c.sessionCapabilities.Resume,
 		CanDelete:       c.sessionCapabilities.Delete,
 	}
-	return info, middleware.ConversationMetadata{}, nil
+	return info, c.sessionModeMetadata(), nil
 }
 
 // createACPRemoteSession asks the peer for a new session.

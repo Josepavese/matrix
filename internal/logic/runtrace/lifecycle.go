@@ -110,11 +110,15 @@ func (s *Store) Complete(runID, output, stopReason string) (Run, error) {
 		return Run{}, err
 	}
 	if outcome.Status == StatusFailed {
+		failureCode := outcome.FailureCode
+		if failureCode == "" {
+			failureCode = completionFailureCode
+		}
 		s.emitTerminalTrace(run, func() error {
 			_, err := s.AppendEvent(Event{
 				RunID: run.ID, Kind: "run.failed", Actor: "matrix", Status: StatusFailed,
 				Timestamp: run.CompletedAt, Message: run.Error, StopReason: run.StopReason,
-				Metadata: map[string]interface{}{"failure_code": completionFailureCode},
+				Metadata: map[string]interface{}{"failure_code": failureCode},
 			})
 			return err
 		})

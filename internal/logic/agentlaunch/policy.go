@@ -21,7 +21,12 @@ type policyAdapter interface {
 	Resolve(endpoint middleware.ProtocolEndpoint) (Resolution, error)
 }
 
-var policyAdapters = []policyAdapter{codexPolicyAdapter{}}
+// policyAdapters is ordered: the neutral session mode contract is resolved
+// before the Codex launch-policy contract so a launch that declares both is
+// refused by the neutral contract instead of being claimed by the Codex
+// adapter. An endpoint that declares only one of them is unaffected by the
+// order because only that contract matches.
+var policyAdapters = []policyAdapter{sessionModeAdapter{}, codexPolicyAdapter{}}
 
 type codexPolicyAdapter struct{}
 

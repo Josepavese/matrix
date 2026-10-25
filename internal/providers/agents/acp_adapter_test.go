@@ -97,26 +97,31 @@ func TestPickAutoApproveConfigOptionPrefersStableConfigSurface(t *testing.T) {
 	}
 }
 
-func TestApplyPreferredSessionModeUsesExactConfiguredValue(t *testing.T) {
+func TestApplyConfiguredSessionModeUsesExactRequiredValue(t *testing.T) {
 	fake := &pagedListACPClient{ctx: context.Background()}
-	client := &acpConversationClient{client: fake, preferredMode: "agent-full-access"}
+	client := &acpConversationClient{client: fake, sessionMode: acpSessionModeContract{id: "agent-full-access", required: true}}
 	session := &middleware.NewSessionResponse{ConfigOptions: []middleware.ConfigOption{{
 		ID: "mode", Category: "mode", Options: []middleware.ConfigOptionValue{{ID: "agent"}, {ID: "agent-full-access"}},
 	}}}
-	if err := client.applyPreferredSessionMode(context.Background(), session, "remote"); err != nil {
+	if err := client.applyConfiguredSessionMode(context.Background(), session, "remote"); err != nil {
 		t.Fatal(err)
 	}
 	if fake.setConfigReq == nil || fake.setConfigReq.Value != "agent-full-access" {
 		t.Fatalf("configured mode was downgraded: %#v", fake.setConfigReq)
 	}
+	evidence := client.currentSessionModeEvidence()
+	if evidence == nil || evidence.EffectiveMode != "agent-full-access" || evidence.ConfigID != "mode" ||
+		evidence.EvidenceSource != sessionModeSourceSetConfigOption {
+		t.Fatalf("provider confirmation was not recorded: %#v", evidence)
+	}
 }
 
-func TestApplyPreferredSessionModeFailsClosedWhenUnavailable(t *testing.T) {
-	client := &acpConversationClient{client: &pagedListACPClient{ctx: context.Background()}, preferredMode: "agent-full-access"}
+func TestApplyConfiguredSessionModeFailsClosedWhenUnavailable(t *testing.T) {
+	client := &acpConversationClient{client: &pagedListACPClient{ctx: context.Background()}, sessionMode: acpSessionModeContract{id: "agent-full-access", required: true}}
 	session := &middleware.NewSessionResponse{Modes: &middleware.SessionModeState{
 		CurrentModeID: "agent", AvailableModes: []middleware.SessionMode{{ID: "agent"}},
 	}}
-	err := client.applyPreferredSessionMode(context.Background(), session, "remote")
+	err := client.applyConfiguredSessionMode(context.Background(), session, "remote")
 	if err == nil || !strings.Contains(err.Error(), "unavailable") {
 		t.Fatalf("expected fail-closed mode error, got %v", err)
 	}
@@ -268,7 +273,8 @@ func (c *pagedListACPClient) SetConfigOption(_ context.Context, req acpSetConfig
 		}
 		return &acpSetConfigOptionResponse{ConfigOptions: []zedacp.ConfigOption{{ID: "model", Current: value}}}, nil
 	}
-	return &acpSetConfigOptionResponse{}, nil
+	value, _ := req.Value.(string)
+	return &acpSetConfigOptionResponse{ConfigOptions: []zedacp.ConfigOption{{ID: req.ConfigID, Category: "mode", Current: value}}}, nil
 }
 func (c *pagedListACPClient) ExtRequest(context.Context, string, interface{}, interface{}) error {
 	return nil
@@ -686,5 +692,290 @@ func TestACPProtocolCapabilitiesFollowTheNegotiatedGeneration(t *testing.T) {
 		if descriptor, ok := v2Report.Operations[removed]; ok && descriptor.Supported {
 			t.Fatalf("version 2 removed %s: %#v", removed, descriptor)
 		}
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Required ACP session mode (MATRIX_ACP_SESSION_MODE)
+//
+// A required mode is a contract, not a preference: it is applied to the session
+// the provider returned and then confirmed by a provider statement, and a
+// session whose provider cannot or does not confirm it fails before any prompt
+// reaches the provider. The Codex launch-policy contract keeps its existing
+// behaviour through the same surfaces.
+// ----------------------------------------------------------------------------
+
+// sessionModeACPClient is a fake ACP client whose session state and mode-apply
+// responses the test controls. It exists because the mode surfaces are the whole
+// subject here: the session's advertised config options, the set response and
+// the current_mode_update notification.
+type sessionModeACPClient struct {
+	*pagedListACPClient
+	newSessionResponse *acpNewSessionResponse
+	configResponse     *acpSetConfigOptionResponse
+	configErr          error
+	setModeErr         error
+	emitModeOnSet      string
+	watchers           []acpSessionObserver
+}
+
+func (c *sessionModeACPClient) NewSession(ctx context.Context, req acpNewSessionRequest) (*acpNewSessionResponse, error) {
+	c.pagedListACPClient.newReq = &req
+	if c.newSessionResponse != nil {
+		return c.newSessionResponse, nil
+	}
+	return &acpNewSessionResponse{SessionID: "remote-mode"}, nil
+}
+
+func (c *sessionModeACPClient) SetConfigOption(ctx context.Context, req acpSetConfigOptionRequest) (*acpSetConfigOptionResponse, error) {
+	c.setConfigReq = &req
+	if c.configErr != nil {
+		return nil, c.configErr
+	}
+	if c.configResponse != nil {
+		return c.configResponse, nil
+	}
+	return c.pagedListACPClient.SetConfigOption(ctx, req)
+}
+
+func (c *sessionModeACPClient) SetMode(ctx context.Context, sessionID, modeID string) error {
+	c.setModeID = modeID
+	if c.setModeErr != nil {
+		return c.setModeErr
+	}
+	if c.emitModeOnSet != "" {
+		update := acpSessionNotification{Update: acpSessionUpdate{SessionUpdate: "current_mode_update", CurrentModeID: c.emitModeOnSet}}
+		for _, observer := range c.watchers {
+			observer.OnUpdate(update)
+		}
+	}
+	return nil
+}
+
+func (c *sessionModeACPClient) WatchSession(_ string, observer acpSessionObserver) func() {
+	c.watchers = append(c.watchers, observer)
+	return func() {}
+}
+
+func requiredModeClient(fake *sessionModeACPClient, mode string) *acpConversationClient {
+	return &acpConversationClient{
+		client: fake, loadedSessions: map[string]bool{},
+		sessionMode: acpSessionModeContract{id: mode, required: true},
+	}
+}
+
+func modeConfigSession(current string, values ...string) *acpNewSessionResponse {
+	options := make([]zedacp.ConfigOptionValue, 0, len(values))
+	for _, value := range values {
+		options = append(options, zedacp.ConfigOptionValue{ID: value})
+	}
+	return &acpNewSessionResponse{SessionID: "remote-mode", ConfigOptions: []acpConfigOption{{
+		ID: "mode", Name: "Session Mode", Category: "mode", Current: current, Options: options,
+	}}}
+}
+
+func sessionModeMetadataOfTurn(t *testing.T, result middleware.ConversationResult) map[string]interface{} {
+	t.Helper()
+	raw, ok := result.Metadata.Meta[sessionModeMetaKey]
+	if !ok {
+		t.Fatalf("turn metadata carries no %q evidence: %#v", sessionModeMetaKey, result.Metadata.Meta)
+	}
+	evidence, ok := raw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("session mode evidence is not a map: %#v", raw)
+	}
+	return evidence
+}
+
+func TestExecuteTurnAppliesAndVerifiesRequiredConfigOptionModeBeforePrompt(t *testing.T) {
+	fake := &sessionModeACPClient{
+		pagedListACPClient: &pagedListACPClient{ctx: context.Background(), protocolVersion: 1},
+		newSessionResponse: modeConfigSession("build", "build", "json-planning"),
+	}
+	client := requiredModeClient(fake, "json-planning")
+	result, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{Message: "return json"})
+	if err != nil {
+		t.Fatalf("required mode turn failed: %v", err)
+	}
+	if fake.setConfigReq == nil || fake.setConfigReq.ConfigID != "mode" || fake.setConfigReq.Value != "json-planning" {
+		t.Fatalf("required mode was not applied through the config option: %#v", fake.setConfigReq)
+	}
+	if fake.promptReq == nil {
+		t.Fatal("a confirmed required mode must let the prompt through")
+	}
+	evidence := sessionModeMetadataOfTurn(t, result)
+	for key, want := range map[string]interface{}{
+		"configured_mode": "json-planning",
+		"effective_mode":  "json-planning",
+		"config_id":       "mode",
+		"evidence_source": sessionModeSourceSetConfigOption,
+		"verification":    middleware.ModelVerificationConfirmed,
+		"enforcement":     "required",
+	} {
+		if evidence[key] != want {
+			t.Fatalf("turn evidence %s=%v want %v (%#v)", key, evidence[key], want, evidence)
+		}
+	}
+}
+
+func TestExecuteTurnConfirmsRequiredSessionModeFromProviderCurrentModeUpdate(t *testing.T) {
+	fake := &sessionModeACPClient{
+		pagedListACPClient: &pagedListACPClient{ctx: context.Background(), protocolVersion: 1},
+		newSessionResponse: &acpNewSessionResponse{SessionID: "remote-mode", Modes: &acpSessionModeState{
+			CurrentModeID: "build", AvailableModes: []zedacp.SessionMode{{ID: "build"}, {ID: "json-planning"}},
+		}},
+		emitModeOnSet: "json-planning",
+	}
+	client := requiredModeClient(fake, "json-planning")
+	result, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{Message: "return json"})
+	if err != nil {
+		t.Fatalf("v1 session mode turn failed: %v", err)
+	}
+	if fake.setModeID != "json-planning" {
+		t.Fatalf("required mode was not applied through session/set_mode: %q", fake.setModeID)
+	}
+	if fake.promptReq == nil {
+		t.Fatal("a confirmed v1 session mode must let the prompt through")
+	}
+	evidence := sessionModeMetadataOfTurn(t, result)
+	if evidence["evidence_source"] != sessionModeSourceCurrentModeUpdate || evidence["effective_mode"] != "json-planning" {
+		t.Fatalf("v1 confirmation evidence missing: %#v", evidence)
+	}
+}
+
+func TestExecuteTurnFailsBeforePromptWhenRequiredModeCannotBeConfirmed(t *testing.T) {
+	cases := map[string]struct {
+		fake    *sessionModeACPClient
+		wantErr []string
+	}{
+		"set response states no mode": {
+			fake: &sessionModeACPClient{
+				pagedListACPClient: &pagedListACPClient{ctx: context.Background(), protocolVersion: 1},
+				newSessionResponse: modeConfigSession("build", "build", "json-planning"),
+				configResponse:     &acpSetConfigOptionResponse{},
+			},
+			wantErr: []string{`"json-planning"`, "did not confirm"},
+		},
+		"set response states another mode": {
+			fake: &sessionModeACPClient{
+				pagedListACPClient: &pagedListACPClient{ctx: context.Background(), protocolVersion: 1},
+				newSessionResponse: modeConfigSession("build", "build", "json-planning"),
+				configResponse: &acpSetConfigOptionResponse{ConfigOptions: []acpConfigOption{{
+					ID: "mode", Category: "mode", Current: "build",
+				}}},
+			},
+			wantErr: []string{`"json-planning"`, `session reports "build"`},
+		},
+		"v1 current mode update states another mode": {
+			fake: &sessionModeACPClient{
+				pagedListACPClient: &pagedListACPClient{ctx: context.Background(), protocolVersion: 1},
+				newSessionResponse: &acpNewSessionResponse{SessionID: "remote-mode", Modes: &acpSessionModeState{
+					CurrentModeID: "build", AvailableModes: []zedacp.SessionMode{{ID: "build"}, {ID: "json-planning"}},
+				}},
+				emitModeOnSet: "plan",
+			},
+			wantErr: []string{`"json-planning"`, `session reports "plan"`},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			client := requiredModeClient(tc.fake, "json-planning")
+			_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{Message: "return json"})
+			if err == nil {
+				t.Fatal("an unconfirmed required mode must fail the turn")
+			}
+			for _, want := range tc.wantErr {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error %q does not contain %q", err, want)
+				}
+			}
+			if tc.fake.promptReq != nil {
+				t.Fatalf("an unconfirmed required mode must not reach the prompt: %#v", tc.fake.promptReq)
+			}
+		})
+	}
+}
+
+func TestExecuteTurnFailsBeforePromptWhenRequiredModeIsUnavailable(t *testing.T) {
+	fake := &sessionModeACPClient{
+		pagedListACPClient: &pagedListACPClient{ctx: context.Background(), protocolVersion: 1},
+		newSessionResponse: &acpNewSessionResponse{SessionID: "remote-mode", Modes: &acpSessionModeState{
+			CurrentModeID: "build", AvailableModes: []zedacp.SessionMode{{ID: "build"}},
+		}},
+	}
+	client := requiredModeClient(fake, "json-planning")
+	_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{Message: "return json"})
+	if err == nil || !strings.Contains(err.Error(), "unavailable") || !strings.Contains(err.Error(), `"json-planning"`) {
+		t.Fatalf("expected an unavailable-mode error naming the mode, got %v", err)
+	}
+	if fake.promptReq != nil {
+		t.Fatalf("an unavailable required mode must not reach the prompt: %#v", fake.promptReq)
+	}
+}
+
+func TestExecuteTurnFailsBeforePromptWhenRequiredModeApplyFails(t *testing.T) {
+	fake := &sessionModeACPClient{
+		pagedListACPClient: &pagedListACPClient{ctx: context.Background(), protocolVersion: 1},
+		newSessionResponse: modeConfigSession("build", "build", "json-planning"),
+		configErr:          errors.New("mode is locked"),
+	}
+	client := requiredModeClient(fake, "json-planning")
+	_, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{Message: "return json"})
+	if err == nil || !strings.Contains(err.Error(), `"json-planning"`) || !strings.Contains(err.Error(), "mode is locked") {
+		t.Fatalf("apply failure lost its mode name or cause: %v", err)
+	}
+	if fake.promptReq != nil {
+		t.Fatalf("a failed required mode must not reach the prompt: %#v", fake.promptReq)
+	}
+}
+
+func TestExecuteTurnKeepsCodexPreferredModeBehaviourWithoutVerification(t *testing.T) {
+	fake := &sessionModeACPClient{
+		pagedListACPClient: &pagedListACPClient{ctx: context.Background(), protocolVersion: 1},
+		newSessionResponse: &acpNewSessionResponse{SessionID: "remote-mode", Modes: &acpSessionModeState{
+			CurrentModeID: "agent", AvailableModes: []zedacp.SessionMode{{ID: "agent"}, {ID: "agent-full-access"}},
+		}},
+	}
+	client := &acpConversationClient{
+		client: fake, loadedSessions: map[string]bool{},
+		sessionMode: acpSessionModeContract{id: "agent-full-access"},
+	}
+	result, err := client.ExecuteTurn(context.Background(), middleware.ConversationTurn{Message: "work"})
+	if err != nil {
+		t.Fatalf("codex preferred mode turn failed: %v", err)
+	}
+	if fake.setModeID != "agent-full-access" || fake.promptReq == nil {
+		t.Fatalf("codex preferred mode was not applied: mode=%q prompt=%#v", fake.setModeID, fake.promptReq)
+	}
+	if _, ok := result.Metadata.Meta[sessionModeMetaKey]; ok {
+		t.Fatalf("a preferred (non-required) mode must not claim provider confirmation: %#v", result.Metadata.Meta)
+	}
+}
+
+func TestMaterializeRemoteSessionReturnsRequiredModeEvidence(t *testing.T) {
+	fake := &sessionModeACPClient{
+		pagedListACPClient: &pagedListACPClient{ctx: context.Background()},
+		newSessionResponse: modeConfigSession("build", "build", "json-planning"),
+	}
+	client := requiredModeClient(fake, "json-planning")
+	info, metadata, err := client.MaterializeRemoteSession(context.Background(), middleware.SessionMaterializeRequest{WorkspacePath: "/workspace"})
+	if err != nil {
+		t.Fatalf("materialize failed: %v", err)
+	}
+	if info.RemoteSessionID != "remote-mode" {
+		t.Fatalf("unexpected materialized session: %#v", info)
+	}
+	raw, ok := metadata.Meta[sessionModeMetaKey]
+	if !ok {
+		t.Fatalf("materialize returned no mode evidence: %#v", metadata.Meta)
+	}
+	evidence, ok := raw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("mode evidence is not a map: %#v", raw)
+	}
+	if evidence["configured_mode"] != "json-planning" || evidence["effective_mode"] != "json-planning" ||
+		evidence["config_id"] != "mode" || evidence["evidence_source"] != sessionModeSourceSetConfigOption ||
+		evidence["verification"] != middleware.ModelVerificationConfirmed {
+		t.Fatalf("materialize evidence is incomplete: %#v", evidence)
 	}
 }

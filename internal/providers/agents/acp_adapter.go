@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/logic/runtrace"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
@@ -75,7 +74,7 @@ func (f *acpConversationFactory) initializeConversation(ctx context.Context, end
 		authMethods:         append([]acpAuthMethod(nil), initResp.AuthMethods...),
 		loadedSessions:      map[string]bool{},
 		mcpServers:          toZedACPMCPServers(deps.McpServers),
-		preferredMode:       agentlaunch.PreferredSessionMode(endpoint),
+		sessionMode:         sessionModeContractFor(endpoint),
 	}
 	// A terminal login has to reconnect with the same endpoint and dependencies
 	// this connection was built from, so the factory owns that rebuild.
@@ -127,7 +126,8 @@ type acpConversationClient struct {
 	featureCapabilities acpFeatureCapabilities
 	authMethods         []acpAuthMethod
 	mcpServers          []acpMcpServerConfig
-	preferredMode       string
+	sessionMode         acpSessionModeContract
+	modeEvidence        *acpSessionModeEvidence
 	presentation        *acpPresentation
 	presentationStop    func()
 	// reconnect rebuilds the connection after a terminal authentication method
@@ -185,6 +185,7 @@ func (c *acpConversationClient) executeTurnOnce(ctx context.Context, turn middle
 		RemoteSessionID: remoteSessionID, Metadata: obs.Metadata(),
 	}
 	result.Metadata = c.withPresentationMetadata(remoteSessionID, result.Metadata)
+	result.Metadata = c.withSessionModeMetadata(result.Metadata)
 	observedReason, _ := obs.terminalState()
 	stopReason := observedReason
 	if resp != nil {
@@ -380,8 +381,8 @@ func (c *acpConversationClient) createAndConfigureACPRemoteSession(ctx context.C
 }
 
 func (c *acpConversationClient) applySessionMode(ctx context.Context, session *middleware.NewSessionResponse, sessionID string, log *slog.Logger) error {
-	if c.preferredMode != "" {
-		return c.applyPreferredSessionMode(ctx, session, sessionID)
+	if c.sessionMode.id != "" {
+		return c.applyConfiguredSessionMode(ctx, session, sessionID)
 	}
 	if c.endpoint.Sandbox != nil {
 		return nil
@@ -404,64 +405,6 @@ func (c *acpConversationClient) applySessionMode(ctx context.Context, session *m
 		log.Warn("failed to set ACP mode", "mode", modeID, "error", err)
 	}
 	return nil
-}
-
-func (c *acpConversationClient) applyPreferredSessionMode(ctx context.Context, session *middleware.NewSessionResponse, sessionID string) error {
-	if session == nil {
-		return fmt.Errorf("configured provider mode %q cannot be verified: empty session state", c.preferredMode)
-	}
-	if currentSessionMode(session) == c.preferredMode {
-		return nil
-	}
-	if configID, value := findSessionConfigMode(session, c.preferredMode); configID != "" {
-		_, err := c.currentACPClient().SetConfigOption(ctx, acpSetConfigOptionRequest{SessionID: sessionID, ConfigID: configID, Value: value})
-		return wrapConfiguredModeError(c.preferredMode, err)
-	}
-	if !hasSessionMode(session, c.preferredMode) {
-		return fmt.Errorf("configured provider mode %q is unavailable in ACP session state", c.preferredMode)
-	}
-	err := c.currentACPClient().SetMode(ctx, sessionID, c.preferredMode)
-	return wrapConfiguredModeError(c.preferredMode, err)
-}
-
-func findSessionConfigMode(session *middleware.NewSessionResponse, preferred string) (string, string) {
-	for _, option := range session.ConfigOptions {
-		if option.Category != "mode" && !strings.EqualFold(option.ID, "mode") {
-			continue
-		}
-		for _, value := range option.Options {
-			if value.ID == preferred {
-				return option.ID, value.ID
-			}
-		}
-	}
-	return "", ""
-}
-
-func currentSessionMode(session *middleware.NewSessionResponse) string {
-	if session.Modes == nil {
-		return ""
-	}
-	return session.Modes.CurrentModeID
-}
-
-func hasSessionMode(session *middleware.NewSessionResponse, preferred string) bool {
-	if session.Modes == nil {
-		return false
-	}
-	for _, mode := range session.Modes.AvailableModes {
-		if mode.ID == preferred {
-			return true
-		}
-	}
-	return false
-}
-
-func wrapConfiguredModeError(mode string, err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("apply configured provider mode %q: %w", mode, err)
 }
 
 type acpLoadRemoteSessionRequest struct {

@@ -35,6 +35,9 @@ func classifyProviderFailure(agentID string, endpoint middleware.ProtocolEndpoin
 		code = providerfailure.ModelUnavailable
 		message = "configured provider model is unavailable through the selected adapter"
 		model = extractBacktickModel(errText)
+	case isToolPermissionDenial(lower):
+		code = providerfailure.ProviderToolPermissionDenied
+		message = "provider aborted the turn after a tool permission was denied"
 	case isProviderAuthError(lower):
 		code = providerfailure.AuthMismatch
 		message = "provider authentication failed or does not match the selected adapter"
@@ -69,6 +72,70 @@ func isModelUnavailableError(lower string) bool {
 			strings.Contains(lower, "unknown model option") ||
 			strings.Contains(lower, "do not have access") ||
 			strings.Contains(lower, "not have access"))
+}
+
+// toolPermissionDenialSignals are the structured or protocol-shaped phrases a
+// provider uses when it aborts a turn because a tool permission was denied. They
+// are matched lowercased against the provider's error text; the plain "permission
+// denied" phrase is also accepted because providers emit it without any tool
+// noun, and an authentication refusal is excluded separately below. The final
+// entries are Matrix's own denial wording for client-side fs/terminal methods,
+// which the peer may echo into the abort it reports.
+var toolPermissionDenialSignals = []string{
+	"tool_permission_denied",
+	"tool permission denied",
+	"tool permission",
+	"permission_denied",
+	"permission denied",
+	"user rejected",
+	"rejected permission",
+	"permission rejected",
+	"denied permission",
+	"user denied",
+	"denied by user",
+	"tool call rejected",
+	"tool call was rejected",
+	"rejected tool call",
+	"agent.trust_mode is false",
+}
+
+// authenticationSignals mark a refusal as an authentication failure rather than a
+// tool-permission denial. A provider that says both — for example "permission
+// denied: invalid api key" — is an auth failure: the caller fixes credentials,
+// not the tool policy. This is the conservative side of the classification,
+// since a false tool-permission diagnosis would send a consumer looking for a
+// denied tool that never existed.
+var authenticationSignals = []string{
+	"auth",
+	"unauthorized",
+	"forbidden",
+	"api key",
+	"apikey",
+	"credential",
+	"401",
+	"403",
+	"token",
+	"login",
+	"sign in",
+}
+
+// isToolPermissionDenial reports whether a provider turn error is evidenced as a
+// denial of a tool permission. It never makes an error into a denial: only the
+// provider's own words count, and authentication evidence always wins.
+func isToolPermissionDenial(lower string) bool {
+	if matchesAny(lower, authenticationSignals) {
+		return false
+	}
+	return matchesAny(lower, toolPermissionDenialSignals)
+}
+
+func matchesAny(lower string, signals []string) bool {
+	for _, signal := range signals {
+		if strings.Contains(lower, signal) {
+			return true
+		}
+	}
+	return false
 }
 
 func isProviderAuthError(lower string) bool {
