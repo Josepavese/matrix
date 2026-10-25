@@ -140,8 +140,10 @@ repair were the ones that had never been proven to fail.
 
 - `gofmt` — formatting is not negotiable.
 - `go vet` — including the checks the race detector does not perform.
-- `golangci-lint` — when installed; the tool must be rebuilt with the toolchain
-  on `PATH`, otherwise it fails to read export data and the run is meaningless.
+- `golangci-lint` — when installed; the pinned release must be able to read the
+  export data of the toolchain pinned in `go.mod` (v2.14.0 or later for
+  `go1.27.3`, whose export data version is 5), otherwise the type checker fails
+  before analysing anything and the run is meaningless.
 - `govulncheck` — the last run reported no vulnerabilities affecting called code.
 - `go run ./scripts/governance_check --manifest governance/manifest.toml` — the
   repository's own layering and budget rules.

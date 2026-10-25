@@ -42,7 +42,11 @@ jobs:
     - name: golangci-lint
       uses: golangci/golangci-lint-action@63c23d5020da8f97005b6de340504130bdbe42c7 # v9
       with:
-        version: v2.13.2
+        # The linter must be able to read the export data of the toolchain pinned
+        # in go.mod. v2.13.2's type checker supports export data version 4 and
+        # fails on the version 5 that go1.27.3 emits; v2.14.0 reads it. This pin
+        # moves with the Go pin, never ahead of it.
+        version: v2.14.0
 
   test:
     runs-on: ubuntu-latest
