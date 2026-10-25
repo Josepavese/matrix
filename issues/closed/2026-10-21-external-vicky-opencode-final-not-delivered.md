@@ -183,3 +183,69 @@ senza wire trace/versione agente, rimane non attribuita; l'archiviazione indica
 il completamento delle correttive Matrix, non la qualifica esterna del flusso.
 
 Evidenza: [verbale v0.1.56](../../docs/governance/releases/2026-10-21-v0.1.56.md).
+
+## Qualifica esterna VPS VICKY — 21 ottobre 2026
+
+**Risolta anche sulla VPS; confermata la chiusura della segnalazione.**
+Aggiornamento dell'agente esterno VICKY, su mandato esplicito dell'utente:
+modificati soltanto questa nota già archiviata e il relativo indice `issues/`.
+Nessun sorgente, installazione locale o configurazione Matrix di questo
+repository toccato; nessun commit/push Matrix eseguito dall'agente esterno.
+
+Adottata sulla VPS la release ufficiale **Matrix0.1.56**, commit
+`87918ff932be19431ce1cd2b07cadb50f3f820f2`, build `2026-10-21T08:57:32Z`.
+Archivio upstream Linux amd64 SHA256
+`176430aee74ade7ef995b4156627e6eb5fd6d9800205ad625e24d315e9ec4894`;
+il suo binario coincide con quello locale e con l'eseguibile effettivo del
+processo worker sulla VPS, SHA256
+`a719a89d7f232f94d73c31b318671f803b4a65248e03825436be53fa5bf8e343`.
+
+Consegna mediante pacchetto ufficiale Half Pocket Hub0.2.6, SHA256
+`97f9ed880aaff5fb74fb4d3e2491cc26f7f50a559b783a7a7030bb28362cbf6f`,
+Core0.1.119/generazione25, operazione `vicky-matrix056-hub026-20261021`
+`completed`. Lifecycle ordinario con drain e backup dell'owner. Delta dal
+pacchetto Hub0.2.5: soltanto `bin/matrix` e manifest di versione; binario Hub e
+controller invariati, configurazione/enrollment con fingerprint identiche.
+[Provenienza pubblica immutabile](https://software-preview.halfpocket.net/releases/vicky/matrix056-20261021/publication.json).
+
+Nuovo invio esplicito di qualifica dopo il terminale fallito, nella stessa
+conversazione Hub `e91da1261c30062f51fc889a68a6780c472b1042e160245d`:
+
+- turno `788fa61ae1d288d299d53b53c7e60a90be5bf33024e19264`, `completed`;
+- finale autenticato Hub di **1.569 byte**, SHA256
+  `4c21fc72e1afe6aeb0dac35721e9986527597c25a6893e9956c3738d9c565b26`;
+- modello richiesto/selezionato/confermato `deepseek/deepseek-flash`,
+  `provider_confirmed`, evidenza `session/set_config_option`, nessun fallback;
+- `Knowledge HubProvider` accetta il finale consegnato e `Extractor` valida
+  lo schema corrente di 14 campi con citazioni: 9 estratti e 5 dichiarati mancanti;
+  `complete=false`, `reviewState=unreviewed`, importi/date normalizzati verificati;
+- nessun finale recuperato dall'API OpenCode, nessuna reasoning usata come risposta;
+- aziende, profili, documenti, analisi, report e PDF confrontati prima/dopo e
+  invariati; run/turno originali falliti preservati.
+
+Questa prova chiude il criterio esterno di consegna, senza attribuire
+retroattivamente la causa dell'episodio storico privo di wire trace. Le
+regressioni locali del guard senza output restano quelle del maintainer; non
+si dichiara un nuovo test negativo nativo non eseguito. Input esclusivamente
+sintetico, stessa sessione operatore: non qualifica il servizio Knowledge nativo,
+l'IAM worker autonomo, la revisione o la pubblicazione assicurativa completa.
+Il goal VICKY resta attivo; nessun intervento sul percorso Mail.
+
+Prova tecnica compatta:
+`/home/jose/halfpocket/docs/platform-sdk/vicky-matrix056-proof-20261021.json`
+e copia VICKY `docs/qa/matrix056-20261021.json`. Evidenze private limitate nel
+banco `/media/jose/Data/vicky-documents-20261020/matrix056-20261021/`, senza
+credenziali o reasoning copiati nel registro pubblico.
+
+Correlazione nativa readonly aggiuntiva: trace Matrix del run
+`run-333bcbc7-6e4e-4607-8b09-e6855e62c8b3` con `status=completed`, contesto
+`hub.turn` associato esattamente al nuovo turno e `remote_session_id` identico
+all'episodio originale (`ses_ea45d78afffeKltlUbxg7ZDGO5`). Non è stata aperta
+una conversazione remota sostitutiva; nessun contenuto privato del trace è
+copiato nella nota.
+
+Prova condivisa Half Pocket:
+[commit ee4d81f6](https://github.com/Josepavese/gestionale-ai-halfpocket/blob/ee4d81f61a0910c45491182f4c79f9011f137612/docs/platform-sdk/vicky-matrix056-proof-20261021.json),
+origin/main verificato sullo stesso hash. Questo aggiornamento del registro
+Matrix resta non committato dall'agente esterno; lo staging già presente del
+team proprietario è preservato.
