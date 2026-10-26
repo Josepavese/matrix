@@ -113,7 +113,7 @@ func digestOfFile(t *testing.T, path string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func sampleGeneration(digest string) Generation {
+func sampleGeneration() Generation {
 	return Generation{
 		AgentID:  "opencode",
 		Version:  "1.2.3",
@@ -148,7 +148,7 @@ func publishTarGz(t *testing.T, store *Store, entries []archiveEntry) (Generatio
 	archive := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	writeTestTarGz(t, archive, entries)
 	digest := digestOfFile(t, archive)
-	published, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration(digest))
+	published, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration())
 	if err != nil {
 		t.Fatalf("publish archive: %v", err)
 	}

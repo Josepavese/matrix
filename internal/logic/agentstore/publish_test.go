@@ -67,7 +67,7 @@ func TestPublishArchivePreservesLauncherVerbatim(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	writeTestTarGz(t, archive, launcherEntries())
 	digest := digestOfFile(t, archive)
-	generation := sampleGeneration(digest)
+	generation := sampleGeneration()
 	generation.Launcher = "./opencode"
 	published, err := store.PublishArchive(testArchiver(), archive, digest, generation)
 	if err != nil {
@@ -94,11 +94,11 @@ func TestPublishArchiveIsIdempotent(t *testing.T) {
 	writeTestTarGz(t, archive, launcherEntries())
 	digest := digestOfFile(t, archive)
 
-	first, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration(digest))
+	first, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration())
 	if err != nil {
 		t.Fatalf("first publish: %v", err)
 	}
-	second, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration(digest))
+	second, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration())
 	if err != nil {
 		t.Fatalf("idempotent republish: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestPublishArchiveRejectsImmutabilityConflict(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	writeTestTarGz(t, archive, launcherEntries())
 	digest := digestOfFile(t, archive)
-	if _, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration(digest)); err != nil {
+	if _, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration()); err != nil {
 		t.Fatalf("first publish: %v", err)
 	}
 	conflicts := []struct {
@@ -135,7 +135,7 @@ func TestPublishArchiveRejectsImmutabilityConflict(t *testing.T) {
 	}
 	for _, conflict := range conflicts {
 		t.Run(conflict.name, func(t *testing.T) {
-			incoming := sampleGeneration(digest)
+			incoming := sampleGeneration()
 			conflict.change(&incoming)
 			_, err := store.PublishArchive(testArchiver(), archive, digest, incoming)
 			if err == nil {
@@ -162,7 +162,7 @@ func TestPublishArchiveRefusesTamperedExistingGeneration(t *testing.T) {
 		t.Fatalf("tamper launcher: %v", err)
 	}
 	relockForTest(t, blobDir)
-	if _, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration(digest)); err == nil || !strings.Contains(err.Error(), "verification failed") {
+	if _, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration()); err == nil || !strings.Contains(err.Error(), "verification failed") {
 		t.Fatalf("a tampered existing generation must not be reused: %v", err)
 	}
 }
@@ -172,7 +172,7 @@ func TestPublishArchiveRejectsDigestMismatch(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	writeTestTarGz(t, archive, launcherEntries())
 	wrong := hexDigest("0")
-	if _, err := store.PublishArchive(testArchiver(), archive, wrong, sampleGeneration(wrong)); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+	if _, err := store.PublishArchive(testArchiver(), archive, wrong, sampleGeneration()); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
 		t.Fatalf("expected a digest mismatch refusal: %v", err)
 	}
 	list, err := store.List()
@@ -208,7 +208,7 @@ func TestPublishArchiveRejectsSymlinkLauncher(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	writeTestTarGz(t, archive, entries)
 	digest := digestOfFile(t, archive)
-	_, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration(digest))
+	_, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration())
 	if err == nil || !strings.Contains(err.Error(), "not found in artifact") {
 		t.Fatalf("a dropped symlink launcher must leave the generation unusable: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestPublishArchiveRejectsHardlinkLauncher(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	writeTestTarGz(t, archive, entries)
 	digest := digestOfFile(t, archive)
-	if _, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration(digest)); err == nil {
+	if _, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration()); err == nil {
 		t.Fatal("expected the hardlink launcher to be refused")
 	}
 	assertNoStagingLeftovers(t, store)
@@ -240,7 +240,7 @@ func TestPublishArchiveDropsUnsafeArchiveEntries(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	writeTestTarGz(t, archive, entries)
 	digest := digestOfFile(t, archive)
-	published, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration(digest))
+	published, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration())
 	if err != nil {
 		t.Fatalf("the provider drops hostile entries; the remaining tree is publishable: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestPublishArchiveRejectsNilProvider(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	writeTestTarGz(t, archive, launcherEntries())
 	digest := digestOfFile(t, archive)
-	if _, err := store.PublishArchive(nil, archive, digest, sampleGeneration(digest)); err == nil || !strings.Contains(err.Error(), "archive provider is required") {
+	if _, err := store.PublishArchive(nil, archive, digest, sampleGeneration()); err == nil || !strings.Contains(err.Error(), "archive provider is required") {
 		t.Fatalf("expected a missing provider refusal: %v", err)
 	}
 }
@@ -276,7 +276,7 @@ func TestPublishArchiveRejectsLauncherMissing(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "artifact.tar.gz")
 	writeTestTarGz(t, archive, []archiveEntry{{name: "lib/data.txt", mode: 0o644, body: "data"}})
 	digest := digestOfFile(t, archive)
-	generation := sampleGeneration(digest)
+	generation := sampleGeneration()
 	generation.Launcher = "missing-binary"
 	if _, err := store.PublishArchive(testArchiver(), archive, digest, generation); err == nil || !strings.Contains(err.Error(), "not found in artifact") {
 		t.Fatalf("expected a missing launcher refusal: %v", err)
@@ -290,7 +290,7 @@ func TestPublishArchiveRejectsEscapingLauncher(t *testing.T) {
 	writeTestTarGz(t, archive, launcherEntries())
 	digest := digestOfFile(t, archive)
 	for _, launcher := range []string{"../outside", "lib/../../outside", "/bin/sh", "."} {
-		generation := sampleGeneration(digest)
+		generation := sampleGeneration()
 		generation.Launcher = launcher
 		if _, err := store.PublishArchive(testArchiver(), archive, digest, generation); err == nil {
 			t.Fatalf("expected launcher %q to be refused", launcher)
@@ -305,7 +305,7 @@ func TestPublishArchiveRejectsUnsupportedArchiveFormat(t *testing.T) {
 		t.Fatalf("write archive: %v", err)
 	}
 	digest := digestOfFile(t, archive)
-	if _, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration(digest)); err == nil || !strings.Contains(err.Error(), "unsupported archive format") {
+	if _, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration()); err == nil || !strings.Contains(err.Error(), "unsupported archive format") {
 		t.Fatalf("expected an unsupported format refusal: %v", err)
 	}
 }
@@ -315,7 +315,7 @@ func TestPublishArchiveFromZip(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "artifact.zip")
 	writeTestZip(t, archive, launcherEntries())
 	digest := digestOfFile(t, archive)
-	published, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration(digest))
+	published, err := store.PublishArchive(testArchiver(), archive, digest, sampleGeneration())
 	if err != nil {
 		t.Fatalf("publish zip: %v", err)
 	}

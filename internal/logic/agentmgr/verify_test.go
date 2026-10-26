@@ -84,7 +84,7 @@ func sealStoreLayout(t *testing.T, root string) {
 func makeStoreTreeWritable(root string) {
 	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil || entry == nil {
-			return nil
+			return nil //nolint:nilerr // best-effort cleanup: an unreadable entry is not a test failure.
 		}
 		if entry.IsDir() {
 			_ = os.Chmod(path, 0o755)

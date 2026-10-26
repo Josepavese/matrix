@@ -130,7 +130,7 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # commands, the deterministic agent inventory, the offline verify report, the restore
 # path and the explicit prune of a superseded per-home copy. Measured 5365; no file,
 # function or branch budget is relaxed.
-"cmd/matrix" = 5365
+"cmd/matrix" = 5373
 # 2026-09-23: the generic ACP handler reads the agent's own authMethods through
 # AgentAuthController instead of always returning a hardcoded method, and performs
 # the protocol authenticate for a method the agent published. The port gained its
@@ -244,11 +244,11 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # package: digest-addressed publication, atomic publish, tree manifests, per-home
 # references, fail-closed consumer open and GC. Measured 923 production LOC; the
 # default 800 ceiling does not cover that surface, and no file/function/branch
-# budget is relaxed. 2026-10-26: agentmgr grows by the store-backed install and
+# budget is relaxed (measured 924 after the CI lint pass on the same commit). 2026-10-26: agentmgr grows by the store-backed install and
 # publish contract plus the read-side inventory/verify/restore/prune surface,
 # measured 2052 after splitting the publish gate out of PublishToStore to stay
 # inside the branch budget.
-"internal/logic/agentstore" = 923
+"internal/logic/agentstore" = 924
 "internal/logic/agentmgr" = 2052
 # 2026-07-22: ACP message identity and structured final/progress projection add
 # lossless messageId/phase handling without provider-text heuristics. 2026-07-19:

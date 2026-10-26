@@ -19,14 +19,6 @@ func registryAgent(agentID, version string) InventoryAgent {
 	return InventoryAgent{ID: agentID, Version: version, Distribution: "binary", Regenerable: true}
 }
 
-func restoreByID(results []RestoreResult) map[string]RestoreResult {
-	byID := make(map[string]RestoreResult, len(results))
-	for _, result := range results {
-		byID[result.ID] = result
-	}
-	return byID
-}
-
 func TestRestoreSkipsAnAlreadyRegisteredAgent(t *testing.T) {
 	fake := startFakeRegistry(t, publishRealDigest)
 	installer, storage, _, _ := newReadSideInstaller(t, fake.registryURL())

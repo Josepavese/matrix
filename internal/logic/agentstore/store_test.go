@@ -77,7 +77,7 @@ func TestOpenConsumerAcceptsSealedStore(t *testing.T) {
 	if err := consumer.Verify(digest); err != nil {
 		t.Fatalf("consumer Verify: %v", err)
 	}
-	if _, err := consumer.PublishArchive(testArchiver(), "ignored.tar.gz", digest, sampleGeneration(digest)); !errors.Is(err, errReadOnlyStore) {
+	if _, err := consumer.PublishArchive(testArchiver(), "ignored.tar.gz", digest, sampleGeneration()); !errors.Is(err, errReadOnlyStore) {
 		t.Fatalf("publish on a consumer store = %v, want errReadOnlyStore", err)
 	}
 	if _, _, err := consumer.GC(RefSet{}); !errors.Is(err, errReadOnlyStore) {
@@ -151,11 +151,15 @@ func TestWritableByCurrentUserReadsRealModes(t *testing.T) {
 			t.Fatalf("directory sealed %04o must not count as writable", sealed)
 		}
 	}
-	os.Chmod(dir, 0o770)
+	if err := os.Chmod(dir, 0o770); err != nil {
+		t.Fatalf("chmod 0770: %v", err)
+	}
 	if !writableByCurrentUser(dir) {
 		t.Fatal("group-writable directory must fail closed")
 	}
-	os.Chmod(dir, 0o707)
+	if err := os.Chmod(dir, 0o707); err != nil {
+		t.Fatalf("chmod 0707: %v", err)
+	}
 	if !writableByCurrentUser(dir) {
 		t.Fatal("world-writable directory must count as writable")
 	}

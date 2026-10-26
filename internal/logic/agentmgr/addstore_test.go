@@ -76,11 +76,11 @@ func sealStore(t *testing.T, root string) {
 	t.Cleanup(func() {
 		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {
-				return nil
+				return nil //nolint:nilerr // best-effort cleanup: an unreadable entry is not a test failure.
 			}
 			info, infoErr := entry.Info()
 			if infoErr != nil {
-				return nil
+				return nil //nolint:nilerr // best-effort cleanup: an unreadable entry is not a test failure.
 			}
 			perm := info.Mode().Perm()
 			if entry.IsDir() {

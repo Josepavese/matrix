@@ -2,6 +2,7 @@ package agentstore
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -264,7 +265,7 @@ func writeJSONAtomic(filePath string, value any) error {
 	syncErr := temp.Sync()
 	closeErr := temp.Close()
 	if writeErr != nil || syncErr != nil || closeErr != nil {
-		return fmt.Errorf("write %s: write=%v sync=%v close=%v", filepath.Base(filePath), writeErr, syncErr, closeErr)
+		return fmt.Errorf("write %s: %w", filepath.Base(filePath), errors.Join(writeErr, syncErr, closeErr))
 	}
 	if err := os.Rename(tempName, filePath); err != nil {
 		return fmt.Errorf("replace %s: %w", filePath, err)
