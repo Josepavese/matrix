@@ -104,7 +104,9 @@ matrix agent store gc --store /srv/matrix/store --home /home/a/.local/share/matr
 dry run by default and deletes only with `--apply`; it refuses to run without at
 least one `--home`, because it must know every home whose references to keep. It
 never deletes a referenced generation, and it also removes publish staging older
-than one hour.
+than one hour. As a guard against a wrong home list, `--apply` is also refused
+when the given homes carry no store reference at all: `--allow-empty-refs`
+confirms that the store really is unused.
 
 Consumer side:
 
@@ -182,7 +184,9 @@ reclaim.
 - **Garbage collection is deployment-coordinated.** `gc` trusts the `--home`
   paths it is given. A home whose reference file is not passed can have its
   generation reclaimed; run `gc` dry first and keep the home list in the
-  deployment runbook.
+  deployment runbook. The empty-reference guard refuses `--apply` when the list
+  yields no reference at all, but it cannot know about a home it was never told
+  about.
 - **A store-backed home depends on the store being mounted.** If the store is
   unavailable, the agent cannot launch; that is a visible launch failure, not a
   silent fallback to an old copy. The Vault traffic, sessions and agent records

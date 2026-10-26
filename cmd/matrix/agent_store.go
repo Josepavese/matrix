@@ -13,10 +13,11 @@ import (
 )
 
 var (
-	agentStoreRoot  string
-	agentStoreJSON  bool
-	agentStoreHomes []string
-	agentStoreApply bool
+	agentStoreRoot          string
+	agentStoreJSON          bool
+	agentStoreHomes         []string
+	agentStoreApply         bool
+	agentStoreAllowEmptyRef bool
 )
 
 var agentStoreCmd = &cobra.Command{
@@ -148,6 +149,12 @@ deletes.`,
 		if err != nil {
 			exitf("Error: %v", err)
 		}
+		if len(refs) == 0 && agentStoreApply && !agentStoreAllowEmptyRef {
+			exitf("Error: the given --home list carries no store reference at all; refusing to delete every generation (re-check --home, or pass --allow-empty-refs to confirm the store is unused)")
+		}
+		if len(refs) == 0 && !agentStoreApply {
+			fmt.Fprintln(cmd.ErrOrStderr(), "warning: the given --home list carries no store reference: every generation would be reclaimable; check the --home list before --apply")
+		}
 		pending, freed, err := collectStoreGC(root, home, refs, agentStoreApply)
 		if err != nil {
 			exitf("Error: %v", err)
@@ -276,5 +283,6 @@ func init() {
 	}
 	agentStoreGCCmd.Flags().StringArrayVar(&agentStoreHomes, "home", nil, "PAL home whose references must be kept (repeatable)")
 	agentStoreGCCmd.Flags().BoolVar(&agentStoreApply, "apply", false, "Delete the unreferenced generations (dry run otherwise)")
+	agentStoreGCCmd.Flags().BoolVar(&agentStoreAllowEmptyRef, "allow-empty-refs", false, "Allow --apply when the --home list carries no store reference at all (confirms the store is unused)")
 	agentStoreCmd.AddCommand(agentStorePublishCmd, agentStoreListCmd, agentStoreVerifyCmd, agentStoreGCCmd)
 }
