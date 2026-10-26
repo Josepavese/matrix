@@ -10,6 +10,19 @@ state gestite e conservate in [closed/](closed/).
 Questo file è un indice, non una segnalazione aperta. Qualifiche esterne e limiti
 accettati sono espliciti nel riepilogo; l'archiviazione non li certifica risolti.
 
+## Revisione del 26 ottobre 2026
+
+- [Copie agente per worker e picco del backup Hub](closed/2026-10-26-external-agent-artifact-dedup-hub-backup-peak.md):
+  **chiusa in v0.1.61 in parte, con limiti dichiarati**. Costruiti il deposito
+  immutabile content-addressed con pubblicazione atomica e ruoli
+  publisher/consumer, l'installazione e il `prune` da store con riferimento per
+  home, il contratto consumer per escludere il software rigenerabile dal backup
+  (inventario deterministico, `verify` con metodi dichiarati, `restore`) e il GC
+  coordinato con guardia sulle home. Non costruiti per scelta: modifica del
+  backup o della riserva Hub, immutabilità cross-account come garanzia (resta una
+  proprietà del deployment), conversione automatica/hardlink, confronto dei
+  digest degli otto worker e qualunque risparmio dichiarato senza misura.
+
 ## Revisione del 25 ottobre 2026
 
 - [Release Matrix compilata con una patch Go superata](closed/2026-10-23-external-matrix-release-go-patch.md):
