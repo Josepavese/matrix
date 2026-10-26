@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcatalog"
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
+	"github.com/Josepavese/matrix/internal/logic/agentstore"
 	networkprovider "github.com/Josepavese/matrix/internal/providers/network"
 	"github.com/spf13/cobra"
 )
@@ -19,6 +21,8 @@ var (
 	installA2ATenant          string
 	installA2AHeaders         []string
 	installAllowUnverified    bool
+	installStoreRoot          string
+	installStoreDigest        string
 )
 
 var installCmd = &cobra.Command{
@@ -28,6 +32,10 @@ var installCmd = &cobra.Command{
 	Run: func(_ *cobra.Command, args []string) {
 		agentID := args[0]
 		netProv := networkprovider.NewProvider()
+		if strings.TrimSpace(installStoreRoot) != "" && (installA2AURL != "" || installA2ACardURL != "") {
+			fmt.Fprintln(os.Stderr, "Error: --store cannot be combined with --a2a-url/--a2a-card-url: a remote A2A endpoint runs no local software")
+			os.Exit(1)
+		}
 
 		// 1. Setup Dependencies
 		ctx, cleanup, err := NewInstallerContext(DefaultVaultPath)
@@ -61,6 +69,18 @@ var installCmd = &cobra.Command{
 		}
 
 		// 2. Execute Install
+		storeRoot := strings.TrimSpace(installStoreRoot)
+		if storeRoot == "" {
+			storeRoot = strings.TrimSpace(os.Getenv(agentstore.EnvName))
+		}
+		if storeRoot != "" {
+			installFromSharedStore(ctx, agentID, storeRoot)
+			return
+		}
+		if installStoreDigest != "" {
+			fmt.Fprintf(os.Stderr, "Error: --digest requires --store (or %s); a digest alone does not name a store\n", agentstore.EnvName)
+			os.Exit(1)
+		}
 		ctx.Installer.SetAllowUnverified(installAllowUnverified)
 		if err := ctx.Installer.Install(context.Background(), agentID); err != nil {
 			fmt.Fprintf(os.Stderr, "Installation failed: %v\n", err)
@@ -71,6 +91,27 @@ var installCmd = &cobra.Command{
 	},
 }
 
+// installFromSharedStore registers an agent whose software is already a verified
+// generation of the shared immutable store. The store is read-only for this
+// runtime, so the bytes are not downloaded again and no per-home copy is made;
+// the agent record points at the digest-addressed generation.
+func installFromSharedStore(ctx *InstallerContext, agentID, storeRoot string) {
+	digest := strings.TrimSpace(installStoreDigest)
+	if digest == "" {
+		resolved, err := ctx.Installer.ResolveStoreGeneration(context.Background(), agentID, storeRoot)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Store install failed: %v\n", err)
+			os.Exit(1)
+		}
+		digest = resolved.Digest
+	}
+	if err := ctx.Installer.InstallFromStore(context.Background(), agentID, storeRoot, digest); err != nil {
+		fmt.Fprintf(os.Stderr, "Store install failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Successfully installed and registered agent '%s' from store %s generation %s\n", agentID, storeRoot, digest)
+}
+
 func init() {
 	installCmd.Flags().StringVar(&installA2AURL, "a2a-url", "", "Register the agent as a remote A2A endpoint instead of installing from the ACP registry")
 	installCmd.Flags().StringVar(&installA2ATransport, "a2a-transport", "JSONRPC", "A2A transport binding for --a2a-url or an A2A card")
@@ -79,5 +120,7 @@ func init() {
 	installCmd.Flags().StringVar(&installA2ATenant, "a2a-tenant", "", "Optional A2A tenant for direct endpoint registration")
 	installCmd.Flags().StringArrayVar(&installA2AHeaders, "a2a-header", nil, "Governed A2A header as Name=Value (repeatable; stored only in the Vault)")
 	installCmd.Flags().BoolVar(&installAllowUnverified, "allow-unverified", false, "Install a binary distribution whose registry entry publishes no sha256 (recorded in the install evidence; refused by default)")
+	installCmd.Flags().StringVar(&installStoreRoot, "store", "", "Install the agent from a verified generation of a shared immutable artifact store instead of a per-home copy (defaults to $"+agentstore.EnvName+")")
+	installCmd.Flags().StringVar(&installStoreDigest, "digest", "", "Exact store generation to install with --store; resolved from the current registry version when omitted")
 	rootCmd.AddCommand(installCmd)
 }

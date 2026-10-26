@@ -24,6 +24,7 @@ type Installer struct {
 	proc     middleware.Process
 	registry *RegistryClient
 	baseDir  string
+	home     string
 
 	// progress receives human-readable progress lines. It is a field rather than
 	// direct writes to stdout so that a caller offering machine-readable output
@@ -71,16 +72,25 @@ type InstallerConfig struct {
 	Process  middleware.Process
 	Registry *RegistryClient
 	BaseDir  string
+	// Home is the PAL home the installer belongs to. It is resolved when BaseDir
+	// is empty; callers that override BaseDir for a test PAL may set it
+	// explicitly. It names where per-home software references are recorded, so
+	// an empty Home disables the store-backed paths that need one.
+	Home string
 }
 
 // NewInstaller creates a new agent Installer from the given config.
 func NewInstaller(cfg InstallerConfig) (*Installer, error) {
+	home := cfg.Home
 	if cfg.BaseDir == "" {
-		home, err := matrixhome.Resolve()
+		resolved, err := matrixhome.Resolve()
 		if err != nil {
 			return nil, fmt.Errorf("cannot determine matrix home for agent install path: %w", err)
 		}
-		cfg.BaseDir = matrixhome.AgentsDir(home)
+		cfg.BaseDir = matrixhome.AgentsDir(resolved)
+		if home == "" {
+			home = resolved
+		}
 	}
 	return &Installer{
 		progress: os.Stdout,
@@ -91,7 +101,14 @@ func NewInstaller(cfg InstallerConfig) (*Installer, error) {
 		proc:     cfg.Process,
 		registry: cfg.Registry,
 		baseDir:  cfg.BaseDir,
+		home:     home,
 	}, nil
+}
+
+// Home returns the PAL home the installer writes per-home references into. It
+// is empty when the installer was built over a bare base directory.
+func (inst *Installer) Home() string {
+	return inst.home
 }
 
 // RegistryClient returns the ACP registry client used by this installer.
@@ -297,6 +314,9 @@ func (inst *Installer) Uninstall(_ context.Context, agentID string) error {
 	}
 	if err := agentcfg.DeleteMeta(inst.storage, agentID); err != nil {
 		slog.Warn("failed to delete agent metadata", "agent", agentID, "error", err)
+	}
+	if err := inst.removeStoreReference(agentID); err != nil {
+		slog.Warn("failed to delete agent store reference", "agent", agentID, "error", err)
 	}
 	return nil
 }

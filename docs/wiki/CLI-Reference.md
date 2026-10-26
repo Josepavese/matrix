@@ -126,6 +126,68 @@ Configured launch policy adds requested/effective policy, application
 mechanism, and verification status. Inapplicable policy reports
 `launch_policy_invalid` and blocks dispatch.
 
+### `matrix agent inventory [--json]`
+
+Describe the installed agent software deterministically and without secrets:
+sorted by id, environment reduced to variable names, no install timestamps and no
+values. `regenerable` says whether the software can be reinstalled from a governed
+source, and `restore_command` names the command that would do it. This is the
+document a consumer reads before excluding regenerable software from a backup.
+
+```bash
+matrix agent inventory --json > inventory.json
+```
+
+### `matrix agent verify [agent-id...] [--strict] [--json]`
+
+Verify installed software. Store-backed agents are verified offline against the
+store's tree manifest (`store_tree`); per-home installs report the recorded
+evidence and launcher existence (`recorded_evidence`), which does not re-prove the
+bytes offline. `--strict` exits non-zero unless every agent is fully verified.
+
+```bash
+matrix agent verify --strict
+```
+
+### `matrix agent restore (--inventory <file> | --all) [--store <root>] [--allow-version-drift] [--replace] [--dry-run]`
+
+Reinstall regenerable software from a verified store generation when the inventory
+is store-backed, otherwise from the governed registry. It never installs from an
+arbitrary URL and never substitutes a different registry version unless
+`--allow-version-drift` is explicit.
+
+```bash
+matrix agent restore --inventory inventory.json --store /srv/matrix/store --dry-run
+```
+
+### `matrix agent prune [agent-id...] [--apply] [--json]`
+
+Reclaim the per-home software copy of an agent that already runs from a verified
+store generation. Dry run by default; `--apply` removes only the software
+directory, keeping the Vault record and the store reference. Refused when the
+agent has no store reference or the recorded generation no longer verifies.
+
+```bash
+matrix agent prune --apply claude
+```
+
+### `matrix agent store <publish|list|verify|gc>`
+
+Manage the shared immutable agent artifact store (outside every PAL home).
+
+```bash
+matrix agent store publish claude --store /srv/matrix/store
+matrix agent store list --store /srv/matrix/store
+matrix agent store verify <sha256> --store /srv/matrix/store
+matrix agent store gc --home /home/a/.local/share/matrix --store /srv/matrix/store --apply
+```
+
+`publish` only publishes artifacts the registry index publishes a valid sha256
+for. `gc` is a dry run by default, requires at least one `--home` whose references
+to keep, and never deletes a referenced generation. `--store` defaults to
+`$MATRIX_AGENT_STORE`. See
+[Agent artifact store and regenerable software](../matrix_agent_artifact_store.md).
+
 ### `matrix agent set-endpoint <agent-id> <address>`
 
 Set the network endpoint for an agent.
@@ -508,6 +570,17 @@ matrix install <agent-id> --allow-unverified
 
 `--allow-unverified` applies only to a missing digest: a digest that mismatches
 or is malformed always refuses the install.
+
+`--store <root>` installs from a verified generation of the shared immutable
+artifact store instead of a per-home copy; `--digest <sha256>` pins the exact
+generation. Without `--digest` the generation matching the current registry
+version is resolved, and the install fails closed when there is none. The store
+path also defaults to `$MATRIX_AGENT_STORE`. See
+[Agent artifact store and regenerable software](../matrix_agent_artifact_store.md).
+
+```bash
+matrix install claude --store /srv/matrix/store
+```
 
 ### `matrix uninstall <agent-id>`
 

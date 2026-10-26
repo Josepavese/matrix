@@ -95,6 +95,26 @@ type Meta struct {
 	// ArtifactVerification is absent for agents that were not installed by the
 	// installer (seeded from config, registered A2A endpoints).
 	ArtifactVerification *ArtifactVerification `json:"artifact_verification,omitempty"`
+	// Reference is present only when the agent's software is a verified
+	// generation of an immutable artifact store shared across PAL homes instead
+	// of a per-home copy. It names the digest that must still verify in the
+	// store before the software is run, regenerated or reclaimed.
+	Reference *ArtifactReference `json:"reference,omitempty"`
+}
+
+// ArtifactReference is the evidence that an agent's software lives in a shared
+// immutable artifact store: the store root, the digest-addressed generation,
+// the digest of its file tree, the launcher inside the generation and the
+// platform the generation was published for. It is the read side of the store
+// contract used by inventory, verify, prune and the consumer backup.
+type ArtifactReference struct {
+	Store              string    `json:"store"`
+	Digest             string    `json:"digest"`
+	TreeManifestSHA256 string    `json:"tree_manifest_sha256"`
+	Launcher           string    `json:"launcher"`
+	Version            string    `json:"version"`
+	Platform           string    `json:"platform"`
+	InstalledAt        time.Time `json:"installed_at"`
 }
 
 // MetaKey returns the vault key for an agent's metadata.

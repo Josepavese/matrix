@@ -106,6 +106,32 @@ Uninstall:
 matrix uninstall <agent-id>
 ```
 
+## Sharing Installed Software
+
+A binary agent is extracted under this PAL home, so every home keeps its own copy
+of the same verified bytes. Many homes can instead run the same immutable
+generation of a shared artifact store: the publisher verifies and publishes the
+artifact once, and each home registers the agent with a small reference to it.
+
+```bash
+# once, as the publisher account
+matrix agent store publish <agent-id> --store /srv/matrix/store
+
+# on each PAL home, as the runtime user
+matrix install <agent-id> --store /srv/matrix/store
+matrix agent prune <agent-id> --apply   # reclaim the superseded per-home copy
+```
+
+The runtime user must not be able to write the store: Matrix refuses to install
+from a store it can see as writable. `matrix agent inventory` describes the
+installed software deterministically and without secrets, `matrix agent verify`
+proves a store generation's tree offline, and `matrix agent restore` reinstalls
+from a verified store generation or the governed registry. This makes regenerable
+software safe to leave out of a data backup; the backup policy itself stays the
+consumer's decision. See
+[Agent artifact store and regenerable software](../matrix_agent_artifact_store.md)
+for the layout, the fail-closed rules and the stated limits.
+
 ## Configuring Agents
 
 ### Set a custom binary path
