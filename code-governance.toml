@@ -130,7 +130,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # commands, the deterministic agent inventory, the offline verify report, the restore
 # path and the explicit prune of a superseded per-home copy. Measured 5365; no file,
 # function or branch budget is relaxed.
-"cmd/matrix" = 5373
+# 2026-10-28: `matrix agent store usage` measures what the store holds and who still
+# references it, replacing the `du -sb` guesswork the deployment note had to leave to
+# the consumer. Measured 5451; no file, function or branch budget is relaxed.
+"cmd/matrix" = 5451
 # 2026-09-23: the generic ACP handler reads the agent's own authMethods through
 # AgentAuthController instead of always returning a hardcoded method, and performs
 # the protocol authenticate for a method the agent published. The port gained its
@@ -248,8 +251,14 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # publish contract plus the read-side inventory/verify/restore/prune surface,
 # measured 2052 after splitting the publish gate out of PublishToStore to stay
 # inside the branch budget.
-"internal/logic/agentstore" = 924
-"internal/logic/agentmgr" = 2052
+# 2026-10-28: the store gains the measurement read side (footprint classified by
+# reference fan-out, staging apart) and an inspection open that separates "the
+# store's role is wrong" from "the bytes are wrong" without mutating permissions;
+# agentmgr reports that distinction as a third verification method plus the remedy
+# each result knows. Measured 1050 and 2095; no file, function or branch budget is
+# relaxed.
+"internal/logic/agentstore" = 1050
+"internal/logic/agentmgr" = 2095
 # 2026-07-22: ACP message identity and structured final/progress projection add
 # lossless messageId/phase handling without provider-text heuristics. 2026-07-19:
 # stable ACP v1.19 and A2A v1.0.1 coverage expansion adds

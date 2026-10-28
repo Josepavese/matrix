@@ -10,6 +10,12 @@ import (
 
 var errReadOnlyStore = errors.New("agent store is open read-only; reopen it with OpenPublisher to mutate it")
 
+// ErrLayoutWritable is returned when a store layout is writable by the current
+// user. A consumer refuses to open such a store, because a runtime that can
+// write the layout can swap a verified generation after the check. The failure
+// says the store's role is wrong; it says nothing about the bytes.
+var ErrLayoutWritable = errors.New("agent store layout is writable by the current user, so a verified generation can still be swapped")
+
 // Store is an opened agent store. The root is absolute and symlink-resolved;
 // readOnly is set by OpenConsumer and refuses every mutation.
 type Store struct {
@@ -44,6 +50,24 @@ func OpenConsumer(root, palHome string) (*Store, error) {
 		return nil, err
 	}
 	if err := store.requireReadOnly(); err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
+// OpenInspection opens a store to read and verify its generations without
+// claiming a trust boundary: it validates the root and requires a usable
+// layout, but it neither checks nor changes permissions. It exists so a report
+// can tell "the store's role is wrong" apart from "the bytes are wrong", which
+// are different facts with different remedies. It never mutates the store and
+// it must not be used to install or to run software.
+func OpenInspection(root, palHome string) (*Store, error) {
+	resolved, err := ValidateRoot(root, palHome)
+	if err != nil {
+		return nil, err
+	}
+	store := &Store{root: resolved, readOnly: true}
+	if err := store.requireLayout(); err != nil {
 		return nil, err
 	}
 	return store, nil
@@ -113,7 +137,7 @@ func requireReadableDir(path string) error {
 func (s *Store) requireReadOnly() error {
 	for _, dir := range s.layoutDirs() {
 		if writableByCurrentUser(dir) {
-			return fmt.Errorf("agent store directory %s is writable by the current user, so a verified generation can still be swapped; publish from a different account or mount the store read-only", dir)
+			return fmt.Errorf("%w: publish from a different account or mount the store read-only for the runtime user (first offending directory: %s)", ErrLayoutWritable, dir)
 		}
 	}
 	return nil

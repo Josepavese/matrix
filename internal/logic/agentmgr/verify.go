@@ -1,8 +1,10 @@
 package agentmgr
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 
 	"github.com/Josepavese/matrix/internal/logic/agentcfg"
@@ -10,23 +12,50 @@ import (
 )
 
 // Verification methods. They say what was actually proven: a full tree
-// verification of a store generation, or the evidence the per-home install
-// recorded. The two are never conflated, because only the first re-reads bytes.
+// verification of a store generation, the same tree verification in a store
+// whose role cannot be trusted, or the evidence the per-home install recorded.
+// The three are never conflated, because only the first re-reads bytes and only
+// the first is a guarantee that survives the check.
 const (
 	// VerifyMethodStoreTree re-read the published generation and proved its tree
-	// matches the recorded manifest.
+	// matches the recorded manifest. The store is read-only for the runtime user,
+	// so the proof survives the check.
 	VerifyMethodStoreTree = "store_tree"
+	// VerifyMethodStoreWritable re-read the same tree and found it matching, but
+	// the store layout is writable by the runtime user: those bytes can be
+	// swapped after the check, so the match is a point-in-time observation and
+	// never a guarantee. The bytes are not wrong; the store's role is.
+	VerifyMethodStoreWritable = "store_writable"
 	// VerifyMethodRecordedEvidence read the install evidence and checked the
 	// launcher exists. The bytes were not re-proven offline.
 	VerifyMethodRecordedEvidence = "recorded_evidence"
 )
 
+// storeRoleRemedy is the deployment fix for a store the runtime user can write.
+// It is offered wherever that role is reported, because the failure is about the
+// deployment and not about the agent.
+const storeRoleRemedy = "publish from a different account or mount the store read-only for the runtime user, then run this check again"
+
 // VerifyResult is the outcome of verifying one installed agent.
+//
+// Remedy names the command sequence or deployment change that would turn this
+// result into a re-proven one, when Matrix knows one. It is empty when the
+// result needs no remedy, and it never claims a fix Matrix cannot perform.
 type VerifyResult struct {
 	ID       string `json:"id"`
 	Method   string `json:"method"`
 	Verified bool   `json:"verified"`
 	Detail   string `json:"detail"`
+	Remedy   string `json:"remedy,omitempty"`
+}
+
+// storeProof says how a generation that verified must be reported: under which
+// method, with which remedy, and whether the result survives the store being
+// modified after the check.
+type storeProof struct {
+	Method  string
+	Remedy  string
+	Durable bool
 }
 
 // VerifyInstalled verifies the installed software of the named agents. An empty
@@ -89,19 +118,44 @@ func (inst *Installer) verifyInstalledAgent(agentID string, registered map[strin
 	if meta.Reference != nil {
 		return inst.verifyStoreCopy(agentID, meta.Reference)
 	}
-	return inst.verifyRecordedEvidence(agentID, entry.Config.Command, meta.ArtifactVerification)
+	return inst.verifyRecordedEvidence(agentID, entry.Config.Command, meta)
 }
 
 // verifyStoreCopy proves a store-backed agent still matches the generation its
-// reference names: the store must open read-only, the generation must be
-// readable, its tree must verify, and the tree manifest must be the recorded one.
+// reference names. A sealed store is opened in the consumer role and a match is
+// a guarantee. A store this user can write is still measured, because "the store
+// role is wrong" and "the bytes are wrong" are different facts that need
+// different remedies, but the match is reported as a point-in-time observation.
 func (inst *Installer) verifyStoreCopy(agentID string, ref *agentcfg.ArtifactReference) VerifyResult {
-	result := VerifyResult{ID: agentID, Method: VerifyMethodStoreTree}
 	store, err := agentstore.OpenConsumer(ref.Store, inst.home)
-	if err != nil {
-		result.Detail = fmt.Sprintf("cannot open the recorded store %s as a consumer: %v", ref.Store, err)
-		return result
+	if err == nil {
+		return proveStoreGeneration(store, agentID, ref, storeProof{Method: VerifyMethodStoreTree, Durable: true})
 	}
+	if !errors.Is(err, agentstore.ErrLayoutWritable) {
+		return VerifyResult{
+			ID:     agentID,
+			Method: VerifyMethodStoreTree,
+			Detail: fmt.Sprintf("cannot open the recorded store %s as a consumer: %v", ref.Store, err),
+		}
+	}
+	inspection, inspectErr := agentstore.OpenInspection(ref.Store, inst.home)
+	if inspectErr != nil {
+		return VerifyResult{
+			ID:     agentID,
+			Method: VerifyMethodStoreWritable,
+			Detail: fmt.Sprintf("the recorded store %s is writable by the current user and cannot be inspected: %v", ref.Store, inspectErr),
+			Remedy: storeRoleRemedy,
+		}
+	}
+	return proveStoreGeneration(inspection, agentID, ref, storeProof{Method: VerifyMethodStoreWritable, Remedy: storeRoleRemedy})
+}
+
+// proveStoreGeneration proves the generation a reference names: it must be
+// readable, it must verify against its published tree manifest, and that
+// manifest must be the one the agent reference recorded. A proof the store's own
+// writability undermines is reported as measured but never as verified.
+func proveStoreGeneration(store *agentstore.Store, agentID string, ref *agentcfg.ArtifactReference, proof storeProof) VerifyResult {
+	result := VerifyResult{ID: agentID, Method: proof.Method, Remedy: proof.Remedy}
 	generation, err := store.Get(ref.Digest)
 	if err != nil {
 		result.Detail = fmt.Sprintf("store generation %s is not readable: %v", ref.Digest, err)
@@ -115,6 +169,10 @@ func (inst *Installer) verifyStoreCopy(agentID string, ref *agentcfg.ArtifactRef
 		result.Detail = fmt.Sprintf("store generation %s records tree manifest %s, but the agent reference names %s; the generation is not the one that was installed", generation.Digest, generation.TreeManifestSHA256, ref.TreeManifestSHA256)
 		return result
 	}
+	if !proof.Durable {
+		result.Detail = fmt.Sprintf("store generation %s matches its recorded tree manifest %s at the time of this check, but the store layout is writable by the current user, so the match cannot be relied on: those bytes can be swapped after the check", generation.Digest, generation.TreeManifestSHA256)
+		return result
+	}
 	result.Verified = true
 	result.Detail = fmt.Sprintf("store generation %s verified against its recorded tree manifest %s", generation.Digest, generation.TreeManifestSHA256)
 	return result
@@ -122,10 +180,12 @@ func (inst *Installer) verifyStoreCopy(agentID string, ref *agentcfg.ArtifactRef
 
 // verifyRecordedEvidence reports what the per-home install recorded. It checks
 // the launcher exists because a record whose program is gone is not an
-// installation, but it cannot re-prove the bytes offline and says so.
-func (inst *Installer) verifyRecordedEvidence(agentID, launcher string, verification *agentcfg.ArtifactVerification) VerifyResult {
-	result := VerifyResult{ID: agentID, Method: VerifyMethodRecordedEvidence}
+// installation, but it cannot re-prove the bytes offline and says so. The remedy
+// names the only path Matrix offers from that evidence to a re-proven tree.
+func (inst *Installer) verifyRecordedEvidence(agentID, launcher string, meta agentcfg.Meta) VerifyResult {
+	result := VerifyResult{ID: agentID, Method: VerifyMethodRecordedEvidence, Remedy: perHomeRemedy(meta.DistTypes)}
 	launcherDetail := inst.launcherEvidence(launcher)
+	verification := meta.ArtifactVerification
 	if verification == nil {
 		result.Detail = fmt.Sprintf("no artifact verification was recorded for this per-home install (launcher %s); the bytes were not re-proven offline", launcherDetail)
 		return result
@@ -141,6 +201,22 @@ func (inst *Installer) verifyRecordedEvidence(agentID, launcher string, verifica
 	result.Verified = true
 	result.Detail = fmt.Sprintf("the recorded install evidence says the artifact was sha256-verified for %s; the bytes were not re-proven offline (per-home launcher present)", verification.Platform)
 	return result
+}
+
+// perHomeRemedy names the only path Matrix offers from recorded evidence to a
+// re-proven tree: publish the verified registry artifact into a shared store and
+// reinstall from it. An agent installed by its package manager has no archive to
+// publish, and an agent registered by path was never installed from a registry
+// artifact: the remedy says so instead of promising a command that cannot work.
+func perHomeRemedy(distTypes []string) string {
+	switch {
+	case slices.Contains(distTypes, "binary"):
+		return "publish the verified registry artifact into a shared store and reinstall from it: `matrix agent store publish <agent-id> --store <root>`, then `matrix install <agent-id> --store <root>`"
+	case slices.Contains(distTypes, "npx"), slices.Contains(distTypes, "uvx"):
+		return "this agent is installed by its package manager, so there is no archive for Matrix to publish or to re-prove; a shared store cannot carry it"
+	default:
+		return "this agent was registered by path, not installed from a registry artifact, so there is no recorded artifact for Matrix to re-prove"
+	}
 }
 
 // launcherEvidence describes the launcher the vault entry names: "present" only

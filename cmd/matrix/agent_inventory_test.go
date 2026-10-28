@@ -183,3 +183,26 @@ func mapKeys(commands map[string]*cobra.Command) []string {
 	}
 	return keys
 }
+
+// TestVerifyLinesKeepTheRemedyBesideTheVerdict locks the human surface: a result
+// that carries a remedy shows it in the same line, because an operator who sees
+// FAILED must also see what would fix it. The line keeps its four columns.
+func TestVerifyLinesKeepTheRemedyBesideTheVerdict(t *testing.T) {
+	results := []agentmgr.VerifyResult{
+		{ID: "alpha", Method: agentmgr.VerifyMethodStoreWritable, Detail: "measured but not durable", Remedy: "publish from a different account"},
+		{ID: "beta", Method: agentmgr.VerifyMethodStoreTree, Verified: true, Detail: "already proven"},
+	}
+	lines := verifyLines(results)
+	if len(lines) != 2 {
+		t.Fatalf("verify lines = %d, want one per result", len(lines))
+	}
+	if !strings.Contains(lines[0], "remedy: publish from a different account") {
+		t.Fatalf("the failing line hides the remedy: %q", lines[0])
+	}
+	if strings.Contains(lines[1], "remedy:") {
+		t.Fatalf("a result without a remedy must not print one: %q", lines[1])
+	}
+	if fields := strings.Split(lines[0], "\t"); len(fields) != 4 {
+		t.Fatalf("the line changed its column count: %d fields in %q", len(fields), lines[0])
+	}
+}

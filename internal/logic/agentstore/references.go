@@ -93,7 +93,23 @@ func RemoveReference(palHome, agentID string) error {
 
 // LoadRefSet unions the digests referenced by every given PAL home.
 func LoadRefSet(homes []string) (RefSet, error) {
-	refs := RefSet{}
+	fanout, err := LoadRefFanout(homes)
+	if err != nil {
+		return nil, err
+	}
+	refs := make(RefSet, len(fanout))
+	for digest := range fanout {
+		refs[digest] = struct{}{}
+	}
+	return refs, nil
+}
+
+// LoadRefFanout counts, per digest, how many of the given PAL homes reference
+// it. A measurement needs the count rather than the union: a generation one
+// home needs and a generation two homes share are different amounts of work to
+// retire, and only the count tells them apart.
+func LoadRefFanout(homes []string) (map[string]int, error) {
+	fanout := make(map[string]int, len(homes))
 	for _, home := range homes {
 		references, err := ReadReferences(home)
 		if err != nil {
@@ -101,9 +117,9 @@ func LoadRefSet(homes []string) (RefSet, error) {
 		}
 		for _, ref := range references.Agents {
 			if ref.Digest != "" {
-				refs[ref.Digest] = struct{}{}
+				fanout[ref.Digest]++
 			}
 		}
 	}
-	return refs, nil
+	return fanout, nil
 }

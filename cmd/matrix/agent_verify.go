@@ -18,9 +18,16 @@ var agentVerifyCmd = &cobra.Command{
 	Long: `Verify the installed software of the named agents (all agents when none are named).
 
 A store-backed agent is verified by re-reading its published generation and proving
-the file tree matches the recorded manifest ("store_tree"). A per-home install is
-verified from the evidence recorded at install time and its launcher ("recorded_evidence");
-that method never claims the bytes were re-proven offline.`,
+the file tree matches the recorded manifest ("store_tree"); that result survives the
+check because the store is read-only for the runtime user. When the store is writable
+by this user the same tree is still measured and reported as "store_writable": the
+bytes matched at the time of the check, but they can be swapped afterwards, so it is
+not a guarantee and it never verifies. A per-home install is verified from the
+evidence recorded at install time and its launcher ("recorded_evidence"); that method
+never claims the bytes were re-proven offline.
+
+A result carries a remedy when Matrix knows the command or deployment change that
+would turn it into a re-proven result.`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx, cleanup, err := NewInstallerContext(DefaultVaultPath)
@@ -47,7 +54,9 @@ that method never claims the bytes were re-proven offline.`,
 }
 
 // verifyLines renders one line per result, naming the method so a reader never
-// mistakes recorded evidence for a re-proven tree.
+// mistakes recorded evidence for a re-proven tree, and appending the remedy when
+// the result has one. The line keeps its four columns: the remedy is guidance for
+// the reader, not a fifth fact about the agent.
 func verifyLines(results []agentmgr.VerifyResult) []string {
 	lines := make([]string, 0, len(results))
 	for _, result := range results {
@@ -55,7 +64,11 @@ func verifyLines(results []agentmgr.VerifyResult) []string {
 		if !result.Verified {
 			verdict = "FAILED"
 		}
-		lines = append(lines, fmt.Sprintf("%s\t%s\t%s\t%s", result.ID, verdict, result.Method, result.Detail))
+		detail := result.Detail
+		if result.Remedy != "" {
+			detail = fmt.Sprintf("%s; remedy: %s", detail, result.Remedy)
+		}
+		lines = append(lines, fmt.Sprintf("%s\t%s\t%s\t%s", result.ID, verdict, result.Method, detail))
 	}
 	return lines
 }

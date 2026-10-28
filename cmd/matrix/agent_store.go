@@ -243,8 +243,9 @@ func resolveStoreRoot(flagValue string) (string, error) {
 }
 
 // openInspectionStore opens a store for read-only inspection. A sealed store is
-// opened as a consumer; a writable publisher layout falls back to the publisher
-// role because listing and verifying never mutate anything.
+// opened in the consumer role; otherwise it is opened for inspection only. It
+// must never fall back to the publisher role: opening a publisher rewrites the
+// layout permissions, so inspecting a store would silently unseal it.
 func openInspectionStore(root string) (*agentstore.Store, error) {
 	flagRoot, err := resolveStoreRoot(root)
 	if err != nil {
@@ -257,15 +258,14 @@ func openInspectionStore(root string) (*agentstore.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, consumerErr := agentstore.OpenConsumer(flagRoot, home)
-	if consumerErr == nil {
+	if store, err := agentstore.OpenConsumer(flagRoot, home); err == nil {
 		return store, nil
 	}
-	publisher, publisherErr := agentstore.OpenPublisher(flagRoot, home)
-	if publisherErr == nil {
-		return publisher, nil
+	store, err := agentstore.OpenInspection(flagRoot, home)
+	if err != nil {
+		return nil, fmt.Errorf("cannot open agent store %s for inspection: %w", flagRoot, err)
 	}
-	return nil, fmt.Errorf("cannot open agent store %s: %w", flagRoot, consumerErr)
+	return store, nil
 }
 
 // currentPALHome is the PAL home a store must live outside of.

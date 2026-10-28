@@ -257,3 +257,131 @@ func TestVerifyInstalledReportsUnknownAgentsWithoutFailingTheBatch(t *testing.T)
 		t.Fatalf("all-agents verification = %+v", all)
 	}
 }
+
+// unsealStoreLayout makes the store layout writable by the current user again,
+// which is the shape a single-account deployment ends up with: the same account
+// publishes and runs.
+func unsealStoreLayout(t *testing.T, root string) {
+	t.Helper()
+	for _, dir := range []string{root, filepath.Join(root, "blobs"), filepath.Join(root, "blobs", "sha256"), filepath.Join(root, "generations")} {
+		if err := os.Chmod(dir, 0o755); err != nil {
+			t.Fatalf("unseal %s: %v", dir, err)
+		}
+	}
+}
+
+func TestVerifyInstalledMeasuresAWritableStoreWithoutClaimingAGuarantee(t *testing.T) {
+	installer, storage, _, _ := newReadSideInstaller(t, "")
+	fixture := publishStoreFixture(t, "stored", "2.5.0")
+	savedStoreBackedAgent(t, storage, fixture)
+	unsealStoreLayout(t, fixture.root)
+
+	results, err := installer.VerifyInstalled([]string{"stored"})
+	if err != nil {
+		t.Fatalf("VerifyInstalled: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	result := results[0]
+	if result.Verified {
+		t.Fatalf("a writable store must never verify, got %+v", result)
+	}
+	if result.Method != VerifyMethodStoreWritable {
+		t.Fatalf("method = %q, want %q: the bytes matched but the store role does not", result.Method, VerifyMethodStoreWritable)
+	}
+	if !strings.Contains(result.Detail, "cannot be relied on") {
+		t.Fatalf("detail must say the match cannot be relied on: %q", result.Detail)
+	}
+	if !strings.Contains(result.Detail, fixture.digest) {
+		t.Fatalf("detail %q does not name the measured generation %s", result.Detail, fixture.digest)
+	}
+	if !strings.Contains(result.Remedy, "read-only") {
+		t.Fatalf("remedy must name the deployment fix: %q", result.Remedy)
+	}
+}
+
+func TestVerifyInstalledReportsTamperedBytesInsideAWritableStore(t *testing.T) {
+	installer, storage, _, _ := newReadSideInstaller(t, "")
+	fixture := publishStoreFixture(t, "stored", "2.5.0")
+	savedStoreBackedAgent(t, storage, fixture)
+
+	unsealStoreLayout(t, fixture.root)
+	makeStoreTreeWritable(fixture.blobDir())
+	if err := os.Chmod(fixture.launcherPath(), 0o644); err != nil {
+		t.Fatalf("unseal the published launcher: %v", err)
+	}
+	if err := os.WriteFile(fixture.launcherPath(), []byte("#!/bin/sh\nexit 1\n"), 0o644); err != nil {
+		t.Fatalf("tamper with the published launcher: %v", err)
+	}
+
+	results, err := installer.VerifyInstalled([]string{"stored"})
+	if err != nil {
+		t.Fatalf("VerifyInstalled: %v", err)
+	}
+	if len(results) != 1 || results[0].Verified {
+		t.Fatalf("tampered bytes must not verify: %+v", results)
+	}
+	if !strings.Contains(results[0].Detail, "failed tree verification") {
+		t.Fatalf("wrong bytes must be reported as wrong bytes, not as a store role problem: %q", results[0].Detail)
+	}
+}
+
+// perHomeAgent registers a per-home install with the given distribution types
+// and no recorded artifact verification, which is the shape of a script install.
+func perHomeAgent(t *testing.T, storage middleware.Storage, agentID string, distTypes []string) {
+	t.Helper()
+	launcher := filepath.Join(t.TempDir(), agentID+"-bin")
+	if err := os.WriteFile(launcher, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write launcher: %v", err)
+	}
+	saveAgentEntry(t, storage, agentID, agentcfg.Config{Command: launcher, Kind: "acp", Transport: "stdio"})
+	saveAgentMeta(t, storage, agentID, agentcfg.Meta{ID: agentID, Version: "1.0.0", DistTypes: distTypes})
+}
+
+func TestVerifyInstalledNamesTheStorePathForAPerHomeBinaryInstall(t *testing.T) {
+	installer, storage, _, _ := newReadSideInstaller(t, "")
+	perHomeAgent(t, storage, "binary-home", []string{"binary"})
+
+	results, err := installer.VerifyInstalled([]string{"binary-home"})
+	if err != nil {
+		t.Fatalf("VerifyInstalled: %v", err)
+	}
+	result := results[0]
+	if result.Verified || result.Method != VerifyMethodRecordedEvidence {
+		t.Fatalf("a per-home install without recorded evidence must not verify: %+v", result)
+	}
+	if !strings.Contains(result.Remedy, "matrix agent store publish") || !strings.Contains(result.Remedy, "matrix install") {
+		t.Fatalf("remedy must name the store adoption sequence: %q", result.Remedy)
+	}
+}
+
+func TestVerifyInstalledDeclaresThePackageManagerLimitInsteadOfAStoreRemedy(t *testing.T) {
+	installer, storage, _, _ := newReadSideInstaller(t, "")
+	perHomeAgent(t, storage, "npx-home", []string{"npx"})
+
+	results, err := installer.VerifyInstalled([]string{"npx-home"})
+	if err != nil {
+		t.Fatalf("VerifyInstalled: %v", err)
+	}
+	remedy := results[0].Remedy
+	if !strings.Contains(remedy, "package manager") {
+		t.Fatalf("remedy must declare the package-manager limit: %q", remedy)
+	}
+	if strings.Contains(remedy, "matrix agent store publish") {
+		t.Fatalf("an npx agent has no archive to publish, so the store must not be offered as the remedy: %q", remedy)
+	}
+}
+
+func TestVerifyInstalledDeclaresTheRegisteredByPathLimit(t *testing.T) {
+	installer, storage, _, _ := newReadSideInstaller(t, "")
+	perHomeAgent(t, storage, "path-home", nil)
+
+	results, err := installer.VerifyInstalled([]string{"path-home"})
+	if err != nil {
+		t.Fatalf("VerifyInstalled: %v", err)
+	}
+	if remedy := results[0].Remedy; !strings.Contains(remedy, "registered by path") {
+		t.Fatalf("remedy must declare that a path-registered agent has no registry artifact: %q", remedy)
+	}
+}
