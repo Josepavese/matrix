@@ -97,6 +97,7 @@ Publisher side:
 matrix agent store publish claude --store /srv/matrix/store
 matrix agent store list --store /srv/matrix/store
 matrix agent store verify <digest> --store /srv/matrix/store
+matrix agent store usage --store /srv/matrix/store --home /home/a/.local/share/matrix --home /home/b/.local/share/matrix
 matrix agent store gc --store /srv/matrix/store --home /home/a/.local/share/matrix --home /home/b/.local/share/matrix
 ```
 
@@ -107,6 +108,16 @@ never deletes a referenced generation, and it also removes publish staging older
 than one hour. As a guard against a wrong home list, `--apply` is also refused
 when the given homes carry no store reference at all: `--allow-empty-refs`
 confirms that the store really is unused.
+
+`usage` answers the question `gc` only answers one slice of: how large is the
+store, and who still needs it. It measures every generation on disk, counts it
+exactly once, and classifies its bytes by how many of the named homes reference
+it: **exclusive** (exactly one), **shared** (two or more) and **reclaimable**
+(none, so the next `gc` pass would delete them). Publish staging is reported
+apart because it is work in flight. The three buckets add up to the measured
+total by construction, and the per-generation lines are the evidence behind the
+totals. Like `gc`, it requires at least one `--home`: a measurement that does not
+know every home would report live software as reclaimable.
 
 Consumer side:
 
@@ -126,8 +137,13 @@ matrix agent prune claude --apply    # delete only the superseded per-home copy
 - `matrix agent verify` reports `store_tree` for store-backed agents (full offline
   tree verification) and `recorded_evidence` for per-home installs. The second
   method proves the launcher exists and that the install recorded a verified
-  digest; it does **not** re-prove the bytes offline. `--strict` exits non-zero
-  unless every agent is fully verified.
+  digest; it does **not** re-prove the bytes offline. A store-backed agent whose
+  store the runtime user can write is reported as `store_writable`: the tree was
+  measured and matched at the time of the check, but those bytes can be swapped
+  afterwards, so it is a point-in-time observation and never verifies. Each result
+  carries a `remedy` when Matrix knows the command or deployment change that would
+  turn it into a re-proven result; `--strict` exits non-zero unless every agent is
+  fully verified.
 - `matrix agent restore` installs from a verified store generation when the
   inventory says the agent is store-backed, otherwise from the governed registry.
   It refuses to substitute a different registry version unless
@@ -154,10 +170,15 @@ per home:
    (or, for registry installs, `matrix agent restore --all`), then verify with
    `matrix agent verify --strict`.
 
-No savings are declared here before measurement: the reclaimable size is the
-actual size of the per-home software directories (`du -sb <home>/agents`) and
-`matrix agent prune` reports the bytes it would free for the agents it can
-reclaim.
+No savings are declared here before measurement. After adoption, measure with
+`matrix agent store usage --home <every home>`: it reports the store footprint
+split into exclusive, shared and reclaimable bytes, the per-generation reference
+counts, and publish staging apart. The per-home copies that are still there are
+measured with `du -sb <home>/agents`, and `matrix agent prune` reports the bytes
+it would free for the agents it can actually reclaim. What a data backup has to
+carry afterwards is the store (outside every home) plus `configs/` and the Vault,
+so the number to compare against a backup budget is derived from those measured
+sizes, not from the size the deployment had before.
 
 ## Limits (stated explicitly)
 
@@ -199,6 +220,16 @@ reclaim.
 - **Matrix verifies declarations, not agent behaviour.** The store strengthens the
   provenance of the installed bytes; it does not and cannot prove what an agent
   does at runtime, which requests it sends, or what a provider does with them.
+- **A single account cannot produce a consumer-verified store.** The publisher
+  must write the store and the runtime user must not, so an installation where one
+  account does both cannot reach `store_tree`. It is not silently trusted: the
+  bytes are still measured and reported as `store_writable`, with the deployment
+  fix as the remedy. Reaching a durable verdict needs a second account or a
+  read-only mount for the runtime user.
+- **The measurement is not the backup peak.** `usage` measures this store and the
+  references of the homes it is given. Another product's backup peak also depends
+  on its compression, its exclude rules and what it does with the store path, none
+  of which Matrix reads or controls.
 
 ## Related
 

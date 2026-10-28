@@ -125,10 +125,16 @@ matrix agent prune <agent-id> --apply   # reclaim the superseded per-home copy
 The runtime user must not be able to write the store: Matrix refuses to install
 from a store it can see as writable. `matrix agent inventory` describes the
 installed software deterministically and without secrets, `matrix agent verify`
-proves a store generation's tree offline, and `matrix agent restore` reinstalls
-from a verified store generation or the governed registry. This makes regenerable
-software safe to leave out of a data backup; the backup policy itself stays the
-consumer's decision. See
+proves a store generation's tree offline, and `matrix agent store usage` measures
+the store's footprint by reference count (exclusive, shared, reclaimable) so a
+deployment can size a backup from measured bytes instead of guessing. When
+`matrix agent verify` cannot re-prove the bytes it names the remedy in the same
+result: a per-home install points at the store adoption sequence, an npx/uvx
+install declares that no archive exists to publish, and a store the runtime user
+can write is reported as `store_writable` — measured, but not a guarantee.
+`matrix agent restore` reinstalls from a verified store generation or the governed
+registry. This makes regenerable software safe to leave out of a data backup; the
+backup policy itself stays the consumer's decision. See
 [Agent artifact store and regenerable software](../matrix_agent_artifact_store.md)
 for the layout, the fail-closed rules and the stated limits.
 

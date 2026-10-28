@@ -171,7 +171,7 @@ agent has no store reference or the recorded generation no longer verifies.
 matrix agent prune --apply claude
 ```
 
-### `matrix agent store <publish|list|verify|gc>`
+### `matrix agent store <publish|list|verify|usage|gc>`
 
 Manage the shared immutable agent artifact store (outside every PAL home).
 
@@ -179,13 +179,17 @@ Manage the shared immutable agent artifact store (outside every PAL home).
 matrix agent store publish claude --store /srv/matrix/store
 matrix agent store list --store /srv/matrix/store
 matrix agent store verify <sha256> --store /srv/matrix/store
+matrix agent store usage --store /srv/matrix/store --home /home/a/.local/share/matrix --home /home/b/.local/share/matrix
 matrix agent store gc --home /home/a/.local/share/matrix --store /srv/matrix/store --apply
 ```
 
 `publish` only publishes artifacts the registry index publishes a valid sha256
-for. `gc` is a dry run by default, requires at least one `--home` whose references
-to keep, and never deletes a referenced generation. `--store` defaults to
-`$MATRIX_AGENT_STORE`. See
+for. `usage` measures the store and splits its bytes by how many of the named
+homes reference each generation: exclusive (one), shared (two or more),
+reclaimable (none), with publish staging reported apart. `gc` is a dry run by
+default, requires at least one `--home` whose references to keep, and never
+deletes a referenced generation. `usage` requires `--home` for the same reason.
+`--store` defaults to `$MATRIX_AGENT_STORE`. See
 [Agent artifact store and regenerable software](../matrix_agent_artifact_store.md).
 
 ### `matrix agent set-endpoint <agent-id> <address>`

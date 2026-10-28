@@ -10,6 +10,28 @@ state gestite e conservate in [closed/](closed/).
 Questo file è un indice, non una segnalazione aperta. Qualifiche esterne e limiti
 accettati sono espliciti nel riepilogo; l'archiviazione non li certifica risolti.
 
+## Revisione del 28 ottobre 2026
+
+- [Adozione Hub del riuso immutabile e misura del beneficio](closed/2026-10-26-external-agent-hub-artifact-store-adoption.md):
+  **chiusa in v0.1.62 in parte, con limiti dichiarati**. Costruita la misura che
+  mancava — `matrix agent store usage` legge le generazioni dal disco e ne
+  classifica i byte per numero di reference (exclusive/shared/reclaimable),
+  staging a parte, con `--home` obbligatorio — e corretto un difetto collegato:
+  l'ispezione cadeva sul ruolo publisher e riscriveva i permessi del layout,
+  togliendo il sigillo allo store. L'adozione resta al proprietario del
+  deployment, con il percorso canonico già documentato. Non costruiti per scelta:
+  la conversione una tantum dai byte locali (coniarebbe una seconda identità) e
+  qualunque misura del picco del backup Hub, che appartiene al prodotto di backup.
+- [Qualifica Knowledge: provenienza di OpenCode locale](closed/2026-10-27-external-knowledge-local-opencode-provenance.md):
+  **chiusa in v0.1.62, con la condizione di deployment dichiarata**. Il percorso
+  owner esiste (`store publish` → `install --store` → `verify` → `store_tree`) e
+  `opencode` è una distribuzione binary del registro; vale però solo se il
+  runtime non può scrivere lo store, condizione non soddisfacibile su un account
+  singolo. Costruiti il `remedy` per risultato e il metodo `store_writable`, che
+  separa «ruolo dello store sbagliato» da «byte sbagliati». Non costruita una
+  ricevuta sui byte attuali di un'installazione da script: sarebbe la ricevuta
+  falsa che la nota vieta.
+
 ## Revisione del 26 ottobre 2026
 
 - [Copie agente per worker e picco del backup Hub](closed/2026-10-26-external-agent-artifact-dedup-hub-backup-peak.md):
