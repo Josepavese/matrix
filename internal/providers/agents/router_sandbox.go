@@ -36,10 +36,6 @@ func (r *Router) cachedLaunchMatches(key string, client middleware.ConversationC
 	if err != nil {
 		return false, err
 	}
-	// Existing endpoints without sandbox preserve the historical cache contract.
-	if acp.endpoint.Sandbox == nil && resolved.Endpoint.Sandbox == nil {
-		return true, nil
-	}
 	first, err := json.Marshal(acp.endpoint)
 	if err != nil {
 		return false, fmt.Errorf("cached launch declaration invalid")

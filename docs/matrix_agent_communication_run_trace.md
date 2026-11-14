@@ -440,6 +440,15 @@ Tool enrichment is intentionally layered:
 
 Native protocol payloads are preserved only as evidence in `protocol_meta`. ACP updates are stored under `protocol_meta.acp` when available. A2A or future providers should follow the same pattern, for example `protocol_meta.a2a`, while keeping the Matrix event kind and fields provider-neutral. Frontends that need ACP-native projection can build it from Matrix neutral events plus `protocol_meta.acp`; generic channel adapters should consume the neutral contract.
 
+## What the trace cannot observe
+
+The trace records what Matrix observed at its own boundary, not what the provider decided inside. A specific boundary worth stating: the tool catalog a provider offers to a model for one request is provider-owned. ACP v1 has no message that carries it — `initialize` and `session/new` advertise capabilities and session facts, not the names of the tools placed in the model request — so Matrix cannot publish an offered-tool attestation and does not fabricate one.
+
+- Absence of that observation is `not_observed`, never an empty catalog and never a success.
+- Configured capability (an endpoint flag, an MCP server Matrix passes, a declared tool list), executed calls and a model's statement about availability are different observations. None of them is the model's request catalog.
+- A consumer that needs this evidence must obtain it from the provider's own instrumentation, correlated to the native request; Matrix can correlate the run and its trace, but it cannot see a request body it never receives.
+- This boundary grants no tool and executes nothing: observing inventory is not authorization.
+
 ## Privacy
 
 Default policy:

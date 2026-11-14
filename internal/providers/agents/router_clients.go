@@ -187,7 +187,7 @@ func (r *Router) getOrCreateClientLocked(ctx context.Context, agentID string, cw
 			return nil, err
 		}
 		if !matches {
-			return nil, fmt.Errorf("sandbox launch policy changed: reap the previous workspace client before dispatch")
+			return nil, fmt.Errorf("launch declaration changed: reap the previous workspace client before dispatch")
 		}
 	}
 	if client, ok := r.lookupReusableClientLocked(key); ok {

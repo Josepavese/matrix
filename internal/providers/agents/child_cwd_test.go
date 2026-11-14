@@ -171,6 +171,11 @@ func TestChildProcessRunsInTheRunWorkspace(t *testing.T) {
 	// process. The peer reports its pid in the session id, so a continued
 	// session is provable rather than assumed.
 	firstReport := readChildCwd(t, workspaces[0])
+	// prepareCwdProbe points the shared resolver at the peer copy inside the
+	// workspace it prepared. That switch is test scaffolding, not a live
+	// endpoint change; restoring the first workspace's declaration lets the
+	// replay compare like with like instead of looking like a reconfiguration.
+	t.Setenv(cwdProbeEnv, filepath.Join(workspaces[0], "cwd-probe.sh"))
 	reused := runCwdProbeTurn(t, router, workspaces[0], "still there?")
 	if reused != sessions[0] {
 		t.Fatalf("reused run session = %q, want the workspace-bound session %q", reused, sessions[0])

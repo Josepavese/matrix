@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Josepavese/matrix/internal/logic/agentlaunch"
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
@@ -69,8 +70,16 @@ func TestRouterConcurrentRunCancelDoesNotPoisonSibling(t *testing.T) {
 	for _, phase := range []string{"session/new", "session/prompt"} {
 		t.Run(phase, func(t *testing.T) {
 			fake := newConcurrentCancelACPClient(phase)
+			resolved, err := agentlaunch.ResolveEndpoint("codex", middleware.ProtocolEndpoint{Kind: middleware.ProtocolKindACP, Transport: "stdio", Address: "codex-acp", Command: "codex-acp"})
+			if err != nil {
+				t.Fatalf("resolve endpoint: %v", err)
+			}
 			conversation := &acpConversationClient{
-				client:         fake,
+				client: fake,
+				// The router compares the cached launch declaration with the
+				// resolver's current one; a factory that forgets to attach the
+				// endpoint it was given is a test artifact, not a real client.
+				endpoint:       resolved.Endpoint,
 				loadedSessions: map[string]bool{"remote-a": true, "remote-b": true},
 			}
 			router := NewRouter(&mockResolver{protocol: "stdio", address: "codex-acp"})

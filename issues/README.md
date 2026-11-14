@@ -23,6 +23,25 @@ accettati sono espliciti nel riepilogo; l'archiviazione non li certifica risolti
   solo con un tipo verificato, con regressioni di proiezione e notifier. Limite
   dichiarato: un risultato senza identità e senza chiamata resta ignoto; un
   percorso citato dal testo resta evidenza estratta ma non decide più l'azione.
+- [Cache client ACP e ambiente di lancio cambiato senza sandbox](closed/2026-11-14-external-acp-client-cache-changed-launch-environment.md):
+  **chiusa in v0.1.64**. `cachedLaunchMatches` tornava `true` quando entrambe le
+  sandbox erano nil, prima di confrontare le dichiarazioni: un endpoint senza
+  sandbox con ambiente risolto diverso riusava il figlio avviato col vecchio
+  ambiente. Rimosso il bypass: ogni client cached confronta la dichiarazione
+  risolta completa, il mismatch fallisce chiuso con il flusso esplicito di
+  reap/relaunch preservando lease attive e sessioni non collegate, e una
+  dichiarazione invariata rigioca il client. Limiti dichiarati: nessun reap
+  automatico del figlio in volo; un resolver non disponibile ora fa fallire il
+  riuso; acknowledgement parziali/persi restano evidenza del ciclo di turno.
+- [Evidenza del catalogo tool offerto per richiesta ACP](closed/2026-11-14-external-offered-tool-catalog-evidence.md):
+  **chiusa in v0.1.64, con il limite dichiarato e nessun codice di attestazione**.
+  Il catalogo offerto al modello è interno al provider e ACP v1 non lo trasmette:
+  Matrix non pubblica un'attestazione che non può osservare. Documentata la
+  frontiera nel contratto del trace — assenza = `not_observed`, mai catalogo vuoto
+  o successo; capability configurata, chiamate eseguite e affermazioni del modello
+  non sono il catalogo della richiesta — e indicata la strumentazione del provider
+  come percorso owner. Non costruiti: attestazione, nuova CLI/API/trace read path,
+  qualifica di sessioni riprese o profili role-denied per un dato inesistente.
 
 ## Revisione del 28 ottobre 2026
 
