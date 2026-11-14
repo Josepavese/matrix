@@ -478,8 +478,11 @@ func TestNotifierCorrelatesACPToolWithPermissionContext(t *testing.T) {
 	if requested.Inputs["path"] != "/tmp/noema_matrix_contract.sh" {
 		t.Fatalf("expected requested path from permission context, got %#v", requested.Inputs)
 	}
-	if completed.Summary != "Created /tmp/noema_matrix_contract.sh" {
-		t.Fatalf("expected enriched completion summary, got %q", completed.Summary)
+	// The kind came from the word "write" in the request, not from protocol
+	// metadata or a declared tool identity, so the completed summary stays
+	// neutral: it must not turn a content guess into a factual creation claim.
+	if completed.Summary != "Completed write_file" {
+		t.Fatalf("expected neutral completion summary for a certainty-limited kind, got %q", completed.Summary)
 	}
 	if completed.Outputs["path"] != "/tmp/noema_matrix_contract.sh" {
 		t.Fatalf("expected completed output path, got %#v", completed.Outputs)
@@ -520,5 +523,67 @@ func TestPresentationUpdatesAreNotTurnWorkEvidence(t *testing.T) {
 		if !kinds[kind] {
 			t.Fatalf("missing neutral event %s", kind)
 		}
+	}
+}
+
+// TestNotifierKeepsAReadResultAReadWhenThePatchOmitsKind is the end-to-end
+// regression for the external reader/proof trace. The call declares read_file,
+// the update patch omits the unchanged kind and carries page text that quotes
+// delete and update words, and the trace must still show a read: the identity is
+// inherited from the correlated call, never guessed from the result body.
+func TestNotifierKeepsAReadResultAReadWhenThePatchOmitsKind(t *testing.T) {
+	store := runtrace.NewStore(memstore.New())
+	run, _, err := store.Start(runtrace.Run{AgentID: "opencode", Protocol: "acp", ChannelID: "http.test"})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	notifier := New(store, run.ID, "opencode", "acp")
+	notifier.OnThought(middleware.ThoughtUpdate{
+		Type:    middleware.ThoughtTypeToolCall,
+		Content: "read the public documentation page",
+		Metadata: map[string]interface{}{
+			"source_update_type": "tool_call",
+			"title":              "read_file",
+		},
+	})
+	notifier.OnThought(middleware.ThoughtUpdate{
+		Type:    middleware.ThoughtTypeToolResult,
+		Content: "Public page /workspace/docs: delete the stale workspace, remove files, write and edit sections.",
+		Metadata: map[string]interface{}{
+			"source_update_type": "tool_call_update",
+			"status":             "completed",
+		},
+	})
+
+	trace, found, err := store.Trace(run.ID)
+	if err != nil || !found {
+		t.Fatalf("trace found=%v err=%v", found, err)
+	}
+	var requested, completed *runtrace.Event
+	for i := range trace.Events {
+		switch trace.Events[i].Kind {
+		case "tool.call.requested":
+			requested = &trace.Events[i]
+		case "tool.result.received":
+			completed = &trace.Events[i]
+		}
+	}
+	if requested == nil || completed == nil {
+		t.Fatalf("expected tool request and result events: %#v", trace.Events)
+	}
+	if requested.ToolName != "read_file" || requested.ToolKind != "read" {
+		t.Fatalf("the call must be a read, got name=%q kind=%q", requested.ToolName, requested.ToolKind)
+	}
+	if completed.ToolName != "read_file" || completed.ToolKind != "read" || completed.ToolEffect != "read_only" {
+		t.Fatalf("the result must inherit the call identity, got name=%q kind=%q effect=%q", completed.ToolName, completed.ToolKind, completed.ToolEffect)
+	}
+	if completed.ToolClassificationSource != "heuristic_fallback" || completed.ToolClassificationConfidence != "low" {
+		t.Fatalf("inherited identity must stay low confidence, got source=%q confidence=%q", completed.ToolClassificationSource, completed.ToolClassificationConfidence)
+	}
+	if completed.Summary != "Completed read_file" {
+		t.Fatalf("expected a neutral read summary, got %q", completed.Summary)
+	}
+	if completed.ToolCallID == "" || completed.ToolCallID != requested.ToolCallID {
+		t.Fatalf("the result must correlate with its call, got %q vs %q", completed.ToolCallID, requested.ToolCallID)
 	}
 }

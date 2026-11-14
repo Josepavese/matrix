@@ -10,6 +10,20 @@ state gestite e conservate in [closed/](closed/).
 Questo file è un indice, non una segnalazione aperta. Qualifiche esterne e limiti
 accettati sono espliciti nel riepilogo; l'archiviazione non li certifica risolti.
 
+## Revisione del 14 novembre 2026
+
+- [ACP trace: letture pubbliche classificate come delete/write](closed/2026-11-14-external-acp-trace-read-results-classified-as-writes.md):
+  **chiusa in v0.1.63**. Difetto reale di Matrix, non del fornitore: `kind` può
+  mancare da una patch `tool_call_update` e la normalizzazione per-update non
+  correlava il risultato alla chiamata, quindi il fallback leggeva le parole del
+  corpo e la summary rendeva `Deleted`/`Updated` da un percorso citato. Costruiti
+  la precedenza dell'evidenza (protocollo → identità dichiarata → testo solo per
+  le chiamate), l'eredità dell'identità dalla chiamata correlata, lo stato
+  esplicito `unknown` per un risultato senza identità e le summary al passato
+  solo con un tipo verificato, con regressioni di proiezione e notifier. Limite
+  dichiarato: un risultato senza identità e senza chiamata resta ignoto; un
+  percorso citato dal testo resta evidenza estratta ma non decide più l'azione.
+
 ## Revisione del 28 ottobre 2026
 
 - [Adozione Hub del riuso immutabile e misura del beneficio](closed/2026-10-26-external-agent-hub-artifact-store-adoption.md):

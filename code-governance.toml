@@ -168,6 +168,14 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # shared structural rule explain reads. Measured 1794; file/function/branch
 # ceilings unchanged.
 "internal/logic/runtrace" = 1804
+# 2026-11-14: the tool projection stops letting result-body words decide an
+# action. Protocol kind, declared tool identity and free-form text are now
+# separate evidence classes; a result update without a kind or identity stays
+# explicitly unknown (inheriting the correlated call when one exists), and a
+# past-tense write summary requires a verified kind. Measured 880; file,
+# function, parameter and branch budgets are not raised, and the classification
+# lives in its own file instead of growing tool.go.
+"internal/logic/frontendevents" = 880
 # 2026-05-04: fork subtree cleanup proof reconciles child records after parent
 # process reap; forced run-owned child cleanup can remediate parent-owner
 # retention without weakening inline parent-restore safety. Later same-day

@@ -396,9 +396,9 @@ Tool events use stable correlation fields:
 - `tool_semantic_kind`: optional provider-neutral semantic class such as `validate`, `vcs`, `network`, or `agent` when the provider or upstream event supplies it;
 - `tool_effect`: structural effect class such as `read_only`, `write`, `execute`, `control`, or `unknown`;
 - `tool_subject_kind`: target subject such as `workspace`, `filesystem`, `process`, `network`, `agent_session`, `agent_reasoning`, or `unknown`;
-- `tool_classification_source`: `protocol_metadata`, `heuristic_fallback`, or `unknown`;
-- `tool_classification_confidence`: `high` for protocol metadata, `low` for heuristic fallback;
-- `summary`: short safe UI text;
+- `tool_classification_source`: `protocol_metadata`, `heuristic_fallback`, or `unknown`. A declared tool identity that names the action (`read_file`, `write_file`, `search`, `shell`) is `heuristic_fallback`; a result update with no kind and no identity is `unknown`;
+- `tool_classification_confidence`: `high` for protocol metadata, `low` for heuristic fallback and for an unknown classification;
+- `summary`: short safe UI text. A past-tense write summary (`Created`, `Updated`, `Deleted`) requires a verified kind; an unverified action keeps a neutral `Completed <tool>` form;
 - `inputs`: structured safe input fields;
 - `outputs`: structured safe output fields;
 - `artifact_refs`: externally addressable artifacts when known.
@@ -433,6 +433,9 @@ Tool enrichment is intentionally layered:
 - ACP client-handled tools such as `fs/read_text_file`, `fs/write_text_file`, and `terminal/create` are also projected into neutral tool events when Matrix executes them on behalf of the agent;
 - a pending tool call can be enriched from the correlated permission request for the same active tool window;
 - file artifact references are emitted as `file://...` only for completed edit/delete/move-style operations with a safe absolute path;
+- when the provider omits `tool_kind`, a declared tool identity/title from the canonical vocabulary supplies the kind as a low-confidence fallback; free-form words are the last resort and remain marked `heuristic_fallback`/`low`;
+- a tool result update is never classified from words in its body: the provider's `tool_kind` wins, a declared identity comes next, and without either the action stays `other` with `tool_classification_source=unknown`. The result inherits the identity of the correlated call still in the same tool window, which is protocol evidence rather than text inference;
+- past-tense write summaries require a verified kind (protocol metadata or a declared identity). A kind inferred from text, or an unknown result, renders the neutral `Completed <tool>` form, so public page or proof text that quotes delete/update/write words cannot become a filesystem write claim;
 - Matrix avoids arbitrary natural-language inference when no structured source exists.
 
 Native protocol payloads are preserved only as evidence in `protocol_meta`. ACP updates are stored under `protocol_meta.acp` when available. A2A or future providers should follow the same pattern, for example `protocol_meta.a2a`, while keeping the Matrix event kind and fields provider-neutral. Frontends that need ACP-native projection can build it from Matrix neutral events plus `protocol_meta.acp`; generic channel adapters should consume the neutral contract.

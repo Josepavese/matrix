@@ -7,23 +7,39 @@ import (
 )
 
 type toolSummaryContext struct {
-	Status    string
-	Name      string
-	Kind      string
-	Path      string
-	Operation string
-	Content   string
+	Status               string
+	Name                 string
+	Kind                 string
+	Path                 string
+	Operation            string
+	Content              string
+	ClassificationSource string
+	KindFromIdentity     bool
+}
+
+// verifiedKind reports whether the event's kind is evidence the trace may state
+// as fact: the provider declared it, or the tool identity names it. A kind
+// guessed from free-form words is not enough for a past-tense write claim.
+func (ctx toolSummaryContext) verifiedKind() bool {
+	return ctx.KindFromIdentity || ctx.ClassificationSource == "protocol_metadata"
+}
+
+func (ctx toolSummaryContext) terminal() bool {
+	return ctx.Status == runtrace.StatusCompleted || ctx.Status == runtrace.StatusFailed
 }
 
 func toolSummary(ctx toolSummaryContext) string {
+	action := map[string]string{"pending": "Start", "running": "Run", runtrace.StatusCompleted: "Completed", runtrace.StatusFailed: "Failed"}[ctx.Status]
+	if action == "" {
+		action = "Run"
+	}
 	if ctx.Path != "" {
 		if summary := pathToolSummary(ctx); summary != "" {
 			return summary
 		}
 	}
-	action := map[string]string{"pending": "Start", "running": "Run", runtrace.StatusCompleted: "Completed", runtrace.StatusFailed: "Failed"}[ctx.Status]
-	if action == "" {
-		action = "Run"
+	if ctx.terminal() {
+		return fmt.Sprintf("%s %s", action, ctx.Name)
 	}
 	if ctx.Content != "" {
 		return truncateSummary(ctx.Content)
@@ -60,7 +76,7 @@ var pathSummaryRules = []pathSummaryRule{
 	},
 	{
 		match: func(ctx toolSummaryContext) bool {
-			return ctx.Status == runtrace.StatusCompleted && ctx.Name == "write_file"
+			return ctx.Status == runtrace.StatusCompleted && ctx.Name == "write_file" && ctx.verifiedKind()
 		},
 		render: func(ctx toolSummaryContext) string { return "Created " + ctx.Path },
 	},
@@ -69,7 +85,9 @@ var pathSummaryRules = []pathSummaryRule{
 		render: func(ctx toolSummaryContext) string { return "Edit " + ctx.Path },
 	},
 	{
-		match:  func(ctx toolSummaryContext) bool { return ctx.Status == runtrace.StatusCompleted && ctx.Kind == "edit" },
+		match: func(ctx toolSummaryContext) bool {
+			return ctx.Status == runtrace.StatusCompleted && ctx.Kind == "edit" && ctx.verifiedKind()
+		},
 		render: func(ctx toolSummaryContext) string { return "Updated " + ctx.Path },
 	},
 	{
@@ -78,7 +96,7 @@ var pathSummaryRules = []pathSummaryRule{
 	},
 	{
 		match: func(ctx toolSummaryContext) bool {
-			return ctx.Status == runtrace.StatusCompleted && ctx.Kind == "delete"
+			return ctx.Status == runtrace.StatusCompleted && ctx.Kind == "delete" && ctx.verifiedKind()
 		},
 		render: func(ctx toolSummaryContext) string { return "Deleted " + ctx.Path },
 	},

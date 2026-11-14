@@ -25,6 +25,7 @@ type toolContext struct {
 	ToolID                   string
 	Name                     string
 	Kind                     string
+	KindFromIdentity         bool
 	SemanticKind             string
 	Effect                   string
 	SubjectKind              string
@@ -234,6 +235,7 @@ func (n *Notifier) appendToolRequested(update middleware.ThoughtUpdate) {
 		ToolID:                   toolID,
 		Name:                     tool.Name,
 		Kind:                     tool.Kind,
+		KindFromIdentity:         tool.KindFromIdentity,
 		SemanticKind:             tool.SemanticKind,
 		Effect:                   tool.Effect,
 		SubjectKind:              tool.SubjectKind,
@@ -270,7 +272,8 @@ func (n *Notifier) appendToolResult(update middleware.ThoughtUpdate) {
 	content := strings.TrimSpace(frontendevents.FirstNonEmpty(update.Content, update.Title))
 	tool := frontendevents.NormalizeTool(content, update.Metadata, inferToolName(content))
 	toolID := frontendevents.FirstNonEmpty(n.activeToolCallID, frontendevents.StableToolCallID(n.runID, tool.Name, content, update.Metadata))
-	if toolID == n.activeTool.ToolID {
+	if toolID != "" && toolID == n.activeTool.ToolID {
+		tool = frontendevents.InheritToolIdentity(tool, n.correlatedCall())
 		tool = frontendevents.EnrichToolWithContext(tool, n.activeTool.Path, n.activeTool.Operation)
 	}
 	event := n.baseEvent("tool.result.received", "tool", tool.Status, content)
@@ -348,13 +351,14 @@ func (n *Notifier) enrichActiveToolFromPermission(permission frontendevents.Perm
 		return
 	}
 	tool := frontendevents.ToolEvent{
-		Name:         event.ToolName,
-		Kind:         event.ToolKind,
-		Status:       event.Status,
-		Summary:      event.Summary,
-		Inputs:       event.Inputs,
-		Outputs:      event.Outputs,
-		ArtifactRefs: event.ArtifactRefs,
+		Name:             event.ToolName,
+		Kind:             event.ToolKind,
+		KindFromIdentity: n.activeTool.KindFromIdentity,
+		Status:           event.Status,
+		Summary:          event.Summary,
+		Inputs:           event.Inputs,
+		Outputs:          event.Outputs,
+		ArtifactRefs:     event.ArtifactRefs,
 	}
 	tool = frontendevents.EnrichToolWithContext(tool, path, operation)
 	event.Summary = tool.Summary

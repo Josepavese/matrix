@@ -9,6 +9,7 @@ import (
 type ToolEvent struct {
 	Name                     string
 	Kind                     string
+	KindFromIdentity         bool
 	SemanticKind             string
 	Effect                   string
 	SubjectKind              string
@@ -22,13 +23,9 @@ type ToolEvent struct {
 }
 
 func NormalizeTool(content string, metadata map[string]interface{}, fallbackName string) ToolEvent {
-	name := NormalizeToolName(FirstNonEmpty(
-		StringValue(metadata, "tool_name"),
-		StringValue(metadata, "name"),
-		StringValue(metadata, "title"),
-		fallbackName,
-	))
-	kind, classificationSource, confidence := NormalizeToolKindFromMetadata(metadata, name, content)
+	declaredName := declaredToolName(metadata)
+	name := NormalizeToolName(FirstNonEmpty(declaredName, fallbackName))
+	kind, classificationSource, confidence, kindFromIdentity := classifyToolKind(metadata, declaredName, name, content)
 	path := FirstPath(content, metadata)
 	semanticKind := FirstNonEmpty(StringValue(metadata, "tool_semantic_kind"), StringValue(metadata, "semantic_kind"))
 	effect := FirstNonEmpty(StringValue(metadata, "tool_effect"), effectForKind(kind))
@@ -38,16 +35,20 @@ func NormalizeTool(content string, metadata map[string]interface{}, fallbackName
 	return ToolEvent{
 		Name:                     name,
 		Kind:                     kind,
+		KindFromIdentity:         kindFromIdentity,
 		SemanticKind:             semanticKind,
 		Effect:                   effect,
 		SubjectKind:              subjectKind,
 		ClassificationSource:     classificationSource,
 		ClassificationConfidence: confidence,
 		Status:                   status,
-		Summary:                  toolSummary(toolSummaryContext{Status: status, Name: name, Kind: kind, Path: path, Operation: operation, Content: content}),
-		Inputs:                   toolInputs(path, operation),
-		Outputs:                  toolOutputs(path, operation, status),
-		ArtifactRefs:             toolArtifactRefs(path, kind, status),
+		Summary: toolSummary(toolSummaryContext{
+			Status: status, Name: name, Kind: kind, Path: path, Operation: operation, Content: content,
+			ClassificationSource: classificationSource, KindFromIdentity: kindFromIdentity,
+		}),
+		Inputs:       toolInputs(path, operation),
+		Outputs:      toolOutputs(path, operation, status),
+		ArtifactRefs: toolArtifactRefs(path, kind, status),
 	}
 }
 
@@ -55,7 +56,7 @@ func EnrichToolWithContext(tool ToolEvent, path, operation string) ToolEvent {
 	path = strings.TrimSpace(path)
 	operation = strings.TrimSpace(operation)
 	if path == "" && operation == "" {
-		return tool
+		return refreshToolSummary(tool)
 	}
 	if path != "" {
 		tool.Inputs = mergeToolMap(tool.Inputs, map[string]interface{}{"path": path})
@@ -74,12 +75,31 @@ func EnrichToolWithContext(tool ToolEvent, path, operation string) ToolEvent {
 		}
 	}
 	tool.Summary = toolSummary(toolSummaryContext{
-		Status:    tool.Status,
-		Name:      tool.Name,
-		Kind:      tool.Kind,
-		Path:      path,
-		Operation: operation,
-		Content:   tool.Summary,
+		Status:               tool.Status,
+		Name:                 tool.Name,
+		Kind:                 tool.Kind,
+		Path:                 path,
+		Operation:            operation,
+		Content:              tool.Summary,
+		ClassificationSource: tool.ClassificationSource,
+		KindFromIdentity:     tool.KindFromIdentity,
+	})
+	return tool
+}
+
+// refreshToolSummary rewrites the summary from the event's own fields. It keeps
+// a projection consistent after an identity is inherited from the correlated
+// call, which by itself may carry no new path or operation.
+func refreshToolSummary(tool ToolEvent) ToolEvent {
+	tool.Summary = toolSummary(toolSummaryContext{
+		Status:               tool.Status,
+		Name:                 tool.Name,
+		Kind:                 tool.Kind,
+		Path:                 StringValue(tool.Inputs, "path"),
+		Operation:            StringValue(tool.Inputs, "operation"),
+		Content:              tool.Summary,
+		ClassificationSource: tool.ClassificationSource,
+		KindFromIdentity:     tool.KindFromIdentity,
 	})
 	return tool
 }
@@ -96,37 +116,6 @@ func NormalizeToolName(raw string) string {
 		return "tool"
 	}
 	return value
-}
-
-func NormalizeToolKind(name, content string) string {
-	kind, _, _ := fallbackToolKind(name, content)
-	return kind
-}
-
-func NormalizeToolKindFromMetadata(metadata map[string]interface{}, name, content string) (string, string, string) {
-	for _, key := range []string{"tool_kind", "acp_tool_kind", "kind"} {
-		if kind := NormalizeOfficialToolKind(StringValue(metadata, key)); kind != "" {
-			return kind, "protocol_metadata", "high"
-		}
-	}
-	if kind := nestedACPToolKind(metadata); kind != "" {
-		return kind, "protocol_metadata", "high"
-	}
-	return fallbackToolKind(name, content)
-}
-
-func NormalizeOfficialToolKind(raw string) string {
-	return officialToolKindAliases[strings.ToLower(strings.TrimSpace(raw))]
-}
-
-func fallbackToolKind(name, content string) (string, string, string) {
-	value := strings.ToLower(name + " " + content)
-	for _, rule := range toolKindRules {
-		if containsAny(value, rule.matches) {
-			return rule.kind, "heuristic_fallback", "low"
-		}
-	}
-	return "other", "unknown", "low"
 }
 
 func NormalizeToolStatus(raw string) string {
@@ -212,21 +201,6 @@ func isArtifactKind(kind string) bool {
 	return kind == "edit" || kind == "delete" || kind == "move"
 }
 
-func nestedACPToolKind(metadata map[string]interface{}) string {
-	rawACP, ok := metadata["acp"].(map[string]interface{})
-	if !ok {
-		return ""
-	}
-	for _, key := range []string{"tool_kind", "kind"} {
-		if value, ok := rawACP[key].(string); ok {
-			if kind := NormalizeOfficialToolKind(value); kind != "" {
-				return kind
-			}
-		}
-	}
-	return ""
-}
-
 func effectForKind(kind string) string {
 	switch kind {
 	case "read", "search", "fetch", "think":
@@ -243,12 +217,14 @@ func effectForKind(kind string) string {
 }
 
 func subjectForKind(kind string, metadata map[string]interface{}, path string) string {
+	subject, known := toolSubjectByKind[kind]
+	if !known {
+		// An unidentified action has no subject either: a path quoted by a
+		// result body must not turn it into a filesystem claim.
+		return "unknown"
+	}
 	if strings.TrimSpace(path) != "" || StringValue(metadata, "path") != "" {
 		return "filesystem"
-	}
-	subject := toolSubjectByKind[kind]
-	if subject == "" {
-		return "unknown"
 	}
 	return subject
 }
@@ -265,21 +241,4 @@ var toolNameRules = []toolNameRule{
 	{name: "search", matches: []string{"search", "grep"}},
 	{name: "list_files", matches: []string{"list", "ls"}},
 	{name: "shell", matches: []string{"terminal", "shell", "bash", "exec"}},
-}
-
-type toolKindRule struct {
-	kind    string
-	matches []string
-}
-
-var toolKindRules = []toolKindRule{
-	{kind: "edit", matches: []string{"write", "create", "edit", "patch"}},
-	{kind: "delete", matches: []string{"delete", "remove"}},
-	{kind: "move", matches: []string{"move", "rename"}},
-	{kind: "search", matches: []string{"search", "grep"}},
-	{kind: "read", matches: []string{"read", "list"}},
-	{kind: "execute", matches: []string{"shell", "terminal", "exec", "bash"}},
-	{kind: "fetch", matches: []string{"fetch", "http"}},
-	{kind: "think", matches: []string{"think", "reason"}},
-	{kind: "switch_mode", matches: []string{"switch_mode", "set_mode"}},
 }
