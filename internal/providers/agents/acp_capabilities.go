@@ -20,6 +20,8 @@ func acpSessionCapabilities(resp *acpInitializeResponse) middleware.Conversation
 	resume := surface.Resume
 	fork := surface.Fork
 	additionalDirectories := surface.AdditionalDirectories
+	systemPrompt := surface.SystemPrompt
+	systemPromptOverride := surface.SystemPromptOverride
 	return middleware.ConversationSessionCapabilities{
 		List:                  list,
 		Load:                  load,
@@ -30,6 +32,8 @@ func acpSessionCapabilities(resp *acpInitializeResponse) middleware.Conversation
 		Resume:                resume,
 		Fork:                  fork,
 		AdditionalDirectories: additionalDirectories,
+		SystemPrompt:          systemPrompt,
+		SystemPromptOverride:  systemPromptOverride,
 		Details: map[string]middleware.CapabilityDescriptor{
 			"list":                   acpCapability("list", list, "stable", "zed_acp_session_list_rfd"),
 			"info_update":            acpCapability("info_update", list, "stable", "zed_acp_session_info_update"),
@@ -40,6 +44,7 @@ func acpSessionCapabilities(resp *acpInitializeResponse) middleware.Conversation
 			"resume":                 acpCapability("resume", resume, "stable", "zed_acp_schema_session_resume"),
 			"fork":                   acpForkCapability(fork),
 			"additional_directories": acpCapability("additional_directories", additionalDirectories, "stable", "zed_acp_v1_session_additional_directories"),
+			"system_prompt":          acpCapability("system_prompt", systemPrompt, "stable", "zed_acp_v1_session_system_prompt"),
 		},
 	}
 }

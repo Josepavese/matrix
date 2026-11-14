@@ -8,6 +8,7 @@ type NewSessionRequest struct {
 	AdditionalDirectories []string               `json:"additionalDirectories,omitempty"`
 	McpServers            []McpServerConfig      `json:"mcpServers"`
 	Tools                 []Tool                 `json:"tools,omitempty"`
+	SystemPrompt          *SystemPrompt          `json:"systemPrompt,omitempty"`
 	Meta                  map[string]interface{} `json:"_meta,omitempty"`
 }
 

@@ -123,6 +123,19 @@ func (s *Supervisor) startOnDemand(ctx context.Context, log *slog.Logger, agentI
 	log.Info("agent is on-demand, skipping background supervision", "event", "agent_on_demand", "agent", agentID, "protocol_kind", endpoint.Kind, "transport", endpoint.Transport)
 }
 
+var _ middleware.AgentSystemPromptResolver = (*Supervisor)(nil)
+
+// GetAgentSystemPrompt returns the client-owned system prompt configured for an
+// agent. It reads the same registry view the endpoint comes from, so a prompt is
+// never paired with a different configuration than the one it was written for.
+func (s *Supervisor) GetAgentSystemPrompt(agentID string) (middleware.SystemPrompt, error) {
+	cfg, err := s.registry.Get(agentID)
+	if err != nil {
+		return middleware.SystemPrompt{}, errors.Join(middleware.ErrAgentNotFound, fmt.Errorf("agent %s configuration not found in registry: %w", agentID, err))
+	}
+	return middleware.SystemPrompt{Mode: cfg.SystemPromptMode, Text: cfg.SystemPrompt}, nil
+}
+
 // GetAgentEndpoint returns the normalized endpoint description for the agent.
 func (s *Supervisor) GetAgentEndpoint(agentID string) (middleware.ProtocolEndpoint, error) {
 	cfg, err := s.registry.Get(agentID)

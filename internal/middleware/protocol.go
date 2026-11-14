@@ -3,6 +3,8 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 )
 
 var ErrConversationTurnActive = errors.New("conversation turn already active")
@@ -55,6 +57,52 @@ type ConversationTurn struct {
 	AdditionalDirectories    []string
 	ThoughtNotifier          ThoughtNotifier
 	LiveContextAttach        bool
+}
+
+// SystemPrompt is the protocol-neutral client-owned system-level instruction
+// set for a session. The stable ACP contract only requires agents to accept text
+// content blocks, so the neutral form stays text: a richer form would promise a
+// content type no current capability admits, and a per-provider encoding would
+// leak one provider's draft into the neutral layer.
+type SystemPrompt struct {
+	// Mode is append or override. Empty means append, the mode every agent that
+	// advertises the capability supports.
+	Mode string
+	// Text is the instruction body. Empty means no prompt is configured.
+	Text string
+}
+
+const (
+	SystemPromptModeAppend   = "append"
+	SystemPromptModeOverride = "override"
+)
+
+// ValidateSystemPrompt rejects a configured prompt Matrix cannot represent on
+// the stable wire. It does not decide whether the agent advertises support; that
+// is connection-specific and checked before a session request is sent.
+func ValidateSystemPrompt(prompt SystemPrompt) error {
+	switch prompt.Mode {
+	case "", SystemPromptModeAppend, SystemPromptModeOverride:
+	default:
+		return fmt.Errorf("unsupported system prompt mode %q: use %q or %q", prompt.Mode, SystemPromptModeAppend, SystemPromptModeOverride)
+	}
+	if prompt.Text != "" && strings.TrimSpace(prompt.Text) == "" {
+		return fmt.Errorf("system prompt is whitespace only")
+	}
+	return nil
+}
+
+// IsZero reports whether no system prompt is configured.
+func (p SystemPrompt) IsZero() bool {
+	return strings.TrimSpace(p.Text) == ""
+}
+
+// EffectiveMode is the wire mode: an empty configured mode means append.
+func (p SystemPrompt) EffectiveMode() string {
+	if p.Mode == "" {
+		return SystemPromptModeAppend
+	}
+	return p.Mode
 }
 
 // ConversationResult is the protocol-neutral result of a single agent turn.
@@ -153,7 +201,12 @@ type ConversationSessionCapabilities struct {
 	Resume                bool
 	Fork                  bool
 	AdditionalDirectories bool
-	Details               map[string]CapabilityDescriptor
+	// SystemPrompt reports that the agent accepts a client-provided system
+	// prompt on session lifecycle requests; SystemPromptOverride reports the
+	// separately advertised replacement mode.
+	SystemPrompt         bool
+	SystemPromptOverride bool
+	Details              map[string]CapabilityDescriptor
 }
 
 // ConversationSessionControl is an optional interface implemented by protocol clients
@@ -218,6 +271,11 @@ type ConversationFactoryDeps struct {
 	// the login process is interactive: a provider without a process backend
 	// cannot honour it even when the flag is set.
 	TerminalAuth bool
+	// SystemPrompt is the client-owned instruction set configured for the agent.
+	// It is sent only on a protocol that advertises support for it; the adapter
+	// fails closed when a configured prompt cannot be represented rather than
+	// silently using the agent's default instructions.
+	SystemPrompt SystemPrompt
 }
 
 // AgentSessionController is an optional router capability for protocol-transparent

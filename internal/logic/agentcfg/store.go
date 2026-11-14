@@ -33,9 +33,13 @@ type Config struct {
 	Address         string            `json:"address,omitempty"`
 	CardURL         string            `json:"card_url,omitempty"`
 	ProtocolVersion string            `json:"protocol_version,omitempty"`
-	HealthcheckPath string            `json:"healthcheck_path"`
-	EnvIsolation    bool              `json:"env_isolation"`
-	Active          *bool             `json:"active,omitempty"`
+	// SystemPrompt is the client-owned instruction set Matrix sends when the ACP
+	// agent advertises support for it. SystemPromptMode is append or override.
+	SystemPrompt     string `json:"system_prompt,omitempty"`
+	SystemPromptMode string `json:"system_prompt_mode,omitempty"`
+	HealthcheckPath  string `json:"healthcheck_path"`
+	EnvIsolation     bool   `json:"env_isolation"`
+	Active           *bool  `json:"active,omitempty"`
 }
 
 // IsActive reports whether this endpoint is enabled; omission means enabled.

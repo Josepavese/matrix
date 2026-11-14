@@ -68,12 +68,17 @@ func (c *acpConversationClient) createACPRemoteSession(ctx context.Context, req 
 	if err != nil {
 		return nil, err
 	}
+	systemPrompt, err := c.sessionSystemPrompt()
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.currentACPClient().NewSession(ctx, acpNewSessionRequest{
 		ClientTitle:           strings.TrimSpace(req.LogicalSessionID),
 		Cwd:                   cwd,
 		AdditionalDirectories: additionalDirectories,
 		McpServers:            mcpServers,
 		Tools:                 toZedACPTools(req.Tools),
+		SystemPrompt:          systemPrompt,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("ACP new session failed: %w", err)

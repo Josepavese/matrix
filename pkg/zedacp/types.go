@@ -254,6 +254,7 @@ type LoadSessionRequest struct {
 	Cwd                   string                 `json:"cwd"`
 	AdditionalDirectories []string               `json:"additionalDirectories,omitempty"`
 	McpServers            []McpServerConfig      `json:"mcpServers"`
+	SystemPrompt          *SystemPrompt          `json:"systemPrompt,omitempty"`
 	Meta                  map[string]interface{} `json:"_meta,omitempty"`
 }
 
@@ -275,6 +276,7 @@ type ResumeSessionRequest struct {
 	Cwd                   string                 `json:"cwd"`
 	AdditionalDirectories []string               `json:"additionalDirectories,omitempty"`
 	McpServers            []McpServerConfig      `json:"mcpServers"`
+	SystemPrompt          *SystemPrompt          `json:"systemPrompt,omitempty"`
 	Meta                  map[string]interface{} `json:"_meta,omitempty"`
 }
 

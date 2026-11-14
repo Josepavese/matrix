@@ -33,6 +33,8 @@ type (
 	acpLoadSessionResponse              = zedacp.LoadSessionResponse
 	acpResumeSessionRequest             = zedacp.ResumeSessionRequest
 	acpResumeSessionResponse            = zedacp.ResumeSessionResponse
+	acpSystemPrompt                     = zedacp.SystemPrompt
+	acpSystemPromptMode                 = zedacp.SystemPromptMode
 	acpForkSessionRequest               = zedacp.ForkSessionRequest
 	acpForkSessionResponse              = zedacp.ForkSessionResponse
 	acpListSessionsRequest              = zedacp.ListSessionsRequest

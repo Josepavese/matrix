@@ -1,6 +1,6 @@
 # Matrix Zed ACP Protocol Tracking
 
-Last checked: 2026-10-21.
+Last checked: 2026-11-15.
 
 The combined ACP/A2A feature matrix now lives in
 [`protocol_coverage.md`](protocol_coverage.md). This file records ACP-specific
@@ -8,15 +8,30 @@ drift decisions.
 
 ## Source snapshot
 
-- Stable ACP v1 schema: `schema-v1.26.0`.
-- Protocol release: `v1.12.0`.
-- Verified official repository commit:
-  `e2d83349bc9e28a4059ea3acefa1c91c966f74e2`.
+- Stable ACP v1 schema: `schema-v1.32.0` (2026-11-14).
+- Protocol release: `v1.18.0` (the Rust crate version is separate from the wire
+  protocol version, which remains 1).
+- Verified stable source commit:
+  `3d911e0c126ecc71e5872e38212e4a7345f36aed`.
+- Draft ACP v2 schema: `schema-v2.0.0-alpha.16`, source commit
+  `6921fb746d7a9108eb2ded9acbb586bb7083a11e`. Matrix keeps its explicit v2
+  experimental surface and does not chase draft-only additions as stable.
 - Overview: https://agentclientprotocol.com/protocol/overview
 - Initialization: https://agentclientprotocol.com/protocol/v1/initialization
 - Transports: https://agentclientprotocol.com/protocol/v1/transports
 
 ## Stable result
+
+Stable drift from `schema-v1.26.0` to `schema-v1.32.0` is small: the session
+lifecycle requests gained a client-owned `systemPrompt` field (stabilized in
+`schema-v1.30.0`), and the schema gained descriptions and serialization hints.
+No stable method was added or removed. Matrix now models and delivers the
+system prompt when an operator configures one and the agent advertises
+`sessionCapabilities.systemPrompt`; append is the default mode and override is
+sent only when the agent advertises it. The remaining schema deltas were
+unstable-only additions (archive/unarchive, status, set_title, proxy, tool-call
+and terminal cancellation, background work, prompt suggestions) and are not
+advertised as stable coverage.
 
 All stable agent, client, and protocol methods are represented by the Matrix
 ACP package and adapter. Optional lifecycle, prompt-content, MCP, logout,

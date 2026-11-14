@@ -146,6 +146,7 @@ type pagedListACPClient struct {
 	listErr            error
 	newReq             *acpNewSessionRequest
 	resumeReq          *acpResumeSessionRequest
+	loadReq            *acpLoadSessionRequest
 	resumeErr          error
 	promptReq          *acpPromptRequest
 	promptUpdates      []acpSessionNotification
@@ -182,7 +183,8 @@ func (c *pagedListACPClient) NewSession(_ context.Context, req acpNewSessionRequ
 	c.newReq = &req
 	return &acpNewSessionResponse{SessionID: "remote-new"}, nil
 }
-func (c *pagedListACPClient) LoadSession(context.Context, acpLoadSessionRequest, acpSessionObserver) (*acpLoadSessionResponse, error) {
+func (c *pagedListACPClient) LoadSession(_ context.Context, req acpLoadSessionRequest, _ acpSessionObserver) (*acpLoadSessionResponse, error) {
+	c.loadReq = &req
 	return &acpLoadSessionResponse{}, nil
 }
 func (c *pagedListACPClient) ResumeSession(_ context.Context, req acpResumeSessionRequest) (*acpResumeSessionResponse, error) {

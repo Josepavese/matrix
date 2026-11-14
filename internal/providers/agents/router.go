@@ -289,6 +289,10 @@ func (r *Router) createClient(ctx context.Context, agentID string, cwd string, l
 	if !ok {
 		return nil, "", fmt.Errorf("unsupported protocol kind: %s", endpoint.Kind)
 	}
+	systemPrompt, err := r.systemPromptFor(agentID, endpoint)
+	if err != nil {
+		return nil, "", err
+	}
 	client, err := factory.NewClient(r.providerClientContext(ctx), endpoint, middleware.ConversationFactoryDeps{
 		FS:        r.fs,
 		Cwd:       cwd,
@@ -298,11 +302,37 @@ func (r *Router) createClient(ctx context.Context, agentID string, cwd string, l
 		AgentID:             agentID,
 		ElicitationFrontend: r.elicitation,
 		TerminalAuth:        r.terminalAuth,
+		SystemPrompt:        systemPrompt,
 	})
 	if err != nil {
 		return nil, "", annotateProviderFailureAgent(err, agentID)
 	}
 	return client, endpoint.Kind, nil
+}
+
+// systemPromptFor resolves the client-owned system prompt an agent configured.
+// A resolver without the optional prompt surface leaves it unset. A configured
+// prompt on a non-ACP agent is an error rather than a value silently dropped:
+// the operator wrote instructions Matrix cannot deliver on that protocol.
+func (r *Router) systemPromptFor(agentID string, endpoint middleware.ProtocolEndpoint) (middleware.SystemPrompt, error) {
+	resolver, ok := r.resolver.(middleware.AgentSystemPromptResolver)
+	if !ok {
+		return middleware.SystemPrompt{}, nil
+	}
+	prompt, err := resolver.GetAgentSystemPrompt(agentID)
+	if err != nil {
+		return middleware.SystemPrompt{}, err
+	}
+	if prompt.IsZero() {
+		return middleware.SystemPrompt{}, nil
+	}
+	if err := middleware.ValidateSystemPrompt(prompt); err != nil {
+		return middleware.SystemPrompt{}, fmt.Errorf("agent %s system prompt: %w", agentID, err)
+	}
+	if endpoint.Kind != middleware.ProtocolKindACP {
+		return middleware.SystemPrompt{}, fmt.Errorf("agent %s configures a system prompt, which only the ACP protocol carries", agentID)
+	}
+	return prompt, nil
 }
 
 func (r *Router) providerClientContext(fallback context.Context) context.Context {

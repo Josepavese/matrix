@@ -14,15 +14,17 @@ Each agent in Matrix has:
 Protocol behavior is capability-gated. For ACP, Matrix follows the Zed Agent
 Client Protocol and reads provider-advertised capabilities before using
 features such as `session/list`, `session/close`, `session/fork`, or
-`additionalDirectories`.
+`additionalDirectories`. A client-provided system prompt is sent only when the
+agent advertises `sessionCapabilities.systemPrompt`; configure it with
+`matrix agent system-prompt <agent-id>`.
 
-As of 2026-10-21, Matrix tracks stable ACP wire version 1 (schema 1.26.0)
-and negotiated ACP v2 draft alpha.9. Notices and context compaction are separate
+As of 2026-11-15, Matrix tracks stable ACP wire version 1 (schema 1.32.0)
+and negotiated ACP v2 draft alpha.16. Notices and context compaction are separate
 presentation events; they never count as an agent answer. V2 completion requires
 an actual foreground running/requires_action → idle transition, and partial
 output with a missing completion or provider error is reported as failure.
 
-A2A client and server use SDK 2.7.0 for protocol 1.0.1. Raw HTTP callers must
+A2A client and server use SDK 2.8.0 for protocol 1.0.1. Raw HTTP callers must
 send `A2A-Version: 1.0`; JSON-RPC uses PascalCase methods. The retired A2A 0.3
 method aliases are no longer accepted. See the authoritative
 [protocol coverage and limitations](../protocol_coverage.md).

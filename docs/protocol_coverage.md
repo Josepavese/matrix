@@ -1,6 +1,6 @@
 # ACP and A2A Protocol Coverage
 
-Matrix implementation rechecked: 2026-10-21. Upstream snapshot: 2026-10-21.
+Matrix implementation rechecked: 2026-11-15. Upstream snapshot: 2026-11-15.
 
 This document is the Matrix source of truth for protocol feature coverage. The
 runtime capability report is the live source of truth for a specific configured
@@ -10,17 +10,24 @@ apply to every adapter.
 
 ## Upstream snapshot
 
-- ACP stable wire protocol `1`, JSON schema `schema-v1.26.0` (2026-10-16),
-  source commit `e2d83349bc9e28a4059ea3acefa1c91c966f74e2`. Rust crate `v1.12.0`
+- ACP stable wire protocol `1`, JSON schema `schema-v1.32.0` (2026-11-14),
+  source commit `3d911e0c126ecc71e5872e38212e4a7345f36aed`. Rust crate `v1.18.0`
   is a separate artifact version, not the wire protocol version.
-- ACP v2 remains draft: `schema-v2.0.0-alpha.9`, source commit
-  `e2d83349bc9e28a4059ea3acefa1c91c966f74e2`. Matrix supports its negotiated
+- ACP v2 remains draft: `schema-v2.0.0-alpha.16`, source commit
+  `6921fb746d7a9108eb2ded9acbb586bb7083a11e`. Matrix supports its negotiated
   client surfaces; subprocess fixtures prove interoperability, not commercial
-  provider support or editor-complete history rendering.
+  provider support or editor-complete history rendering. Draft-only additions
+  after alpha.9 are tracked, not advertised as stable.
 - A2A specification `v1.0.1`, release commit
-  `3303592588e388e62e0f69f701af531d2f4e3991` (2026-05-28).
-- Matrix A2A SDK: `github.com/a2aproject/a2a-go/v2 v2.7.0` (2026-10-21).
-  Minimum Go version is 1.26; repository qualification uses Go 1.27.1.
+  `3303592588e388e62e0f69f701af531d2f4e3991` (2026-05-28). The `v1.1.0-rc` tag
+  (`78e1d6a1f7f118c8e9bc830b04a8579c1119cb78`) is a release candidate, not a
+  published stable specification; Matrix keeps serving and requiring `1.0`.
+- Matrix A2A SDK: `github.com/a2aproject/a2a-go/v2 v2.8.0` (2026-11-06).
+  Minimum Go version is 1.26; repository qualification uses the go.mod toolchain (Go 1.27.3). The
+  upgrade is a dependency alignment: Matrix uses the same stable A2A v1.0.1
+  surface and inherits the SDK's correctness fixes; the SDK's new optional
+  executor, gRPC pool, structured-input extension, error sanitizer and card
+  caching are not adopted by Matrix yet.
 
 Authoritative sources:
 
@@ -29,9 +36,9 @@ Authoritative sources:
 - https://agentclientprotocol.com/protocol/v1/transports
 - https://a2a-protocol.org/latest/specification/
 - https://github.com/a2aproject/A2A/releases/tag/v1.0.1
-- https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.26.0
-- https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v2.0.0-alpha.9
-- https://github.com/a2aproject/a2a-go/releases/tag/v2.7.0
+- https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.32.0
+- https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v2.0.0-alpha.16
+- https://github.com/a2aproject/a2a-go/releases/tag/v2.8.0
 
 ## ACP v2 implementation evidence
 
@@ -55,6 +62,7 @@ method existing in the SDK never causes Matrix to advertise provider support.
 | Content | text, resource link, image, audio, embedded resource | Complete; baseline text/resource-link always allowed, optional blocks rejected unless advertised |
 | MCP session configuration | stdio, HTTP, SSE | Complete; HTTP/SSE are rejected unless the agent advertises the matching MCP capability |
 | Session configuration | select groups and boolean options | Complete; Matrix advertises stable boolean config-option support |
+| Client system prompt | `systemPrompt` on `session/new`, `session/load`, `session/resume` | Complete; configured per agent, sent only when the agent advertises `sessionCapabilities.systemPrompt`; append is the default and `override` requires the separately advertised mode. A configured prompt the agent cannot accept fails closed before the session request instead of silently using the agent's defaults; no configured prompt means no field on the wire |
 | Transport | stdio plus Matrix remote websocket/unix adapters | Complete for configured Matrix ACP endpoints; upstream Streamable HTTP remains draft and is not advertised |
 | Authentication | agent-owned method ID and capability-gated logout | Complete through the neutral authentication control; retired credential payloads are rejected by construction |
 
@@ -252,7 +260,7 @@ accepted, tested, and recorded here rather than left implicit:
   content (which may be an empty array if the task has no artifacts)". Matrix omits
   the field for an artifact-less task. The omission is the SDK wire type's, not the
   store's: both bindings marshal with `encoding/json` (SDK JSON-RPC and REST handlers) and `a2a.Task.Artifacts` carries
-  `json:"artifacts,omitempty"` (in `a2a-go/v2 v2.7.0`), so an empty
+  `json:"artifacts,omitempty"` (in `a2a-go/v2 v2.8.0`), so an empty
   slice is dropped whether or not it is nil. Only a transport-level body rewrite or a
   fork of the SDK's core type could emit `[]`, and the sentence is a lowercase
   "should". The MUST in the same paragraph - omit the field when `includeArtifacts` is
@@ -260,7 +268,7 @@ accepted, tested, and recorded here rather than left implicit:
   `TestListTasksOmitsTheArtifactsFieldForATaskWithoutArtifacts`
   (`internal/providers/a2a/methods_test.go`), which fails if the SDK's shape changes.
 
-Terminal-task message/subscription errors now come directly from SDK 2.7.0:
+Terminal-task message/subscription errors now come directly from the SDK:
 `UnsupportedOperationError` (-32004 on JSON-RPC). The old correction interceptor
 was removed; `TestProtocolSDKTerminalTaskCodesMatchCurrentSpecification` pins
 native behavior. Matrix retains only its own one-running-turn policy; running

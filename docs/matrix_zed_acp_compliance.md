@@ -1,6 +1,6 @@
 # Matrix Zed ACP Compliance Notes
 
-Last reviewed: 2026-10-21 against stable ACP v1 schema `schema-v1.26.0`.
+Last reviewed: 2026-11-15 against stable ACP v1 schema `schema-v1.32.0`.
 
 Matrix follows the Zed Agent Client Protocol documented at
 https://agentclientprotocol.com/protocol/overview. The exhaustive current
@@ -34,7 +34,9 @@ The ACP package and adapter cover every stable v1 method in both directions:
 - stable text/resource-link prompt content and capability-gated image, audio,
   and embedded resource content;
 - stdio MCP configuration plus capability-gated HTTP and SSE configuration;
-- paginated session discovery and stable `additionalDirectories` handling.
+- paginated session discovery and stable `additionalDirectories` handling;
+- the stable client system prompt on session creation and restoration, delivered
+  only when the agent advertises it and with the advertised mode.
 
 `session/set_config_option` is preferred when a session returns config options.
 `session/set_mode` remains a separate stable ACP operation and is used when a

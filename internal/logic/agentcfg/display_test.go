@@ -11,17 +11,20 @@ import (
 const (
 	sentinelEnvValue    = "ENV-SENTINEL-4f2c9a"
 	sentinelHeaderValue = "HEADER-SENTINEL-77bd31"
+	sentinelPromptValue = "PROMPT-SENTINEL-c19e42"
 )
 
 func sentinelConfig() Config {
 	return Config{
-		Command:         "agent-binary",
-		Args:            []string{"--serve"},
-		Env:             []string{"MATRIX_TOKEN=" + sentinelEnvValue, "PLAIN=1"},
-		Headers:         map[string]string{"Authorization": sentinelHeaderValue},
-		Kind:            "acp",
-		Transport:       "stdio",
-		HealthcheckPath: "/health",
+		Command:          "agent-binary",
+		Args:             []string{"--serve"},
+		Env:              []string{"MATRIX_TOKEN=" + sentinelEnvValue, "PLAIN=1"},
+		Headers:          map[string]string{"Authorization": sentinelHeaderValue},
+		Kind:             "acp",
+		Transport:        "stdio",
+		SystemPrompt:     sentinelPromptValue,
+		SystemPromptMode: "override",
+		HealthcheckPath:  "/health",
 	}
 }
 
@@ -48,6 +51,30 @@ func TestTheDisplayOfAConfigurationNamesAndCountsAndCarriesNoValue(t *testing.T)
 	}
 	if shown["command"] != "agent-binary" || shown["kind"] != "acp" {
 		t.Fatalf("il resto della configurazione non e' passato: %+v", shown)
+	}
+}
+
+func TestTheSystemPromptIsNamedCountedAndHiddenLikeAnyOtherValue(t *testing.T) {
+	shown, err := DisplayConfig(sentinelConfig(), false)
+	if err != nil {
+		t.Fatalf("DisplayConfig: %v", err)
+	}
+	report := marshalReport(t, shown)
+	if strings.Contains(report, sentinelPromptValue) {
+		t.Fatalf("il report di default porta il testo del prompt:\n%s", report)
+	}
+	if shown["system_prompt_bytes"] != len(sentinelPromptValue) || shown["system_prompt_mode"] != "override" {
+		t.Fatalf("prompt non descritto: bytes=%v mode=%v", shown["system_prompt_bytes"], shown["system_prompt_mode"])
+	}
+	if _, ok := shown["system_prompt"]; ok {
+		t.Fatal("il report di default porta il testo del prompt")
+	}
+	revealed, err := DisplayConfig(sentinelConfig(), true)
+	if err != nil {
+		t.Fatalf("DisplayConfig reveal: %v", err)
+	}
+	if report := marshalReport(t, revealed); !strings.Contains(report, sentinelPromptValue) {
+		t.Fatalf("il report richiesto non porta il prompt:\n%s", report)
 	}
 }
 

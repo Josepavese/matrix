@@ -52,9 +52,11 @@ func DisplayConfig(cfg Config, revealValues bool) (map[string]any, error) {
 	out["env_count"] = len(cfg.Env)
 	out["header_names"] = HeaderNames(cfg.Headers)
 	out["header_count"] = len(cfg.Headers)
+	out["system_prompt_bytes"] = len(cfg.SystemPrompt)
 	if !revealValues {
 		delete(out, "env")
 		delete(out, "headers")
+		delete(out, "system_prompt")
 	}
 	return out, nil
 }

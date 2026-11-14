@@ -133,7 +133,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-10-28: `matrix agent store usage` measures what the store holds and who still
 # references it, replacing the `du -sb` guesswork the deployment note had to leave to
 # the consumer. Measured 5451; no file, function or branch budget is relaxed.
-"cmd/matrix" = 5451
+# 2026-11-15: the stable ACP client system prompt adds the configured-prompt
+# surface and its CLI (`matrix agent system-prompt`). Measured 5544; no file,
+# function, parameter or branch budget is relaxed.
+"cmd/matrix" = 5544
 # 2026-09-23: the generic ACP handler reads the agent's own authMethods through
 # AgentAuthController instead of always returning a hardcoded method, and performs
 # the protocol authenticate for a method the agent published. The port gained its
@@ -208,7 +211,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # adapters already exchanged, not new coupling.
 # 2026-10-01: the registration remedy moves here as the one place both the
 # runtime status and the run refusal read from. Measured 1185.
-"internal/middleware" = 1292
+# 2026-11-15: the neutral contract gains the protocol-neutral client system
+# prompt and the optional resolver companion the router reads. Measured 1328;
+# no file, function, parameter or branch budget is relaxed.
+"internal/middleware" = 1328
 # 2026-04-27: workspace timeline event recording split validation/persistence/state update.
 # 2026-10-01: closing ten externally-reported issues across five clusters -
 # outcome semantics, structured ACP error propagation, workspace and session
@@ -265,8 +271,11 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # agentmgr reports that distinction as a third verification method plus the remedy
 # each result knows. Measured 1050 and 2095; no file, function or branch budget is
 # relaxed.
+# 2026-11-15: the supervisor exposes the client-owned system prompt through the
+# same registry read as the endpoint, so the prompt cannot be paired with a
+# different configuration. Measured 2103; no other budget is relaxed.
 "internal/logic/agentstore" = 1050
-"internal/logic/agentmgr" = 2095
+"internal/logic/agentmgr" = 2103
 # 2026-07-22: ACP message identity and structured final/progress projection add
 # lossless messageId/phase handling without provider-text heuristics. 2026-07-19:
 # stable ACP v1.19 and A2A v1.0.1 coverage expansion adds
@@ -311,7 +320,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # into acp_session_mode.go under the file budget) and structured
 # permission-denial diagnostics with the provider failure code. Measured 6061;
 # file/function/branch ceilings are met by splitting and are not relaxed.
-"internal/providers/agents" = 6071
+# 2026-11-15: the adapter gates, assembles and reports the stable client system
+# prompt on session creation and restoration. Measured 6122; no file, function,
+# parameter or branch budget is relaxed.
+"internal/providers/agents" = 6122
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.
@@ -393,7 +405,10 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # 2026-10-21: bounded byte-accounted text coalescing adds the queue owner,
 # correlation barriers and lossless raw-content merge. Measured production LOC;
 # file/function/branch limits remain unchanged.
-"pkg/zedacp" = 2489
+# 2026-11-15: the stable v1 systemPrompt wire types moved to their own file and
+# the session surface resolves append/override for both generations. Measured
+# 2528; no file, function, parameter or branch limit is relaxed.
+"pkg/zedacp" = 2528
 
 [file_overrides]
 "cmd/matrix/workspace.go" = 390

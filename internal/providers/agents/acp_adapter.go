@@ -320,10 +320,14 @@ func (c *acpConversationClient) restoreACPRemoteSession(ctx context.Context, tur
 	if err != nil {
 		return sessionOriginUnknown, err
 	}
+	systemPrompt, err := c.sessionSystemPrompt()
+	if err != nil {
+		return sessionOriginUnknown, err
+	}
 	req := acpLoadRemoteSessionRequest{
 		Ctx: ctx, RemoteSessionID: turn.RemoteSessionID, Cwd: cwd,
 		AdditionalDirectories: turn.AdditionalDirectories, McpServers: mcpServers,
-		Notifier: turn.ThoughtNotifier, Log: log,
+		SystemPrompt: systemPrompt, Notifier: turn.ThoughtNotifier, Log: log,
 	}
 	if c.sessionCapabilities.Resume {
 		resumed, err := c.resumeACPRemoteSession(req)
@@ -413,6 +417,7 @@ type acpLoadRemoteSessionRequest struct {
 	Cwd                   string
 	AdditionalDirectories []string
 	McpServers            []acpMcpServerConfig
+	SystemPrompt          *acpSystemPrompt
 	Notifier              middleware.ThoughtNotifier
 	Log                   *slog.Logger
 }
@@ -432,6 +437,7 @@ func (c *acpConversationClient) resumeACPRemoteSession(req acpLoadRemoteSessionR
 		Cwd:                   req.Cwd,
 		AdditionalDirectories: additionalDirectories,
 		McpServers:            req.McpServers,
+		SystemPrompt:          req.SystemPrompt,
 	})
 	if err != nil {
 		req.Log.Warn("ACP session resume failed, will fall back to load/prompt flow", "agent_session", req.RemoteSessionID, "error", err)
@@ -460,6 +466,7 @@ func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionReq
 		Cwd:                   req.Cwd,
 		AdditionalDirectories: additionalDirectories,
 		McpServers:            req.McpServers,
+		SystemPrompt:          req.SystemPrompt,
 	}, obs)
 	if err != nil {
 		req.Log.Warn("ACP session load failed, will fall back to prompt/recreate flow", "agent_session", req.RemoteSessionID, "error", err)
@@ -471,6 +478,31 @@ func (c *acpConversationClient) loadACPRemoteSession(req acpLoadRemoteSessionReq
 	}
 	obs.WaitIdle(req.Ctx, acpV1QuietWindow())
 	return nil
+}
+
+// sessionSystemPrompt resolves the configured client-owned system prompt into
+// its stable wire form. A configured prompt Matrix cannot deliver fails closed:
+// silently falling back to the agent's own instructions would present a session
+// as configured when it is not. No prompt means no field on the wire.
+func (c *acpConversationClient) sessionSystemPrompt() (*acpSystemPrompt, error) {
+	prompt := c.deps.SystemPrompt
+	if prompt.IsZero() {
+		return nil, nil
+	}
+	if err := middleware.ValidateSystemPrompt(prompt); err != nil {
+		return nil, err
+	}
+	if !c.sessionCapabilities.SystemPrompt {
+		return nil, fmt.Errorf("agent does not advertise sessionCapabilities.systemPrompt; clear the configured system prompt or use an agent that advertises it")
+	}
+	mode := prompt.EffectiveMode()
+	if mode == middleware.SystemPromptModeOverride && !c.sessionCapabilities.SystemPromptOverride {
+		return nil, fmt.Errorf("agent advertises append system prompts only; change the configured mode from %q to %q", mode, middleware.SystemPromptModeAppend)
+	}
+	return &acpSystemPrompt{
+		Mode:    acpSystemPromptMode(mode),
+		Content: []acpContent{{Type: "text", Text: prompt.Text}},
+	}, nil
 }
 
 func (c *acpConversationClient) prepareTurnCallbacks(turn middleware.ConversationTurn, remoteSessionID string) {

@@ -114,6 +114,20 @@ Disable an agent without removing it.
 matrix agent disable kimi
 ```
 
+### `matrix agent system-prompt <agent-id> [--mode append|override] [--show|--clear]`
+
+Sets the client-owned system prompt for an ACP agent. The instruction body is
+read from stdin; `--show` prints the configured body and `--clear` removes it.
+The prompt is delivered on session creation/restoration only when the agent
+advertises `sessionCapabilities.systemPrompt`, otherwise a run fails closed.
+`override` mode requires the separately advertised override capability.
+
+```bash
+printf 'Answer in Italian and cite file paths.\n' | matrix agent system-prompt opencode
+matrix agent system-prompt opencode --show
+matrix agent system-prompt opencode --clear
+```
+
 ### `matrix agent doctor <agent-id>`
 
 Run diagnostics on an agent. Checks binary, protocol, and configuration.

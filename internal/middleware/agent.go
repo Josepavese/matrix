@@ -131,6 +131,14 @@ type AgentEndpointResolver interface {
 	GetAgentEndpoint(agentID string) (ProtocolEndpoint, error)
 }
 
+// AgentSystemPromptResolver is the optional companion an endpoint resolver may
+// implement when the runtime keeps a client-owned system prompt for an agent.
+// A resolver that does not implement it leaves the prompt unset; the router must
+// not guess one, because the instruction body is operator data.
+type AgentSystemPromptResolver interface {
+	GetAgentSystemPrompt(agentID string) (SystemPrompt, error)
+}
+
 // NewSessionRequest is the payload sent to create a new agent session.
 type NewSessionRequest struct {
 	ClientTitle           string                 `json:"clientTitle,omitempty"`
