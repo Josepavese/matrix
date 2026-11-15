@@ -64,17 +64,23 @@ go test ./tests/integration -run TestACPv2CommercialAgentQualification -v
 The `CLAUDE` variables have the same shape; an empty `*_PROMPT` qualifies
 initialize, `session/new`, capability reporting and close without a model call.
 `MATRIX_ACP_V2_SYSTEM_PROMPT` additionally exercises the advertised system-prompt
-mode. The test asserts that the live connection negotiated version 2, reports
-the draft stability, creates a resumable session, and (when a prompt is supplied)
-completes a prompt whose terminal state update ends the turn, resumes that
-session and closes it.
+mode. `MATRIX_ACP_V2_ENV_FILE` names an optional JSON document with an `env`
+object; its entries are passed to the agent process. This qualifies a peer
+against the same gateway the interactive CLI uses without putting secrets on
+the command line or in logs. `MATRIX_ACP_V2_CANCEL=1` adds a live cancellation:
+a long turn starts on a fresh session and is interrupted with `session/cancel`;
+the turn must return with the cancelled stop reason instead of hanging or
+reporting success. The test asserts that the live connection negotiated version
+2, reports the draft stability, creates a resumable session, and (when a prompt
+is supplied) completes a prompt whose terminal state update ends the turn,
+resumes that session and closes it.
 
 Qualification recorded on 2026-11-15:
 
 | Peer | Version | Evidence | Limit |
 | --- | --- | --- | --- |
-| Codex ACP | 2.6.0 | Live `initialize` negotiated 2; `session/new`; prompt acknowledgement followed by the terminal `state_update`; `session/resume`; `session/close`; advertised system prompt append on `session/new`. Test passed. | Does not exercise a provider permission prompt or cancellation; those paths are covered by the mock-peer and unit tests. |
-| Claude Agent ACP | 0.107.0 | Live `initialize` negotiated 2; capability report exposed the v2 surface as draft; `session/new` returned a resumable session; close succeeded. Test passed. | The local OAuth session was expired, so the prompt reached the peer and was refused with `provider_auth_mismatch` before a model call. This is not evidence of v2 prompt conformance; re-run with a valid login to extend it. |
+| Codex ACP | 2.6.0 | Live `initialize` negotiated 2; `session/new`; prompt acknowledgement followed by the terminal `state_update`; `session/resume`; `session/close`; advertised system prompt append on `session/new`; opt-in cancellation ended the turn with `acp_stop_reason: cancelled`. Test passed. | Does not exercise a provider permission prompt; that path is covered by the mock-peer and unit tests. |
+| Claude Agent ACP | 0.107.0 | Live `initialize` negotiated 2; capability report exposed the v2 surface as draft; `session/new` returned a resumable session; prompt acknowledged and ended on the terminal `state_update`; `session/resume` and `session/close` succeeded; opt-in cancellation ended the turn with `acp_stop_reason: cancelled`. Test passed with the operator's Anthropic-compatible gateway environment (`MATRIX_ACP_V2_ENV_FILE`). | The local OAuth session remains expired; the direct OAuth prompt path has not been qualified. The gateway env path is an operator configuration, not evidence that an unauthenticated peer works. |
 | Kimi CLI | 1.3 | Declares `protocolVersion: 2` but sends the version 1 `agentInfo`/`agentCapabilities` payload. Strict conformance rejects the handshake with an explicit non-conforming-payload error. Pinning the agent to version 1 makes the handshake pass and doctor reports `provider_protocol_version: 1`. | Installed legacy release; the pin is the documented rollback, not a claim that Kimi speaks v2. |
 
 No installed commercial agent is promoted silently. The runtime still serves

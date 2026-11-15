@@ -2,8 +2,10 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +37,10 @@ import (
 // The Claude variables follow the same shape. Leaving the PROMPT variable empty
 // qualifies initialize, session/new, capability reporting and close without
 // spending a model call; use it for an agent whose local login is unavailable.
+// MATRIX_ACP_V2_ENV_FILE names an optional JSON file with an "env" object; its
+// entries are passed to the agent process. It lets an operator qualify a peer
+// against the same gateway the interactive CLI uses without copying secrets
+// into the test command line or logs.
 // ----------------------------------------------------------------------------
 
 type acpV2QualificationResolver struct {
@@ -86,9 +92,14 @@ func TestACPv2CommercialAgentQualification(t *testing.T) {
 			if node == "" {
 				t.Fatal("node was not found; set MATRIX_ACP_V2_NODE")
 			}
+			agentEnv, err := qualificationEnvironment(os.Getenv("MATRIX_ACP_V2_ENV_FILE"))
+			if err != nil {
+				t.Fatalf("qualification environment: %v", err)
+			}
 			resolver := acpV2QualificationResolver{
 				command: node,
 				args:    []string{entry},
+				env:     agentEnv,
 				prompt:  qualificationSystemPrompt(),
 			}
 			workspace := t.TempDir()
@@ -166,6 +177,48 @@ func TestACPv2CommercialAgentQualification(t *testing.T) {
 			if err := router.CloseAgentSessionForWorkspace(ctx, spec.agentID, remoteID, workspace); err != nil {
 				t.Fatalf("session/close: %v", err)
 			}
+			if os.Getenv("MATRIX_ACP_V2_CANCEL") == "1" {
+				cancelMaterialized, _, err := router.MaterializeAgentSession(ctx, spec.agentID, middleware.SessionMaterializeRequest{
+					LogicalSessionID: "qualification-cancel-" + spec.name,
+					WorkspacePath:    workspace,
+				})
+				if err != nil {
+					t.Fatalf("session/new for cancellation: %v", err)
+				}
+				cancelCtx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
+				cancelDone := make(chan cancelTurnResult, 1)
+				go func() {
+					_, _, _, metadata, err := router.Route(cancelCtx, middleware.RouteRequest{
+						AgentID:          spec.agentID,
+						AgentSessionID:   cancelMaterialized.RemoteSessionID,
+						LogicalSessionID: "qualification-cancel-turn-" + spec.name,
+						WorkspacePath:    workspace,
+						Message:          "Count slowly from 1 to 100, one number per line with a short comment after each number. Do not stop early.",
+					})
+					cancelDone <- cancelTurnResult{metadata: metadata, err: err}
+				}()
+				time.Sleep(2 * time.Second)
+				if err := router.CancelAgentSessionForWorkspace(cancelCtx, spec.agentID, cancelMaterialized.RemoteSessionID, workspace); err != nil {
+					cancelTimeout()
+					t.Fatalf("session/cancel: %v", err)
+				}
+				select {
+				case result := <-cancelDone:
+					if result.err != nil {
+						t.Fatalf("cancelled turn: %v", result.err)
+					}
+					if got, _ := result.metadata.Meta["acp_stop_reason"].(string); got != "cancelled" {
+						t.Fatalf("cancelled turn stop reason = %q, want cancelled", got)
+					}
+				case <-time.After(30 * time.Second):
+					cancelTimeout()
+					t.Fatal("cancelled turn did not return")
+				}
+				cancelTimeout()
+				if err := router.CloseAgentSessionForWorkspace(context.Background(), spec.agentID, cancelMaterialized.RemoteSessionID, workspace); err != nil {
+					t.Fatalf("session/close after cancellation: %v", err)
+				}
+			}
 		})
 	}
 }
@@ -176,4 +229,38 @@ func qualificationSystemPrompt() middleware.SystemPrompt {
 		return middleware.SystemPrompt{}
 	}
 	return middleware.SystemPrompt{Text: text, Mode: middleware.SystemPromptModeAppend}
+}
+
+// qualificationEnvironment reads the optional operator-provided JSON document
+// ({"env": {"NAME": "value"}}) and converts its entries to the KEY=VALUE form
+// the resolver passes to the agent process. It never logs a value.
+func qualificationEnvironment(path string) ([]string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var document struct {
+		Env map[string]string `json:"env"`
+	}
+	if err := json.Unmarshal(data, &document); err != nil {
+		return nil, err
+	}
+	env := make([]string, 0, len(document.Env))
+	for name, value := range document.Env {
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		env = append(env, name+"="+value)
+	}
+	sort.Strings(env)
+	return env, nil
+}
+
+type cancelTurnResult struct {
+	metadata middleware.ConversationMetadata
+	err      error
 }

@@ -29,10 +29,13 @@ Matrix negotiates version 2 by default; it does not assume it. On a conforming
 peer the live evidence is:
 
 - Codex ACP 2.6.0: initialize, `session/new`, prompt acknowledgement with a
-  terminal `state_update`, `session/resume`, `session/close`, and the advertised
-  system-prompt append path.
-- Claude Agent ACP 0.107.0: initialize and `session/new`; the prompt path is
-  limited by an expired local OAuth session, not by the adapter.
+  terminal `state_update`, `session/resume`, `session/close`, the advertised
+  system-prompt append path and a live `session/cancel` that ends with the
+  cancelled stop reason.
+- Claude Agent ACP 0.107.0: initialize, `session/new`, prompt with terminal
+  state update, resume, close and live cancellation. The local OAuth session is
+  expired, so the prompt path runs through the operator's Anthropic-compatible
+  gateway environment; the direct OAuth path is not qualified.
 - Kimi CLI 1.3: declares version 2 but sends the version 1 payload, so strict
   conformance rejects the handshake. A per-agent version 1 pin is the supported
   rollback and the doctor then reports the negotiated generation.
