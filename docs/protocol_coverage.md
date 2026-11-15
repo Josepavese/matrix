@@ -73,10 +73,14 @@ the turn must return with the cancelled stop reason instead of hanging or
 reporting success. `MATRIX_ACP_V2_PERMISSION=1` adds a live permission path: the
 workspace opts into the agent's default permission mode, the agent asks for a
 shell command, and the trust-mode handler approves it so the command's artifact
-exists. Omitting `MATRIX_ACP_V2_ENV_FILE` for Claude exercises the local OAuth
-path; on the recorded host it fails before a model call because
-`claude auth status` reports `loggedIn: false` and the agent answers
-`OAuth session expired and could not be refreshed`. `MATRIX_ACP_V2_DELETE=1` adds a live `session/delete` on a disposable
+exists. `MATRIX_ACP_V2_PERMISSION_COMMAND` overrides the shell command, so an
+operator can request a network or out-of-workspace action that a peer must gate.
+Omitting `MATRIX_ACP_V2_ENV_FILE` for Claude exercises the local OAuth path; on
+the recorded host it fails before a model call because `claude auth status`
+reports `loggedIn: false` and the agent answers `OAuth session expired and could
+not be refreshed`. The operator confirms the host account has no eligible
+Max/Pro subscription for an OAuth login, so that path cannot be completed
+without a different credential. `MATRIX_ACP_V2_DELETE=1` adds a live `session/delete` on a disposable
 session. The test asserts that the live connection negotiated version 2, reports
 the draft stability, creates a resumable session, and (when a prompt is supplied)
 completes a prompt whose terminal state update ends the turn, resumes that
@@ -86,7 +90,7 @@ Qualification recorded on 2026-11-15:
 
 | Peer | Version | Evidence | Limit |
 | --- | --- | --- | --- |
-| Codex ACP | 2.6.0 | Live `initialize` negotiated 2; `session/new`; prompt acknowledgement followed by the terminal `state_update`; `session/resume`; `session/close`; advertised system prompt append on `session/new`; opt-in cancellation ended the turn with `acp_stop_reason: cancelled`; the opt-in permission prompt produced its command artifact; opt-in `session/delete` succeeded. Test passed. | Codex executed the command without sending `session/request_permission` in this run, even with `CODEX_CONFIG` requesting `approval_policy: on-request` and `sandbox_mode: workspace-write` under the signed launch-policy contract; the callback is covered by the mock-peer and unit tests, not claimed live. |
+| Codex ACP | 2.6.0 | Live `initialize` negotiated 2; `session/new`; prompt acknowledgement followed by the terminal `state_update`; `session/resume`; `session/close`; advertised system prompt append on `session/new`; opt-in cancellation ended the turn with `acp_stop_reason: cancelled`; the opt-in permission prompt produced its command artifact; opt-in `session/delete` succeeded. Test passed. | Codex executed the command without sending `session/request_permission` in this run, even with `CODEX_CONFIG` requesting `approval_policy: on-request`, `approvals_reviewer: user` and `sandbox_mode: workspace-write` under the signed launch-policy contract; the app-server normalized the turn to `approvalsReviewer: auto_review` and auto-approved the command internally. The callback is covered by the mock-peer and unit tests, not claimed live. |
 | Claude Agent ACP | 0.107.0 | Live `initialize` negotiated 2; capability report exposed the v2 surface as draft; `session/new` returned a resumable session; prompt acknowledged and ended on the terminal `state_update`; `session/resume` and `session/close` succeeded; opt-in cancellation ended the turn with `acp_stop_reason: cancelled`; opt-in permission mode sent `session/request_permission`, trust mode selected `allow-once`, the command artifact was created and opt-in `session/delete` succeeded; the system-prompt append path was exercised. Test passed with the operator's Anthropic-compatible gateway environment (`MATRIX_ACP_V2_ENV_FILE`). | The local OAuth session remains expired (`claude auth status`: `loggedIn: false`; no access or refresh token). A run without `MATRIX_ACP_V2_ENV_FILE` failed at `session/prompt` with `OAuth session expired and could not be refreshed`; the direct OAuth path remains unqualified. The gateway env path is an operator configuration, not evidence that an unauthenticated peer works. |
 | Kimi CLI | 1.3 | Declares `protocolVersion: 2` but sends the version 1 `agentInfo`/`agentCapabilities` payload. Strict conformance rejects the handshake with an explicit non-conforming-payload error. Pinning the agent to version 1 makes the handshake pass and doctor reports `provider_protocol_version: 1`. | Installed legacy release; the pin is the documented rollback, not a claim that Kimi speaks v2. |
 
@@ -352,17 +356,19 @@ go test -race ./...
 
 ### Residual qualification notes
 
-The direct Claude OAuth path is blocked by the local credential state, not by
-the ACP adapter: an initialize/session/new handshake still negotiates v2, while
-`session/prompt` fails closed with `provider_auth_mismatch` before a model call.
-The unblock condition is a valid `claude auth login` session (or an equivalent
-credential available to the agent process); the `MATRIX_ACP_V2_ENV_FILE` gateway
-route is a separate, qualified path.
+The direct Claude OAuth path is blocked by the local account/credential state,
+not by the ACP adapter: an initialize/session/new handshake still negotiates v2,
+while `session/prompt` fails closed with `provider_auth_mismatch` before a model
+call. The operator confirms there is no eligible Max/Pro subscription for a
+`claude auth login` session; the unblock condition is an eligible login (or an
+equivalent credential available to the agent process). The
+`MATRIX_ACP_V2_ENV_FILE` gateway route is a separate, qualified path.
 
 Codex ACP 2.6.0 was also probed with an explicit approval policy and writeable
 sandbox through `MATRIX_CODEX_LAUNCH_POLICY_CONTRACT=codex-acp-env-v1` and
-`CODEX_CONFIG={"approval_policy":"on-request","sandbox_mode":"workspace-write"}`.
-The command still completed and wrote its artifact without a
-`session/request_permission` callback. That is recorded as peer behaviour not
-observed, not as a Matrix permission failure; the adapter callback remains
-covered by the mock peer.
+`CODEX_CONFIG={"approval_policy":"on-request","approvals_reviewer":"user","sandbox_mode":"workspace-write"}`.
+The app-server normalized the turn to `approvalsReviewer: auto_review`, ran its
+own `item/autoApprovalReview` (approved, low risk) and completed the command
+without a `session/request_permission` callback. That is recorded as peer
+behaviour not observed, not as a Matrix permission failure; the adapter callback
+remains covered by the mock peer.

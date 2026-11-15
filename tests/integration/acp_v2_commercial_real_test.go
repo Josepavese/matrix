@@ -245,12 +245,16 @@ func TestACPv2CommercialAgentQualification(t *testing.T) {
 				permissionRouter.SetTrustMode(func() bool { return true })
 				permissionRouter.SetProcess(execprov.NewProvider())
 				permissionRouter.SetFS(osfs.NewFSProvider(), permissionWorkspace)
+				permissionCommand := strings.TrimSpace(os.Getenv("MATRIX_ACP_V2_PERMISSION_COMMAND"))
+				if permissionCommand == "" {
+					permissionCommand = "echo PROOF > permission-proof.txt"
+				}
 				permissionCtx, permissionTimeout := context.WithTimeout(ctx, 90*time.Second)
 				_, _, _, _, err := permissionRouter.Route(permissionCtx, middleware.RouteRequest{
 					AgentID:          spec.agentID,
 					LogicalSessionID: "qualification-permission-" + spec.name,
 					WorkspacePath:    permissionWorkspace,
-					Message:          "Run this shell command in the current workspace: echo PROOF > permission-proof.txt. Then reply DONE.",
+					Message:          "Run this shell command in the current workspace: " + permissionCommand + ". Then reply DONE.",
 				})
 				permissionTimeout()
 				permissionRouter.Close()

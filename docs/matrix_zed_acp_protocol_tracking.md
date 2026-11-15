@@ -34,14 +34,16 @@ peer the live evidence is:
   cancelled stop reason, an opt-in permission command that produced its
   artifact and an opt-in `session/delete`. The permission callback itself was
   not observed because Codex executed the command without asking, including when
-  the launch policy requested `approval_policy: on-request` and a writeable
-  sandbox; the callback remains covered by the mock peer.
+  the launch policy requested `approval_policy: on-request`, a writeable sandbox
+  and `approvals_reviewer: user` (normalized to auto-review by the app-server);
+  the callback remains covered by the mock peer.
 - Claude Agent ACP 0.107.0: initialize, `session/new`, prompt with terminal
   state update, resume, close, live cancellation, a live
   `session/request_permission` that trust mode approved, `session/delete` and the
-  system-prompt append path. The local OAuth session
-  is expired, so the prompt path runs through the operator's Anthropic-compatible
-  gateway environment; the direct OAuth path is not qualified.
+  system-prompt append path. The local OAuth session is expired and the
+  operator confirms the account has no eligible Max/Pro subscription for login,
+  so the prompt path runs through the operator's Anthropic-compatible gateway
+  environment; the direct OAuth path is not qualified.
 - Kimi CLI 1.3: declares version 2 but sends the version 1 payload, so strict
   conformance rejects the handshake. A per-agent version 1 pin is the supported
   rollback and the doctor then reports the negotiated generation.
