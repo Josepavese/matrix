@@ -160,62 +160,6 @@ type InitializeResponse struct {
 	V2PayloadConforming bool `json:"-"`
 }
 
-// hasJSONObject reports whether a parameter is present as a JSON object. A
-// null or a missing key is not a conforming version 2 parameter.
-func hasJSONObject(fields map[string]json.RawMessage, key string) bool {
-	raw, ok := fields[key]
-	if !ok || len(raw) == 0 || string(raw) == "null" {
-		return false
-	}
-	var object map[string]json.RawMessage
-	return json.Unmarshal(raw, &object) == nil
-}
-
-func (r *InitializeResponse) UnmarshalJSON(data []byte) error {
-	// The capability and info parameters are named differently by the two
-	// generations, and the reply must be read in the names the generation that
-	// answered defines: a v2 peer sends capabilities and info, a v1 peer sends
-	// agentCapabilities and agentInfo. Reading only the v1 names silently dropped
-	// everything a v2 peer advertised, so Matrix believed a conforming agent
-	// supported nothing at all - including the terminal authentication surface.
-	//
-	// The retired spelling stays retired where it was retired: a response declaring
-	// version 1 must not populate capabilities from that name, which is what the
-	// existing test pins and what the governance manifest records. Decoding is by
-	// generation, not by whichever key happens to be present.
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
-	}
-	decodeInto := func(target interface{}, keys ...string) error {
-		for _, key := range keys {
-			raw, ok := fields[key]
-			if !ok || len(raw) == 0 || string(raw) == "null" {
-				continue
-			}
-			return json.Unmarshal(raw, target)
-		}
-		return nil
-	}
-	if err := decodeInto(&r.ProtocolVersion, "protocolVersion"); err != nil {
-		return err
-	}
-	if err := decodeInto(&r.AuthMethods, "authMethods"); err != nil {
-		return err
-	}
-	if r.ProtocolVersion >= ProtocolVersionV2 {
-		r.V2PayloadConforming = hasJSONObject(fields, "info") && hasJSONObject(fields, "capabilities")
-		if err := decodeInto(&r.AgentInfo, "info", "agentInfo"); err != nil {
-			return err
-		}
-		return decodeInto(&r.Capabilities, "capabilities", "agentCapabilities")
-	}
-	if err := decodeInto(&r.AgentInfo, "agentInfo"); err != nil {
-		return err
-	}
-	return decodeInto(&r.Capabilities, "agentCapabilities")
-}
-
 // AuthMethod is one entry of the initialize response's authMethods. It carries
 // both generations of the identifier: "id" in v1, "methodId" in v2. Args and Env
 // are what a v2 terminal method contributes to the client's own launch of the
