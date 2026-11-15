@@ -74,7 +74,6 @@ func TestACPv2CommercialAgentQualification(t *testing.T) {
 		{name: "codex", agentID: "codex-qualification", entryEnv: "MATRIX_ACP_V2_CODEX_ENTRY", promptEnv: "MATRIX_ACP_V2_CODEX_PROMPT"},
 	}
 	for _, spec := range specs {
-		spec := spec
 		t.Run(spec.name, func(t *testing.T) {
 			entry := os.Getenv(spec.entryEnv)
 			if entry == "" {

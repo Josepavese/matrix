@@ -21,7 +21,7 @@ pin so it negotiates the highest generation Matrix supports. A version 1 pin is
 the rollback for a peer whose version 2 payload is not conforming. Use --clear
 to return to negotiation.`,
 	Args: cobra.RangeArgs(1, 2),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: func(_ *cobra.Command, args []string) {
 		agentID := args[0]
 		ctx, cleanup, err := NewAgentStoreContext(DefaultVaultPath)
 		if err != nil {
