@@ -33,8 +33,9 @@ peer the live evidence is:
   system-prompt append path, a live `session/cancel` that ends with the
   cancelled stop reason, an opt-in permission command that produced its
   artifact and an opt-in `session/delete`. The permission callback itself was
-  not observed because Codex executed the command without asking; the callback
-  remains covered by the mock peer.
+  not observed because Codex executed the command without asking, including when
+  the launch policy requested `approval_policy: on-request` and a writeable
+  sandbox; the callback remains covered by the mock peer.
 - Claude Agent ACP 0.107.0: initialize, `session/new`, prompt with terminal
   state update, resume, close, live cancellation, a live
   `session/request_permission` that trust mode approved, `session/delete` and the
