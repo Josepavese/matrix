@@ -31,13 +31,14 @@ peer the live evidence is:
 - Codex ACP 2.6.0: initialize, `session/new`, prompt acknowledgement with a
   terminal `state_update`, `session/resume`, `session/close`, the advertised
   system-prompt append path, a live `session/cancel` that ends with the
-  cancelled stop reason and an opt-in permission command that produced its
-  artifact. The permission callback itself was not observed because Codex
-  executed the command without asking; the callback remains covered by the
-  mock peer.
+  cancelled stop reason, an opt-in permission command that produced its
+  artifact and an opt-in `session/delete`. The permission callback itself was
+  not observed because Codex executed the command without asking; the callback
+  remains covered by the mock peer.
 - Claude Agent ACP 0.107.0: initialize, `session/new`, prompt with terminal
-  state update, resume, close, live cancellation, and a live
-  `session/request_permission` that trust mode approved. The local OAuth session
+  state update, resume, close, live cancellation, a live
+  `session/request_permission` that trust mode approved, `session/delete` and the
+  system-prompt append path. The local OAuth session
   is expired, so the prompt path runs through the operator's Anthropic-compatible
   gateway environment; the direct OAuth path is not qualified.
 - Kimi CLI 1.3: declares version 2 but sends the version 1 payload, so strict

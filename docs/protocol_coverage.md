@@ -73,7 +73,8 @@ the turn must return with the cancelled stop reason instead of hanging or
 reporting success. `MATRIX_ACP_V2_PERMISSION=1` adds a live permission path: the
 workspace opts into the agent's default permission mode, the agent asks for a
 shell command, and the trust-mode handler approves it so the command's artifact
-exists. The test asserts that the live connection negotiated version 2, reports
+exists. `MATRIX_ACP_V2_DELETE=1` adds a live `session/delete` on a disposable
+session. The test asserts that the live connection negotiated version 2, reports
 the draft stability, creates a resumable session, and (when a prompt is supplied)
 completes a prompt whose terminal state update ends the turn, resumes that
 session and closes it.
@@ -82,8 +83,8 @@ Qualification recorded on 2026-11-15:
 
 | Peer | Version | Evidence | Limit |
 | --- | --- | --- | --- |
-| Codex ACP | 2.6.0 | Live `initialize` negotiated 2; `session/new`; prompt acknowledgement followed by the terminal `state_update`; `session/resume`; `session/close`; advertised system prompt append on `session/new`; opt-in cancellation ended the turn with `acp_stop_reason: cancelled`; the opt-in permission prompt produced its command artifact. Test passed. | Codex executed the command without sending `session/request_permission` in this run, so its permission callback was not observed; the callback is covered by the mock-peer and unit tests. |
-| Claude Agent ACP | 0.107.0 | Live `initialize` negotiated 2; capability report exposed the v2 surface as draft; `session/new` returned a resumable session; prompt acknowledged and ended on the terminal `state_update`; `session/resume` and `session/close` succeeded; opt-in cancellation ended the turn with `acp_stop_reason: cancelled`; opt-in permission mode sent `session/request_permission`, trust mode selected `allow-once`, and the command artifact was created. Test passed with the operator's Anthropic-compatible gateway environment (`MATRIX_ACP_V2_ENV_FILE`). | The local OAuth session remains expired; the direct OAuth prompt path has not been qualified. The gateway env path is an operator configuration, not evidence that an unauthenticated peer works. |
+| Codex ACP | 2.6.0 | Live `initialize` negotiated 2; `session/new`; prompt acknowledgement followed by the terminal `state_update`; `session/resume`; `session/close`; advertised system prompt append on `session/new`; opt-in cancellation ended the turn with `acp_stop_reason: cancelled`; the opt-in permission prompt produced its command artifact; opt-in `session/delete` succeeded. Test passed. | Codex executed the command without sending `session/request_permission` in this run, so its permission callback was not observed; the callback is covered by the mock-peer and unit tests. |
+| Claude Agent ACP | 0.107.0 | Live `initialize` negotiated 2; capability report exposed the v2 surface as draft; `session/new` returned a resumable session; prompt acknowledged and ended on the terminal `state_update`; `session/resume` and `session/close` succeeded; opt-in cancellation ended the turn with `acp_stop_reason: cancelled`; opt-in permission mode sent `session/request_permission`, trust mode selected `allow-once`, the command artifact was created and opt-in `session/delete` succeeded; the system-prompt append path was exercised. Test passed with the operator's Anthropic-compatible gateway environment (`MATRIX_ACP_V2_ENV_FILE`). | The local OAuth session remains expired; the direct OAuth prompt path has not been qualified. The gateway env path is an operator configuration, not evidence that an unauthenticated peer works. |
 | Kimi CLI | 1.3 | Declares `protocolVersion: 2` but sends the version 1 `agentInfo`/`agentCapabilities` payload. Strict conformance rejects the handshake with an explicit non-conforming-payload error. Pinning the agent to version 1 makes the handshake pass and doctor reports `provider_protocol_version: 1`. | Installed legacy release; the pin is the documented rollback, not a claim that Kimi speaks v2. |
 
 No installed commercial agent is promoted silently. The runtime still serves

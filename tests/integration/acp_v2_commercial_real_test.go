@@ -178,6 +178,18 @@ func TestACPv2CommercialAgentQualification(t *testing.T) {
 			if err := router.CloseAgentSessionForWorkspace(ctx, spec.agentID, remoteID, workspace); err != nil {
 				t.Fatalf("session/close: %v", err)
 			}
+			if os.Getenv("MATRIX_ACP_V2_DELETE") == "1" {
+				deleteMaterialized, _, err := router.MaterializeAgentSession(ctx, spec.agentID, middleware.SessionMaterializeRequest{
+					LogicalSessionID: "qualification-delete-" + spec.name,
+					WorkspacePath:    workspace,
+				})
+				if err != nil {
+					t.Fatalf("session/new for deletion: %v", err)
+				}
+				if err := router.DeleteAgentSessionForWorkspace(ctx, spec.agentID, deleteMaterialized.RemoteSessionID, workspace); err != nil {
+					t.Fatalf("session/delete: %v", err)
+				}
+			}
 			if os.Getenv("MATRIX_ACP_V2_CANCEL") == "1" {
 				cancelMaterialized, _, err := router.MaterializeAgentSession(ctx, spec.agentID, middleware.SessionMaterializeRequest{
 					LogicalSessionID: "qualification-cancel-" + spec.name,
@@ -198,7 +210,7 @@ func TestACPv2CommercialAgentQualification(t *testing.T) {
 					})
 					cancelDone <- cancelTurnResult{metadata: metadata, err: err}
 				}()
-				time.Sleep(2 * time.Second)
+				time.Sleep(5 * time.Second)
 				if err := router.CancelAgentSessionForWorkspace(cancelCtx, spec.agentID, cancelMaterialized.RemoteSessionID, workspace); err != nil {
 					cancelTimeout()
 					t.Fatalf("session/cancel: %v", err)
