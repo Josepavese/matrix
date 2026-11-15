@@ -20,6 +20,7 @@ func (f *acpConversationFactory) NewClient(ctx context.Context, endpoint middlew
 	if err != nil {
 		return nil, err
 	}
+	deps.ProtocolVersion = endpoint.ProtocolVersion
 	transport, err := createTransport(ctx, transportSpec{
 		Protocol:     endpoint.Transport,
 		Address:      endpoint.Address,

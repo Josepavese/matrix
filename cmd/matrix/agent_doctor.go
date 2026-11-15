@@ -101,7 +101,7 @@ var agentDoctorCmd = &cobra.Command{
 				}
 			}
 			if policyErr == nil {
-				checks, checkWarnings := agentdoctor.InspectACP(endpoint, agentprobe.ACPInitialize)
+				checks, checkWarnings := agentdoctor.InspectACP(endpoint, agentprobe.ACPInitializeVersion)
 				for key, value := range checks {
 					item[key] = value
 				}

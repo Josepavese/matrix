@@ -51,19 +51,27 @@ func terminalAuthAdvertisement(deps middleware.ConversationFactoryDeps) *zedacp.
 // opens sends, including the one a terminal login reconnects with. Keeping it in
 // one place is what makes a reconnected connection negotiate exactly like the
 // first one, capability advertisement included.
-func acpInitializeRequestFor(deps middleware.ConversationFactoryDeps) acpInitializeRequest {
+func acpInitializeRequestFor(deps middleware.ConversationFactoryDeps) (acpInitializeRequest, error) {
+	version, err := zedacp.ConfiguredProtocolVersion(deps.ProtocolVersion)
+	if err != nil {
+		return acpInitializeRequest{}, fmt.Errorf("agent %s: %w", deps.AgentID, err)
+	}
 	return acpInitializeRequest{
 		// Zero asks the client to negotiate: it requests the highest version
-		// Matrix supports and drops to v1 if the agent refuses it.
-		ProtocolVersion:    0,
+		// Matrix supports and drops to v1 if the agent refuses it. A configured
+		// pin is sent as-is, so pinning 1 never offers version 2 at all.
+		ProtocolVersion:    version,
 		ClientInfo:         map[string]interface{}{"name": "matrix", "version": "1.0"},
 		ClientCapabilities: acpClientCapabilitiesForDeps(deps),
-	}
+	}, nil
 }
 
 // initializeACPConnection performs the version-negotiating handshake.
 func initializeACPConnection(ctx context.Context, client acpClient, deps middleware.ConversationFactoryDeps) (*acpInitializeResponse, error) {
-	req := acpInitializeRequestFor(deps)
+	req, err := acpInitializeRequestFor(deps)
+	if err != nil {
+		return nil, err
+	}
 	if _, ok := client.(acpSessionUpdatesWatcher); ok {
 		req.ClientCapabilities.Session.Notices = &zedacp.NoticeCapabilities{}
 		req.ClientCapabilities.Session.Compaction = &zedacp.CompactionCapabilities{}
@@ -72,7 +80,7 @@ func initializeACPConnection(ctx context.Context, client acpClient, deps middlew
 	if err != nil {
 		return nil, fmt.Errorf("ACP initialize failed: %w", err)
 	}
-	if err := validateNegotiatedProtocolVersion(client); err != nil {
+	if err := zedacp.ValidateInitializeResponse(resp, client.AuthenticatedProtocolVersion()); err != nil {
 		return nil, err
 	}
 	return resp, nil

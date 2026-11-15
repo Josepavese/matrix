@@ -19,9 +19,13 @@ func (r *Router) AgentCapabilities(ctx context.Context, agentID string) (middlew
 	}
 	if reporter, ok := client.(middleware.ConversationCapabilityReporter); ok {
 		protocolReport := reporter.ProtocolCapabilities()
+		report.ProtocolVersion = protocolReport.ProtocolVersion
 		report.Operations = protocolReport.Operations
 		report.Content = protocolReport.Content
 		report.Transports = protocolReport.Transports
+	}
+	if report.ProtocolVersion == "" {
+		report.ProtocolVersion = endpoint.ProtocolVersion
 	}
 	controller, ok := client.(middleware.ConversationSessionControl)
 	if !ok {

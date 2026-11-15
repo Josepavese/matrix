@@ -626,7 +626,8 @@ func TestRouterTerminalAuthOptInReachesTheAdapter(t *testing.T) {
 func TestInitializeConversationAcceptsANegotiatedV2Connection(t *testing.T) {
 	fake := newScriptedAuthACPClient(zedacp.ProtocolVersionV2)
 	fake.initializeResponse = &acpInitializeResponse{
-		ProtocolVersion: zedacp.ProtocolVersionV2,
+		ProtocolVersion:     zedacp.ProtocolVersionV2,
+		V2PayloadConforming: true,
 		AuthMethods: []acpAuthMethod{
 			{Type: zedacp.AuthMethodTypeAgent, MethodID: "agent-login", Name: "Agent login"},
 			terminalMethod(),
@@ -708,7 +709,8 @@ func TestLogoutCapabilityFollowsTheAdvertisedMethodsOnVersionTwo(t *testing.T) {
 	}{
 		{
 			name: "version 2 with advertised methods",
-			resp: &acpInitializeResponse{ProtocolVersion: zedacp.ProtocolVersionV2, AuthMethods: agentMethod},
+			resp: &acpInitializeResponse{ProtocolVersion: zedacp.ProtocolVersionV2,
+				V2PayloadConforming: true, AuthMethods: agentMethod},
 			want: true,
 		},
 		{
@@ -747,8 +749,9 @@ func TestLogoutReachesAVersionTwoAgentThatAdvertisesMethods(t *testing.T) {
 		deps:   middleware.ConversationFactoryDeps{AgentID: "codex"},
 		featureCapabilities: acpFeatureCapabilitiesFromDeps(
 			&acpInitializeResponse{
-				ProtocolVersion: zedacp.ProtocolVersionV2,
-				AuthMethods:     []acpAuthMethod{{Type: zedacp.AuthMethodTypeAgent, MethodID: "agent-login"}},
+				ProtocolVersion:     zedacp.ProtocolVersionV2,
+				V2PayloadConforming: true,
+				AuthMethods:         []acpAuthMethod{{Type: zedacp.AuthMethodTypeAgent, MethodID: "agent-login"}},
 			}, middleware.ConversationFactoryDeps{AgentID: "codex"}),
 	}
 	if err := conversation.Logout(context.Background()); err != nil {

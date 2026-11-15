@@ -175,12 +175,16 @@ type CapabilityDescriptor struct {
 
 // ProviderCapabilityReport is a channel-safe provider capability snapshot.
 type ProviderCapabilityReport struct {
-	AgentID      string                          `json:"agent_id,omitempty"`
-	ProtocolKind ProtocolKind                    `json:"protocol_kind,omitempty"`
-	Session      map[string]CapabilityDescriptor `json:"session,omitempty"`
-	Operations   map[string]CapabilityDescriptor `json:"operations,omitempty"`
-	Content      map[string]CapabilityDescriptor `json:"content,omitempty"`
-	Transports   map[string]CapabilityDescriptor `json:"transports,omitempty"`
+	AgentID      string       `json:"agent_id,omitempty"`
+	ProtocolKind ProtocolKind `json:"protocol_kind,omitempty"`
+	// ProtocolVersion is the generation this live connection actually
+	// negotiated, not the version configured in the endpoint. Empty means the
+	// protocol has no comparable generation or the client has not connected.
+	ProtocolVersion string                          `json:"protocol_version,omitempty"`
+	Session         map[string]CapabilityDescriptor `json:"session,omitempty"`
+	Operations      map[string]CapabilityDescriptor `json:"operations,omitempty"`
+	Content         map[string]CapabilityDescriptor `json:"content,omitempty"`
+	Transports      map[string]CapabilityDescriptor `json:"transports,omitempty"`
 }
 
 // ConversationCapabilityReporter exposes the full adapter contract instead of
@@ -261,6 +265,11 @@ type ConversationFactoryDeps struct {
 	McpServers []McpServerConfig
 	// AgentID names the agent this client speaks for.
 	AgentID string
+	// ProtocolVersion is the operator's pin for the connection generation.
+	// Empty negotiates the highest generation the protocol supports; "1" pins
+	// the connection to version 1, which is the rollback for a peer whose newer
+	// payload is not conforming. Only the ACP adapter consumes it.
+	ProtocolVersion string
 	// ElicitationFrontend is the neutral port for agent-initiated
 	// elicitations. Nil disables the capability entirely.
 	ElicitationFrontend ElicitationFrontend

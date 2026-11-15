@@ -30,13 +30,16 @@ func TestEndpointAddressPicksTheAddressableTarget(t *testing.T) {
 // TestProbeHandshakeReportsBothOutcomes keeps a failed handshake from being
 // reported as ready: the doctor's advice is load-bearing for operators.
 func TestProbeHandshakeReportsBothOutcomes(t *testing.T) {
-	ready := ProbeHandshake(middleware.ProtocolEndpoint{}, func(context.Context, middleware.ProtocolEndpoint) error { return nil })
+	ready := ProbeHandshake(middleware.ProtocolEndpoint{}, func(context.Context, middleware.ProtocolEndpoint) (int, error) { return 2, nil })
 	if ready["provider_handshake_ok"] != true || ready["provider_status"] != "ready_on_demand" {
 		t.Fatalf("a successful handshake must report ready, got %v", ready)
 	}
+	if ready["provider_protocol_version"] != 2 {
+		t.Fatalf("the negotiated generation must be reported, got %v", ready)
+	}
 
-	failed := ProbeHandshake(middleware.ProtocolEndpoint{}, func(context.Context, middleware.ProtocolEndpoint) error {
-		return errors.New("initialize rejected")
+	failed := ProbeHandshake(middleware.ProtocolEndpoint{}, func(context.Context, middleware.ProtocolEndpoint) (int, error) {
+		return 0, errors.New("initialize rejected")
 	})
 	if failed["provider_handshake_ok"] != false {
 		t.Fatalf("a failed handshake must not report ok, got %v", failed)
@@ -60,9 +63,9 @@ func TestInspectACPIgnoresNonStdioEndpoints(t *testing.T) {
 	}
 	for name, endpoint := range cases {
 		t.Run(name, func(t *testing.T) {
-			result, warnings := InspectACP(endpoint, func(context.Context, middleware.ProtocolEndpoint) error {
+			result, warnings := InspectACP(endpoint, func(context.Context, middleware.ProtocolEndpoint) (int, error) {
 				t.Fatal("an endpoint the inspector does not own must not be probed")
-				return nil
+				return 0, nil
 			})
 			if len(result) != 0 || len(warnings) != 0 {
 				t.Fatalf("expected no report, got result=%v warnings=%v", result, warnings)
@@ -79,8 +82,8 @@ func TestInspectACPWarnsWhenTheProviderCannotBeReached(t *testing.T) {
 		Transport: "stdio",
 		Command:   "/nonexistent/matrix-doctor-probe",
 	}
-	result, warnings := InspectACP(endpoint, func(context.Context, middleware.ProtocolEndpoint) error {
-		return errors.New("spawn failed")
+	result, warnings := InspectACP(endpoint, func(context.Context, middleware.ProtocolEndpoint) (int, error) {
+		return 0, errors.New("spawn failed")
 	})
 	if _, ok := result["command_probe_ok"]; !ok {
 		t.Fatalf("the report must record the command probe, got %v", result)

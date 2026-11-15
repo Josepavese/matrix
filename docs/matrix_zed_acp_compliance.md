@@ -1,6 +1,6 @@
 # Matrix Zed ACP Compliance Notes
 
-Last reviewed: 2026-11-15 against stable ACP v1 schema `schema-v1.32.0`.
+Last reviewed: 2026-11-15 against stable ACP v1 schema `schema-v1.32.0` and the draft ACP v2 `schema-v2.0.0-alpha.16` preview.
 
 Matrix follows the Zed Agent Client Protocol documented at
 https://agentclientprotocol.com/protocol/overview. The exhaustive current
@@ -62,6 +62,29 @@ metadata, content annotations and observer registrations are merge barriers.
 Opaque content extensions survive in `RawContent`. Distinct updates remain
 limited to 256 queued entries and retained input bytes, including a callback in
 flight, to the transport's 32 MiB frame budget. Control/tool updates never merge.
+
+## ACP v2 preview
+
+ACP v2 remains an upstream draft. Matrix negotiates it when the peer does: the
+initialize request asks for the highest supported generation and falls back to
+version 1 when the peer refuses it. A per-agent pin can force version 1.
+
+The adapter follows the negotiated generation for method names and capability
+reporting: version 2 uses `auth/login`/`auth/logout`, removes `session/load` and
+`session/set_mode`, and reports its operations and content as `draft`; version 1
+keeps the stable names and labels. The negotiated generation is exposed as
+`protocol_version` in the capability report and as `provider_protocol_version`
+in `matrix agent doctor`.
+
+A peer that declares version 2 while sending the version 1 `info` or
+`capabilities` payload fails initialize explicitly; Matrix does not silently
+treat it as a conforming version 2 agent. The supported recovery is the
+per-agent version 1 pin (`matrix agent protocol-version <agent-id> 1`), which
+makes the handshake and the reported generation observable and reversible.
+
+Live qualification against released peers is recorded in
+[`protocol_coverage.md`](protocol_coverage.md). It is a preview, not a stable
+promotion: version 1 remains served and no version 2-only path is introduced.
 
 ## Capability rules
 

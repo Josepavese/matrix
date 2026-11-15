@@ -603,7 +603,8 @@ func TestACPProtocolCapabilitiesExposeStableSurface(t *testing.T) {
 // closed.
 func TestACPSessionCapabilitiesComeFromTheVersionTwoSurface(t *testing.T) {
 	resp := &acpInitializeResponse{
-		ProtocolVersion: zedacp.ProtocolVersionV2,
+		ProtocolVersion:     zedacp.ProtocolVersionV2,
+		V2PayloadConforming: true,
 		Capabilities: map[string]interface{}{
 			"session": map[string]interface{}{
 				"delete":                map[string]interface{}{},
@@ -631,7 +632,8 @@ func TestACPSessionCapabilitiesComeFromTheVersionTwoSurface(t *testing.T) {
 // so nothing may be reported as supported.
 func TestACPSessionCapabilitiesReportNoSurfaceWhenVersionTwoOmitsIt(t *testing.T) {
 	resp := &acpInitializeResponse{
-		ProtocolVersion: zedacp.ProtocolVersionV2,
+		ProtocolVersion:     zedacp.ProtocolVersionV2,
+		V2PayloadConforming: true,
 		Capabilities: map[string]interface{}{
 			// A version 1 spelling in a version 2 reply is not read: the reply is
 			// decoded by the generation that produced it.

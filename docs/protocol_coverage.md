@@ -15,9 +15,10 @@ apply to every adapter.
   is a separate artifact version, not the wire protocol version.
 - ACP v2 remains draft: `schema-v2.0.0-alpha.16`, source commit
   `6921fb746d7a9108eb2ded9acbb586bb7083a11e`. Matrix supports its negotiated
-  client surfaces; subprocess fixtures prove interoperability, not commercial
-  provider support or editor-complete history rendering. Draft-only additions
-  after alpha.9 are tracked, not advertised as stable.
+  client surfaces. A live, opt-in qualification against released peers is
+  recorded below; it is a qualified preview, not a stable promotion or a claim
+  of editor-complete history rendering. Draft-only additions after alpha.9 are
+  tracked, not advertised as stable.
 - A2A specification `v1.0.1`, release commit
   `3303592588e388e62e0f69f701af531d2f4e3991` (2026-05-28). The `v1.1.0-rc` tag
   (`78e1d6a1f7f118c8e9bc830b04a8579c1119cb78`) is a release candidate, not a
@@ -43,11 +44,46 @@ Authoritative sources:
 ## ACP v2 implementation evidence
 
 Matrix tests the negotiated v2 initialize/authenticate/logout surface and the
-asynchronous turn lifecycle against real stdio subprocess fixtures in
-`tests/integration/acp_v2_*_real_test.go`. These are protocol peers built for
-conformance tests, not evidence that a commercial agent supports v2. Terminal
+asynchronous turn lifecycle against the repository's stdio mock peer in
+`tests/integration/acp_v2_*_real_test.go`. Those tests prove the wire contract;
+they are not evidence that a commercial agent accepts it. Terminal
 authentication requires the explicit operator capability opt-in. ACP v1 keeps
-its own lifecycle. Configure and inspect the actual provider before selecting v2.
+its own lifecycle.
+
+Because a synthetic peer cannot answer that question, the release also carries
+`tests/integration/acp_v2_commercial_real_test.go`, an opt-in qualification
+that launches the endpoints the operator names:
+
+```bash
+MATRIX_ACP_V2_REAL=1 \
+MATRIX_ACP_V2_CODEX_ENTRY=/path/to/codex-acp/dist/index.js \
+MATRIX_ACP_V2_CODEX_PROMPT='Reply with exactly: MATRIX-ACP-V2-OK' \
+go test ./tests/integration -run TestACPv2CommercialAgentQualification -v
+```
+
+The `CLAUDE` variables have the same shape; an empty `*_PROMPT` qualifies
+initialize, `session/new`, capability reporting and close without a model call.
+`MATRIX_ACP_V2_SYSTEM_PROMPT` additionally exercises the advertised system-prompt
+mode. The test asserts that the live connection negotiated version 2, reports
+the draft stability, creates a resumable session, and (when a prompt is supplied)
+completes a prompt whose terminal state update ends the turn, resumes that
+session and closes it.
+
+Qualification recorded on 2026-11-15:
+
+| Peer | Version | Evidence | Limit |
+| --- | --- | --- | --- |
+| Codex ACP | 2.6.0 | Live `initialize` negotiated 2; `session/new`; prompt acknowledgement followed by the terminal `state_update`; `session/resume`; `session/close`; advertised system prompt append on `session/new`. Test passed. | Does not exercise a provider permission prompt or cancellation; those paths are covered by the mock-peer and unit tests. |
+| Claude Agent ACP | 0.107.0 | Live `initialize` negotiated 2; capability report exposed the v2 surface as draft; `session/new` returned a resumable session; close succeeded. Test passed. | The local OAuth session was expired, so the prompt reached the peer and was refused with `provider_auth_mismatch` before a model call. This is not evidence of v2 prompt conformance; re-run with a valid login to extend it. |
+| Kimi CLI | 1.3 | Declares `protocolVersion: 2` but sends the version 1 `agentInfo`/`agentCapabilities` payload. Strict conformance rejects the handshake with an explicit non-conforming-payload error. Pinning the agent to version 1 makes the handshake pass and doctor reports `provider_protocol_version: 1`. | Installed legacy release; the pin is the documented rollback, not a claim that Kimi speaks v2. |
+
+No installed commercial agent is promoted silently. The runtime still serves
+version 1 and negotiates version 2 only with a peer that conforms. Each agent's
+generation is visible as `protocol_version` in its capability report and as
+`provider_protocol_version` in `matrix agent doctor`. Pin an agent that must
+remain on version 1 with `matrix agent protocol-version <agent-id> 1`; use
+`--clear` to return to negotiation. Configure and inspect the actual provider
+before selecting v2.
 
 ## ACP v1 stable coverage
 
@@ -211,8 +247,10 @@ stable schema.
   Malformed optional display metadata is absent. Provider `_meta` cannot replace
   Matrix's protocol identity or evidence classification.
 - Native unit/race tests and real stdio mock peers cover these contracts. A real
-  OpenCode/DeepSeek probe qualifies current v1 delivery; no installed commercial
-  v2 agent support is inferred from synthetic v2 peers.
+  OpenCode/DeepSeek probe qualifies current v1 delivery. The 2026-11-15 live
+  qualification above covers Codex ACP 2.6.0 end to end and Claude Agent ACP
+  0.107.0 through session creation; Kimi 1.3 is rejected unless pinned to v1.
+  Synthetic v2 peers never substitute for that evidence.
 
 ## A2A v1.0.1 coverage
 

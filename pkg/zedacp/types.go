@@ -146,12 +146,29 @@ type FsCapability struct {
 	WriteTextFile bool `json:"writeTextFile"`
 }
 
-// InitializeResponse decodes the stable ACP v1 initialization response.
+// InitializeResponse decodes an ACP initialization response of either generation.
 type InitializeResponse struct {
 	ProtocolVersion int                    `json:"protocolVersion,omitempty"`
 	AgentInfo       map[string]interface{} `json:"agentInfo,omitempty"`
 	Capabilities    map[string]interface{} `json:"-"`
 	AuthMethods     []AuthMethod           `json:"authMethods,omitempty"`
+	// V2PayloadConforming records whether a version 2 reply used the parameter
+	// names that generation defines: both "info" and "capabilities" as objects.
+	// Decoding stays tolerant of the old names so callers can inspect what a
+	// peer sent; the adapter contract does not stay tolerant, and rejects this
+	// reply during initialize.
+	V2PayloadConforming bool `json:"-"`
+}
+
+// hasJSONObject reports whether a parameter is present as a JSON object. A
+// null or a missing key is not a conforming version 2 parameter.
+func hasJSONObject(fields map[string]json.RawMessage, key string) bool {
+	raw, ok := fields[key]
+	if !ok || len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var object map[string]json.RawMessage
+	return json.Unmarshal(raw, &object) == nil
 }
 
 func (r *InitializeResponse) UnmarshalJSON(data []byte) error {
@@ -187,6 +204,7 @@ func (r *InitializeResponse) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if r.ProtocolVersion >= ProtocolVersionV2 {
+		r.V2PayloadConforming = hasJSONObject(fields, "info") && hasJSONObject(fields, "capabilities")
 		if err := decodeInto(&r.AgentInfo, "info", "agentInfo"); err != nil {
 			return err
 		}

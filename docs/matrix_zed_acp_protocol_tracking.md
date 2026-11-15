@@ -16,9 +16,40 @@ drift decisions.
 - Draft ACP v2 schema: `schema-v2.0.0-alpha.16`, source commit
   `6921fb746d7a9108eb2ded9acbb586bb7083a11e`. Matrix keeps its explicit v2
   experimental surface and does not chase draft-only additions as stable.
+  Version 2 remains a qualified preview against released peers, not a stable
+  promotion.
 - Overview: https://agentclientprotocol.com/protocol/overview
 - Initialization: https://agentclientprotocol.com/protocol/v1/initialization
 - Transports: https://agentclientprotocol.com/protocol/v1/transports
+
+
+## Version 2 adoption state (2026-11-15)
+
+Matrix negotiates version 2 by default; it does not assume it. On a conforming
+peer the live evidence is:
+
+- Codex ACP 2.6.0: initialize, `session/new`, prompt acknowledgement with a
+  terminal `state_update`, `session/resume`, `session/close`, and the advertised
+  system-prompt append path.
+- Claude Agent ACP 0.107.0: initialize and `session/new`; the prompt path is
+  limited by an expired local OAuth session, not by the adapter.
+- Kimi CLI 1.3: declares version 2 but sends the version 1 payload, so strict
+  conformance rejects the handshake. A per-agent version 1 pin is the supported
+  rollback and the doctor then reports the negotiated generation.
+
+Version 2 operations and content are reported with `stability: draft` on a
+version 2 connection; version 1 remains `stability: stable`. The negotiated
+generation is carried as `protocol_version` in the capability report and as
+`provider_protocol_version` in the doctor handshake result. The opt-in real-peer
+test is `tests/integration/acp_v2_commercial_real_test.go`; the mock peers keep
+covering cancellation, terminal authentication and synthetic edge cases.
+
+Pin and clear an agent with:
+
+```bash
+matrix agent protocol-version <agent-id> 1
+matrix agent protocol-version <agent-id> --clear
+```
 
 ## Stable result
 
