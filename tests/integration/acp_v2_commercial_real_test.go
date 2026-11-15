@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -217,6 +218,39 @@ func TestACPv2CommercialAgentQualification(t *testing.T) {
 				cancelTimeout()
 				if err := router.CloseAgentSessionForWorkspace(context.Background(), spec.agentID, cancelMaterialized.RemoteSessionID, workspace); err != nil {
 					t.Fatalf("session/close after cancellation: %v", err)
+				}
+			}
+			if os.Getenv("MATRIX_ACP_V2_PERMISSION") == "1" {
+				permissionWorkspace := t.TempDir()
+				permissionSettings := filepath.Join(permissionWorkspace, ".claude", "settings.local.json")
+				if err := os.MkdirAll(filepath.Dir(permissionSettings), 0o700); err != nil {
+					t.Fatalf("permission workspace: %v", err)
+				}
+				if err := os.WriteFile(permissionSettings, []byte(`{"permissions":{"defaultMode":"default","allow":[]}}`), 0o600); err != nil {
+					t.Fatalf("permission settings: %v", err)
+				}
+				permissionRouter := agents.NewRouter(resolver)
+				permissionRouter.SetTrustMode(func() bool { return true })
+				permissionRouter.SetProcess(execprov.NewProvider())
+				permissionRouter.SetFS(osfs.NewFSProvider(), permissionWorkspace)
+				permissionCtx, permissionTimeout := context.WithTimeout(ctx, 90*time.Second)
+				_, _, _, _, err := permissionRouter.Route(permissionCtx, middleware.RouteRequest{
+					AgentID:          spec.agentID,
+					LogicalSessionID: "qualification-permission-" + spec.name,
+					WorkspacePath:    permissionWorkspace,
+					Message:          "Run this shell command in the current workspace: echo PROOF > permission-proof.txt. Then reply DONE.",
+				})
+				permissionTimeout()
+				permissionRouter.Close()
+				if err != nil {
+					t.Fatalf("permission turn: %v", err)
+				}
+				data, err := os.ReadFile(filepath.Join(permissionWorkspace, "permission-proof.txt"))
+				if err != nil {
+					t.Fatalf("permission turn did not produce its artifact: %v", err)
+				}
+				if strings.TrimSpace(string(data)) != "PROOF" {
+					t.Fatalf("permission artifact = %q, want PROOF", strings.TrimSpace(string(data)))
 				}
 			}
 		})
