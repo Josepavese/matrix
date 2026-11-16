@@ -587,3 +587,71 @@ func TestNotifierKeepsAReadResultAReadWhenThePatchOmitsKind(t *testing.T) {
 		t.Fatalf("the result must correlate with its call, got %q vs %q", completed.ToolCallID, requested.ToolCallID)
 	}
 }
+
+// An ACP turn can have more than one tool call in flight. A completion must keep
+// the identity and context of the call it belongs to, even when another request
+// is the most recent one and the completions arrive out of request order.
+func TestNotifierCorrelatesInterleavedToolCalls(t *testing.T) {
+	store := runtrace.NewStore(memstore.New())
+	run, _, err := store.Start(runtrace.Run{AgentID: "opencode", Protocol: "acp", ChannelID: "http.test"})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	notifier := New(store, run.ID, "opencode", "acp")
+	toolCall := func(id, path, content string) {
+		notifier.OnThought(middleware.ThoughtUpdate{
+			Type:    middleware.ThoughtTypeToolCall,
+			Content: content,
+			Metadata: map[string]interface{}{
+				"tool_call_id":       id,
+				"tool_name":          "read_file",
+				"source_update_type": "tool_call",
+				"path":               path,
+				"status":             "pending",
+			},
+		})
+	}
+	toolResult := func(id, content string) {
+		notifier.OnThought(middleware.ThoughtUpdate{
+			Type:    middleware.ThoughtTypeToolResult,
+			Content: content,
+			Metadata: map[string]interface{}{
+				"tool_call_id":       id,
+				"tool_name":          "read_file",
+				"source_update_type": "tool_call_update",
+				"status":             "completed",
+			},
+		})
+	}
+
+	toolCall("call-a", "/workspace/report.md", "Read report")
+	toolCall("call-b", "/workspace/plan.md", "Read plan")
+	toolResult("call-a", "Read report")
+	toolResult("call-b", "Read plan")
+
+	events, err := store.LoadEvents(run.ID, 0)
+	if err != nil {
+		t.Fatalf("load events: %v", err)
+	}
+	var requested, results []runtrace.Event
+	for _, event := range events {
+		switch event.Kind {
+		case "tool.call.requested":
+			requested = append(requested, event)
+		case "tool.result.received":
+			results = append(results, event)
+		}
+	}
+	if len(requested) != 2 || len(results) != 2 {
+		t.Fatalf("expected two requests and two results, got requests=%#v results=%#v", requested, results)
+	}
+	wantPaths := []string{"/workspace/report.md", "/workspace/plan.md"}
+	for i := range results {
+		if results[i].ToolCallID == "" || results[i].ToolCallID != requested[i].ToolCallID {
+			t.Fatalf("completion %d lost its request identity: requested=%q completed=%q", i, requested[i].ToolCallID, results[i].ToolCallID)
+		}
+		if got := results[i].Inputs["path"]; got != wantPaths[i] {
+			t.Fatalf("completion %d inherited the wrong call context: got %#v, want path %q", i, got, wantPaths[i])
+		}
+	}
+}

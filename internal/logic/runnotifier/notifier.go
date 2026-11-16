@@ -17,6 +17,7 @@ type Notifier struct {
 	protocol         string
 	activeToolCallID string
 	activeTool       toolContext
+	toolCalls        map[string]toolContext
 	sawExplicitFinal bool
 }
 
@@ -36,7 +37,7 @@ type toolContext struct {
 }
 
 func New(store *runtrace.Store, runID, agentID, protocol string) *Notifier {
-	return &Notifier{store: store, runID: runID, agentID: agentID, protocol: protocol}
+	return &Notifier{store: store, runID: runID, agentID: agentID, protocol: protocol, toolCalls: map[string]toolContext{}}
 }
 
 func (n *Notifier) OnThought(update middleware.ThoughtUpdate) {
@@ -211,7 +212,6 @@ func (n *Notifier) appendToolRequested(update middleware.ThoughtUpdate) {
 	content := strings.TrimSpace(frontendevents.FirstNonEmpty(update.Content, update.Title))
 	tool := frontendevents.NormalizeTool(content, update.Metadata, inferToolName(content))
 	toolID := frontendevents.StableToolCallID(n.runID, tool.Name, content, update.Metadata)
-	n.activeToolCallID = toolID
 	event := n.baseEvent("tool.call.requested", "agent", "pending", content)
 	event.ProtocolMethod = "session/update"
 	event.ToolCallID = toolID
@@ -230,6 +230,7 @@ func (n *Notifier) appendToolRequested(update middleware.ThoughtUpdate) {
 	})
 	event.ProtocolMeta = frontendevents.ProtocolMeta(update.Metadata)
 	stored, _ := n.store.AppendEvent(event)
+	n.activeToolCallID = toolID
 	n.activeTool = toolContext{
 		EventID:                  stored.ID,
 		ToolID:                   toolID,
@@ -244,6 +245,7 @@ func (n *Notifier) appendToolRequested(update middleware.ThoughtUpdate) {
 		Path:                     stringFromMap(tool.Inputs, "path"),
 		Operation:                stringFromMap(tool.Inputs, "operation"),
 	}
+	n.toolCalls[toolID] = n.activeTool
 }
 
 func progressSummary(kind string, update middleware.ThoughtUpdate) string {
@@ -271,10 +273,10 @@ func progressFrontendVisible(kind string) bool {
 func (n *Notifier) appendToolResult(update middleware.ThoughtUpdate) {
 	content := strings.TrimSpace(frontendevents.FirstNonEmpty(update.Content, update.Title))
 	tool := frontendevents.NormalizeTool(content, update.Metadata, inferToolName(content))
-	toolID := frontendevents.FirstNonEmpty(n.activeToolCallID, frontendevents.StableToolCallID(n.runID, tool.Name, content, update.Metadata))
-	if toolID != "" && toolID == n.activeTool.ToolID {
-		tool = frontendevents.InheritToolIdentity(tool, n.correlatedCall())
-		tool = frontendevents.EnrichToolWithContext(tool, n.activeTool.Path, n.activeTool.Operation)
+	toolID, correlated, found := n.resultCall(tool, content, update.Metadata)
+	if found {
+		tool = frontendevents.InheritToolIdentity(tool, n.correlatedCall(correlated))
+		tool = frontendevents.EnrichToolWithContext(tool, correlated.Path, correlated.Operation)
 	}
 	event := n.baseEvent("tool.result.received", "tool", tool.Status, content)
 	event.ProtocolMethod = "session/update"
@@ -296,8 +298,11 @@ func (n *Notifier) appendToolResult(update middleware.ThoughtUpdate) {
 	})
 	event.ProtocolMeta = frontendevents.ProtocolMeta(update.Metadata)
 	if event.Status == runtrace.StatusCompleted || event.Status == runtrace.StatusFailed {
-		n.activeToolCallID = ""
-		n.activeTool = toolContext{}
+		delete(n.toolCalls, toolID)
+		if n.activeTool.ToolID == toolID {
+			n.activeToolCallID = ""
+			n.activeTool = toolContext{}
+		}
 	}
 	_, _ = n.store.AppendEvent(event)
 }
@@ -343,6 +348,7 @@ func (n *Notifier) enrichActiveToolFromPermission(permission frontendevents.Perm
 	}
 	n.activeTool.Path = path
 	n.activeTool.Operation = operation
+	n.toolCalls[n.activeTool.ToolID] = n.activeTool
 	if n.activeTool.EventID == "" {
 		return
 	}

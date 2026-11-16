@@ -5,12 +5,15 @@ import (
 	"encoding/hex"
 )
 
+// ToolCallID returns the peer-assigned identity of a tool call, when the update
+// carries one. A caller that needs the trace identity must hash it through
+// StableToolCallID; this function only reports whether the identity is explicit.
+func ToolCallID(metadata map[string]interface{}) string {
+	return FirstNonEmpty(StringValue(metadata, "tool_call_id"), StringValue(metadata, "id"), StringValue(metadata, "call_id"))
+}
+
 func StableToolCallID(runID, name, content string, metadata map[string]interface{}) string {
-	raw := FirstNonEmpty(
-		StringValue(metadata, "tool_call_id"),
-		StringValue(metadata, "id"),
-		StringValue(metadata, "call_id"),
-	)
+	raw := ToolCallID(metadata)
 	if raw == "" {
 		// The path takes part in the identity: two calls to the same tool with
 		// the same description but different arguments are different calls, and
