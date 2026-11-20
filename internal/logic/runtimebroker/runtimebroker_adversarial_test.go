@@ -3,6 +3,7 @@ package runtimebroker
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -57,8 +58,8 @@ func TestWriteThenReadRoundTripsAndIsPrivate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	// The token authorises vault access: the descriptor must not be world readable.
-	if info.Mode().Perm() != 0o600 {
+	// The token authorises vault access. Go reports Unix mode bits only on Unix.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("descriptor mode is %v, want 0600", info.Mode().Perm())
 	}
 	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
