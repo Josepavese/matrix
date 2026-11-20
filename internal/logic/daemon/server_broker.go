@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/Josepavese/matrix/internal/logic/runtimebroker"
@@ -48,6 +49,9 @@ func (s *Server) activateRuntimeBroker(addr string) (func(), error) {
 	}
 	if err := runtimebroker.Write(s.broker.fs, path, descriptor); err != nil {
 		return nil, fmt.Errorf("publish runtime broker: %w", err)
+	}
+	if err := runtimebroker.Remove(s.broker.fs, runtimebroker.StartupPath(s.broker.home)); err != nil {
+		return nil, errors.Join(err, runtimebroker.Remove(s.broker.fs, path))
 	}
 	return func() { _ = runtimebroker.Remove(s.broker.fs, path) }, nil
 }

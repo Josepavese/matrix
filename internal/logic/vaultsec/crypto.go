@@ -2,6 +2,7 @@
 package vaultsec
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -17,7 +18,9 @@ import (
 	"github.com/Josepavese/matrix/internal/middleware"
 )
 
-const encryptedPrefix = "ENCV2:"
+// CurrentValueFormat identifies the key-bound vault value encoding.
+const CurrentValueFormat = "ENCV2"
+const encryptedPrefix = CurrentValueFormat + ":"
 const defaultMasterKeyPath = "configs/vault-master.key"
 
 // KeyStatus describes the state of the vault encryption master key.
@@ -237,7 +240,7 @@ func openValue(gcm cipher.AEAD, raw []byte, prefix string, associated []byte) ([
 }
 
 func IsEncryptedValue(raw []byte) bool {
-	return strings.HasPrefix(string(raw), encryptedPrefix)
+	return bytes.HasPrefix(raw, []byte(encryptedPrefix))
 }
 
 func parseMasterKey(raw string) ([]byte, error) {

@@ -1,6 +1,7 @@
 package runtimevault
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,8 +16,10 @@ import (
 const (
 	brokerDiscoveryGrace = 50 * time.Millisecond
 	brokerStartupWait    = 2 * time.Second
-	startupMarkerMaxAge  = 5 * time.Second
 )
+
+// ErrBrokerStarting means the daemon owns startup and the broker is not ready.
+var ErrBrokerStarting = errors.New("daemon is starting but runtime vault broker is not ready")
 
 type Storage interface {
 	middleware.Storage
@@ -36,29 +39,6 @@ func OpenReadOnly(vaultPath string) (Storage, error) {
 	})
 }
 
-// OpenDaemon claims startup ownership before taking the daemon's bbolt lock.
-func OpenDaemon(vaultPath string) (Storage, error) {
-	home, err := matrixhome.Resolve()
-	if err != nil {
-		return nil, err
-	}
-	fs := osfs.NewFSProvider()
-	marker := runtimebroker.StartupPath(home)
-	if err := runtimebroker.ClaimStartup(fs, marker, time.Now(), startupMarkerMaxAge); err != nil {
-		return nil, err
-	}
-	provider, openErr := bolt.NewProvider(vaultPath)
-	removeErr := runtimebroker.RemoveStartup(fs, marker)
-	if openErr != nil {
-		return nil, openErr
-	}
-	if removeErr != nil {
-		_ = provider.Close()
-		return nil, fmt.Errorf("remove runtime broker startup marker: %w", removeErr)
-	}
-	return provider, nil
-}
-
 func openWithBrokerRetry(openLocal func() (Storage, error)) (Storage, error) {
 	if provider, err := openBroker(); err == nil {
 		return provider, nil
@@ -66,11 +46,7 @@ func openWithBrokerRetry(openLocal func() (Storage, error)) (Storage, error) {
 	if broker, starting := discoverRuntimeOwner(); broker != nil {
 		return broker, nil
 	} else if starting {
-		if provider, err := waitForBroker(brokerStartupWait); err == nil {
-			return provider, nil
-		} else {
-			return nil, fmt.Errorf("daemon is starting but runtime vault broker is not ready: %w", err)
-		}
+		return waitForStartupBroker()
 	}
 	provider, err := openLocal()
 	if err == nil {
@@ -79,7 +55,18 @@ func openWithBrokerRetry(openLocal func() (Storage, error)) (Storage, error) {
 	if broker, brokerErr := openBroker(); brokerErr == nil {
 		return broker, nil
 	}
+	if daemonStarting() {
+		return waitForStartupBroker()
+	}
 	return nil, err
+}
+
+func waitForStartupBroker() (Storage, error) {
+	provider, err := waitForBroker(brokerStartupWait)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrBrokerStarting, err)
+	}
+	return provider, nil
 }
 
 func discoverRuntimeOwner() (*rpcstorage.Provider, bool) {
@@ -110,17 +97,6 @@ func waitForBroker(timeout time.Duration) (*rpcstorage.Provider, error) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	return nil, lastErr
-}
-
-func daemonStarting() bool {
-	home, err := matrixhome.Resolve()
-	if err != nil {
-		return false
-	}
-	fresh, err := runtimebroker.StartupFresh(
-		osfs.NewFSProvider(), runtimebroker.StartupPath(home), time.Now(), startupMarkerMaxAge,
-	)
-	return err == nil && fresh
 }
 
 func RuntimeLogFile() (string, bool) {

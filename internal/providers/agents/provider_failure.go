@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
@@ -31,7 +32,7 @@ func classifyProviderFailure(agentID string, endpoint middleware.ProtocolEndpoin
 		// ACP v2's structured signal, checked before the text heuristics.
 		code = providerfailure.AuthMismatch
 		message = "the agent requires authentication before this request"
-	case isModelUnavailableError(lower):
+	case isModelUnavailableError(err):
 		code = providerfailure.ModelUnavailable
 		message = "configured provider model is unavailable through the selected adapter"
 		model = extractBacktickModel(errText)
@@ -55,6 +56,14 @@ func classifyProviderFailure(agentID string, endpoint middleware.ProtocolEndpoin
 	}
 }
 
+func modelErrorMessage(err error) string {
+	var rpcFailure *zedacp.RPCError
+	if errors.As(err, &rpcFailure) {
+		return strings.ToLower(rpcFailure.Message)
+	}
+	return strings.ToLower(err.Error())
+}
+
 func annotateProviderFailureAgent(err error, agentID string) error {
 	failure, ok := providerfailure.As(err)
 	if !ok || failure.AgentID != "" {
@@ -65,9 +74,11 @@ func annotateProviderFailureAgent(err error, agentID string) error {
 	return &next
 }
 
-func isModelUnavailableError(lower string) bool {
-	return strings.Contains(lower, "model") &&
+func isModelUnavailableError(err error) bool {
+	lower := modelErrorMessage(err)
+	return !isProviderAuthError(lower) && strings.Contains(lower, "model") &&
 		(strings.Contains(lower, "does not exist") ||
+			strings.Contains(lower, "model not found") ||
 			strings.Contains(lower, "unavailable") ||
 			strings.Contains(lower, "unknown model option") ||
 			strings.Contains(lower, "do not have access") ||

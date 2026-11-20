@@ -334,7 +334,9 @@ exclude_dirs = ["vendor", "tests/mocks"]
 # the per-agent pin plumbing and the doctor's negotiated-version probe. The
 # report and decoder were split out of the 55-line/branch-budgeted functions;
 # file/function/parameter/branch limits remain unrelaxed. Measured 6162.
-"internal/providers/agents" = 6162
+# 2026-11-20: model rejection diagnostics record the negotiated ACP method,
+# version and requested model, with bounded peer RPC evidence.
+"internal/providers/agents" = 6195
 # 2026-05-04: run-level cleanup proofs reuse parent-covered fork_children and
 # avoid double-cleaning related fork sessions already proven by child/parent
 # subtree cleanup. Final resume cleanup scopes reconcile by run agent/workspace.

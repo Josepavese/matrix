@@ -60,27 +60,31 @@ func New(addr, logFile string) (Descriptor, error) {
 }
 
 func Write(fs middleware.FS, path string, descriptor Descriptor) error {
-	data, err := json.MarshalIndent(descriptor, "", "  ")
+	return writeMetadata(fs, path, "descriptor", descriptor)
+}
+
+func writeMetadata(fs middleware.FS, path, kind string, metadata any) error {
+	data, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode runtime broker descriptor: %w", err)
+		return fmt.Errorf("encode runtime broker %s: %w", kind, err)
 	}
 	temporary := path + ".tmp"
 	file, err := fs.OpenFile(temporary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("create runtime broker descriptor: %w", err)
+		return fmt.Errorf("create runtime broker %s: %w", kind, err)
 	}
 	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
 		_ = fs.Remove(temporary)
-		return fmt.Errorf("write runtime broker descriptor: %w", err)
+		return fmt.Errorf("write runtime broker %s: %w", kind, err)
 	}
 	if err := file.Close(); err != nil {
 		_ = fs.Remove(temporary)
-		return fmt.Errorf("close runtime broker descriptor: %w", err)
+		return fmt.Errorf("close runtime broker %s: %w", kind, err)
 	}
 	if err := fs.Rename(temporary, path); err != nil {
 		_ = fs.Remove(temporary)
-		return fmt.Errorf("activate runtime broker descriptor: %w", err)
+		return fmt.Errorf("activate runtime broker %s: %w", kind, err)
 	}
 	return nil
 }

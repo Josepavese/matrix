@@ -48,6 +48,9 @@ jobs:
           go test -race -count=1 ./internal/providers/runapi -run 'TestRichRun|TestRunRejectsAmbiguousIngress|TestRunRequest|TestRunIdempotencyKeyReturnsSameRun'
           go test -race -count=1 -v ./internal/providers/agents -run 'TestSandbox|TestCachedLaunch|TestRouterCodexPolicy'
           go test -race -count=1 -v ./cmd/matrix -run 'TestPAL|TestCapacity'
+      - name: Native vault startup, migration and broker ownership
+        shell: bash
+        run: go test -race -count=1 ./internal/providers/bolt ./internal/providers/runtimevault ./internal/logic/runtimebroker ./internal/logic/daemon
       - name: Native CLI including workspace path with spaces
         shell: bash
         run: |

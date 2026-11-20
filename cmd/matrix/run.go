@@ -40,14 +40,14 @@ var runCmd = &cobra.Command{
 
 		d, closeDaemon, err := NewDaemonContext(DefaultVaultPath)
 		if err != nil {
-			exitf("Daemon init error: %v", err)
+			return fmt.Errorf("daemon init: %w", err)
 		}
 		defer closeDaemon()
 
 		// Logging bootstrap
 		logRuntime, err := logging.BootstrapWithFactory(d.App.Config, oslog.NewFactory().WithCollectorCredential(func() (string, error) { return d.App.Config.Get("system.logging.collector.authorization") }))
 		if err != nil {
-			exitf("Logging init error: %v", err)
+			return fmt.Errorf("logging init: %w", err)
 		}
 		defer func() {
 			if err := logRuntime.Close(); err != nil {

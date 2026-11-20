@@ -136,6 +136,13 @@ Matrix instead reports `failure_reason=provider_process_exit`,
 `provider_stderr`. Home paths are shortened and common bearer/API-key/token
 forms are redacted before logs, run responses, or trace metadata receive them.
 
+An ACP model-selection failure includes `requested_model`,
+`negotiated_protocol_version`, and the wire method in `phase`:
+`session/set_config_option` for v1 or `session/set_model` for v2. A peer
+response of `model not found` is reported as `provider_model_unavailable`.
+The response proves rejection by that session. Whether the process loaded a
+credential or configuration remains provider-side evidence.
+
 `clean=true` means Matrix reached an operational cleanup state for that lifecycle. `strong_cleanup=true` means Matrix has hard evidence from the provider or OS process layer. For ephemeral interrupt/resume flows, Matrix requires strong proof; local-only forgetting fails with `failure_code=cleanup_clean_without_remote_or_process_proof`. If no remote session was ever materialized and the exact workspace-bound provider client is absent, Matrix records `process_absent=true` with `process_absence_reason=no matching cached agent client`; that is strong proof for the not-started/no-provider-process path. If a remote session id is known, process absence alone is not enough and cleanup still needs remote delete/close/cancel or process reap proof. If the target remote session is deleted, closed, or canceled while another local session still owns the workspace client, Matrix keeps the cleanup strong and lists that owner as non-retained `related_sessions[]` evidence with reason `shared_agent_client_owner`. For non-ephemeral shared sessions without strong target proof, retained clients are allowed but explicitly marked with `cleanup_strength=retained` and `weak_cleanup_reason=process_retained`.
 
 Run-level cleanup also accounts for sessions touched during the run but not equal

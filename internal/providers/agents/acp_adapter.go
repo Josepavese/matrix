@@ -241,7 +241,7 @@ func (c *acpConversationClient) prepareTurnSession(ctx context.Context, turn mid
 		Origin:          origin,
 	})
 	if err != nil {
-		return remoteSessionID, classifyProviderFailure(turn.AgentID, c.endpoint, "session/set_model", err)
+		return remoteSessionID, c.modelSelectionFailure(turn, err)
 	}
 	if turn.ModelID != "" {
 		if notifier, ok := turn.ThoughtNotifier.(middleware.ModelSelectionNotifier); ok {

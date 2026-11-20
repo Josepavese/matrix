@@ -3,9 +3,12 @@ package agents
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 // sessionOrigin records how the remote session reached the current turn. It is
@@ -82,11 +85,33 @@ func hasModelRejectionPhrase(lower string) bool {
 	return false
 }
 
+func modelSelectionMethod(version int) string {
+	if version < zedacp.ProtocolVersionV2 {
+		return acpSetConfigOptionMethod
+	}
+	return acpSetSessionModelMethod
+}
+
+func (c *acpConversationClient) modelSelectionFailure(turn middleware.ConversationTurn, err error) error {
+	if _, ok := providerfailure.As(err); ok {
+		return err
+	}
+	version := c.negotiatedProtocolVersion()
+	classified := classifyProviderFailure(turn.AgentID, c.endpoint, modelSelectionMethod(version), err)
+	failure, ok := providerfailure.As(classified)
+	if !ok {
+		return classified
+	}
+	failure.RequestedModel = turn.ModelID
+	failure.Diagnostics["negotiated_protocol_version"] = strconv.Itoa(version)
+	return classified
+}
+
 func (c *acpConversationClient) applyRequestedModel(ctx context.Context, sessionID, modelID string, origin sessionOrigin) (middleware.ModelSelection, error) {
 	if modelID == "" {
 		return middleware.ModelSelection{}, nil
 	}
-	if c.negotiatedProtocolVersion() < 2 {
+	if modelSelectionMethod(c.negotiatedProtocolVersion()) == acpSetConfigOptionMethod {
 		return c.applyModelConfigOption(ctx, sessionID, modelID, origin)
 	}
 	return c.applySessionModel(ctx, sessionID, modelID, origin)

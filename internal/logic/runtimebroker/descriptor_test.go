@@ -1,6 +1,7 @@
 package runtimebroker
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -40,7 +41,7 @@ func TestDescriptorRoundTripUsesPrivateRuntimeToken(t *testing.T) {
 	}
 }
 
-func TestStartupMarkerFreshnessAndRemoval(t *testing.T) {
+func TestStartupMarkerRoundTripAndRemoval(t *testing.T) {
 	home := t.TempDir()
 	path := StartupPath(home)
 	fs := osfs.NewFSProvider()
@@ -48,19 +49,21 @@ func TestStartupMarkerFreshnessAndRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	if err := ClaimStartup(fs, path, now, 5*time.Second); err != nil {
+	if err := WriteStartup(fs, path, now); err != nil {
 		t.Fatal(err)
 	}
-	if fresh, err := StartupFresh(fs, path, now.Add(time.Second), 5*time.Second); err != nil || !fresh {
-		t.Fatalf("fresh=%t err=%v", fresh, err)
+	raw, err := fs.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := ClaimStartup(fs, path, now.Add(time.Second), 5*time.Second); err == nil {
-		t.Fatal("second startup claim unexpectedly succeeded")
+	var startup Startup
+	if err := json.Unmarshal(raw, &startup); err != nil {
+		t.Fatal(err)
 	}
-	if fresh, err := StartupFresh(fs, path, now.Add(6*time.Second), 5*time.Second); err != nil || fresh {
-		t.Fatalf("stale marker fresh=%t err=%v", fresh, err)
+	if startup.State != "initializing" || startup.PID != os.Getpid() || !startup.StartedAt.Equal(now) {
+		t.Fatalf("unexpected startup state: %+v", startup)
 	}
-	if err := RemoveStartup(fs, path); err != nil {
+	if err := Remove(fs, path); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := fs.Stat(path); !os.IsNotExist(err) {

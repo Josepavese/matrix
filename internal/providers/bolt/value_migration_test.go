@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Josepavese/matrix/internal/logic/vaultsec"
 	bbolt "go.etcd.io/bbolt"
 )
 
@@ -101,6 +102,40 @@ func TestV1MigrationPreservesDataAndVerifiedOriginalBackup(t *testing.T) {
 	if len(again) != 1 {
 		t.Fatal("migration ran again on already converted values")
 	}
+}
+
+func TestCurrentVaultRecordsItsFormatOnce(t *testing.T) {
+	setTestVaultKey(t)
+	path := filepath.Join(t.TempDir(), "vault.db")
+	value, err := vaultsec.EncryptBytes("entry", []byte("current"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawVault(t, path, map[string][]byte{"entry": value})
+	transaction := func() int {
+		t.Helper()
+		p, err := NewProvider(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = p.Close() }()
+		var id int
+		if err := p.db.View(func(tx *bbolt.Tx) error {
+			id = tx.ID()
+			meta := tx.Bucket(vaultMetadataBucket)
+			if meta == nil || string(meta.Get(valueFormatKey)) != vaultsec.CurrentValueFormat {
+				t.Error("vault encoding was not recorded")
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	if first, next := transaction(), transaction(); first != next {
+		t.Fatalf("reopening current vault wrote a transaction: %d -> %d", first, next)
+	}
+	assertRawValue(t, path, "entry", value)
 }
 
 func TestFailedMigrationRollsBackEveryRecord(t *testing.T) {

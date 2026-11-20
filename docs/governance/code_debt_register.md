@@ -18,6 +18,10 @@ Current allowed baseline:
 
 Latest budget realignment:
 
+- 2026-11-20: ACP model-selection failures record the actual wire method and
+  negotiated version while retaining the peer response and requested model.
+  Agents package baseline 6195 LOC. File, function and branch limits remain.
+
 - 2026-10-21 readiness correction: expose the existing governed-header network
   capability through the neutral contract and name the Matrix HTTP credential
   header once. Middleware baseline 1292 LOC; duplicated CLI setup was reduced.

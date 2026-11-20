@@ -69,22 +69,6 @@ func openProvider(path string, readOnly bool) (*Provider, error) {
 		}, nil
 	}
 
-	// Ensure default bucket exists
-	err = db.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(defaultBucket)
-		return err
-	})
-
-	if err != nil {
-		_ = db.Close()
-		return nil, &middleware.Error{
-			Code:    "ERR_VAULT_INIT",
-			Message: "Failed to initialize default bucket",
-			Op:      "bolt.NewProvider",
-			Err:     err,
-		}
-	}
-
 	if err := vaultsec.ApplySecurePermissions(path); err != nil {
 		_ = db.Close()
 		return nil, &middleware.Error{

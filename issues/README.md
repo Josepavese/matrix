@@ -10,6 +10,14 @@ state gestite e conservate in [closed/](closed/).
 Questo file è un indice, non una segnalazione aperta. Qualifiche esterne e limiti
 accettati sono espliciti nel riepilogo; l'archiviazione non li certifica risolti.
 
+## Revisione del 20 novembre 2026
+
+- [Avvio del vault e pubblicazione del broker](closed/2026-11-20-vault-startup-broker.md):
+  correttiva e regressioni incluse in v0.1.68.
+- [Rifiuto del modello in preflight ACP](closed/2026-11-20-acp-model-preflight-diagnostics.md):
+  correttiva diagnostica inclusa in v0.1.68. La qualifica del profilo sul
+  worker segnalante resta in [Half Pocket #36](https://github.com/Josepavese/gestionale-ai-halfpocket/issues/36).
+
 ## Revisione del 14 novembre 2026
 
 - [ACP trace: letture pubbliche classificate come delete/write](closed/2026-11-14-external-acp-trace-read-results-classified-as-writes.md):

@@ -6,6 +6,7 @@ import (
 
 	"github.com/Josepavese/matrix/internal/logic/providerfailure"
 	"github.com/Josepavese/matrix/internal/middleware"
+	"github.com/Josepavese/matrix/pkg/zedacp"
 )
 
 func TestClassifyProviderFailureDetectsModelUnavailable(t *testing.T) {
@@ -39,6 +40,34 @@ func TestClassifyProviderFailureRecognizesACPModelOptionRejection(t *testing.T) 
 	failure, ok := providerfailure.As(err)
 	if !ok || failure.Code != providerfailure.ModelUnavailable {
 		t.Fatalf("ACP model rejection not typed: %v", err)
+	}
+}
+
+func TestModelPreflightPreservesWireMethodAndRPCRejection(t *testing.T) {
+	requested := "deepseek/deepseek-flash"
+	peer := &zedacp.RPCError{Code: -32602, Message: "Invalid params: model not found: " + requested,
+		Data: map[string]any{"modelId": "deepseek-flash", "providerId": "deepseek"}}
+	for _, tc := range []struct {
+		version    int
+		method     string
+		negotiated string
+	}{
+		{zedacp.ProtocolVersionV1, "session/set_config_option", "1"},
+		{zedacp.ProtocolVersionV2, "session/set_model", "2"},
+	} {
+		t.Run(tc.method, func(t *testing.T) {
+			client := &acpConversationClient{client: newScriptedAuthACPClient(tc.version),
+				endpoint: middleware.ProtocolEndpoint{Kind: middleware.ProtocolKindACP}}
+			err := client.modelSelectionFailure(middleware.ConversationTurn{AgentID: "opencode", ModelID: requested}, peer)
+			failure, ok := providerfailure.As(err)
+			if !ok || failure.Code != providerfailure.ModelUnavailable || failure.Phase != tc.method || failure.RequestedModel != requested {
+				t.Fatalf("wrong model failure: %v", err)
+			}
+			if failure.Diagnostics["negotiated_protocol_version"] != tc.negotiated ||
+				failure.Diagnostics["rpc_error_code"] != "-32602" || failure.Diagnostics["rpc_error_message"] != peer.Message {
+				t.Fatalf("incomplete ACP diagnostics: %+v", failure.Diagnostics)
+			}
+		})
 	}
 }
 

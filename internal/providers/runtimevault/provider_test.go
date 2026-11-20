@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -127,41 +129,43 @@ func TestOpenWaitsForBrokerWhileDaemonStartupOwnsVaultIntent(t *testing.T) {
 	if err := fs.MkdirAll(filepath.Join(home, "data"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtimebroker.ClaimStartup(fs, runtimebroker.StartupPath(home), time.Now(), 5*time.Second); err != nil {
+	dbPath := filepath.Join(home, "data", "matrix-vault.db")
+	writer, err := runtimevault.OpenDaemon(dbPath)
+	if err != nil {
 		t.Fatal(err)
 	}
-	dbPath := filepath.Join(home, "data", "matrix-vault.db")
+	t.Cleanup(func() { _ = writer.Close() })
+	marker := runtimebroker.StartupPath(home)
+	old := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(marker, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if duplicate, err := runtimevault.OpenDaemon(dbPath); err == nil {
+		_ = duplicate.Close()
+		t.Fatal("a second daemon claimed the live runtime")
+	}
+	if reader, err := runtimevault.OpenReadOnly(dbPath); !errors.Is(err, runtimevault.ErrBrokerStarting) {
+		if reader != nil {
+			_ = reader.Close()
+		}
+		t.Fatalf("open before broker publication: %v", err)
+	}
+	if err := writer.Set("probe", []byte(`"intent"`)); err != nil {
+		t.Fatal(err)
+	}
+	server := daemon.NewServer(vault.NewVault(writer), networkprovider.NewProvider()).
+		WithRuntimeBroker(writer, fs, home, filepath.Join(home, "logs", "runtime.jsonl"))
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	startupErr := make(chan error, 1)
 	serverDone := make(chan error, 1)
-	go func() {
-		// The startup intent descriptor above already makes the CLI wait, so the
-		// daemon may open the vault immediately instead of after a fixed delay.
-		writer, err := bolt.NewProvider(dbPath)
-		if err != nil {
-			startupErr <- err
-			return
+	go func() { serverDone <- server.Start(ctx, "127.0.0.1:0") }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-serverDone; err != nil {
+			t.Error(err)
 		}
-		defer writer.Close()
-		if err := runtimebroker.RemoveStartup(fs, runtimebroker.StartupPath(home)); err != nil {
-			startupErr <- err
-			return
-		}
-		if err := writer.Set("probe", []byte(`"intent"`)); err != nil {
-			startupErr <- err
-			return
-		}
-		startupErr <- nil
-		server := daemon.NewServer(vault.NewVault(writer), networkprovider.NewProvider()).
-			WithRuntimeBroker(writer, fs, home, filepath.Join(home, "logs", "runtime.jsonl"))
-		serverDone <- server.Start(ctx, "127.0.0.1:0")
-	}()
+	})
 
 	reader, err := runtimevault.OpenReadOnly(dbPath)
-	if startupErr := <-startupErr; startupErr != nil {
-		t.Fatalf("daemon startup: %v", startupErr)
-	}
 	if err != nil {
 		t.Fatalf("CLI open during daemon startup: %v", err)
 	}
@@ -171,9 +175,39 @@ func TestOpenWaitsForBrokerWhileDaemonStartupOwnsVaultIntent(t *testing.T) {
 	if err := reader.Close(); err != nil {
 		t.Fatal(err)
 	}
-	cancel()
-	if err := <-serverDone; err != nil {
+	if _, err := fs.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("startup marker remains after broker published: %v", err)
+	}
+}
+
+func TestOpenIgnoresStartupMarkerWithoutAnOwner(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("MATRIX_HOME", home)
+	fs := osfs.NewFSProvider()
+	marker := runtimebroker.StartupPath(home)
+	if err := fs.MkdirAll(filepath.Dir(marker), 0o700); err != nil {
 		t.Fatal(err)
+	}
+	if err := runtimebroker.WriteStartup(fs, marker, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(home, "data", "matrix-vault.db")
+	vault, err := runtimevault.Open(dbPath)
+	if err != nil {
+		t.Fatalf("stale startup marker blocked offline access: %v", err)
+	}
+	if err := vault.Close(); err != nil {
+		t.Fatal(err)
+	}
+	writer, err := runtimevault.OpenDaemon(dbPath)
+	if err != nil {
+		t.Fatalf("stale startup marker prevented restart: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fs.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("startup marker remains after close: %v", err)
 	}
 }
 
